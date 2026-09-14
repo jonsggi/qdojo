@@ -16,3 +16,13 @@ The first rounds are easy. A white belt should be able to solve them. They
 get harder as the dojo grows, and one day the riddles will be code that is
 broken and must be fixed. That is the plan. A casino is what you get when
 you skip the training.
+
+## The cabinet
+
+The dojo is watched through an arcade cabinet from the early nineties. The
+page is not a dashboard, it is an attract mode: INSERT COIN blinks until a
+round opens, the riddle is the bell, the commit window is a health bar
+draining in ticks, the reveal window is a CONTINUE? countdown, and settlement
+is the K.O. screen with the winners' names in the high-score table. Every
+number on it is real QU and every line links to the transaction that proves
+it. Fun first, but never at the cost of a spectator being able to verify.
