@@ -141,6 +141,8 @@ def test_full_round_two_bots_one_wins(world, tmp_path):
     hist = h.export(str(tmp_path / "web"))
     r = hist["rounds"][0]
     assert r["state"] == "settled" and r["settlement"]["winners"] == [ALICE]
+    assert hashing.settlement_hash(r["settlement"]).hex() == r["settlement"]["hash"]   # the page re-verifies this
+    assert r["rake_bps"] == 500
     names = {f["identity"]: f["name"] for f in hist["fighters"]}
     assert names[ALICE] == "RYUBOT" and names[BOB] is None      # bob never bowed
     top = hist["fighters"][0]

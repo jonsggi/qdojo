@@ -336,13 +336,11 @@ class House:
                 for p in doc["payouts"]:
                     if p["kind"] == "win" and p["confirmed"]:
                         fighter(p["identity"])["earned"] += p["amount"]
-                settlement = {"pot": doc["pot"], "rake": doc["rake"], "carry": doc["carry"], "answer": doc["answer"],
-                              "dojo_salt": doc["dojo_salt"], "winners": doc["winners"], "payouts": doc["payouts"],
-                              "hash": doc.get("hash"), "settle_tx": doc.get("settle_tx")}
+                settlement = dict(doc)  # exactly the hashed document, so the page can re-verify it
             rd = {"round_id": rid, "title": rpub["title"], "state": state, "publish_tick": meta["publish_tick"],
                   "publish_tx": meta["publish_tx"], "commit_window": meta["commit_window"],
                   "reveal_window": meta["reveal_window"], "entry_fee": meta["entry_fee"],
-                  "house_seed": meta["house_seed"], "riddle_hash": meta["riddle_hash"],
+                  "house_seed": meta["house_seed"], "rake_bps": meta["rake_bps"], "riddle_hash": meta["riddle_hash"],
                   "answer_commitment": meta["answer_commitment"], "riddle": rpub,
                   "entries": entries, "settlement": settlement}
             rounds.append(rd)

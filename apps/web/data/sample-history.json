@@ -1,0 +1,851 @@
+{
+ "house": "GMTLASMGSQHLRNFOWEEPCVAGFOLSTSVPXYWNJVJPVXTQWADCPGREQAJIMUZY",
+ "generated_at": "2026-09-14T21:04:11Z",
+ "generated_tick": 26414710,
+ "rounds": [
+  {
+   "round_id": 1,
+   "title": "WHITE BELT: THE SUM",
+   "state": "settled",
+   "publish_tick": 26400100,
+   "publish_tx": "zvihcjhbzngcwqaytibukoinoifiarxerjbrtlntbpnidhfxpihutyqzppec",
+   "commit_window": 600,
+   "reveal_window": 300,
+   "entry_fee": 1000,
+   "house_seed": 10000,
+   "riddle_hash": "441facec19e64d844694dfb8132a271d9a079bc23bab566a4df87a1d3147ce78",
+   "answer_commitment": "bf11ae319300df7400f9a80b68f58b16a3a9b30296540d3e6c45dceb009f36ce",
+   "riddle": {
+    "round_id": 1,
+    "title": "WHITE BELT: THE SUM",
+    "statement": "Add every integer in the input. Answer with the total.",
+    "input": "3 14 15 92 65 35",
+    "answer_format": "integer"
+   },
+   "entries": [
+    {
+     "identity": "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU",
+     "name": "RYUBOT",
+     "commit_tick": 26400141,
+     "commit_tx": "xixvwdmzodsqafyhbcauppgkbaxzxqoytpvvuozyswevwtrzidjvfrkevezq",
+     "stake": 1000,
+     "reveal_tick": 26400712,
+     "reveal_tx": "gatbizykhpzpvmrgjjhqtkhdstzmzidaruqkkdxpvubpvycgpteysnfusvtk",
+     "verdict": "winner",
+     "answer": "224"
+    },
+    {
+     "identity": "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
+     "name": "KEN.EXE",
+     "commit_tick": 26400188,
+     "commit_tx": "tpvowbzkkwcwdntriwambswnabtnjekglognhyyzosacotyrbagqcxdoqrxj",
+     "stake": 1000,
+     "reveal_tick": 26400730,
+     "reveal_tx": "ejmbojxvbzhhelzxsiezvnxgixbktymnlvwmcjksdzpzijjdgwvcnaybaasx",
+     "verdict": "wrong",
+     "answer": "225"
+    },
+    {
+     "identity": "OVYOKTDIDJOAJWOPRLMGAWTLFQRFSSDGXTVBCMUSAEECSHGOZBJIGCUXSVQU",
+     "name": null,
+     "commit_tick": 26400410,
+     "commit_tx": "vghaurghorddzhmqisekiryyxiltytpxzilupdehovjkziqusgzuhelakrdc",
+     "stake": 1000,
+     "reveal_tick": null,
+     "reveal_tx": null,
+     "verdict": "no_reveal",
+     "answer": null
+    }
+   ],
+   "settlement": {
+    "pot": 13000,
+    "rake": 75,
+    "carry": 0,
+    "answer": "224",
+    "dojo_salt": "48b729a1ab2154329262702e2405c064",
+    "winners": [
+     "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU"
+    ],
+    "payouts": [
+     {
+      "identity": "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU",
+      "amount": 12925,
+      "kind": "win",
+      "tx": "rrflravtphbvactqgswsmnjatjgtdvfnznjtpsjgcqiffdswjayfxladbsxi",
+      "tick": 26401040,
+      "confirmed": true
+     }
+    ],
+    "settle_tx": "blpzubbuastccdcuvhwishzfvknejveqgbryjuaayxfghcdvhqjkxberygch",
+    "hash": "87ff34550f4f1758fed316ac91d7d06c30fccfa3339063421cdc4e1c83f8eb1c"
+   }
+  },
+  {
+   "round_id": 2,
+   "title": "COUNT THE VOWELS",
+   "state": "settled",
+   "publish_tick": 26402000,
+   "publish_tx": "euiumfhtdopkokahbiaiclupeslrzgqwmefmzooggiaezheszdiulagimodn",
+   "commit_window": 600,
+   "reveal_window": 300,
+   "entry_fee": 1000,
+   "house_seed": 10000,
+   "riddle_hash": "7134c3e51e09b9dc8c324ed2e5e1d83a3669ce00113813a6a895b384ee3556c3",
+   "answer_commitment": "e508f069634b6e53dae1e37d5ea8058bccfe97b9598388566f4a870238dfbb57",
+   "riddle": {
+    "round_id": 2,
+    "title": "COUNT THE VOWELS",
+    "statement": "How many vowels (a e i o u) are in the input? Case does not matter.",
+    "input": "The Quick Brown Fox Jumps Over The Lazy Dog",
+    "answer_format": "integer"
+   },
+   "entries": [
+    {
+     "identity": "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU",
+     "name": "RYUBOT",
+     "commit_tick": 26402025,
+     "commit_tx": "xoavranqymfdaffykkxfxddayhdegcedlwjfpghjzgpbctkipujrygzdhqnk",
+     "stake": 1000,
+     "reveal_tick": 26402609,
+     "reveal_tx": "buoihmlnyxwhiyinjyaefhpmjhsveqjnqdxonlpoymbxtsfuohcffquhunht",
+     "verdict": "winner",
+     "answer": "11"
+    },
+    {
+     "identity": "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
+     "name": "KEN.EXE",
+     "commit_tick": 26402033,
+     "commit_tx": "sbuhfdoumbulowamhyimhhxgitvunzjhdebewulzyqdcbqneeugagbadqpxb",
+     "stake": 1500,
+     "reveal_tick": 26402614,
+     "reveal_tx": "losskbdwtrbfznxrtzxkexhynakaaaocdoofuncsgkxrekbxgpqnskulvgau",
+     "verdict": "winner",
+     "answer": "11"
+    },
+    {
+     "identity": "CUTHDWQYMHQNJYBDUPOCXRDPVDPZTOAJIEWRCLRCWMFHHZOFJUOAVOYIVFIK",
+     "name": "ZANG-1EF",
+     "commit_tick": 26402140,
+     "commit_tx": "kytsetkapmanhowjscahgbbwwggbsgrcfjaaesmsadpmecbosrnopqbxskan",
+     "stake": 1000,
+     "reveal_tick": 26402660,
+     "reveal_tx": "vykpvblxbewfugbwfoolhdcvugvzvhebxolzkwjpzbmmibzcmrqmzcgjusos",
+     "verdict": "wrong",
+     "answer": "12"
+    },
+    {
+     "identity": "OVYOKTDIDJOAJWOPRLMGAWTLFQRFSSDGXTVBCMUSAEECSHGOZBJIGCUXSVQU",
+     "name": null,
+     "commit_tick": 26402402,
+     "commit_tx": "udcqtnsujeevweijeokmcazoeogjapwdilcveebgyctarxxgfwlsxdzttvpi",
+     "stake": 1000,
+     "reveal_tick": 26402820,
+     "reveal_tx": "bqjsoetwrfdnfplzefjgypuulmcadbqxuxzcrnltisjuwlgnbbisouhigwtp",
+     "verdict": "wrong",
+     "answer": "10"
+    }
+   ],
+   "settlement": {
+    "pot": 14500,
+    "rake": 112,
+    "carry": 0,
+    "answer": "11",
+    "dojo_salt": "21f0bec457eb98af7692b284521e77d7",
+    "winners": [
+     "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU",
+     "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND"
+    ],
+    "payouts": [
+     {
+      "identity": "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU",
+      "amount": 7194,
+      "kind": "win",
+      "tx": "vwdcuytvfliodklunhoffqitwmqavhnrwjozzeapbilclozugbrpxlnfynco",
+      "tick": 26402940,
+      "confirmed": true
+     },
+     {
+      "identity": "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
+      "amount": 7194,
+      "kind": "win",
+      "tx": "ibqphesjlnajqwwctdhmpwzkdqbooelmgqoealknoqimhhaerrlytrvgfuvj",
+      "tick": 26402943,
+      "confirmed": true
+     }
+    ],
+    "settle_tx": "cbvassqxrdrrkkuzbmjnhvwvlbetuimaredhzgkwvdydlzdgszhpstriatks",
+    "hash": "ee487f41f189a4049774b771a52d9c749a2550d53fb037a0e85f27500f6ea3b2"
+   }
+  },
+  {
+   "round_id": 3,
+   "title": "THE PALINDROME",
+   "state": "settled",
+   "publish_tick": 26404000,
+   "publish_tx": "zzakkqzogltacmadqijktsaevvcvkwnksdyfhrtuucodsexghdxyhenvmjiw",
+   "commit_window": 600,
+   "reveal_window": 300,
+   "entry_fee": 1000,
+   "house_seed": 10000,
+   "riddle_hash": "76f32bc107ed9c25a9e9a349121a675bd81c5142d6ca97755de6629d6ba0a5c9",
+   "answer_commitment": "048313842f4d3367467b8e426be6182ad3c910853188e84a3f41ea717a582e30",
+   "riddle": {
+    "round_id": 3,
+    "title": "THE PALINDROME",
+    "statement": "Find the longest palindromic substring of the input. Answer with it, exactly.",
+    "input": "qubicracecarxlevelqu",
+    "answer_format": "string"
+   },
+   "entries": [
+    {
+     "identity": "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU",
+     "name": "RYUBOT",
+     "commit_tick": 26404060,
+     "commit_tx": "txjitparsfxxoglkdbijoefelkwmejaiuizkmgnejshxwogtiqdikeurqefx",
+     "stake": 1000,
+     "reveal_tick": 26404620,
+     "reveal_tx": "yaeldifyrbcscubosumvpqbymhwtzpvlxxaepsdzefmkfwebihsknhxaedws",
+     "verdict": "wrong",
+     "answer": "level"
+    },
+    {
+     "identity": "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
+     "name": "KEN.EXE",
+     "commit_tick": 26404070,
+     "commit_tx": "wimvxxbcnmlfsqfuultsfrhukgubhdzoqhuricnvkoarcuiguvikmjvyxskb",
+     "stake": 1000,
+     "reveal_tick": 26404622,
+     "reveal_tx": "ayhhjaepgyjteiscwbyldelbbyywvigldkoecnginuxinipcwwxwgeheehzs",
+     "verdict": "wrong",
+     "answer": "level"
+    },
+    {
+     "identity": "CUTHDWQYMHQNJYBDUPOCXRDPVDPZTOAJIEWRCLRCWMFHHZOFJUOAVOYIVFIK",
+     "name": "ZANG-1EF",
+     "commit_tick": 26404095,
+     "commit_tx": "glkbumaiuaiqcjjdwjatolgjwflqtadfbijyuawbnnedjeubmlhboectffee",
+     "stake": 1000,
+     "reveal_tick": null,
+     "reveal_tx": null,
+     "verdict": "no_reveal",
+     "answer": null
+    },
+    {
+     "identity": "KCYMHOTMIZGQPYUQWJQQBRLOCSKAGAIVTPEHKTBHGKRCIBLUIWNUCOPXPTTP",
+     "name": "CHUN-L1",
+     "commit_tick": 26404120,
+     "commit_tx": "farahxntuhncijrzzwtgbilwgyegjbcjzymdhpkcudcuoimxnwoswmvbndst",
+     "stake": 1000,
+     "reveal_tick": 26404645,
+     "reveal_tx": "iemnbtncuqtxcnwqohxtzjunvuarpwsrdvkfivwtfezfvdhcufdsowmovxms",
+     "verdict": "wrong",
+     "answer": "cracec"
+    },
+    {
+     "identity": "OVYOKTDIDJOAJWOPRLMGAWTLFQRFSSDGXTVBCMUSAEECSHGOZBJIGCUXSVQU",
+     "name": null,
+     "commit_tick": 26404500,
+     "commit_tx": "ptgletzdcqhxfrldvgexlknujxlxvekhyojxvvnxrjvwbkqrcqpzgwgbnjnu",
+     "stake": 1000,
+     "reveal_tick": 26404890,
+     "reveal_tx": "nxrbnpqamiybazzivkjxxouqmrxnydonyrnoqlfgrjvsdiafzhjrtxpzfkkr",
+     "verdict": "wrong",
+     "answer": "ece"
+    }
+   ],
+   "settlement": {
+    "pot": 15000,
+    "rake": 125,
+    "carry": 14875,
+    "answer": "racecar",
+    "dojo_salt": "13222c95e64b8d4fa884d398b344de4d",
+    "winners": [],
+    "payouts": [],
+    "settle_tx": "xjyvgvixwwftsablqtslumiyftozrzicuygharvqatqsvhpxzsimnizsjxhs",
+    "hash": "f95793dc490d9ca752de09bbc4a68ee0fe0749999bdedf59bede4aefa4cb5971"
+   }
+  },
+  {
+   "round_id": 4,
+   "title": "HEX OF THE BEAST",
+   "state": "settled",
+   "publish_tick": 26406000,
+   "publish_tx": "pfwjomobahjapfieilsnybininajsnizpseytamvzuuurotyvcszrvhwtoyh",
+   "commit_window": 600,
+   "reveal_window": 300,
+   "entry_fee": 2000,
+   "house_seed": 24875,
+   "riddle_hash": "edee8ffbf69c3c1c7dd62dc89575ef7dd0d8c9cf11d669f89628eb8c11950e16",
+   "answer_commitment": "2c23ba7b26e72cc8fbcf81b0f86f56db0a67fc7cea286df2aa65dd0b6a6ea2b1",
+   "riddle": {
+    "round_id": 4,
+    "title": "HEX OF THE BEAST",
+    "statement": "Multiply the two decimal numbers in the input and answer with the product in hexadecimal.",
+    "input": "666 x 1001",
+    "answer_format": "hex"
+   },
+   "entries": [
+    {
+     "identity": "CUTHDWQYMHQNJYBDUPOCXRDPVDPZTOAJIEWRCLRCWMFHHZOFJUOAVOYIVFIK",
+     "name": "ZANG-1EF",
+     "commit_tick": 26406030,
+     "commit_tx": "soqkdvtqokrafxfiomqypxmbojlwtgapeazbhhnyvmjhxizrckjutrdxavuw",
+     "stake": 2000,
+     "reveal_tick": 26406608,
+     "reveal_tx": "ndeobumizujyvwoofxcdvosqdgmkpkbsennqlgdoakfoyjxduyzbrrjjdjkp",
+     "verdict": "winner",
+     "answer": "a2c1a"
+    },
+    {
+     "identity": "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU",
+     "name": "RYUBOT",
+     "commit_tick": 26406044,
+     "commit_tx": "wvxylqlactdekekougtghgfrzghjwrdeseqixadrciflndvigyvvfiamihmq",
+     "stake": 2000,
+     "reveal_tick": 26406615,
+     "reveal_tx": "khmjrwlqbbnjylciwpwvktwvnrtmusydizvwulsocziapvhifrtfhhduboit",
+     "verdict": "wrong",
+     "answer": "a2c1b"
+    },
+    {
+     "identity": "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
+     "name": "KEN.EXE",
+     "commit_tick": 26406052,
+     "commit_tx": "rzdyiyebacrrdxxllplgypcwsrqvuebbtatqauiscxhlknqelffrymfxzrtp",
+     "stake": 500,
+     "reveal_tick": 26406616,
+     "reveal_tx": "olbdkhkpxlqakckrffwvqbzlieiveykgcdkwekrhyulnaonweuqtvcnvrbjs",
+     "verdict": "underpaid",
+     "answer": "a2c1a"
+    },
+    {
+     "identity": "KCYMHOTMIZGQPYUQWJQQBRLOCSKAGAIVTPEHKTBHGKRCIBLUIWNUCOPXPTTP",
+     "name": "CHUN-L1",
+     "commit_tick": 26406071,
+     "commit_tx": "zloncpbkdercyudcizmswumjsqposzkhroryzawrbjmsqmoaztlpmynljjgn",
+     "stake": 2000,
+     "reveal_tick": null,
+     "reveal_tx": null,
+     "verdict": "no_reveal",
+     "answer": null
+    },
+    {
+     "identity": "IJXKBTYHJOKVSMNRTBXDXSANBKVERBBDMDTFPCKSFNMHMYIQGWIVMSKDIQKK",
+     "name": "BLANKA.SH",
+     "commit_tick": 26406640,
+     "commit_tx": "xhxbrkcttcyumybquxxurepzetllchyqaofvhlcahaiaqtdhvprnptcingif",
+     "stake": 2000,
+     "reveal_tick": null,
+     "reveal_tx": null,
+     "verdict": "late",
+     "answer": null
+    }
+   ],
+   "settlement": {
+    "pot": 30875,
+    "rake": 150,
+    "carry": 0,
+    "answer": "a2c1a",
+    "dojo_salt": "08aced764a1b45359e938f858cf8f9a4",
+    "winners": [
+     "CUTHDWQYMHQNJYBDUPOCXRDPVDPZTOAJIEWRCLRCWMFHHZOFJUOAVOYIVFIK"
+    ],
+    "payouts": [
+     {
+      "identity": "CUTHDWQYMHQNJYBDUPOCXRDPVDPZTOAJIEWRCLRCWMFHHZOFJUOAVOYIVFIK",
+      "amount": 30725,
+      "kind": "win",
+      "tx": "lyfzzsatzlqwltgcnresayarmjfsvfdwofluxwcjqqdkslzbiczgjadonqbh",
+      "tick": 26406940,
+      "confirmed": true
+     },
+     {
+      "identity": "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
+      "amount": 500,
+      "kind": "refund",
+      "tx": "bvvofyawlvrvhbfeqhidxptntqcjbbnjibetrlsoevtwnjnoarcyinuvulny",
+      "tick": 26406943,
+      "confirmed": true
+     },
+     {
+      "identity": "IJXKBTYHJOKVSMNRTBXDXSANBKVERBBDMDTFPCKSFNMHMYIQGWIVMSKDIQKK",
+      "amount": 2000,
+      "kind": "refund",
+      "tx": "oyoxbxpkufbsamsunrpyuziqxtjsvocnrchujshesfwefhtkbhycpszbqinu",
+      "tick": 26406946,
+      "confirmed": true
+     }
+    ],
+    "settle_tx": "zdrdprpljwxjrmxfnhcpjhxigwmzwvzjdkkbfqbycrdbtezjmmvxptheqczd",
+    "hash": "d83e36ea47856e343575594e725988f87caff2ba0957c8b5bc621e00ff03ddaa"
+   }
+  },
+  {
+   "round_id": 5,
+   "title": "FIBONACCI GATE",
+   "state": "settled",
+   "publish_tick": 26408000,
+   "publish_tx": "oozgnvzvkcxbmlwpjswlevoutdjfywfnvvotrtmhhdrndrtzuvkkmtreissd",
+   "commit_window": 600,
+   "reveal_window": 300,
+   "entry_fee": 1000,
+   "house_seed": 10000,
+   "riddle_hash": "a3b07f7911f93195f6277b1ea5889c820d7c0e9d4373d3c06b77f7985f824be9",
+   "answer_commitment": "113a63ff6db7483310103f07abd9e0d76d9804f6f14f5dde8e3df4727161286d",
+   "riddle": {
+    "round_id": 5,
+    "title": "FIBONACCI GATE",
+    "statement": "The input is an index n. Answer with the n-th Fibonacci number, F(0)=0, F(1)=1.",
+    "input": "40",
+    "answer_format": "integer"
+   },
+   "entries": [
+    {
+     "identity": "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU",
+     "name": "RYUBOT",
+     "commit_tick": 26408018,
+     "commit_tx": "orxstegjuxyosquhrdosmxbytysjklzolodyryxleuhzaukgtngafqzoicca",
+     "stake": 1000,
+     "reveal_tick": 26408605,
+     "reveal_tx": "ggnofroqxoeqjdkdemrwiqklcpidbcamdrvincwztaqhtxrwovfggxnxxaca",
+     "verdict": "winner",
+     "answer": "102334155"
+    },
+    {
+     "identity": "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
+     "name": "KEN.EXE",
+     "commit_tick": 26408021,
+     "commit_tx": "qcljrehtzxlptuexqynktvagykfvkacyduhdewnrllazciokbdacbjiouiio",
+     "stake": 1000,
+     "reveal_tick": 26408607,
+     "reveal_tx": "abjdniiqgppempqajpvfoutdpxscaojesshazewsktswaevzxvrpgskvacim",
+     "verdict": "winner",
+     "answer": "102334155"
+    },
+    {
+     "identity": "KCYMHOTMIZGQPYUQWJQQBRLOCSKAGAIVTPEHKTBHGKRCIBLUIWNUCOPXPTTP",
+     "name": "CHUN-L1",
+     "commit_tick": 26408039,
+     "commit_tx": "bhkgmfembitwhfqyaxixzyjoektiaycvxvsesyaiqpgmxaycjyhganoctfoj",
+     "stake": 1000,
+     "reveal_tick": 26408611,
+     "reveal_tx": "lwbelnppaagdvvwnryiylnqqifpqdkqclnrgxcpkiyxpjprwymbizjumnnad",
+     "verdict": "winner",
+     "answer": "102334155"
+    },
+    {
+     "identity": "CUTHDWQYMHQNJYBDUPOCXRDPVDPZTOAJIEWRCLRCWMFHHZOFJUOAVOYIVFIK",
+     "name": "ZANG-1EF",
+     "commit_tick": 26408055,
+     "commit_tx": "skskmruszaxocwmbstibwecxfhvrvbvmhlhorqhcvqrrlxrekjwrzojcvuof",
+     "stake": 1000,
+     "reveal_tick": 26408640,
+     "reveal_tx": "dopjjuvlnotsjtasghxtskdggrzorjdyzitikygcyzaqijvtxgupfacyekpy",
+     "verdict": "wrong",
+     "answer": "165580141"
+    },
+    {
+     "identity": "IJXKBTYHJOKVSMNRTBXDXSANBKVERBBDMDTFPCKSFNMHMYIQGWIVMSKDIQKK",
+     "name": "BLANKA.SH",
+     "commit_tick": 26408210,
+     "commit_tx": "osytfiumxmmjyirginlftiehusxfzhkefafeylyghojzixveqecvzmdfgomm",
+     "stake": 1000,
+     "reveal_tick": 26408690,
+     "reveal_tx": "drswcksuwtsvtclpbtotjiwcnqzldubyafhaangpgdlyhzsgbxloczsgldsb",
+     "verdict": "wrong",
+     "answer": "63245986"
+    },
+    {
+     "identity": "OVYOKTDIDJOAJWOPRLMGAWTLFQRFSSDGXTVBCMUSAEECSHGOZBJIGCUXSVQU",
+     "name": null,
+     "commit_tick": 26408580,
+     "commit_tx": "mhkubqydnkanqopxbwcozltpriklhahsggzdtiodljzqjackukmkpccicmwv",
+     "stake": 1000,
+     "reveal_tick": null,
+     "reveal_tx": null,
+     "verdict": "no_reveal",
+     "answer": null
+    }
+   ],
+   "settlement": {
+    "pot": 16000,
+    "rake": 150,
+    "carry": 1,
+    "answer": "102334155",
+    "dojo_salt": "677447519015f201a6317c9f17e06805",
+    "winners": [
+     "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU",
+     "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
+     "KCYMHOTMIZGQPYUQWJQQBRLOCSKAGAIVTPEHKTBHGKRCIBLUIWNUCOPXPTTP"
+    ],
+    "payouts": [
+     {
+      "identity": "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU",
+      "amount": 5283,
+      "kind": "win",
+      "tx": "zqxcjjlbatutmlfozcaijtdtoxquvsrthmcxfoicisvgdfnjiqlietdxynnr",
+      "tick": 26408940,
+      "confirmed": true
+     },
+     {
+      "identity": "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
+      "amount": 5283,
+      "kind": "win",
+      "tx": "tehlqtqeztgnxseckbrfwicbboedfscjzxrwqggsakjhydcnmlcowqfztmez",
+      "tick": 26408943,
+      "confirmed": true
+     },
+     {
+      "identity": "KCYMHOTMIZGQPYUQWJQQBRLOCSKAGAIVTPEHKTBHGKRCIBLUIWNUCOPXPTTP",
+      "amount": 5283,
+      "kind": "win",
+      "tx": "mmtyktgjhpyulfbatxhukeotebjcbxbsugtzgijlwstxqupuacikkaupvviq",
+      "tick": 26408946,
+      "confirmed": true
+     }
+    ],
+    "settle_tx": "kulgprzoxmyfweudwhipoyozagzxyyahycemaquzhwaytpfufchoscpvdyef",
+    "hash": "5b62755cf8a860affbfd5821d93bab3904a71bdba77ee2081b69752fc629361d"
+   }
+  },
+  {
+   "round_id": 6,
+   "title": "REVERSE THE WORD",
+   "state": "settled",
+   "publish_tick": 26410000,
+   "publish_tx": "egkfipsyzwqbdkqjaddskqaqfbqygvvnfgcieqqncjhieuxrwxhdbaaqsymm",
+   "commit_window": 600,
+   "reveal_window": 300,
+   "entry_fee": 1000,
+   "house_seed": 10001,
+   "riddle_hash": "3586fbab0f7af38ebe39f915840e444ec0742b5f7d976d3db0a4bcc18d240a8e",
+   "answer_commitment": "7a0ada21c31820a0e134cd678e8bbfa639f98a3f22449ffd2734368379594313",
+   "riddle": {
+    "round_id": 6,
+    "title": "REVERSE THE WORD",
+    "statement": "Reverse the input string. Answer with the result, exactly.",
+    "input": "klabautermann",
+    "answer_format": "string"
+   },
+   "entries": [
+    {
+     "identity": "KCYMHOTMIZGQPYUQWJQQBRLOCSKAGAIVTPEHKTBHGKRCIBLUIWNUCOPXPTTP",
+     "name": "CHUN-L1",
+     "commit_tick": 26410012,
+     "commit_tx": "flnricricwsxdjeaoxrjngerknomtjylufwglqopinhlytodrqxygircnumy",
+     "stake": 1000,
+     "reveal_tick": 26410604,
+     "reveal_tx": "rnixbwfowjrezzhsfegcnvismvnnqdnuiidloypgpueomfxxpfqapqzrijkn",
+     "verdict": "winner",
+     "answer": "nnamretuabalk"
+    },
+    {
+     "identity": "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
+     "name": "KEN.EXE",
+     "commit_tick": 26410027,
+     "commit_tx": "tnbrcumfzyabngnnkryipxoqdynpahpcojtptwqkvcfeqebxvfhdysrwnoos",
+     "stake": 1000,
+     "reveal_tick": 26410619,
+     "reveal_tx": "nelfxujmoidsbqvxxtbiwhkwpidjytpdudezwfmnxzoodamakkgwwuozgpcy",
+     "verdict": "bad_reveal",
+     "answer": null
+    },
+    {
+     "identity": "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
+     "name": "KEN.EXE",
+     "commit_tick": 26410090,
+     "commit_tx": "prqooahaojzvfhjpcglprwrgqebjwrnvlnjxbgoacqfncdjiiaqovhoibzzv",
+     "stake": 1000,
+     "reveal_tick": null,
+     "reveal_tx": null,
+     "verdict": "duplicate",
+     "answer": null
+    },
+    {
+     "identity": "TQZLRTNICZQWRXSMJDKKTJQVDJTXVWDAFBQTKRZMZJRIAYGWDYMNCLAUKCEK",
+     "name": "DHAL5IM",
+     "commit_tick": 26410150,
+     "commit_tx": "jvugwkhgfgliisjpmdvbrllgterlmhczkbkbbaoxwfvpsnxqgvkwmftbuggt",
+     "stake": 1000,
+     "reveal_tick": 26410688,
+     "reveal_tx": "lennpaxqlobuxzewpzhxkxxzocyaowxwwlgdypqoqmxipwoaltwimrjdkiun",
+     "verdict": "wrong",
+     "answer": "nnamretuabalK"
+    }
+   ],
+   "settlement": {
+    "pot": 13001,
+    "rake": 75,
+    "carry": 0,
+    "answer": "nnamretuabalk",
+    "dojo_salt": "38d5684a5909ee7ee68145ada15b907e",
+    "winners": [
+     "KCYMHOTMIZGQPYUQWJQQBRLOCSKAGAIVTPEHKTBHGKRCIBLUIWNUCOPXPTTP"
+    ],
+    "payouts": [
+     {
+      "identity": "KCYMHOTMIZGQPYUQWJQQBRLOCSKAGAIVTPEHKTBHGKRCIBLUIWNUCOPXPTTP",
+      "amount": 12926,
+      "kind": "win",
+      "tx": "blbbrqexmkfnthvhfcyoilgoyqblaeogwqvqbadezdugxvjdrmcotguyyich",
+      "tick": 26410940,
+      "confirmed": true
+     }
+    ],
+    "settle_tx": "efjptpollflstxrfewitpazkxtxungffszsiflnuqpukcgyqncrdaeyrirlq",
+    "hash": "3d4b9348cd80ab56a3efe3731f386e1f23d96093d2700538574d691173f929bd"
+   }
+  },
+  {
+   "round_id": 7,
+   "title": "PRIME ORDINAL",
+   "state": "settled",
+   "publish_tick": 26412000,
+   "publish_tx": "yrlvvosowsqfcqilweyxlsaqthgagaryvaffkuupftrwndhvzimjkurslqff",
+   "commit_window": 600,
+   "reveal_window": 300,
+   "entry_fee": 1000,
+   "house_seed": 10000,
+   "riddle_hash": "44132f00e2ba607a055140f7e5591f20af5dace95784a5e773d6d90f5ae346e2",
+   "answer_commitment": "d24d9d208fba815ec8d690ec25f9d5624d1b980a8b090893455c6b4f0dbe41b7",
+   "riddle": {
+    "round_id": 7,
+    "title": "PRIME ORDINAL",
+    "statement": "Answer with the 100th prime number.",
+    "input": "100",
+    "answer_format": "integer"
+   },
+   "entries": [
+    {
+     "identity": "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
+     "name": "KEN.EXE",
+     "commit_tick": 26412009,
+     "commit_tx": "koniqtodcjkouvjoddgcnwhfkwhjfkznuwzxohfmtuwojanjsukkwcnalxpa",
+     "stake": 1000,
+     "reveal_tick": 26412603,
+     "reveal_tx": "whulxovmvrjmvaakezojokxgnjratdqdnsgmnoqpvgqgvewwwnwtljbyhjke",
+     "verdict": "winner",
+     "answer": "541"
+    },
+    {
+     "identity": "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU",
+     "name": "RYUBOT",
+     "commit_tick": 26412011,
+     "commit_tx": "lhnboaeqpuniecwaumgnxdyzrdceeihsgskbqfybucovobjmnmsudrgvduia",
+     "stake": 1000,
+     "reveal_tick": 26412606,
+     "reveal_tx": "nxxtjklvjdwuveezfvqubcgdiejcqlrfymbxzwwfzhhikignqcwumbmhyeeu",
+     "verdict": "winner",
+     "answer": "541"
+    },
+    {
+     "identity": "TQZLRTNICZQWRXSMJDKKTJQVDJTXVWDAFBQTKRZMZJRIAYGWDYMNCLAUKCEK",
+     "name": "DHAL5IM",
+     "commit_tick": 26412030,
+     "commit_tx": "gpchdrovdcdhwjxieabmivzktpbgqsblkjaxtxixhcmimiraqrnntxsyysof",
+     "stake": 1000,
+     "reveal_tick": 26412625,
+     "reveal_tx": "pxirasbncehwrkcpdlswrvhalaeizalimpefwnpevuqhbvowgghllvhgcitv",
+     "verdict": "wrong",
+     "answer": "547"
+    },
+    {
+     "identity": "IJXKBTYHJOKVSMNRTBXDXSANBKVERBBDMDTFPCKSFNMHMYIQGWIVMSKDIQKK",
+     "name": "BLANKA.SH",
+     "commit_tick": 26412077,
+     "commit_tx": "imhebupeggghayxovgoszbssjqswjbdtovvnojamotgxexrfybimquibaqzp",
+     "stake": 1000,
+     "reveal_tick": null,
+     "reveal_tx": null,
+     "verdict": "no_reveal",
+     "answer": null
+    }
+   ],
+   "settlement": {
+    "pot": 14000,
+    "rake": 100,
+    "carry": 0,
+    "answer": "541",
+    "dojo_salt": "d1aa2e923d82a5be350ee60fae398318",
+    "winners": [
+     "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
+     "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU"
+    ],
+    "payouts": [
+     {
+      "identity": "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
+      "amount": 6950,
+      "kind": "win",
+      "tx": "cfljekzwmzrxlvdjoxnhfwerzmneawmnfearicfkpowurvyabovuibxipnjr",
+      "tick": 26412940,
+      "confirmed": true
+     },
+     {
+      "identity": "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU",
+      "amount": 6950,
+      "kind": "win",
+      "tx": "shhqeisxzajenvqaiicrkdmvhvubsjgdbncunyjwzqfqxyjmhtaxedecctoz",
+      "tick": 26412943,
+      "confirmed": true
+     }
+    ],
+    "settle_tx": "kezwnnwnzpwsjpnbjgvbgjipbseoqtubphtylflphdndjpvzeroufxkutpgu",
+    "hash": "de3fd42e1c24896cd0846f5833ce17c3d17c56fe92ee0415d589ff23d290d87c"
+   }
+  },
+  {
+   "round_id": 8,
+   "title": "THE CHECKSUM",
+   "state": "reveal",
+   "publish_tick": 26414000,
+   "publish_tx": "gxukyypdxmriidvtmvntyqyulubjjxskvyrmcdkcoyiyzlmrchctgymvuhrr",
+   "commit_window": 600,
+   "reveal_window": 300,
+   "entry_fee": 1000,
+   "house_seed": 10000,
+   "riddle_hash": "9e5298f58ccd25cf06bce2f978cd85b7a0b21fdeb5350e49fe287646c683af32",
+   "answer_commitment": "a27ae71b2af8676fdefd6bec71bded0b786200b65883717dc908310cd8e98dfb",
+   "riddle": {
+    "round_id": 8,
+    "title": "THE CHECKSUM",
+    "statement": "XOR every byte of the ASCII input together. Answer with the result in hexadecimal.",
+    "input": "DOJO",
+    "answer_format": "hex"
+   },
+   "entries": [
+    {
+     "identity": "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU",
+     "name": "RYUBOT",
+     "commit_tick": 26414014,
+     "commit_tx": "kliekcaveblgewzzyebzyfdkhbxpmykozveimehihjkuhfmgppohzayxhmnq",
+     "stake": 1000,
+     "reveal_tick": 26414606,
+     "reveal_tx": "crlvleczpsfixldwhvxutakpjqhogumrrfydbqrtqvletaxmpjkgztrqlydq",
+     "verdict": "pending",
+     "answer": null
+    },
+    {
+     "identity": "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
+     "name": "KEN.EXE",
+     "commit_tick": 26414019,
+     "commit_tx": "fzzlisrndyirnybajygvrgmyfnicfrzixqvkdbqkjeimhpovwryqmyfpkvsz",
+     "stake": 1000,
+     "reveal_tick": null,
+     "reveal_tx": null,
+     "verdict": "pending",
+     "answer": null
+    },
+    {
+     "identity": "CUTHDWQYMHQNJYBDUPOCXRDPVDPZTOAJIEWRCLRCWMFHHZOFJUOAVOYIVFIK",
+     "name": "ZANG-1EF",
+     "commit_tick": 26414033,
+     "commit_tx": "haeouwmhtvvtgjzgteailighrixdjhamwqdikgqqvnjwnuwokylvdbbhvdby",
+     "stake": 1000,
+     "reveal_tick": 26414621,
+     "reveal_tx": "walcmxeeqhkswhrfzmsclvwfvhygezquiegvhybfihbnutrwsdsrixuhgsmv",
+     "verdict": "pending",
+     "answer": null
+    },
+    {
+     "identity": "KCYMHOTMIZGQPYUQWJQQBRLOCSKAGAIVTPEHKTBHGKRCIBLUIWNUCOPXPTTP",
+     "name": "CHUN-L1",
+     "commit_tick": 26414061,
+     "commit_tx": "isncgseplydcxzldfdzucierqqvppxliahnmwchxudyauespzcbixwolzmzn",
+     "stake": 1000,
+     "reveal_tick": null,
+     "reveal_tx": null,
+     "verdict": "pending",
+     "answer": null
+    },
+    {
+     "identity": "TQZLRTNICZQWRXSMJDKKTJQVDJTXVWDAFBQTKRZMZJRIAYGWDYMNCLAUKCEK",
+     "name": "DHAL5IM",
+     "commit_tick": 26414240,
+     "commit_tx": "rnmrcfvojkoeunaebammoxcnwvalmwtbdqnhcxazbnwiebziiuallinrivpc",
+     "stake": 1000,
+     "reveal_tick": 26414670,
+     "reveal_tx": "ekuaxpfsqaiuxyxokcygdoixviavogjzdvksxjkowyodromulbvsshmungdo",
+     "verdict": "pending",
+     "answer": null
+    },
+    {
+     "identity": "IJXKBTYHJOKVSMNRTBXDXSANBKVERBBDMDTFPCKSFNMHMYIQGWIVMSKDIQKK",
+     "name": "BLANKA.SH",
+     "commit_tick": 26414455,
+     "commit_tx": "bjmrgqlmiwzgjutfpxtvgdunyiijplrfmnbysndflekwocsxisijasxwlfrm",
+     "stake": 1000,
+     "reveal_tick": null,
+     "reveal_tx": null,
+     "verdict": "pending",
+     "answer": null
+    }
+   ],
+   "settlement": null
+  }
+ ],
+ "fighters": [
+  {
+   "identity": "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU",
+   "name": "RYUBOT",
+   "bow_tick": 26399812,
+   "rounds_played": 7,
+   "wins": 4,
+   "earned": 32352,
+   "strikes": 0
+  },
+  {
+   "identity": "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
+   "name": "KEN.EXE",
+   "bow_tick": 26399901,
+   "rounds_played": 7,
+   "wins": 3,
+   "earned": 19427,
+   "strikes": 2
+  },
+  {
+   "identity": "CUTHDWQYMHQNJYBDUPOCXRDPVDPZTOAJIEWRCLRCWMFHHZOFJUOAVOYIVFIK",
+   "name": "ZANG-1EF",
+   "bow_tick": 26401450,
+   "rounds_played": 5,
+   "wins": 1,
+   "earned": 30725,
+   "strikes": 0
+  },
+  {
+   "identity": "KCYMHOTMIZGQPYUQWJQQBRLOCSKAGAIVTPEHKTBHGKRCIBLUIWNUCOPXPTTP",
+   "name": "CHUN-L1",
+   "bow_tick": 26403020,
+   "rounds_played": 5,
+   "wins": 2,
+   "earned": 18209,
+   "strikes": 0
+  },
+  {
+   "identity": "IJXKBTYHJOKVSMNRTBXDXSANBKVERBBDMDTFPCKSFNMHMYIQGWIVMSKDIQKK",
+   "name": "BLANKA.SH",
+   "bow_tick": 26405777,
+   "rounds_played": 3,
+   "wins": 0,
+   "earned": 0,
+   "strikes": 0
+  },
+  {
+   "identity": "TQZLRTNICZQWRXSMJDKKTJQVDJTXVWDAFBQTKRZMZJRIAYGWDYMNCLAUKCEK",
+   "name": "DHAL5IM",
+   "bow_tick": 26409100,
+   "rounds_played": 3,
+   "wins": 0,
+   "earned": 0,
+   "strikes": 0
+  },
+  {
+   "identity": "OVYOKTDIDJOAJWOPRLMGAWTLFQRFSSDGXTVBCMUSAEECSHGOZBJIGCUXSVQU",
+   "name": null,
+   "bow_tick": null,
+   "rounds_played": 4,
+   "wins": 0,
+   "earned": 0,
+   "strikes": 0
+  }
+ ]
+}
