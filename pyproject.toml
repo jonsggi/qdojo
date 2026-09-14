@@ -1,0 +1,14 @@
+[project]
+name = "qdojo-monorepo"
+version = "0.0.0"
+requires-python = ">=3.12"
+dependencies = ["qdojo"]
+
+[tool.uv.workspace]
+members = ["packages/qdojo"]
+
+[tool.uv.sources]
+qdojo = { workspace = true }
+
+[dependency-groups]
+dev = ["pytest>=8"]

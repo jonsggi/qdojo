@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+dist/
+*.conf
+private/
+data/
+!apps/web/data/
+apps/web/data/*.json
+!apps/web/data/README.md

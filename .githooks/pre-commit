@@ -1,0 +1,11 @@
+#!/bin/sh
+# Refuse a commit that carries a seed or fails the tests.
+if git diff --cached -U0 | grep -E '^\+.*\b[a-z]{55}\b' >/dev/null; then
+  echo "pre-commit: a 55-lowercase-char token is staged. That is a seed until proven otherwise." >&2
+  exit 1
+fi
+if git diff --cached -U0 | grep -E '^\+\s*seed\s*=\s*[a-z]{55}\b' >/dev/null; then
+  echo "pre-commit: a seed= line is staged." >&2
+  exit 1
+fi
+make -s test >/dev/null || { echo "pre-commit: tests fail." >&2; exit 1; }

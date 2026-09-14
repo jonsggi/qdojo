@@ -1,0 +1,185 @@
+"""Wire encoding of dojo messages (docs/protocol.md). Pure, no I/O."""
+import struct
+from dataclasses import dataclass
+
+from .hashing import SALT_LEN, HASH_LEN
+
+MAGIC = b"DOJO"
+VERSION = 0
+INPUT_TYPE = 0x444F
+MAX_PAYLOAD = 1024
+MAX_NAME = 32
+MAX_URI = 255
+MAX_ANSWER = 512
+
+KIND_BOW, KIND_PUBLISH, KIND_COMMIT, KIND_REVEAL, KIND_SETTLE = 1, 2, 3, 4, 5
+KIND_NAMES = {1: "BOW", 2: "PUBLISH", 3: "COMMIT", 4: "REVEAL", 5: "SETTLE"}
+
+
+class PayloadError(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class Bow:
+    name: str
+    kind = KIND_BOW
+
+
+@dataclass(frozen=True)
+class Publish:
+    round_id: int
+    entry_fee: int
+    commit_window: int
+    reveal_window: int
+    riddle_hash: bytes
+    answer_commitment: bytes
+    uri: str
+    kind = KIND_PUBLISH
+
+
+@dataclass(frozen=True)
+class Commit:
+    round_id: int
+    commitment: bytes
+    kind = KIND_COMMIT
+
+
+@dataclass(frozen=True)
+class Reveal:
+    round_id: int
+    salt: bytes
+    answer: str
+    kind = KIND_REVEAL
+
+
+@dataclass(frozen=True)
+class Settle:
+    round_id: int
+    dojo_salt: bytes
+    settlement_hash: bytes
+    uri: str
+    kind = KIND_SETTLE
+
+
+Message = Bow | Publish | Commit | Reveal | Settle
+
+
+def _hdr(kind: int) -> bytes:
+    return MAGIC + bytes([VERSION, kind])
+
+
+def _bytes(b, n, what):
+    if not isinstance(b, (bytes, bytearray)) or len(b) != n:
+        raise PayloadError(f"{what} must be {n} bytes")
+    return bytes(b)
+
+
+def _text(s, limit, what, width=1):
+    raw = s.encode("utf-8")
+    if len(raw) > limit:
+        raise PayloadError(f"{what} longer than {limit} bytes")
+    return (struct.pack("<B", len(raw)) if width == 1 else struct.pack("<H", len(raw))) + raw
+
+
+def _u(n, bits, what):
+    if not isinstance(n, int) or n < 0 or n >= (1 << bits):
+        raise PayloadError(f"{what} out of range for u{bits}: {n!r}")
+    return n
+
+
+def encode(m: Message) -> bytes:
+    if isinstance(m, Bow):
+        out = _hdr(KIND_BOW) + _text(m.name, MAX_NAME, "name")
+    elif isinstance(m, Publish):
+        out = (_hdr(KIND_PUBLISH)
+               + struct.pack("<IQHH", _u(m.round_id, 32, "round_id"), _u(m.entry_fee, 64, "entry_fee"),
+                             _u(m.commit_window, 16, "commit_window"), _u(m.reveal_window, 16, "reveal_window"))
+               + _bytes(m.riddle_hash, HASH_LEN, "riddle_hash")
+               + _bytes(m.answer_commitment, HASH_LEN, "answer_commitment")
+               + _text(m.uri, MAX_URI, "uri"))
+    elif isinstance(m, Commit):
+        out = _hdr(KIND_COMMIT) + struct.pack("<I", _u(m.round_id, 32, "round_id")) + _bytes(m.commitment, HASH_LEN, "commitment")
+    elif isinstance(m, Reveal):
+        out = (_hdr(KIND_REVEAL) + struct.pack("<I", _u(m.round_id, 32, "round_id"))
+               + _bytes(m.salt, SALT_LEN, "salt") + _text(m.answer, MAX_ANSWER, "answer", width=2))
+    elif isinstance(m, Settle):
+        out = (_hdr(KIND_SETTLE) + struct.pack("<I", _u(m.round_id, 32, "round_id"))
+               + _bytes(m.dojo_salt, SALT_LEN, "dojo_salt") + _bytes(m.settlement_hash, HASH_LEN, "settlement_hash")
+               + _text(m.uri, MAX_URI, "uri"))
+    else:
+        raise PayloadError(f"not a dojo message: {m!r}")
+    if len(out) > MAX_PAYLOAD:
+        raise PayloadError("payload exceeds 1024 bytes")
+    return out
+
+
+class _Reader:
+    def __init__(self, b: bytes):
+        self.b, self.i = b, 0
+
+    def take(self, n, what):
+        if self.i + n > len(self.b):
+            raise PayloadError(f"truncated at {what}")
+        v = self.b[self.i:self.i + n]
+        self.i += n
+        return v
+
+    def unpack(self, fmt, what):
+        return struct.unpack(fmt, self.take(struct.calcsize(fmt), what))
+
+    def text(self, limit, what, width=1):
+        (n,) = self.unpack("<B" if width == 1 else "<H", what)
+        if n > limit:
+            raise PayloadError(f"{what} longer than {limit} bytes")
+        try:
+            return self.take(n, what).decode("utf-8")
+        except UnicodeDecodeError as e:
+            raise PayloadError(f"{what} is not utf-8") from e
+
+    def done(self, what):
+        if self.i != len(self.b):
+            raise PayloadError(f"trailing bytes after {what}")
+
+
+def decode(b: bytes) -> Message:
+    """Strict decode. Raises PayloadError on anything that is not a well-formed dojo message."""
+    if len(b) > MAX_PAYLOAD:
+        raise PayloadError("payload exceeds 1024 bytes")
+    r = _Reader(bytes(b))
+    if r.take(4, "magic") != MAGIC:
+        raise PayloadError("not a dojo payload")
+    version, kind = r.unpack("<BB", "header")
+    if version != VERSION:
+        raise PayloadError(f"unsupported version {version}")
+    if kind == KIND_BOW:
+        m = Bow(name=r.text(MAX_NAME, "name"))
+    elif kind == KIND_PUBLISH:
+        rid, fee, wc, wr = r.unpack("<IQHH", "publish header")
+        m = Publish(rid, fee, wc, wr, r.take(HASH_LEN, "riddle_hash"), r.take(HASH_LEN, "answer_commitment"),
+                    r.text(MAX_URI, "uri"))
+    elif kind == KIND_COMMIT:
+        (rid,) = r.unpack("<I", "round_id")
+        m = Commit(rid, r.take(HASH_LEN, "commitment"))
+    elif kind == KIND_REVEAL:
+        (rid,) = r.unpack("<I", "round_id")
+        m = Reveal(rid, r.take(SALT_LEN, "salt"), r.text(MAX_ANSWER, "answer", width=2))
+    elif kind == KIND_SETTLE:
+        (rid,) = r.unpack("<I", "round_id")
+        m = Settle(rid, r.take(SALT_LEN, "dojo_salt"), r.take(HASH_LEN, "settlement_hash"), r.text(MAX_URI, "uri"))
+    else:
+        raise PayloadError(f"unknown kind {kind}")
+    r.done(KIND_NAMES[kind])
+    return m
+
+
+def try_decode(b: bytes):
+    """A message, or None. Never raises: foreign payloads are simply not ours."""
+    try:
+        return decode(b)
+    except PayloadError:
+        return None
+
+
+def is_dojo(b: bytes) -> bool:
+    return len(b) >= 6 and bytes(b[:4]) == MAGIC
