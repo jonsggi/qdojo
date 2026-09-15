@@ -267,6 +267,14 @@ function beltTag(r, cls = '') {
   const known = BELTS.includes(b) ? b : 'other';
   return `<span class="belt belt-${known} ${cls}" title="${esc(b)} belt">${esc(b.toUpperCase())} BELT</span>`;
 }
+function seatsText(seats) {
+  // "6 / 3" reads like a fraction; say what it means.
+  if (!seats.min) return `${seats.bought} SEATED`;
+  return seats.bought >= seats.min ? `${seats.bought} SEATED · ${seats.min} NEEDED` : `${seatsText(seats)}`;
+}
+function seatsShort(seats) {
+  return seats.min ? `${seats.bought} (${seats.min} needed)` : `${seats.bought}`;
+}
 function seatsOf(r) {
   // Seats bought so far. Prefer the counted export figure; fall back to the entries we can see.
   const seated = (r.entries || []).filter(e => e.verdict === 'pending' || COUNTED.has(e.verdict));
@@ -289,7 +297,7 @@ function displayName(e) {
 function callout(r) {
   if (isVoid(r)) {
     const seats = seatsOf(r);
-    return { text: 'NO CONTEST', cls: 'timeover void', sub: `TABLE NEVER FILLED · ${seats.bought} / ${seats.min} SEATS · REFUNDED` };
+    return { text: 'NO CONTEST', cls: 'timeover void', sub: `TABLE NEVER FILLED · ${seatsText(seats)} · REFUNDED` };
   }
   if (!r.settlement) {
     if (r.state === 'settling') return { text: 'SETTLING', cls: 'progress' };
@@ -409,7 +417,7 @@ function renderTitle() {
     lines.push(`<div>ROUND ${last.round_id}: <span class="ko">${esc(c.text)}</span>${winnerNames(last).length ? ' — ' + esc(winnerNames(last).join(', ')) : ''}</div>`);
   }
   for (const o of d.open.slice(0, 2)) {
-    if (isLobby(o)) { const seats = seatsOf(o); lines.push(`<div class="blink">ROUND ${o.round_id} TABLE OPEN — ${seats.bought} / ${seats.min} SEATS · INSERT COIN</div>`); }
+    if (isLobby(o)) { const seats = seatsOf(o); lines.push(`<div class="blink">ROUND ${o.round_id} TABLE OPEN — ${seatsText(seats)} · INSERT COIN</div>`); }
     else lines.push(`<div class="blink">ROUND ${o.round_id} IN PROGRESS — ${esc(o.state.toUpperCase())} WINDOW</div>`);
   }
   if (!d.rounds.length) lines.push('<div class="muted">NO ROUNDS YET. THE BELL HAS NOT RUNG.</div>');
@@ -423,7 +431,7 @@ function renderTitle() {
 function sealedHTML(r) {
   const seats = seatsOf(r);
   const line = isVoid(r)
-    ? `THE TABLE NEVER FILLED · ${seats.bought} / ${seats.min} SEATS · THE RIDDLE STAYS SEALED`
+    ? `THE TABLE NEVER FILLED · ${seatsText(seats)} · THE RIDDLE STAYS SEALED`
     : `RIDDLE SEALED UNTIL THE TABLE IS FULL`;
   return `<div class="sealed">
     <span class="sealed-lock" aria-hidden="true"><svg viewBox="0 0 8 8" shape-rendering="crispEdges"><rect x="2" y="0" width="4" height="1" fill="#24e6ff"/><rect x="1" y="1" width="1" height="2" fill="#24e6ff"/><rect x="6" y="1" width="1" height="2" fill="#24e6ff"/><rect x="0" y="3" width="8" height="5" fill="#ffd200"/><rect x="3" y="4" width="2" height="1" fill="#0a0f3d"/><rect x="3" y="5" width="2" height="2" fill="#0a0f3d"/></svg></span>
@@ -542,7 +550,7 @@ function lobbyHTML(r) {
 
     <div class="table-banner">
       <div class="table-title">WAITING FOR CHALLENGERS</div>
-      <div class="table-seats" data-seats="${r.round_id}">${seats.bought} / ${seats.min} SEATS</div>
+      <div class="table-seats" data-seats="${r.round_id}">${seatsText(seats)}</div>
       <div class="table-sub">${full ? 'THE TABLE IS FULL · THE HOUSE PUBLISHES THE RIDDLE' : `${seats.min - seats.bought} MORE TO RING THE BELL · SEND ENTER WITH THE FEE`}</div>
     </div>
 
@@ -627,7 +635,7 @@ function renderFight() {
       <div class="fight-head">
         <div class="fight-round">ROUND ${r.round_id}</div>
         <div class="fight-phase"><span class="badge badge-${esc(r.state)}" data-phase-badge="${r.round_id}">${esc(r.state.toUpperCase())}</span> ${esc(r.title)} ${beltTag(r)}</div>
-        <div class="tiny muted">PUBLISHED @ ${fmt(r.publish_tick)} · ${txLink(r.publish_tx, 'TX')}${hasLobby(r) ? ` · SEATS ${seats.bought}${seats.min ? ' / ' + seats.min : ''}` : ''} · ${esc(payoutModeLabel(r))}</div>
+        <div class="tiny muted">PUBLISHED @ ${fmt(r.publish_tick)} · ${txLink(r.publish_tx, 'TX')}${hasLobby(r) ? ` · SEATS ${seatsShort(seats)}` : ''} · ${esc(payoutModeLabel(r))}</div>
       </div>
 
       <div class="cols">
@@ -662,7 +670,7 @@ function renderFight() {
           </div>
           <div class="stats" style="margin-top:14px;margin-bottom:0">
             <div class="stat"><div class="k">ENTRY FEE</div><div class="v">${fmt(r.entry_fee)}</div></div>
-            <div class="stat green"><div class="k">${hasLobby(r) ? 'SEATS' : 'FIGHTERS IN'}</div><div class="v">${hasLobby(r) ? `${seats.bought}${seats.min ? ' / ' + seats.min : ''}` : entries.length}</div></div>
+            <div class="stat green"><div class="k">${hasLobby(r) ? 'SEATS' : 'FIGHTERS IN'}</div><div class="v">${hasLobby(r) ? `${seatsShort(seats)}` : entries.length}</div></div>
             <div class="stat cyan"><div class="k">REVEALED</div><div class="v">${revealed} / ${entries.length}</div></div>
           </div>
         </div>
@@ -750,7 +758,7 @@ function renderResults() {
   </div>`);
 
   const seats = seatsOf(r);
-  const seatTile = hasLobby(r) ? `<div class="stat green"><div class="k">SEATS</div><div class="v">${seats.bought}${seats.min ? ' / ' + seats.min : ''}</div></div>` : '';
+  const seatTile = hasLobby(r) ? `<div class="stat green"><div class="k">SEATS</div><div class="v">${seatsShort(seats)}</div></div>` : '';
   const moneyTiles = `
       <div class="stat"><div class="k">${r.match_bps ? 'SEED CAP' : 'HOUSE SEED'}</div><div class="v">${fmt(r.house_seed)}</div></div>
       <div class="stat cyan"><div class="k">HOUSE MATCH</div><div class="v">${esc(matchLabel(r.match_bps))}</div></div>
@@ -892,9 +900,9 @@ function renderHistory() {
       let sub;
       if (isVoid(r)) {
         const refunded = ((s && s.payouts) || []).filter(p => p.kind === 'refund').reduce((a, p) => a + (p.amount || 0), 0);
-        sub = `${seats.bought} / ${seats.min} SEATS · REFUNDED ${fmt(refunded)} QU · CARRY ${fmt(s ? s.carry : r.carry_in)} · TABLE OPENED @${fmt(r.lobby_tick)}`;
+        sub = `${seatsText(seats)} · REFUNDED ${fmt(refunded)} QU · CARRY ${fmt(s ? s.carry : r.carry_in)} · TABLE OPENED @${fmt(r.lobby_tick)}`;
       } else if (isLobby(r)) {
-        sub = `${seats.bought} / ${seats.min} SEATS · FEE ${fmt(r.entry_fee)} QU · MATCH ${esc(matchLabel(r.match_bps))} · TABLE OPENED @${fmt(r.lobby_tick)}`;
+        sub = `${seatsText(seats)} · FEE ${fmt(r.entry_fee)} QU · MATCH ${esc(matchLabel(r.match_bps))} · TABLE OPENED @${fmt(r.lobby_tick)}`;
       } else {
         sub = `${(r.entries || []).length} IN${hasLobby(r) ? ` · ${seats.bought} SEATS` : ''} · POT ${fmt(livePot(r))} QU${s ? ` · RAKE ${fmt(s.rake)} · CARRY ${fmt(s.carry)}` : ''} · ${esc(payoutModeLabel(r))} · PUBLISHED @${fmt(r.publish_tick)}${names.length ? ' · ' + esc(names.join(', ')) : ''}`;
       }

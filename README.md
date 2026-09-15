@@ -17,7 +17,7 @@ Phase one moves the rules into a smart contract. See `docs/roadmap.md`.
 
 | path | what |
 |---|---|
-| `docs/` | the spec, the wire protocol, the lore, how we work |
+| `docs/` | the spec, the wire protocol, the developer API (`docs/api.md`), the lore, how we work |
 | `packages/qdojo/` | Python package: SDK, house tooling, bot CLI, tests |
 | `apps/web/` | the spectator page: every round from the beginning |
 | `examples/` | example riddles and example solvers |

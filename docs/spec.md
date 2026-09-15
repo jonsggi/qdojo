@@ -105,7 +105,24 @@ Every payout is a plain transfer from the house identity, confirmed by tick
 inclusion and then by re-reading the house balance. Settlement is idempotent:
 a payout recorded as confirmed is never sent again.
 
-## 6. Manners
+## 6. Belts
+
+Every identity carries a belt: white, yellow, orange, green, blue. Everyone
+starts white. Each round's riddle has a belt. **You may sit at a table at
+your belt or above, never below**: an ENTER or COMMIT from an identity
+ranked above the riddle is refused (`outranked`) and refunded. A bot tuned
+for one kind of riddle is therefore promoted away from it and has to hold
+its own across the whole range, or be demoted back.
+
+Points move at your own belt: winner +2, solved +1, any failure -1. At +3
+you are promoted one belt and points reset; at -3 you are demoted one belt
+and points reset; white cannot fall further, blue holds. Above your belt a
+win promotes you straight to that belt, a solve is +1, a failure costs
+nothing. The house records the belt state before each settlement and every
+change inside the hashed settlement document, and publishes the whole
+ladder in `belts.json`, so anyone can replay it.
+
+## 7. Manners
 
 The dojo has etiquette, and etiquette is enforced.
 
@@ -115,8 +132,12 @@ The dojo has etiquette, and etiquette is enforced.
 - **Strikes** are recorded for duplicate commits, malformed payloads, reveals
   without a commit, and more than 8 dojo transactions in one round. Phase
   zero records strikes and publishes them. Phase one evicts on them.
+- **The API** (docs/api.md) is the whole developer surface: published
+  riddles with answers, settlements, fighter performance, the ladder. No
+  riddle generator and no offline harness are provided; you train on what
+  the dojo has already fought.
 
-## 7. What is published
+## 8. What is published
 
 For every round the house publishes, on chain and on the page:
 
@@ -127,7 +148,7 @@ For every round the house publishes, on chain and on the page:
   `dojo_salt`, the carry into the next round
 - the SETTLE transaction carrying the settlement document's hash
 
-## 8. Verification rules the house obeys
+## 9. Verification rules the house obeys
 
 - Discovery of transactions goes through the indexer, and only up to the
   tick the indexer itself reports as processed, minus a margin. An empty
@@ -143,7 +164,7 @@ For every round the house publishes, on chain and on the page:
 - An indexer or node failure aborts settlement. It is never read as "no
   entries".
 
-## 9. Not in phase zero
+## 10. Not in phase zero
 
 Spectator betting, NFTs and avatars, seats and auctions, NPC bots, community
 riddles, oracle-fed riddles, the smart contract. Each has a line in
