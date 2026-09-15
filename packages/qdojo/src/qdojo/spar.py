@@ -18,13 +18,15 @@ def log(msg):
 
 class Spar:
     def __init__(self, house, belts, entry_fee, commit_window, reveal_window, riddle_dir, web_out, metrics_path,
-                 seed=None, payout_mode=1, poll=15, match_bps=10000, min_players=0, lobby_window=0):
+                 seed=None, payout_mode=1, poll=15, match_bps=10000, min_players=0, lobby_window=0,
+                 npcs=(), npc_rounds=3):
         self.h, self.belts = house, belts
         self.entry_fee, self.wc, self.wr = entry_fee, commit_window, reveal_window
         self.riddle_dir, self.web_out, self.metrics_path = riddle_dir, web_out, metrics_path
         self.rng = random.Random(seed)
         self.payout_mode, self.poll, self.match_bps = payout_mode, poll, match_bps
         self.min_players, self.lobby_window = min_players, lobby_window
+        self.npcs, self.npc_rounds = list(npcs), npc_rounds
         os.makedirs(riddle_dir, mode=0o700, exist_ok=True)
 
     def _export(self):
@@ -37,8 +39,34 @@ class Spar:
         except (Unknown, HouseError) as e:
             log(f"export: {e}")
 
+    def fund_npcs(self) -> int:
+        """House fighters play with house money: top each up to npc_rounds stakes,
+        amount = target - fresh balance, confirmed by inclusion. Returns QU sent."""
+        target, sent = self.entry_fee * self.npc_rounds, 0
+        for idn in self.npcs:
+            try:
+                bal = self.h.chain.balance(idn)
+            except Unknown as e:
+                log(f"npc {idn[:8]}… balance unknown ({e}); not funding"); continue
+            need = target - bal
+            if need <= 0:
+                continue
+            res = self.h.chain.send(idn, need)
+            for _ in range(60):
+                try:
+                    ok = self.h.chain.confirm(res.tx_id, res.scheduled_tick); break
+                except Unknown:
+                    time.sleep(2)
+            else:
+                ok = None
+            log(f"npc {idn[:8]}… topped up {need} ({res.tx_id[:8]}… tick {res.scheduled_tick}) {'confirmed' if ok else 'NOT confirmed'}")
+            if ok:
+                sent += need
+        return sent
+
     def one_round(self, belt: str) -> dict | None:
         rid = self.h.state()["next_round"]
+        npc_funding = self.fund_npcs() if self.npcs else 0
         r = riddles.generate(belt, self.rng, rid)
         path = os.path.join(self.riddle_dir, f"{rid:04d}.json")
         with open(path, "w", encoding="utf-8") as f:
@@ -112,6 +140,7 @@ class Spar:
         self._export()
         after = self.h.chain.balance(self.h.identity)
         row = self.metrics_row(rid, belt, r, spec, doc, before, after)
+        row["npc_funding"] = npc_funding
         with open(self.metrics_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(row, sort_keys=True) + "\n")
         log(f"round {rid} settled: pot {row['pot']} winners {[e['name'] or e['identity'][:6] for e in row['entries'] if e['verdict']=='winner']} "
@@ -182,6 +211,7 @@ def summarize(metrics_path: str) -> dict:
         return round(sum(xs) / len(xs), 1) if xs else None
     return {"rounds": len(rows), "settled": sum(1 for r in rows if r["settled"]),
             "money": {"stakes_in": sum(r["stakes_in"] for r in rows), "payouts_out": sum(r["payouts_out"] for r in rows),
+                      "npc_funding": sum(r.get("npc_funding", 0) for r in rows),
                       "house_delta": sum(r["house_delta"] for r in rows), "carry_now": rows[-1]["carry"] if rows else 0},
             "belts": {k: {"rounds": v["rounds"], "solve_rate": round(v["solved_rounds"] / v["rounds"], 2),
                           "avg_first_solve_ticks": avg(v["latencies"])} for k, v in by_belt.items()},

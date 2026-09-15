@@ -50,6 +50,17 @@ class Bot:
         os.chmod(tmp, 0o600)
         os.replace(tmp, self.path)
 
+    def _can_pay(self, stake: int, actions: list, rid: str) -> bool:
+        """A transaction from an identity that cannot cover it is dropped by the
+        node, and an identity at zero cannot send at all. Say so instead."""
+        try:
+            bal = self.chain.balance(self.chain.identity)
+        except Unknown as e:
+            actions.append(f"round {rid}: balance unknown ({e}), not sending"); return False
+        if bal < stake or bal == 0:
+            actions.append(f"round {rid}: broke: balance {bal} < stake {stake}, sitting out"); return False
+        return True
+
     def chain_offset(self) -> int:
         return getattr(self.chain, "schedule_offset", 20)
 
@@ -92,6 +103,8 @@ class Bot:
                     self.rounds[rid] = {"skipped": True}; self._save()
                     actions.append(f"round {rid}: entry fee {rd['entry_fee']} above max stake, not entering")
                     continue
+                if not self._can_pay(rd["entry_fee"], actions, rid):
+                    continue
                 self.rounds[rid] = {"entered": True, "enter_tx": None}
                 self._save()
                 res = self.chain.send(self.house, rd["entry_fee"], payload.encode(payload.Enter(rd["round_id"])),
@@ -124,6 +137,8 @@ class Bot:
                     continue
                 failures = (st or {}).get("solver_failures", 0)
                 if failures >= MAX_SOLVER_ATTEMPTS:
+                    continue
+                if not self._can_pay(stake, actions, rid):
                     continue
                 keep = {k: v for k, v in (self.rounds.get(rid) or {}).items() if k in ("entered", "enter_tx", "enter_tick", "stake")}
                 try:

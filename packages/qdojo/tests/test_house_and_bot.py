@@ -422,3 +422,29 @@ def test_lobby_that_does_not_fill_is_void_and_refunded(world, tmp_path):
     hist = h.export(str(tmp_path / "web"))
     assert hist["rounds"][0]["state"] == "void" and hist["rounds"][0]["settlement"]["void"]
     assert json.load(open(tmp_path / "web" / "board.json"))["rounds"] == []
+
+
+def test_broke_bot_does_not_send_doomed_transactions(world, tmp_path):
+    h = make_house(world, tmp_path)
+    publish_and_open(h, world, riddle_file(tmp_path))
+    h.collect(); h.export(str(tmp_path / "web"))
+    board = json.load(open(tmp_path / "web" / "board.json"))
+    world.core.balances[ALICE] = 500                                   # below the 1000 stake
+    alice = make_bot(world, tmp_path, ALICE, SUM_SOLVER)
+    acts = alice.step(board)
+    assert acts == ["round 1: broke: balance 500 < stake 1000, sitting out"]
+    assert not any(o.source == ALICE for o in world.core.pending + [(0, x) for x in world.core.ledger] if isinstance(o, tuple) and o[1].source == ALICE)
+    world.core.balances[ALICE] = 5000
+    assert any("committed" in a for a in alice.step(board))
+
+
+def test_spar_tops_up_house_fighters_to_target(world, tmp_path):
+    from qdojo import spar as S
+    h = make_house(world, tmp_path, seed=0)
+    world.core.balances[CARL] = 400
+    sp = S.Spar(h, ["white"], 1000, 50, 20, str(tmp_path / "r"), str(tmp_path / "web"), str(tmp_path / "m.jsonl"),
+                npcs=[CARL, BOB], npc_rounds=3)
+    drive_settle(h, world)
+    sent = sp.fund_npcs()
+    assert sent == 2600 and world.core.balances[CARL] == 3000 and world.core.balances[BOB] == 5000  # Bob was above target
+    assert sp.fund_npcs() == 0

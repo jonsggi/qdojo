@@ -18,7 +18,7 @@ def test_summarize_money_and_fighters(tmp_path):
     p = tmp_path / "m.jsonl"
     p.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
     s = spar.summarize(str(p))
-    assert s["rounds"] == 2 and s["money"] == {"stakes_in": 3000, "payouts_out": 7000, "house_delta": -4000, "carry_now": 6000}
+    assert s["rounds"] == 2 and s["money"] == {"stakes_in": 3000, "payouts_out": 7000, "npc_funding": 0, "house_delta": -4000, "carry_now": 6000}
     assert s["belts"]["white"]["solve_rate"] == 1.0 and s["belts"]["green"]["solve_rate"] == 0.0
     assert s["fighters"]["RYU"] == {"rounds": 1, "solved": 1, "wins": 1, "stakes": 1000, "earned": 7000, "net": 6000, "avg_solve_ticks": 40.0}
     assert s["fighters"]["KEN"]["net"] == -2000 and s["fighters"]["KEN"]["solved"] == 1

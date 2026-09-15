@@ -180,7 +180,7 @@ function normalise(history, board) {
       return merged;
     });
   } else {
-    open = rounds.filter(r => r.state === 'commit' || r.state === 'reveal');
+    open = rounds.filter(r => OPEN_STATES.has(r.state));
   }
   rounds.sort((a, b) => a.round_id - b.round_id);
   open.sort((a, b) => a.round_id - b.round_id);
@@ -195,10 +195,20 @@ function normalise(history, board) {
 }
 
 // ---------------------------------------------------------------- round helpers
-const COUNTED = new Set(['winner', 'solved', 'wrong', 'no_reveal', 'bad_reveal', 'pending']);
+// Verdicts whose stake stays in the pot. "no_commit" bought a seat and never
+// fought: the seat is forfeited to the pot. "void" is refunded, so not counted.
+const COUNTED = new Set(['winner', 'solved', 'wrong', 'no_reveal', 'no_commit', 'bad_reveal', 'pending']);
+const OPEN_STATES = new Set(['lobby', 'commit', 'reveal']);
+const BELTS = ['white', 'yellow', 'orange', 'green', 'blue', 'purple', 'brown', 'black'];
+function isLobby(r) { return r.state === 'lobby'; }
+function isVoid(r) { return r.state === 'void' || !!(r.settlement && r.settlement.void); }
+function hasLobby(r) { return r.lobby_tick !== null && r.lobby_tick !== undefined; }
 function windows(r) {
   const c0 = r.publish_tick + 1, c1 = r.publish_tick + r.commit_window;
   return { c0, c1, r0: c1 + 1, r1: c1 + r.reveal_window };
+}
+function lobbyWindow(r) {
+  return { l0: (r.lobby_tick || 0) + 1, l1: (r.lobby_tick || 0) + (r.lobby_window || 0) };
 }
 function nowTick() {
   if (!S.data) return 0;
@@ -206,14 +216,65 @@ function nowTick() {
   return S.data.generated_tick + Math.max(0, elapsed);
 }
 function phaseAt(r, tick) {
+  if (isLobby(r) || r.publish_tick === null || r.publish_tick === undefined) {
+    // the table is open: the riddle is not published yet, the lobby meter runs
+    const l = lobbyWindow(r);
+    if (tick <= l.l1) return { phase: 'lobby', remaining: l.l1 - tick, total: r.lobby_window || 1, end: l.l1 };
+    return { phase: 'lobby_over', remaining: 0, total: r.lobby_window || 1, end: l.l1 };
+  }
   const w = windows(r);
   if (tick <= w.c1) return { phase: 'commit', remaining: w.c1 - tick, total: r.commit_window, end: w.c1 };
   if (tick <= w.r1) return { phase: 'reveal', remaining: w.r1 - tick, total: r.reveal_window, end: w.r1 };
   return { phase: 'over', remaining: 0, total: r.reveal_window, end: w.r1 };
 }
+// The seed the house adds for a given amount of counted stakes (docs/spec.md §5):
+// carry in, plus min(seed cap, stakes × match_bps / 10000), or the fixed seed when match_bps is 0.
+function seedFor(r, stakes) {
+  const cap = r.house_seed || 0, bps = r.match_bps || 0;
+  const matched = bps ? Math.min(cap, Math.floor(stakes * bps / 10000)) : cap;
+  return (r.carry_in || 0) + matched;
+}
+function countedStakes(r) {
+  return (r.entries || []).filter(e => COUNTED.has(e.verdict)).reduce((a, e) => a + (e.stake || 0), 0);
+}
 function livePot(r) {
   if (r.settlement) return r.settlement.pot;
-  return (r.house_seed || 0) + (r.entries || []).filter(e => COUNTED.has(e.verdict)).reduce((a, e) => a + (e.stake || 0), 0);
+  const stakes = countedStakes(r);
+  return seedFor(r, stakes) + stakes;
+}
+function seedUsed(r) {
+  const s = r.settlement;
+  if (s && s.seed_used !== null && s.seed_used !== undefined) return s.seed_used;
+  if (s && s.void) return 0;
+  return seedFor(r, countedStakes(r));
+}
+// "HOUSE MATCH 1:1" for 10000 bps, "1:2" for 5000, "FIXED" for 0, reduced ratio otherwise.
+function matchLabel(bps) {
+  bps = Number(bps) || 0;
+  if (bps <= 0) return 'FIXED';
+  const gcd = (a, b) => b ? gcd(b, a % b) : a;
+  const g = gcd(bps, 10000);
+  return `${bps / g}:${10000 / g}`;
+}
+function payoutModeLabel(r) {
+  if (r.payout_mode === 'first') return 'FIRST WINS';
+  if (r.payout_mode === 'split') return 'SPLIT';
+  return r.payout_mode ? String(r.payout_mode).toUpperCase() : '—';
+}
+function beltTag(r, cls = '') {
+  const b = String(r.belt || '').toLowerCase();
+  if (!b) return '';
+  const known = BELTS.includes(b) ? b : 'other';
+  return `<span class="belt belt-${known} ${cls}" title="${esc(b)} belt">${esc(b.toUpperCase())} BELT</span>`;
+}
+function seatsOf(r) {
+  // Seats bought so far. Prefer the counted export figure; fall back to the entries we can see.
+  const seated = (r.entries || []).filter(e => e.verdict === 'pending' || COUNTED.has(e.verdict));
+  const bought = Math.max(Number(r.entrants) || 0, seated.length);
+  return { bought, min: Number(r.min_players) || 0, seated };
+}
+function entryTick(e) {
+  return e.commit_tick ?? e.enter_tick ?? Number.MAX_SAFE_INTEGER;
 }
 function maxPot() {
   return Math.max(1, ...S.data.rounds.map(livePot));
@@ -226,19 +287,27 @@ function displayName(e) {
   return n ? esc(n) : '<span class="muted">???</span>';
 }
 function callout(r) {
+  if (isVoid(r)) {
+    const seats = seatsOf(r);
+    return { text: 'NO CONTEST', cls: 'timeover void', sub: `TABLE NEVER FILLED · ${seats.bought} / ${seats.min} SEATS · REFUNDED` };
+  }
   if (!r.settlement) {
     if (r.state === 'settling') return { text: 'SETTLING', cls: 'progress' };
+    if (r.state === 'lobby') return { text: 'TABLE OPEN', cls: 'progress', sub: 'WAITING FOR CHALLENGERS' };
     if (r.state === 'commit') return { text: 'FIGHT!', cls: 'progress' };
     if (r.state === 'reveal') return { text: 'REVEAL!', cls: 'progress' };
     return { text: '…', cls: 'progress' };
   }
   const n = (r.settlement.winners || []).length;
   const counted = (r.entries || []).filter(e => COUNTED.has(e.verdict)).length;
+  const solved = (r.entries || []).filter(e => e.verdict === 'solved').length;
+  const later = solved ? ` · ${solved} SOLVED LATER, NO PAY` : '';
+  const first = r.payout_mode === 'first';
   if (n === 0) return { text: 'TIME OVER', cls: 'timeover', sub: 'NO WINNER · POT CARRIES' };
-  if (n === 1) return { text: 'K.O.', cls: 'ko', perfect: counted >= 3, sub: 'ONE WINNER TAKES THE POT' };
-  if (n === 2) return { text: 'DOUBLE K.O.', cls: 'ko', sub: 'TWO WINNERS SPLIT THE POT' };
-  if (n === 3) return { text: 'TRIPLE K.O.', cls: 'ko', sub: 'THREE WINNERS SPLIT THE POT' };
-  return { text: `${n}x K.O.`, cls: 'ko', sub: `${n} WINNERS SPLIT THE POT` };
+  if (n === 1) return { text: 'K.O.', cls: 'ko', perfect: counted >= 3, sub: (first ? 'FIRST TO SOLVE TAKES THE POT' : 'ONE WINNER TAKES THE POT') + later };
+  if (n === 2) return { text: 'DOUBLE K.O.', cls: 'ko', sub: 'TWO WINNERS SPLIT THE POT' + later };
+  if (n === 3) return { text: 'TRIPLE K.O.', cls: 'ko', sub: 'THREE WINNERS SPLIT THE POT' + later };
+  return { text: `${n}x K.O.`, cls: 'ko', sub: `${n} WINNERS SPLIT THE POT${later}` };
 }
 function winnerNames(r) {
   if (!r.settlement) return [];
@@ -269,22 +338,40 @@ function canonicalAnswer(answer, fmt) {
   if (fmt === 'hex') { let s = String(answer).trim().toLowerCase(); if (s.startsWith('0x')) s = s.slice(2); return s; }
   return String(answer).normalize('NFC').trim();
 }
+async function settlementHash(s) {
+  const body = Object.assign({}, s); delete body.hash; delete body.settle_tx; delete body.settle_tick;
+  return sha256hex(concat(enc.encode('qdojo/settlement/v0'), enc.encode(canonicalJSON(body))));
+}
 async function verifyRound(r) {
   if (!(window.crypto && crypto.subtle)) return [{ ok: false, label: 'VERIFY needs https or localhost (no WebCrypto here)' }];
   const out = [];
-  const pub = r.riddle ? { round_id: r.riddle.round_id, title: r.riddle.title, statement: r.riddle.statement, input: r.riddle.input, answer_format: r.riddle.answer_format } : null;
+  // A lobby or void round never published a riddle: nothing to hash there.
+  const pub = r.riddle && r.riddle_hash ? { round_id: r.riddle.round_id, title: r.riddle.title, statement: r.riddle.statement, input: r.riddle.input, answer_format: r.riddle.answer_format } : null;
   if (pub) {
     const h = await sha256hex(concat(enc.encode('qdojo/riddle/v0'), enc.encode(canonicalJSON(pub))));
     out.push({ ok: h === r.riddle_hash, label: 'RIDDLE HASH', detail: h });
   }
   if (r.settlement) {
     const s = r.settlement;
-    const canon = canonicalAnswer(s.answer, r.riddle ? r.riddle.answer_format : 'string');
-    const c = await sha256hex(concat(enc.encode('qdojo/answer/v0'), u32le(r.round_id), hexBytes(s.dojo_salt), enc.encode(canon)));
-    out.push({ ok: c === r.answer_commitment, label: 'ANSWER COMMITMENT', detail: c });
-    const body = Object.assign({}, s); delete body.hash; delete body.settle_tx; delete body.settle_tick;
-    const sh = await sha256hex(concat(enc.encode('qdojo/settlement/v0'), enc.encode(canonicalJSON(body))));
-    out.push({ ok: sh === s.hash, label: 'SETTLEMENT HASH', detail: sh });
+    if (!s.void && r.answer_commitment && s.answer !== null && s.answer !== undefined && s.dojo_salt) {
+      const canon = canonicalAnswer(s.answer, r.riddle ? r.riddle.answer_format : 'string');
+      const c = await sha256hex(concat(enc.encode('qdojo/answer/v0'), u32le(r.round_id), hexBytes(s.dojo_salt), enc.encode(canon)));
+      out.push({ ok: c === r.answer_commitment, label: 'ANSWER COMMITMENT', detail: c });
+    }
+    if (!s.hash) {
+      out.push({ ok: false, label: 'SETTLEMENT HASH · NOT PUBLISHED YET' });
+    } else {
+      let sh = await settlementHash(s), label = 'SETTLEMENT HASH';
+      if (s.void && sh !== s.hash && S.source === 'live') {
+        // The live export condenses a void settlement; the hashed document is the
+        // published settlements/<round>.json. Verify that one when it can be fetched.
+        try {
+          const doc = await fetchJSON(`./data/settlements/${r.round_id}.json`);
+          if (doc && typeof doc === 'object') { sh = await settlementHash(doc); label = 'SETTLEMENT HASH (settlements/' + r.round_id + '.json)'; }
+        } catch (e) { /* keep the page-body hash and report the mismatch */ }
+      }
+      out.push({ ok: sh === s.hash, label, detail: sh });
+    }
   }
   return out;
 }
@@ -321,7 +408,10 @@ function renderTitle() {
     const c = callout(last);
     lines.push(`<div>ROUND ${last.round_id}: <span class="ko">${esc(c.text)}</span>${winnerNames(last).length ? ' — ' + esc(winnerNames(last).join(', ')) : ''}</div>`);
   }
-  if (d.open.length) lines.push(`<div class="blink">ROUND ${d.open[0].round_id} IN PROGRESS — ${esc(d.open[0].state.toUpperCase())} WINDOW</div>`);
+  for (const o of d.open.slice(0, 2)) {
+    if (isLobby(o)) { const seats = seatsOf(o); lines.push(`<div class="blink">ROUND ${o.round_id} TABLE OPEN — ${seats.bought} / ${seats.min} SEATS · INSERT COIN</div>`); }
+    else lines.push(`<div class="blink">ROUND ${o.round_id} IN PROGRESS — ${esc(o.state.toUpperCase())} WINDOW</div>`);
+  }
   if (!d.rounds.length) lines.push('<div class="muted">NO ROUNDS YET. THE BELL HAS NOT RUNG.</div>');
   setHTML('title-ticker', lines.join(''));
   const roster = d.fighters.filter(f => f.name).slice(0, 8).map(f => `<span class="roster-walk" title="${esc(f.name)}">${avatarSVG(f.identity)}</span>`).join('');
@@ -329,7 +419,21 @@ function renderTitle() {
   setHTML('title-house', d.house ? `HOUSE ${idLink(d.house)}` : '');
 }
 
+// The riddle of a lobby (or void) round was never published: show the seal, not a blank.
+function sealedHTML(r) {
+  const seats = seatsOf(r);
+  const line = isVoid(r)
+    ? `THE TABLE NEVER FILLED · ${seats.bought} / ${seats.min} SEATS · THE RIDDLE STAYS SEALED`
+    : `RIDDLE SEALED UNTIL THE TABLE IS FULL`;
+  return `<div class="sealed">
+    <span class="sealed-lock" aria-hidden="true"><svg viewBox="0 0 8 8" shape-rendering="crispEdges"><rect x="2" y="0" width="4" height="1" fill="#24e6ff"/><rect x="1" y="1" width="1" height="2" fill="#24e6ff"/><rect x="6" y="1" width="1" height="2" fill="#24e6ff"/><rect x="0" y="3" width="8" height="5" fill="#ffd200"/><rect x="3" y="4" width="2" height="1" fill="#0a0f3d"/><rect x="3" y="5" width="2" height="2" fill="#0a0f3d"/></svg></span>
+    <div class="sealed-text${isVoid(r) ? '' : ' blink'}">${line}</div>
+    <p class="tiny muted">${isVoid(r) ? 'No PUBLISH was sent, so there is no riddle hash and no answer commitment to verify. Only the refunds were settled.' : 'The house sends PUBLISH with the riddle hash and the answer commitment the moment the last seat is bought. Until then nobody, not even a seated fighter, knows the riddle.'}</p>
+  </div>`;
+}
+
 function riddleHTML(r) {
+  if (isLobby(r) || isVoid(r) || (!r.riddle && !r.riddle_hash)) return sealedHTML(r);
   const q = r.riddle || {};
   return `<div class="riddle-box">
     <p class="riddle-statement">${esc(q.statement || '(riddle document not published yet)')}</p>
@@ -342,14 +446,27 @@ function riddleHTML(r) {
   </div>`;
 }
 
+const VERDICT_LABEL = { solved: 'SOLVED', no_commit: 'NO SHOW', void: 'REFUNDED' };
 function entryStatus(e, r) {
-  if (e.verdict && e.verdict !== 'pending') return `<span class="badge badge-${esc(e.verdict)}">${esc(e.verdict.replace('_', ' ').toUpperCase())}</span>`;
+  if (e.verdict && e.verdict !== 'pending') {
+    const label = VERDICT_LABEL[e.verdict] || e.verdict.replace('_', ' ').toUpperCase();
+    return `<span class="badge badge-${esc(e.verdict)}">${esc(label)}</span>`;
+  }
   if (e.reveal_tick) return '<span class="badge badge-reveal">REVEALED</span>';
+  if (!e.commit_tx && e.enter_tx) return '<span class="badge badge-seated">SEATED</span>';
   return `<span class="badge badge-pending">SEALED</span>`;
 }
 
+function entryLinks(e) {
+  const parts = [];
+  if (e.enter_tx) parts.push(txLink(e.enter_tx, `SEAT @${fmt(e.enter_tick)}`));
+  if (e.commit_tx || !e.enter_tx) parts.push(txLink(e.commit_tx, `COMMIT @${fmt(e.commit_tick)}`));
+  if (e.reveal_tx) parts.push(txLink(e.reveal_tx, `REVEAL @${fmt(e.reveal_tick)}`));
+  return parts.join('\n      ');
+}
+
 function fighterCard(e, r, slot) {
-  const cls = e.verdict && e.verdict !== 'pending' ? e.verdict : (e.reveal_tick ? 'revealed' : 'sealed');
+  const cls = e.verdict && e.verdict !== 'pending' ? e.verdict : (e.reveal_tick ? 'revealed' : (e.commit_tx ? 'sealed' : 'seated'));
   return `<div class="fcard ${cls}">
     <span class="fslot">${String(slot).padStart(2, '0')}</span>
     ${avatarSVG(e.identity, 'avatar-lg')}
@@ -358,10 +475,122 @@ function fighterCard(e, r, slot) {
     <div class="fstake">STAKE ${qu(e.stake)}</div>
     <div class="fstatus">${entryStatus(e, r)}</div>
     <div class="flinks">
-      ${txLink(e.commit_tx, `COMMIT @${fmt(e.commit_tick)}`)}
-      ${e.reveal_tx ? txLink(e.reveal_tx, `REVEAL @${fmt(e.reveal_tick)}`) : ''}
+      ${entryLinks(e)}
     </div>
   </div>`;
+}
+
+// A pixel-art chair. Original art. `taken` puts the fighter on it.
+function chairSVG() {
+  const p = [];
+  const put = (x, y, w, h, c) => p.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${c}"/>`);
+  put(1, 0, 6, 1, '#ff2a2a'); put(1, 1, 1, 4, '#ff2a2a'); put(6, 1, 1, 4, '#ff2a2a');   // backrest frame
+  put(2, 1, 4, 1, '#b30000'); put(2, 3, 4, 1, '#b30000');                              // slats
+  put(0, 5, 8, 2, '#ffd200'); put(1, 6, 6, 1, '#d9b000');                               // seat
+  put(0, 7, 1, 3, '#f4f4f4'); put(7, 7, 1, 3, '#f4f4f4'); put(2, 7, 1, 2, '#9aa3c7'); put(5, 7, 1, 2, '#9aa3c7'); // legs
+  return `<svg viewBox="0 0 8 10" shape-rendering="crispEdges">${p.join('')}</svg>`;
+}
+
+function seatCard(e, r, slot) {
+  if (!e) {
+    return `<div class="seat seat-empty">
+      <span class="seat-no">SEAT ${String(slot).padStart(2, '0')}</span>
+      <div class="seat-chair">${chairSVG()}</div>
+      <div class="seat-coin blink">INSERT COIN</div>
+      <div class="seat-fee">${qu(r.entry_fee)}</div>
+    </div>`;
+  }
+  if (e.unknown) {
+    return `<div class="seat seat-taken">
+      <span class="seat-no">SEAT ${String(slot).padStart(2, '0')}</span>
+      <div class="seat-chair taken">${chairSVG()}<span class="seat-sit">${avatarSVG('', 'avatar-lg')}</span></div>
+      <div class="fname"><span class="muted">TAKEN</span></div>
+      <div class="tiny muted">FIGHTER NOT IN HISTORY YET</div>
+    </div>`;
+  }
+  return `<div class="seat seat-taken">
+    <span class="seat-no">SEAT ${String(slot).padStart(2, '0')}</span>
+    <div class="seat-chair taken">${chairSVG()}<span class="seat-sit">${avatarSVG(e.identity, 'avatar-lg')}</span></div>
+    <div class="fname">${displayName(e)}</div>
+    <div class="fid">${idLink(e.identity)}</div>
+    <div class="fstake">SEAT ${qu(e.stake)}</div>
+    <div class="fstatus">${entryStatus(e, r)}</div>
+    <div class="flinks">${e.enter_tx ? txLink(e.enter_tx, `ENTER @${fmt(e.enter_tick)}`) : '<span class="muted">ENTER TX PENDING</span>'}</div>
+  </div>`;
+}
+
+// THE TABLE: a lobby round. Seats, a countdown, the fee and the belt; no riddle yet.
+function lobbyHTML(r) {
+  const seats = seatsOf(r);
+  const l = lobbyWindow(r);
+  const seated = seats.seated.slice().sort((a, b) => entryTick(a) - entryTick(b));
+  const unknown = Math.max(0, seats.bought - seated.length);
+  const total = Math.max(seats.min, seats.bought, 1);
+  const cards = [];
+  for (let i = 0; i < total; i++) {
+    const e = i < seated.length ? seated[i] : (i < seated.length + unknown ? { unknown: true } : null);
+    cards.push(seatCard(e, r, i + 1));
+  }
+  const full = seats.min > 0 && seats.bought >= seats.min;
+  const pot = livePot(r);
+  return `
+    <div class="fight-head">
+      <div class="fight-round">ROUND ${r.round_id}</div>
+      <div class="fight-phase"><span class="badge badge-lobby" data-phase-badge="${r.round_id}">LOBBY</span> THE TABLE ${beltTag(r)}</div>
+      <div class="tiny muted">TABLE OPENED @ ${fmt(r.lobby_tick)} · ${esc(r.title || '')}</div>
+    </div>
+
+    <div class="table-banner">
+      <div class="table-title">WAITING FOR CHALLENGERS</div>
+      <div class="table-seats" data-seats="${r.round_id}">${seats.bought} / ${seats.min} SEATS</div>
+      <div class="table-sub">${full ? 'THE TABLE IS FULL · THE HOUSE PUBLISHES THE RIDDLE' : `${seats.min - seats.bought} MORE TO RING THE BELL · SEND ENTER WITH THE FEE`}</div>
+    </div>
+
+    <div class="panel panel-yellow">
+      <h3>SEATS · ${seats.bought} TAKEN</h3>
+      <div class="grid-seats">${cards.join('')}</div>
+    </div>
+
+    <div class="cols">
+      <div class="panel panel-red">
+        <h3>LOBBY</h3>
+        <div class="meter-label">
+          <span data-phase-label="${r.round_id}">—</span>
+          <b><span data-ticks-left="${r.round_id}">—</span> TICKS</b>
+        </div>
+        ${meterHTML(`win-${r.round_id}`, 'warn')}
+        <div class="meter-legend">
+          <span>LOBBY ${fmt(l.l0)} – ${fmt(l.l1)}</span>
+          <span>THEN COMMIT ${fmt(r.commit_window)} · REVEAL ${fmt(r.reveal_window)} TICKS</span>
+        </div>
+        <div class="continue lobby" data-continue="${r.round_id}">
+          <div class="continue-label" data-continue-label="${r.round_id}">INSERT COIN</div>
+          <div class="continue-num" data-secs-left="${r.round_id}">—</div>
+          <div class="continue-sub" data-continue-sub="${r.round_id}"></div>
+        </div>
+      </div>
+
+      <div class="panel panel-cyan">
+        <h3>THE STAKES</h3>
+        <div class="stats" style="margin-bottom:0">
+          <div class="stat"><div class="k">ENTRY FEE</div><div class="v">${fmt(r.entry_fee)}</div></div>
+          <div class="stat green"><div class="k">MIN PLAYERS</div><div class="v">${fmt(r.min_players)}</div></div>
+          <div class="stat cyan"><div class="k">${r.match_bps ? 'SEED CAP' : 'HOUSE SEED'}</div><div class="v">${fmt(r.house_seed)}</div></div>
+          <div class="stat cyan"><div class="k">HOUSE MATCH</div><div class="v">${esc(matchLabel(r.match_bps))}</div></div>
+          <div class="stat"><div class="k">CARRY IN</div><div class="v">${fmt(r.carry_in)}</div></div>
+          <div class="stat"><div class="k">PAYOUT</div><div class="v small">${esc(payoutModeLabel(r))}</div></div>
+          <div class="stat"><div class="k">BELT</div><div class="v small">${r.belt ? beltTag(r) : '<span class="muted">OPEN</span>'}</div></div>
+          <div class="stat"><div class="k">POT SO FAR</div><div class="v">${fmt(pot)}</div></div>
+        </div>
+        <p class="tiny muted" style="margin:10px 0 0">A seat bought and never fought is forfeited to the pot. If the table does not fill, every seat is refunded.</p>
+      </div>
+    </div>
+
+    <div class="panel panel-cyan">
+      <h3>THE RIDDLE</h3>
+      ${sealedHTML(r)}
+    </div>
+  `;
 }
 
 function renderFight() {
@@ -382,20 +611,23 @@ function renderFight() {
     return;
   }
   for (const r of d.open) {
+    if (isLobby(r)) { parts.push(lobbyHTML(r)); continue; }
     const w = windows(r);
-    const entries = (r.entries || []).slice().sort((a, b) => a.commit_tick - b.commit_tick);
-    const staked = entries.filter(e => COUNTED.has(e.verdict)).reduce((a, e) => a + e.stake, 0);
+    const entries = (r.entries || []).slice().sort((a, b) => entryTick(a) - entryTick(b));
+    const staked = countedStakes(r);
     const revealed = entries.filter(e => e.reveal_tick).length;
     const pot = livePot(r);
+    const seed = seedFor(r, staked);
     const potPct = Math.min(100, 100 * pot / maxPot());
-    const seedPct = potPct * (r.house_seed || 0) / Math.max(1, pot);
+    const seedPct = potPct * seed / Math.max(1, pot);
+    const seats = seatsOf(r);
     const cards = entries.map((e, i) => fighterCard(e, r, i + 1)).join('');
     const empties = entries.length < 4 ? Array.from({ length: 4 - entries.length }, () => '<div class="fcard fcard-empty">OPEN SLOT<br>INSERT COIN</div>').join('') : '';
     parts.push(`
       <div class="fight-head">
         <div class="fight-round">ROUND ${r.round_id}</div>
-        <div class="fight-phase"><span class="badge badge-${esc(r.state)}" data-phase-badge="${r.round_id}">${esc(r.state.toUpperCase())}</span> ${esc(r.title)}</div>
-        <div class="tiny muted">PUBLISHED @ ${fmt(r.publish_tick)} · ${txLink(r.publish_tx, 'TX')}</div>
+        <div class="fight-phase"><span class="badge badge-${esc(r.state)}" data-phase-badge="${r.round_id}">${esc(r.state.toUpperCase())}</span> ${esc(r.title)} ${beltTag(r)}</div>
+        <div class="tiny muted">PUBLISHED @ ${fmt(r.publish_tick)} · ${txLink(r.publish_tx, 'TX')}${hasLobby(r) ? ` · SEATS ${seats.bought}${seats.min ? ' / ' + seats.min : ''}` : ''} · ${esc(payoutModeLabel(r))}</div>
       </div>
 
       <div class="cols">
@@ -425,12 +657,12 @@ function renderFight() {
             <div class="meter-fill seed" style="width:${seedPct.toFixed(1)}%"></div>
           </div>
           <div class="meter-legend">
-            <span><i style="background:var(--cyan)"></i>HOUSE SEED ${fmt(r.house_seed)}</span>
+            <span><i style="background:var(--cyan)"></i>HOUSE SEED ${fmt(seed)}${r.match_bps ? ` (MATCH ${esc(matchLabel(r.match_bps))} · CAP ${fmt(r.house_seed)})` : ''}${r.carry_in ? ` · CARRY IN ${fmt(r.carry_in)}` : ''}</span>
             <span><i style="background:var(--yellow)"></i>STAKES ${fmt(staked)}</span>
           </div>
           <div class="stats" style="margin-top:14px;margin-bottom:0">
             <div class="stat"><div class="k">ENTRY FEE</div><div class="v">${fmt(r.entry_fee)}</div></div>
-            <div class="stat green"><div class="k">FIGHTERS IN</div><div class="v">${entries.length}</div></div>
+            <div class="stat green"><div class="k">${hasLobby(r) ? 'SEATS' : 'FIGHTERS IN'}</div><div class="v">${hasLobby(r) ? `${seats.bought}${seats.min ? ' / ' + seats.min : ''}` : entries.length}</div></div>
             <div class="stat cyan"><div class="k">REVEALED</div><div class="v">${revealed} / ${entries.length}</div></div>
           </div>
         </div>
@@ -451,15 +683,17 @@ function renderFight() {
 }
 
 function entriesTable(r) {
-  const entries = (r.entries || []).slice().sort((a, b) => a.commit_tick - b.commit_tick);
+  const entries = (r.entries || []).slice().sort((a, b) => entryTick(a) - entryTick(b));
   if (!entries.length) return '<p class="muted">No entries were observed in this round.</p>';
+  const lobby = hasLobby(r) || entries.some(e => e.enter_tx);
   return `<div class="tscroll"><table>
-    <thead><tr><th>FIGHTER</th><th>IDENTITY</th><th class="num">STAKE</th><th>COMMIT</th><th>REVEAL</th><th>ANSWER</th><th>VERDICT</th></tr></thead>
+    <thead><tr><th>FIGHTER</th><th>IDENTITY</th><th class="num">STAKE</th>${lobby ? '<th>SEAT</th>' : ''}<th>COMMIT</th><th>REVEAL</th><th>ANSWER</th><th>VERDICT</th></tr></thead>
     <tbody>${entries.map(e => `<tr class="${e.verdict === 'winner' ? 'winner' : ''}">
       <td><span class="tname">${avatarSVG(e.identity, 'avatar-sm')} ${displayName(e)}</span></td>
       <td>${idLink(e.identity)}</td>
       <td class="num">${fmt(e.stake)}</td>
-      <td>${txLink(e.commit_tx, '@' + fmt(e.commit_tick))}</td>
+      ${lobby ? `<td>${e.enter_tx ? txLink(e.enter_tx, '@' + fmt(e.enter_tick)) : '<span class="muted">—</span>'}</td>` : ''}
+      <td>${e.commit_tx ? txLink(e.commit_tx, '@' + fmt(e.commit_tick)) : '<span class="muted">—</span>'}</td>
       <td>${e.reveal_tx ? txLink(e.reveal_tx, '@' + fmt(e.reveal_tick)) : '<span class="muted">—</span>'}</td>
       <td class="mono">${e.answer === null || e.answer === undefined ? '<span class="muted">—</span>' : esc(e.answer)}</td>
       <td>${entryStatus(e, r)}</td>
@@ -498,7 +732,7 @@ function renderResults() {
   const s = r.settlement;
   const parts = [];
   parts.push(`<div class="res-head">
-    <h2 class="screen-title" style="margin:0">ROUND ${r.round_id}<small>${esc(r.title)} · <span class="badge badge-${esc(r.state)}">${esc(r.state.toUpperCase())}</span></small></h2>
+    <h2 class="screen-title" style="margin:0">ROUND ${r.round_id}<small>${esc(r.title)} · <span class="badge badge-${esc(r.state)}">${esc(r.state.toUpperCase())}</span> ${beltTag(r)}</small></h2>
     <div class="spacer"></div>
     <div class="res-nav">
       <a class="btn btn-sm ${prev === null ? 'disabled' : ''}" href="#results/${prev ?? r.round_id}" ${prev === null ? 'aria-disabled="true"' : ''}>&#9664; PREV</a>
@@ -512,8 +746,60 @@ function renderResults() {
     <div class="ko-text ${c.cls}">${esc(c.text)}</div>
     ${c.perfect ? '<div class="ko-perfect">PERFECT</div>' : ''}
     ${c.sub ? `<div class="ko-sub">${esc(c.sub)}</div>` : ''}
-    ${!s ? `<div class="ko-sub">THIS ROUND IS STILL OPEN — <a href="#fight">NOW FIGHTING</a></div>` : ''}
+    ${!s ? `<div class="ko-sub">THIS ROUND IS STILL OPEN — <a href="#fight">${isLobby(r) ? 'THE TABLE' : 'NOW FIGHTING'}</a></div>` : ''}
   </div>`);
+
+  const seats = seatsOf(r);
+  const seatTile = hasLobby(r) ? `<div class="stat green"><div class="k">SEATS</div><div class="v">${seats.bought}${seats.min ? ' / ' + seats.min : ''}</div></div>` : '';
+  const moneyTiles = `
+      <div class="stat"><div class="k">${r.match_bps ? 'SEED CAP' : 'HOUSE SEED'}</div><div class="v">${fmt(r.house_seed)}</div></div>
+      <div class="stat cyan"><div class="k">HOUSE MATCH</div><div class="v">${esc(matchLabel(r.match_bps))}</div></div>
+      <div class="stat"><div class="k">CARRY IN</div><div class="v">${fmt(r.carry_in)}</div></div>
+      <div class="stat"><div class="k">ENTRY FEE</div><div class="v">${fmt(r.entry_fee)}</div></div>
+      <div class="stat"><div class="k">PAYOUT</div><div class="v small">${esc(payoutModeLabel(r))}</div></div>
+      ${seatTile}`;
+
+  if (s && s.void) {
+    // NO CONTEST: the lobby never filled. Nothing but refunds moved.
+    const refunds = (s.payouts || []).filter(p => p.kind === 'refund');
+    const refunded = refunds.reduce((a, p) => a + (p.amount || 0), 0);
+    const l = lobbyWindow(r);
+    parts.push(`<div class="stats">
+      <div class="stat"><div class="k">POT</div><div class="v">${fmt(s.pot)}</div></div>
+      <div class="stat red"><div class="k">RAKE</div><div class="v">${fmt(s.rake)}</div></div>
+      <div class="stat cyan"><div class="k">CARRY</div><div class="v">${fmt(s.carry)}</div></div>
+      <div class="stat green"><div class="k">REFUNDED</div><div class="v">${fmt(refunded)}</div></div>
+      <div class="stat"><div class="k">SEED USED</div><div class="v">${fmt(seedUsed(r))}</div></div>
+      ${moneyTiles}
+    </div>`);
+    parts.push(`<div class="cols">
+      <div class="panel panel-cyan">
+        <h3>THE TABLE</h3>
+        <dl class="kv">
+          <dt>LOBBY</dt><dd>${fmt(l.l0)} – ${fmt(l.l1)} (${fmt(r.lobby_window)} ticks, ~${ticksToHuman(r.lobby_window || 0)})</dd>
+          <dt>SEATS</dt><dd>${seats.bought} bought, ${fmt(r.min_players)} needed</dd>
+          <dt>BELT</dt><dd>${r.belt ? beltTag(r) : '<span class="muted">open</span>'}</dd>
+          <dt>RIDDLE</dt><dd class="muted">never published</dd>
+        </dl>
+        <p class="tiny muted" style="margin:10px 0 0">The carry in rolls on to the next round untouched.</p>
+      </div>
+      <div class="panel panel-yellow">
+        <h3>SETTLEMENT · VERIFY IT YOURSELF</h3>
+        <dl class="kv">
+          <dt>SETTLE HASH</dt><dd class="mono wrap">${esc(s.hash || '—')}</dd>
+          <dt>SETTLE TX</dt><dd>${txLink(s.settle_tx)}</dd>
+        </dl>
+        <p class="tiny muted" style="margin:10px 0">settlement_hash = SHA-256("qdojo/settlement/v0" ‖ canonical JSON of the settlement without hash, settle_tx, settle_tick). No riddle hash and no answer commitment exist for a void round.</p>
+        <button class="btn btn-sm btn-cyan" data-verify="${r.round_id}">VERIFY</button>
+        <div class="verify-out" data-verify-out="${r.round_id}"></div>
+      </div>
+    </div>`);
+    parts.push(`<div class="panel panel-cyan"><h3>THE RIDDLE</h3>${sealedHTML(r)}</div>`);
+    parts.push(`<div class="panel"><h3>ENTRIES · ${(r.entries || []).length}</h3>${entriesTable(r)}</div>`);
+    parts.push(`<div class="panel panel-green"><h3>REFUNDS · ${refunds.length}</h3>${payoutsTable(s)}</div>`);
+    if (setHTML('results-body', parts.join(''))) runVerify(r.round_id);
+    return;
+  }
 
   if (s) {
     const potPct = Math.min(100, 100 * s.pot / maxPot());
@@ -522,8 +808,8 @@ function renderResults() {
       <div class="stat red"><div class="k">RAKE</div><div class="v">${fmt(s.rake)}</div></div>
       <div class="stat cyan"><div class="k">CARRY</div><div class="v">${fmt(s.carry)}</div></div>
       <div class="stat green"><div class="k">WINNERS</div><div class="v">${(s.winners || []).length}</div></div>
-      <div class="stat"><div class="k">HOUSE SEED</div><div class="v">${fmt(r.house_seed)}</div></div>
-      <div class="stat"><div class="k">ENTRY FEE</div><div class="v">${fmt(r.entry_fee)}</div></div>
+      <div class="stat"><div class="k">SEED USED</div><div class="v">${fmt(seedUsed(r))}</div></div>
+      ${moneyTiles}
     </div>
     <div class="meter" style="margin-bottom:20px"><div class="meter-fill pot" style="width:${potPct.toFixed(1)}%"></div></div>`);
 
@@ -538,6 +824,7 @@ function renderResults() {
             <div class="wamt">+${fmt(p ? p.amount : 0)} QU${p && p.tx ? `<span class="wtx">${txLink(p.tx, 'PAYOUT TX')}</span>` : ''}</div>
           </div>`; }).join('')}</div>`
         : `<p class="muted">Nobody solved it. ${fmt(s.carry)} QU carries into the next round's seed.</p>`}
+        ${(r.entries || []).some(e => e.verdict === 'solved') ? `<p class="tiny muted" style="margin:10px 0 0">SOLVED, NO PAY: ${(r.entries || []).filter(e => e.verdict === 'solved').map(e => nameOf(e) || shortId(e.identity)).map(esc).join(', ')} — correct, but not first. FIRST WINS.</p>` : ''}
       </div>
       <div class="panel panel-yellow">
         <h3>THE ANSWER · VERIFY IT YOURSELF</h3>
@@ -557,8 +844,15 @@ function renderResults() {
     </div>`);
   }
 
+  if (!s) {
+    parts.push(`<div class="stats">
+      <div class="stat"><div class="k">POT SO FAR</div><div class="v">${fmt(livePot(r))}</div></div>
+      <div class="stat"><div class="k">SEED SO FAR</div><div class="v">${fmt(seedUsed(r))}</div></div>
+      ${moneyTiles}
+    </div>`);
+  }
   parts.push(`<div class="panel panel-cyan"><h3>THE RIDDLE</h3>${riddleHTML(r)}</div>`);
-  parts.push(`<div class="panel"><h3>ENTRIES · ${(r.entries || []).length}</h3>${entriesTable(r)}</div>`);
+  parts.push(`<div class="panel"><h3>${isLobby(r) ? 'SEATS' : 'ENTRIES'} · ${(r.entries || []).length}</h3>${entriesTable(r)}</div>`);
   if (s) parts.push(`<div class="panel panel-green"><h3>PAYOUTS · ${(s.payouts || []).length}</h3>${payoutsTable(s)}</div>`);
   if (setHTML('results-body', parts.join('')) && s) runVerify(r.round_id);
 }
@@ -592,12 +886,22 @@ function renderHistory() {
   else {
     parts.push(`<p style="margin:0 0 14px"><a class="btn btn-sm" href="#results/${d.rounds[0].round_id}">&#9654; WATCH FROM ROUND ${d.rounds[0].round_id}</a></p>`);
     parts.push(`<div class="hist-list">${d.rounds.map(r => {
-      const c = callout(r), s = r.settlement, open = !s && (r.state === 'commit' || r.state === 'reveal');
+      const c = callout(r), s = r.settlement, open = !s && OPEN_STATES.has(r.state);
       const names = winnerNames(r);
-      return `<a class="hist-row ${open ? 'open' : ''}" href="#results/${r.round_id}">
+      const seats = seatsOf(r);
+      let sub;
+      if (isVoid(r)) {
+        const refunded = ((s && s.payouts) || []).filter(p => p.kind === 'refund').reduce((a, p) => a + (p.amount || 0), 0);
+        sub = `${seats.bought} / ${seats.min} SEATS · REFUNDED ${fmt(refunded)} QU · CARRY ${fmt(s ? s.carry : r.carry_in)} · TABLE OPENED @${fmt(r.lobby_tick)}`;
+      } else if (isLobby(r)) {
+        sub = `${seats.bought} / ${seats.min} SEATS · FEE ${fmt(r.entry_fee)} QU · MATCH ${esc(matchLabel(r.match_bps))} · TABLE OPENED @${fmt(r.lobby_tick)}`;
+      } else {
+        sub = `${(r.entries || []).length} IN${hasLobby(r) ? ` · ${seats.bought} SEATS` : ''} · POT ${fmt(livePot(r))} QU${s ? ` · RAKE ${fmt(s.rake)} · CARRY ${fmt(s.carry)}` : ''} · ${esc(payoutModeLabel(r))} · PUBLISHED @${fmt(r.publish_tick)}${names.length ? ' · ' + esc(names.join(', ')) : ''}`;
+      }
+      return `<a class="hist-row ${open ? 'open' : ''} ${isVoid(r) ? 'void' : ''}" href="#results/${r.round_id}">
         <div class="hr-num">R${String(r.round_id).padStart(2, '0')}</div>
-        <div><div class="hr-title">${esc(r.title)} <span class="badge badge-${esc(r.state)}">${esc(r.state.toUpperCase())}</span></div>
-          <div class="hr-sub">${(r.entries || []).length} IN · POT ${fmt(livePot(r))} QU${s ? ` · RAKE ${fmt(s.rake)} · CARRY ${fmt(s.carry)}` : ''} · PUBLISHED @${fmt(r.publish_tick)}${names.length ? ' · ' + esc(names.join(', ')) : ''}</div></div>
+        <div><div class="hr-title">${esc(r.title)} <span class="badge badge-${esc(r.state)}">${esc(r.state.toUpperCase())}</span> ${beltTag(r, 'belt-sm')}</div>
+          <div class="hr-sub">${sub}</div></div>
         <div class="hr-call ${c.cls}">${esc(c.text)}${c.perfect ? '<small>PERFECT</small>' : ''}</div>
       </a>`;
     }).join('')}</div>`);
@@ -624,12 +928,15 @@ function renderJoin() {
         <h3>THE HOUSE</h3>
         <dl class="kv">
           <dt>HOUSE</dt><dd>${idLink(d.house)}</dd>
-          <dt>ENTRY FEE</dt><dd>${open ? qu(open.entry_fee) : '<span class="muted">see the next PUBLISH</span>'}</dd>
+          <dt>ENTRY FEE</dt><dd>${open ? qu(open.entry_fee) : '<span class="muted">see the next LOBBY or PUBLISH</span>'}</dd>
+          ${open && hasLobby(open) ? `<dt>LOBBY</dt><dd>${fmt(open.lobby_window)} ticks (~${ticksToHuman(open.lobby_window || 0)}) · ${fmt(open.min_players)} seats to ring the bell ${beltTag(open)}</dd>` : ''}
           <dt>COMMIT</dt><dd>${open ? `${fmt(open.commit_window)} ticks (~${ticksToHuman(open.commit_window)})` : '—'}</dd>
           <dt>REVEAL</dt><dd>${open ? `${fmt(open.reveal_window)} ticks (~${ticksToHuman(open.reveal_window)})` : '—'}</dd>
-          <dt>PAYOUT</dt><dd>(pot − rake) ÷ winners, remainder carries</dd>
+          <dt>SEED</dt><dd>${open ? `${open.match_bps ? `house matches stakes ${esc(matchLabel(open.match_bps))} up to ${fmt(open.house_seed)}` : `fixed ${fmt(open.house_seed)}`} + carry in` : 'carry in + matched stakes up to the cap'}</dd>
+          <dt>PAYOUT</dt><dd>${open ? `${esc(payoutModeLabel(open))} · ` : ''}(pot − rake) ÷ winners, remainder carries${open && open.payout_mode === 'first' ? '; first commit tick wins, later solvers get nothing' : ''}</dd>
           <dt>NO WINNER</dt><dd>pot − rake carries to the next round</dd>
-          <dt>REFUNDS</dt><dd>underpaid or late commits, in full</dd>
+          <dt>NO TABLE</dt><dd>a lobby that does not fill is void: every seat refunded</dd>
+          <dt>REFUNDS</dt><dd>underpaid or late commits, in full; a seat with no commit is forfeited</dd>
         </dl>
       </div>
     </div>
@@ -637,6 +944,7 @@ function renderJoin() {
       <h3>DOJO ETIQUETTE</h3>
       <ol class="rules">
         <li><b>BOW</b> when you enter. A bot that does not bow is a stranger.</li>
+        <li><b>TAKE A SEAT.</b> When the house opens a table, ENTER with the fee before the riddle exists. A seat you do not fight from is forfeited.</li>
         <li><b>WAIT FOR THE BELL.</b> The riddle is the bell. Commit before it rings and you strike the air.</li>
         <li><b>DO NOT STRIKE TWICE.</b> One commitment per round. A second is a strike against you.</li>
         <li><b>REVEAL WHAT YOU SEALED.</b> A reveal that does not match its commitment is a lie, and the dojo remembers lies.</li>
@@ -681,28 +989,36 @@ function updateTicks() {
   for (const r of S.data.open) {
     const id = r.round_id;
     let p = phaseAt(r, t);
-    if (p.phase === 'over' && S.source !== 'live') {
+    if ((p.phase === 'over' || p.phase === 'lobby_over') && S.source !== 'live') {
       // demo loop: restart the window so the cabinet never sits on zero
       S.fetchedAt = Date.now();
       p = phaseAt(r, nowTick());
     }
+    const lobby = p.phase === 'lobby' || p.phase === 'lobby_over';
+    const over = p.phase === 'over' || p.phase === 'lobby_over';
     const fill = $(`[data-meter="win-${id}"]`);
     if (fill) {
       const pct = p.total ? 100 * p.remaining / p.total : 0;
       fill.style.width = `${pct.toFixed(1)}%`;
-      fill.className = `meter-fill ${p.phase === 'reveal' ? (pct < 25 ? 'crit' : 'warn') : (pct < 20 ? 'warn' : '')}`;
+      fill.className = `meter-fill ${p.phase === 'reveal' ? (pct < 25 ? 'crit' : 'warn') : p.phase === 'lobby' ? (pct < 20 ? 'crit' : 'lobby') : (pct < 20 ? 'warn' : '')}`;
     }
     const lbl = $(`[data-phase-label="${id}"]`);
-    if (lbl) lbl.textContent = p.phase === 'commit' ? 'COMMIT WINDOW · SEAL YOUR ANSWER' : p.phase === 'reveal' ? 'REVEAL WINDOW · SHOW WHAT YOU SEALED' : 'TIME OVER · WAITING FOR SETTLEMENT';
+    if (lbl) lbl.textContent = p.phase === 'commit' ? 'COMMIT WINDOW · SEAL YOUR ANSWER'
+      : p.phase === 'reveal' ? 'REVEAL WINDOW · SHOW WHAT YOU SEALED'
+      : p.phase === 'lobby' ? 'LOBBY OPEN · BUY A SEAT'
+      : p.phase === 'lobby_over' ? 'LOBBY CLOSED · THE HOUSE PUBLISHES OR VOIDS'
+      : 'TIME OVER · WAITING FOR SETTLEMENT';
     const tl = $(`[data-ticks-left="${id}"]`); if (tl) tl.textContent = fmt(p.remaining);
-    const secs = $(`[data-secs-left="${id}"]`); if (secs) secs.textContent = p.phase === 'over' ? '0' : String(Math.ceil(p.remaining / 2));
+    const secs = $(`[data-secs-left="${id}"]`); if (secs) secs.textContent = over ? '0' : String(Math.ceil(p.remaining / 2));
     const cont = $(`[data-continue="${id}"]`); if (cont) cont.className = `continue ${p.phase}`;
-    const cl = $(`[data-continue-label="${id}"]`); if (cl) cl.textContent = p.phase === 'commit' ? 'COMMIT!' : p.phase === 'reveal' ? 'CONTINUE?' : 'TIME OVER';
-    const cs = $(`[data-continue-sub="${id}"]`); if (cs) cs.textContent = p.phase === 'over' ? 'THE HOUSE SETTLES AFTER THE WINDOW' : `SECONDS LEFT · WINDOW ENDS @ TICK ${fmt(p.end)}`;
+    const cl = $(`[data-continue-label="${id}"]`); if (cl) cl.textContent = p.phase === 'commit' ? 'COMMIT!' : p.phase === 'reveal' ? 'CONTINUE?' : p.phase === 'lobby' ? 'INSERT COIN' : p.phase === 'lobby_over' ? 'TABLE CLOSED' : 'TIME OVER';
+    const cs = $(`[data-continue-sub="${id}"]`); if (cs) cs.textContent = p.phase === 'over' ? 'THE HOUSE SETTLES AFTER THE WINDOW'
+      : p.phase === 'lobby_over' ? 'ENOUGH SEATS: THE RIDDLE COMES · TOO FEW: EVERY SEAT IS REFUNDED'
+      : `SECONDS LEFT · ${lobby ? 'LOBBY' : 'WINDOW'} ENDS @ TICK ${fmt(p.end)}`;
     const badge = $(`[data-phase-badge="${id}"]`);
     if (badge) {
-      const txt = p.phase === 'over' ? 'SETTLING' : p.phase.toUpperCase();
-      if (badge.textContent !== txt) { badge.textContent = txt; badge.className = `badge badge-${p.phase === 'over' ? 'settling' : p.phase}`; }
+      const txt = p.phase === 'over' ? 'SETTLING' : p.phase === 'lobby_over' ? 'CLOSED' : p.phase.toUpperCase();
+      if (badge.textContent !== txt) { badge.textContent = txt; badge.className = `badge badge-${p.phase === 'over' ? 'settling' : p.phase === 'lobby_over' ? 'settling' : p.phase}`; }
     }
   }
 }
@@ -726,11 +1042,15 @@ function showCallout(text, sub = '', kind = '') {
 }
 function replayRound(r) {
   const c = callout(r);
-  if (!r.settlement) { showCallout('FIGHT!', `ROUND ${r.round_id}`); SFX.fight(); return; }
+  if (!r.settlement) {
+    if (isLobby(r)) { showCallout('TABLE OPEN', `ROUND ${r.round_id} · INSERT COIN`, 'cyan'); SFX.coin(); return; }
+    showCallout('FIGHT!', `ROUND ${r.round_id}`); SFX.fight(); return;
+  }
   showCallout(`ROUND ${r.round_id}`, r.title);
   SFX.fight();
   setTimeout(() => {
-    if (c.cls === 'timeover') { showCallout('TIME OVER', 'NO WINNER · POT CARRIES', 'cyan'); SFX.over(); }
+    if (isVoid(r)) { showCallout('NO CONTEST', 'TABLE NEVER FILLED · SEATS REFUNDED', 'cyan'); SFX.over(); }
+    else if (c.cls === 'timeover') { showCallout('TIME OVER', 'NO WINNER · POT CARRIES', 'cyan'); SFX.over(); }
     else { showCallout(c.text, c.perfect ? 'PERFECT' : winnerNames(r).join(' · '), 'ko'); SFX.ko(); }
   }, 1400);
 }
@@ -742,7 +1062,12 @@ function diffCallouts(data) {
   const events = [];
   for (const r of data.rounds) {
     const p = prev.get(r.round_id), c = cur.get(r.round_id);
-    if (!p) { events.push(() => { showCallout(`ROUND ${r.round_id}`, 'FIGHT!'); SFX.fight(); }); continue; }
+    if (!p) {
+      if (c.state === 'lobby') events.push(() => { showCallout('TABLE OPEN', `ROUND ${r.round_id} · INSERT COIN`, 'cyan'); SFX.coin(); });
+      else events.push(() => { showCallout(`ROUND ${r.round_id}`, 'FIGHT!'); SFX.fight(); });
+      continue;
+    }
+    if (p.state === 'lobby' && c.state === 'commit') events.push(() => { showCallout('FIGHT!', `ROUND ${r.round_id} · THE TABLE IS FULL`); SFX.fight(); });
     if (p.state === 'commit' && c.state === 'reveal') events.push(() => { showCallout('REVEAL!', `ROUND ${r.round_id}`); SFX.reveal(); });
     if (!p.settled && c.settled) events.push(() => replayRound(r));
   }
