@@ -6,7 +6,12 @@ missing, so the page is watchable with no house running. Every hash is
 computed with the real qdojo.hashing module, so the page's VERIFY button
 passes on the sample data exactly as it will on a live export.
 
-    python3 apps/web/data/make-sample.py
+The story: three rounds in the original flow (stake on COMMIT, fixed seed),
+then lobby rounds (seats bought with ENTER before the riddle exists, the house
+matching stakes up to a cap), one lobby that never filled (void, refunded),
+one round in its reveal window and one table waiting for challengers.
+
+    cd apps/web && uv run python data/make-sample.py
 """
 import json
 import os
@@ -20,6 +25,8 @@ from qdojo import hashing  # noqa: E402
 rng = random.Random(0x444F)  # "DO" -- deterministic output
 RAKE_BPS = 250
 WC, WR = 600, 300
+WL = 400            # lobby window, ticks
+MIN_PLAYERS = 4
 
 
 def ident() -> str:
@@ -49,8 +56,12 @@ FIGHTERS = {
 ID = {name: v[0] for name, v in FIGHTERS.items()}
 
 # Each round: riddle, answer, publish tick, and a script of entries:
-#   (name, stake, offset_into_commit, offset_into_reveal or None, verdict, answer)
+#   (name, stake, offset_into_commit or None, offset_into_reveal or None, verdict, answer)
+# A commit offset of None means the fighter bought a seat and never committed.
 # Ticks are relative offsets from the window start so the story stays coherent.
+# Lobby rounds set `lobby`: the table opened WL+100 ticks before the publish tick
+# (or, for a void/open table, at `lobby_tick`). "winner" entries that were not
+# first are demoted to "solved" by build() when payout_mode is "first".
 ROUNDS = [
     dict(
         title="WHITE BELT: THE SUM",
@@ -59,7 +70,7 @@ ROUNDS = [
         answer_format="integer",
         answer="224",
         publish_tick=26_400_100,
-        seed=10_000,
+        seed=10_000, match_bps=0, belt="white", payout_mode="first",
         entry_fee=1_000,
         entries=[
             ("RYUBOT", 1_000, 41, 12, "winner", "224"),
@@ -74,11 +85,11 @@ ROUNDS = [
         answer_format="integer",
         answer="11",
         publish_tick=26_402_000,
-        seed=10_000,
+        seed=10_000, match_bps=0, belt="white", payout_mode="first",
         entry_fee=1_000,
         entries=[
             ("RYUBOT", 1_000, 25, 9, "winner", "11"),
-            ("KEN.EXE", 1_500, 33, 14, "winner", "11"),
+            ("KEN.EXE", 1_500, 33, 14, "winner", "11"),   # correct but not first: solved, no pay
             ("ZANG-1EF", 1_000, 140, 60, "wrong", "12"),
             (None, 1_000, 402, 220, "wrong", "10"),
         ],
@@ -90,7 +101,7 @@ ROUNDS = [
         answer_format="string",
         answer="racecar",
         publish_tick=26_404_000,
-        seed=10_000,
+        seed=10_000, match_bps=0, belt="yellow", payout_mode="first",
         entry_fee=1_000,
         entries=[
             ("RYUBOT", 1_000, 60, 20, "wrong", "level"),
@@ -107,14 +118,15 @@ ROUNDS = [
         answer_format="hex",
         answer="a2c1a",
         publish_tick=26_406_000,
-        seed=10_000,
+        seed=10_000, match_bps=10_000, belt="orange", payout_mode="first", lobby=True,
         entry_fee=2_000,
         entries=[
             ("ZANG-1EF", 2_000, 30, 8, "winner", "a2c1a"),
             ("RYUBOT", 2_000, 44, 15, "wrong", "a2c1b"),
-            ("KEN.EXE", 500, 52, 16, "underpaid", "a2c1a"),  # refunded
+            ("KEN.EXE", 500, None, None, "underpaid", None),   # seat underpaid, refunded
             ("CHUN-L1", 2_000, 71, None, "no_reveal", None),
-            ("BLANKA.SH", 2_000, 640, None, "late", None),  # committed after the bell, refunded
+            ("DHAL5IM", 2_000, None, None, "no_commit", None),  # bought a seat, never fought
+            ("BLANKA.SH", 2_000, None, None, "late", None),     # entered after the lobby closed, refunded
         ],
     ),
     dict(
@@ -124,7 +136,7 @@ ROUNDS = [
         answer_format="integer",
         answer="102334155",
         publish_tick=26_408_000,
-        seed=10_000,
+        seed=10_000, match_bps=5_000, belt="green", payout_mode="split", lobby=True,
         entry_fee=1_000,
         entries=[
             ("RYUBOT", 1_000, 18, 5, "winner", "102334155"),
@@ -142,7 +154,7 @@ ROUNDS = [
         answer_format="string",
         answer="nnamretuabalk",
         publish_tick=26_410_000,
-        seed=10_000,
+        seed=10_000, match_bps=10_000, belt="yellow", payout_mode="first", lobby=True,
         entry_fee=1_000,
         entries=[
             ("CHUN-L1", 1_000, 12, 4, "winner", "nnamretuabalk"),
@@ -158,13 +170,24 @@ ROUNDS = [
         answer_format="integer",
         answer="541",
         publish_tick=26_412_000,
-        seed=10_000,
+        seed=10_000, match_bps=10_000, belt="blue", payout_mode="first", lobby=True,
         entry_fee=1_000,
         entries=[
             ("KEN.EXE", 1_000, 9, 3, "winner", "541"),
-            ("RYUBOT", 1_000, 11, 6, "winner", "541"),
+            ("RYUBOT", 1_000, 11, 6, "winner", "541"),      # solved, not first
             ("DHAL5IM", 1_000, 30, 25, "wrong", "547"),
             ("BLANKA.SH", 1_000, 77, None, "no_reveal", None),
+        ],
+    ),
+    dict(
+        # a table that never filled: two of four seats, void, every seat refunded
+        title="BLUE BELT: AT THE TABLE",
+        lobby_tick=26_413_000,
+        seed=10_000, match_bps=10_000, belt="blue", payout_mode="first", lobby=True, void=True,
+        entry_fee=1_000,
+        entries=[
+            ("RYUBOT", 1_000, None, None, "void", None),
+            ("DHAL5IM", 1_000, None, None, "void", None),
         ],
     ),
     dict(
@@ -175,7 +198,7 @@ ROUNDS = [
         answer_format="hex",
         answer="4",  # kept secret; only the commitment is published
         publish_tick=26_414_000,
-        seed=10_000,
+        seed=10_000, match_bps=10_000, belt="orange", payout_mode="first", lobby=True,
         entry_fee=1_000,
         open=True,
         entries=[
@@ -187,10 +210,32 @@ ROUNDS = [
             ("BLANKA.SH", 1_000, 455, None, "pending", None),
         ],
     ),
+    dict(
+        # the next table, open: two of four seats bought, riddle still sealed
+        title="GREEN BELT: AT THE TABLE",
+        lobby_tick=26_414_000 + WC + 50,
+        seed=10_000, match_bps=10_000, belt="green", payout_mode="first", lobby=True,
+        entry_fee=1_500,
+        open=True,
+        entries=[
+            ("KEN.EXE", 1_500, None, None, "pending", None),
+            ("ZANG-1EF", 1_500, None, None, "pending", None),
+        ],
+    ),
 ]
 
-NOW_TICK = 26_414_000 + WC + 110  # 190 ticks left in round 8's reveal window
-GENERATED_AT = "2026-09-14T21:04:11Z"
+NOW_TICK = 26_414_000 + WC + 110  # 190 ticks left in round 9's reveal window, 340 in round 10's lobby
+GENERATED_AT = "2026-09-15T21:04:11Z"
+
+# Verdicts whose stake stays in the pot (docs/spec.md §5). "void" is refunded.
+COUNTED = ("winner", "solved", "wrong", "no_reveal", "no_commit", "bad_reveal", "pending")
+PLAYED = COUNTED  # what the house counts as a round played
+
+
+def seed_for(spec, carry_in: int, stakes: int) -> int:
+    cap, bps = spec["seed"], spec["match_bps"]
+    matched = min(cap, stakes * bps // 10000) if bps else cap
+    return carry_in + matched
 
 
 def build():
@@ -198,46 +243,95 @@ def build():
     carry = 0
     stats = {name: dict(rounds_played=0, wins=0, earned=0, strikes=0) for name in FIGHTERS}
     for i, spec in enumerate(ROUNDS, start=1):
-        public = dict(round_id=i, title=spec["title"], statement=spec["statement"],
-                      input=spec["input"], answer_format=spec["answer_format"])
-        canon = hashing.canonical_answer(spec["answer"], spec["answer_format"])
-        dojo_salt = salt()
-        house_seed = spec["seed"] + carry
-        carry = 0
-        P = spec["publish_tick"]
         is_open = spec.get("open", False)
+        is_void = spec.get("void", False)
+        lobby = spec.get("lobby", False)
+        published = not is_void and "publish_tick" in spec
+        P = spec.get("publish_tick")
+        L = spec.get("lobby_tick", (P - WL - 100) if (lobby and P is not None) else None)
+        carry_in = carry
+        carry = 0
+
+        public = canon = dojo_salt = None
+        if published:
+            public = dict(round_id=i, title=spec["title"], statement=spec["statement"],
+                          input=spec["input"], answer_format=spec["answer_format"])
+            canon = hashing.canonical_answer(spec["answer"], spec["answer_format"])
+            dojo_salt = salt()
+
+        if is_void:
+            state = "void"
+        elif not published:
+            state = "lobby"
+        elif is_open:
+            state = "reveal"
+        else:
+            state = "settled"
+
         r = dict(
-            round_id=i, title=spec["title"],
-            state="reveal" if is_open else "settled",
-            publish_tick=P, publish_tx=txid(),
+            round_id=i, title=spec["title"], state=state,
+            publish_tick=P if published else None, publish_tx=txid() if published else None,
+            lobby_tick=L, lobby_window=WL if lobby else 0,
+            min_players=MIN_PLAYERS if lobby else 0, belt=spec.get("belt", ""),
+            entrants=0,
             commit_window=WC, reveal_window=WR,
-            entry_fee=spec["entry_fee"], house_seed=house_seed,
-            riddle_hash=hashing.riddle_hash(public).hex(),
-            answer_commitment=hashing.answer_commitment(i, dojo_salt, canon).hex(),
+            entry_fee=spec["entry_fee"], house_seed=spec["seed"], rake_bps=RAKE_BPS,
+            payout_mode=spec.get("payout_mode", "first"), match_bps=spec["match_bps"], carry_in=carry_in,
+            riddle_hash=hashing.riddle_hash(public).hex() if published else None,
+            answer_commitment=hashing.answer_commitment(i, dojo_salt, canon).hex() if published else None,
             riddle=public, entries=[], settlement=None,
         )
-        played = set()
+
+        # entries: a seat (ENTER) in lobby rounds, then COMMIT / REVEAL where they happened
+        enter_off = 3
         for name, stake, c_off, r_off, verdict, answer in spec["entries"]:
+            enter_off += rng.randint(4, 40)
+            if lobby:
+                e_off = (WL + 5) if verdict == "late" else min(enter_off, WL - 1)
+                enter_tick, enter_tx = L + e_off, txid()
+            else:
+                enter_tick = enter_tx = None
+            committed = c_off is not None and P is not None
             e = dict(
                 identity=ID[name], name=name,
-                commit_tick=P + c_off, commit_tx=txid(), stake=stake,
-                reveal_tick=(P + WC + r_off) if r_off is not None else None,
-                reveal_tx=txid() if r_off is not None else None,
+                commit_tick=(P + c_off) if committed else None, commit_tx=txid() if committed else None,
+                stake=stake,
+                reveal_tick=(P + WC + r_off) if (committed and r_off is not None) else None,
+                reveal_tx=txid() if (committed and r_off is not None) else None,
                 verdict=verdict,
+                enter_tick=enter_tick, enter_tx=enter_tx,
                 answer=answer if not is_open else None,
             )
             r["entries"].append(e)
             if verdict in ("duplicate", "bad_reveal"):
                 stats[name]["strikes"] += 1
-            if verdict not in ("duplicate", "late", "underpaid"):
-                played.add(name)
-        for name in played:
-            stats[name]["rounds_played"] += 1
+            if verdict in PLAYED:
+                stats[name]["rounds_played"] += 1
+        r["entrants"] = len([e for e in r["entries"] if e["verdict"] not in ("late", "underpaid")])
 
-        if not is_open:
-            counted = [e for e in r["entries"] if e["verdict"] in ("winner", "wrong", "no_reveal", "bad_reveal")]
+        if is_void:
+            # the lobby never filled: nothing but refunds moved; the carry rolls on
+            payouts = []
+            for e in r["entries"]:
+                payouts.append(dict(identity=e["identity"], amount=e["stake"], kind="refund",
+                                    tx=txid(), tick=L + WL + 40 + len(payouts) * 3, confirmed=True))
+            settlement = dict(void=True, pot=0, rake=0, carry=carry_in, answer=None, dojo_salt=None,
+                              winners=[], payouts=payouts, settle_tx=txid())
+            settlement["hash"] = hashing.settlement_hash(settlement).hex()
+            r["settlement"] = settlement
+            carry = carry_in
+        elif not is_open and published:
+            # first-wins: later correct reveals are "solved", correct but unpaid
+            if r["payout_mode"] == "first":
+                winners = sorted((e for e in r["entries"] if e["verdict"] == "winner"),
+                                 key=lambda e: (e["commit_tick"], e["commit_tx"]))
+                for e in winners[1:]:
+                    if e["commit_tick"] != winners[0]["commit_tick"]:
+                        e["verdict"] = "solved"
+            counted = [e for e in r["entries"] if e["verdict"] in COUNTED]
             stakes = sum(e["stake"] for e in counted)
-            pot = house_seed + stakes
+            seed_used = seed_for(spec, carry_in, stakes)
+            pot = seed_used + stakes
             rake = stakes * RAKE_BPS // 10000
             winners = [e for e in r["entries"] if e["verdict"] == "winner"]
             payouts = []
@@ -256,12 +350,14 @@ def build():
                     payouts.append(dict(identity=e["identity"], amount=e["stake"], kind="refund",
                                         tx=txid(), tick=P + WC + WR + 40 + len(payouts) * 3, confirmed=True))
             settlement = dict(
-                pot=pot, rake=rake, carry=carry, answer=canon, dojo_salt=dojo_salt.hex(),
+                pot=pot, seed_used=seed_used, rake=rake, carry=carry, answer=canon, dojo_salt=dojo_salt.hex(),
                 winners=[e["identity"] for e in winners], payouts=payouts,
                 settle_tx=txid(),
             )
             settlement["hash"] = hashing.settlement_hash(settlement).hex()
             r["settlement"] = settlement
+        else:
+            carry = carry_in  # still open: the carry is riding in this round
         rounds.append(r)
 
     fighters = []
@@ -271,8 +367,8 @@ def build():
     history = dict(house=HOUSE, generated_at=GENERATED_AT, generated_tick=NOW_TICK,
                    rounds=rounds, fighters=fighters)
     board = dict(house=HOUSE, generated_tick=NOW_TICK,
-                 rounds=[{k: v for k, v in r.items() if k not in ("entries", "settlement")}
-                         for r in rounds if r["state"] in ("commit", "reveal")])
+                 rounds=[{k: v for k, v in r.items() if k != "entries"}
+                         for r in rounds if r["state"] in ("lobby", "commit", "reveal")])
     return history, board
 
 
@@ -285,4 +381,5 @@ if __name__ == "__main__":
         json.dump(board, f, indent=1, ensure_ascii=False)
         f.write("\n")
     print(f"wrote {len(history['rounds'])} rounds, {len(history['fighters'])} fighters, "
-          f"open: {[r['round_id'] for r in board['rounds']]}")
+          f"open: {[(r['round_id'], r['state']) for r in board['rounds']]}, "
+          f"void: {[r['round_id'] for r in history['rounds'] if r['state'] == 'void']}")

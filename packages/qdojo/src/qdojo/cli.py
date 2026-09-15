@@ -12,6 +12,7 @@ from .chain.base import Unknown, ChainError
 from .house import House, HouseError
 from .bot import Bot, BotError, fetch_board
 from . import nodes, onboard, spar
+from .shares import Shares, SharesError
 
 
 def _chain(a, signing: bool):
@@ -157,6 +158,55 @@ def cmd_nodes(a):
         print(f"{n['ip']:16} tick {n['tick']}  lag {n['lag']}")
 
 
+def _shares(a, signing):
+    _bot_defaults(a)
+    return Shares(_chain(a, signing))
+
+
+def cmd_bot_issue_shares(a):
+    sh = _shares(a, a.apply)
+    plan = sh.plan_issue(a.name, a.count)
+    print(json.dumps(plan, indent=2))
+    if not a.apply:
+        print("\nPLAN ONLY. The issuance fee above goes to Qx's shareholders and is not refundable. Re-run with --apply.", file=sys.stderr)
+        return
+    res = sh.issue(a.name, a.count)
+    print(f"issue {res.tx_id} scheduled for tick {res.scheduled_tick}; confirming…")
+    for _ in range(90):
+        try:
+            ok = sh.cli.confirm(res.tx_id, res.scheduled_tick); break
+        except Unknown:
+            time.sleep(1)
+    else:
+        ok = None
+    print("included" if ok else "NOT included; nothing was issued" if ok is False else "undecidable yet; check later")
+    if ok:
+        print(json.dumps(sh.owned(a.identity), indent=2))
+
+
+def cmd_bot_shares(a):
+    sh = _shares(a, False)
+    if a.name:
+        hs = sh.holders(a.issuer or a.identity, a.name)
+        total = sum(h.shares for h in hs)
+        for h in hs:
+            print(f"{h.owner}  {h.shares:>10}  {h.shares / total:7.2%}" if total else f"{h.owner}  {h.shares}")
+        print(f"holders {len(hs)}  total shares {total}")
+    else:
+        print(json.dumps(sh.owned(a.identity), indent=2))
+
+
+def cmd_bot_dividend(a):
+    sh = _shares(a, a.apply)
+    plan = sh.plan_dividend(a.name, a.amount)
+    print(json.dumps(plan, indent=2))
+    if not a.apply:
+        print("\nPLAN ONLY. Re-run with --apply to distribute.", file=sys.stderr)
+        return
+    res = sh.pay_dividend(a.name, a.amount)
+    print(f"distribution {res.tx_id} scheduled for tick {res.scheduled_tick}")
+
+
 def cmd_bot_run(a):
     _bot_defaults(a)
     chain = _chain(a, True)
@@ -229,6 +279,14 @@ def main(argv=None):
     d.add_argument("--name"); d.add_argument("--seed-from-stdin", action="store_true", help="import an existing seed instead of creating one")
     d.set_defaults(fn=cmd_bot_init)
     d = s.add_parser("nodes", help="discover live nodes and refresh the cache"); d.set_defaults(fn=cmd_nodes)
+    d = s.add_parser("issue-shares", help="issue this bot's shares on Qx (the issuance fee is yours)")
+    d.add_argument("name"); d.add_argument("count", type=int); d.add_argument("--apply", action="store_true")
+    d.set_defaults(fn=cmd_bot_issue_shares)
+    d = s.add_parser("shares", help="list holders of an asset, or every asset this identity owns")
+    d.add_argument("--name"); d.add_argument("--issuer"); d.set_defaults(fn=cmd_bot_shares)
+    d = s.add_parser("dividend", help="distribute QU to this bot's shareholders pro rata via QUtil")
+    d.add_argument("name"); d.add_argument("amount", type=int); d.add_argument("--apply", action="store_true")
+    d.set_defaults(fn=cmd_bot_dividend)
     d = s.add_parser("run"); d.add_argument("--board", required=True); d.add_argument("--solver", nargs="+", required=True)
     d.add_argument("--name")
     d.add_argument("--max-stake", type=int); d.add_argument("--solver-timeout", type=float, default=60.0)
@@ -238,7 +296,7 @@ def main(argv=None):
     a = p.parse_args(argv)
     try:
         a.fn(a)
-    except (HouseError, BotError, ChainError, R.RiddleError, payload.PayloadError, onboard.OnboardError, RuntimeError) as e:
+    except (HouseError, BotError, ChainError, R.RiddleError, payload.PayloadError, onboard.OnboardError, SharesError, RuntimeError) as e:
         sys.exit(f"qdojo: {e}")
 
 
