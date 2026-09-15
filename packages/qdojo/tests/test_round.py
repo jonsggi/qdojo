@@ -222,3 +222,27 @@ def test_first_wins_reveal_order_does_not_matter(txf, salt):
     ]
     ev = evaluate(s, obs, HOUSE, DOJO_SALT, ANSWER)
     assert ev.winners == [ALICE]
+
+
+def test_matching_seed_follows_stakes_up_to_the_cap(txf, salt):
+    s = spec(house_seed=5000, match_bps=10000, rake_bps=0, payout_mode=P.MODE_SPLIT)
+    obs = [txf.commit(ALICE, 110, 1, salt, "42", amount=1000), txf.commit(BOB, 111, 1, salt, "1", amount=2000),
+           txf.reveal(ALICE, 160, 1, salt, "42"), txf.reveal(BOB, 160, 1, salt, "1")]
+    ev = evaluate(s, obs, HOUSE, DOJO_SALT, ANSWER)
+    assert ev.seed_used == 3000 and ev.pot == 6000 and ev.payouts[0].amount == 6000
+    s2 = spec(house_seed=5000, match_bps=10000, payout_mode=P.MODE_SPLIT)
+    obs2 = [txf.commit(ALICE, 110, 1, salt, "42", amount=7000), txf.reveal(ALICE, 160, 1, salt, "42")]
+    ev2 = evaluate(s2, obs2, HOUSE, DOJO_SALT, ANSWER)
+    assert ev2.seed_used == 5000                                     # the cap binds
+    s3 = spec(house_seed=5000, match_bps=5000, payout_mode=P.MODE_SPLIT)
+    assert evaluate(s3, obs2, HOUSE, DOJO_SALT, ANSWER).seed_used == 3500   # half matching
+    s4 = spec(house_seed=5000, match_bps=0, payout_mode=P.MODE_SPLIT)
+    assert evaluate(s4, [], HOUSE, DOJO_SALT, ANSWER).seed_used == 5000     # fixed seed, even for nobody
+    s5 = spec(house_seed=5000, match_bps=10000, payout_mode=P.MODE_SPLIT)
+    assert evaluate(s5, [], HOUSE, DOJO_SALT, ANSWER).seed_used == 0        # matching: an empty round costs nothing
+
+
+def test_carry_in_is_always_in_the_pot(txf, salt):
+    s = spec(house_seed=5000, match_bps=10000, carry_in=800, payout_mode=P.MODE_SPLIT)
+    ev = evaluate(s, [], HOUSE, DOJO_SALT, ANSWER)
+    assert ev.seed_used == 800 and ev.pot == 800 and ev.carry == 800    # rolls on, untouched

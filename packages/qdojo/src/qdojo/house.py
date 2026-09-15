@@ -96,29 +96,30 @@ class House:
 
     # --------------------------------------------------------------- publish
     def publish(self, riddle_path: str, entry_fee: int, commit_window: int, reveal_window: int,
-                house_seed: int | None = None, payout_mode: int = payload.MODE_FIRST) -> dict:
+                house_seed: int | None = None, payout_mode: int = payload.MODE_FIRST, match_bps: int = 10000) -> dict:
         r, secret = R.load_authored(riddle_path)
         st = self.state()
         if r.round_id != st["next_round"]:
             raise HouseError(f"riddle is round {r.round_id}, next round is {st['next_round']}")
         if os.path.exists(self.rdir(r.round_id)):
             raise HouseError(f"round {r.round_id} already exists on disk")
+        carry_in = st["carry"]
         if house_seed is None:
-            house_seed = st["carry"] + self.seed_per_round
-        # The house must actually hold what it promises: pot seed is money.
+            house_seed = self.seed_per_round
+        # The house must actually hold what it promises: the cap plus the carry is money.
         bal = self.chain.balance(self.identity)  # raises Unknown: an unknown is not a zero
-        if bal < house_seed:
+        if bal < house_seed + carry_in:
             raise HouseError(f"house balance below the seed it would promise")
         uri = f"{self.uri_base}/rounds/{r.round_id}.json" if self.uri_base else ""
         msg = payload.Publish(r.round_id, entry_fee, commit_window, reveal_window, r.hash(),
-                              R.commitment_for(r, secret), uri, payout_mode)
+                              R.commitment_for(r, secret), uri, payout_mode, house_seed, match_bps)
         os.makedirs(self.rdir(r.round_id), mode=0o700)
         _write(self._rpath(r.round_id, "riddle.json"), r.public())
         _write(self._rpath(r.round_id, "secret.json"),
                {"answer": secret.answer, "dojo_salt": secret.dojo_salt.hex()}, mode=0o600)
         meta = {"round_id": r.round_id, "entry_fee": entry_fee, "commit_window": commit_window,
                 "reveal_window": reveal_window, "house_seed": house_seed, "rake_bps": self.rake_bps,
-                "payout_mode": payload.MODE_NAMES[payout_mode],
+                "payout_mode": payload.MODE_NAMES[payout_mode], "match_bps": match_bps, "carry_in": carry_in,
                 "riddle_hash": r.hash().hex(), "answer_commitment": msg.answer_commitment.hex(), "uri": uri,
                 "publish_tx": None, "scheduled_tick": None, "publish_tick": None, "status": "publishing"}
         _write(self._rpath(r.round_id, "meta.json"), meta)
@@ -126,7 +127,7 @@ class House:
         meta.update(publish_tx=res.tx_id, scheduled_tick=res.scheduled_tick)
         _write(self._rpath(r.round_id, "meta.json"), meta)
         st["next_round"] = r.round_id + 1
-        st["carry"] = max(0, st["carry"] - house_seed)   # the seed consumes carry first, never below zero
+        st["carry"] = 0   # the whole carry went into this round's pot as carry_in
         self._save_state(st)
         return meta
 
@@ -158,7 +159,8 @@ class House:
         return RoundSpec(round_id, m["publish_tick"], m["entry_fee"], m["commit_window"], m["reveal_window"],
                          bytes.fromhex(m["riddle_hash"]), bytes.fromhex(m["answer_commitment"]),
                          r.answer_format, m["house_seed"], m["rake_bps"],
-                         {v: k for k, v in payload.MODE_NAMES.items()}[m.get("payout_mode", "split")])
+                         {v: k for k, v in payload.MODE_NAMES.items()}[m.get("payout_mode", "split")],
+                         m.get("match_bps", 0), m.get("carry_in", 0))
 
     # --------------------------------------------------------------- collect
     def collect(self, up_to_tick: int | None = None) -> int:
@@ -364,7 +366,8 @@ class House:
                   "publish_tx": meta["publish_tx"], "commit_window": meta["commit_window"],
                   "reveal_window": meta["reveal_window"], "entry_fee": meta["entry_fee"],
                   "house_seed": meta["house_seed"], "rake_bps": meta["rake_bps"],
-                  "payout_mode": meta.get("payout_mode", "split"), "riddle_hash": meta["riddle_hash"],
+                  "payout_mode": meta.get("payout_mode", "split"), "match_bps": meta.get("match_bps", 0),
+                  "carry_in": meta.get("carry_in", 0), "riddle_hash": meta["riddle_hash"],
                   "answer_commitment": meta["answer_commitment"], "riddle": rpub,
                   "entries": entries, "settlement": settlement}
             rounds.append(rd)

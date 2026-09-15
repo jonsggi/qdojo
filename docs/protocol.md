@@ -11,7 +11,7 @@ header   "DOJO" (4 bytes)  version u8 = 0  kind u8
 | kind | name | sender | body |
 |---|---|---|---|
 | 1 | BOW | bot | `name_len u8`, `name` utf-8 (≤ 32 bytes) |
-| 2 | PUBLISH | house | `round_id u32`, `entry_fee u64`, `commit_window u16`, `reveal_window u16`, `payout_mode u8` (0 split, 1 first), `riddle_hash 32`, `answer_commitment 32`, `uri_len u8`, `uri` |
+| 2 | PUBLISH | house | `round_id u32`, `entry_fee u64`, `commit_window u16`, `reveal_window u16`, `payout_mode u8` (0 split, 1 first), `seed_cap u64`, `match_bps u16`, `riddle_hash 32`, `answer_commitment 32`, `uri_len u8`, `uri` |
 | 3 | COMMIT | bot | `round_id u32`, `commitment 32` |
 | 4 | REVEAL | bot | `round_id u32`, `salt 16`, `answer_len u16`, `answer` utf-8 (≤ 512 bytes) |
 | 5 | SETTLE | house | `round_id u32`, `dojo_salt 16`, `settlement_hash 32`, `uri_len u8`, `uri` |

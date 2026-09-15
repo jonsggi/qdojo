@@ -78,8 +78,8 @@ def make_bot(world, tmp_path, who, solver, name=None):
     return Bot(world.view(who), str(tmp_path / f"bot-{who[0]}"), solver, name=name)
 
 
-def publish_and_open(h, world, path, fee=1000, wc=50, wr=20, mode=payload.MODE_SPLIT):
-    meta = h.publish(path, fee, wc, wr, payout_mode=mode)
+def publish_and_open(h, world, path, fee=1000, wc=50, wr=20, mode=payload.MODE_SPLIT, match_bps=0):
+    meta = h.publish(path, fee, wc, wr, payout_mode=mode, match_bps=match_bps)
     world.core.advance(world.core.schedule_offset)
     return h.confirm_publish(meta["round_id"])
 
@@ -167,7 +167,7 @@ def test_no_winner_carries_into_next_round(world, tmp_path):
     assert doc["winners"] == [] and doc["payouts"] == []
     assert doc["carry"] == 10_000 + 1000 - 50 and h.state()["carry"] == doc["carry"]
     meta = h.publish(riddle_file(tmp_path, rid=2), 1000, 50, 20)
-    assert meta["house_seed"] == 10_000 + doc["carry"] and h.state()["carry"] == 0
+    assert meta["house_seed"] == 10_000 and meta["carry_in"] == doc["carry"] and h.state()["carry"] == 0
 
 
 def test_settle_survives_a_lost_send_without_double_paying(world, tmp_path):
@@ -302,9 +302,19 @@ def test_settle_refuses_when_a_node_cannot_confirm_an_entry(world, tmp_path):
 
 def test_explicit_house_seed_never_drives_carry_negative(world, tmp_path):
     h = make_house(world, tmp_path, seed=0)
-    meta = h.publish(riddle_file(tmp_path), 1000, 50, 20, house_seed=40_000)
+    meta = h.publish(riddle_file(tmp_path), 1000, 50, 20, house_seed=40_000, match_bps=0)
     assert meta["house_seed"] == 40_000 and h.state()["carry"] == 0
     world.core.advance(world.core.schedule_offset); h.confirm_publish(1)
     world.core.advance(1005 + 71 - world.core.tick + 25); h.collect()
     doc = h.settle(1, apply=True)
     assert doc["carry"] == 40_000 and h.state()["carry"] == 40_000  # round 1 on chain recorded 0 here
+
+
+def test_matching_house_pays_nothing_into_an_empty_round(world, tmp_path):
+    h = make_house(world, tmp_path, seed=5000, rake_bps=0)
+    publish_and_open(h, world, riddle_file(tmp_path), match_bps=10000)
+    world.core.advance(1005 + 71 - world.core.tick + 25); h.collect()
+    before = world.core.balances[HOUSE]
+    doc = h.settle(1, apply=True)
+    assert doc["seed_used"] == 0 and doc["pot"] == 0 and doc["carry"] == 0
+    assert world.core.balances[HOUSE] == before and h.state()["carry"] == 0

@@ -64,7 +64,13 @@ identity counts.
 ## 5. Money
 
 - **Stake.** The COMMIT amount. It must be at least `entry_fee` from PUBLISH.
-- **Pot** = house seed for the round + every counted stake.
+- **Seed.** PUBLISH announces a `seed_cap` and a `match_bps`. The house adds
+  `min(seed_cap, counted stakes × match_bps / 10000)` to the pot, plus any
+  carry from earlier rounds. With `match_bps = 10000` the house matches the
+  fighters one to one: an empty round costs nothing, and one fighter alone
+  can never take out more than a multiple of what they put in. With
+  `match_bps = 0` the seed is fixed at `seed_cap` (the round-one behaviour).
+- **Pot** = seed actually added + carry in + every counted stake.
 - **Rake** = `rake_bps / 10000` of the counted stakes, never of the seed.
 - **Solvers** are every identity with a counted commit and a correct reveal.
 - **Payout mode** is set per round in PUBLISH:

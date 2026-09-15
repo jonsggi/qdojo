@@ -18,12 +18,12 @@ def log(msg):
 
 class Spar:
     def __init__(self, house, belts, entry_fee, commit_window, reveal_window, riddle_dir, web_out, metrics_path,
-                 seed=None, payout_mode=1, poll=15):
+                 seed=None, payout_mode=1, poll=15, match_bps=10000):
         self.h, self.belts = house, belts
         self.entry_fee, self.wc, self.wr = entry_fee, commit_window, reveal_window
         self.riddle_dir, self.web_out, self.metrics_path = riddle_dir, web_out, metrics_path
         self.rng = random.Random(seed)
-        self.payout_mode, self.poll = payout_mode, poll
+        self.payout_mode, self.poll, self.match_bps = payout_mode, poll, match_bps
         os.makedirs(riddle_dir, mode=0o700, exist_ok=True)
 
     def _export(self):
@@ -44,7 +44,7 @@ class Spar:
             json.dump(r, f, indent=2, ensure_ascii=False)
         os.chmod(path, 0o600)
         before = self.h.chain.balance(self.h.identity)
-        meta = self.h.publish(path, self.entry_fee, self.wc, self.wr, payout_mode=self.payout_mode)
+        meta = self.h.publish(path, self.entry_fee, self.wc, self.wr, payout_mode=self.payout_mode, match_bps=self.match_bps)
         log(f"round {rid} [{belt}/{r['kind']}] PUBLISH {meta['publish_tx'][:8]}… sched {meta['scheduled_tick']}")
         for _ in range(120):
             try:
@@ -92,7 +92,8 @@ class Spar:
         return {"round_id": rid, "belt": belt, "kind": r["kind"], "title": r["title"], "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "publish_tick": spec.publish_tick, "entry_fee": spec.entry_fee, "house_seed": spec.house_seed,
                 "payout_mode": spec.payout_mode, "settled": bool(doc) and self.h.meta(rid)["status"] == "settled",
-                "pot": (doc or {}).get("pot"), "rake": (doc or {}).get("rake"), "carry": (doc or {}).get("carry"),
+                "pot": (doc or {}).get("pot"), "seed_used": (doc or {}).get("seed_used"), "match_bps": spec.match_bps,
+                "carry_in": spec.carry_in, "rake": (doc or {}).get("rake"), "carry": (doc or {}).get("carry"),
                 "n_entries": len(entries), "n_solved": len(solved),
                 "first_solve_latency_ticks": min((e["commit_latency_ticks"] for e in solved), default=None),
                 "stakes_in": sum(e["stake"] for e in entries),

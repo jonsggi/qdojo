@@ -35,9 +35,15 @@ class RoundSpec:
     riddle_hash: bytes
     answer_commitment: bytes
     answer_format: str
-    house_seed: int = 0
+    house_seed: int = 0          # fixed seed when match_bps == 0, else the cap
     rake_bps: int = 0
     payout_mode: int = payload.MODE_FIRST
+    match_bps: int = 0           # 10000 = the house matches stakes 1:1 up to house_seed
+    carry_in: int = 0            # pot money carried from earlier rounds, always in
+
+    def seed_for(self, stakes: int) -> int:
+        matched = min(self.house_seed, stakes * self.match_bps // 10000) if self.match_bps else self.house_seed
+        return self.carry_in + matched
 
     @property
     def commit_start(self):
@@ -88,6 +94,7 @@ class Evaluation:
     entries: list[Entry] = field(default_factory=list)
     strikes: dict[str, list[str]] = field(default_factory=dict)  # identity -> reasons
     pot: int = 0
+    seed_used: int = 0
     rake: int = 0
     carry: int = 0
     winners: list[str] = field(default_factory=list)
@@ -202,7 +209,8 @@ def evaluate(spec: RoundSpec, observed, house: str, dojo_salt: bytes | None, can
 
     counted = [e for e in ev.entries if e.verdict in ("winner", "solved", "wrong", "no_reveal", "bad_reveal")]
     stakes = sum(e.stake for e in counted)
-    ev.pot = spec.house_seed + stakes
+    ev.seed_used = spec.seed_for(stakes)
+    ev.pot = ev.seed_used + stakes
     ev.rake = stakes * spec.rake_bps // 10000
     distributable = ev.pot - ev.rake
     solved = sorted((e for e in ev.entries if e.verdict == "winner"), key=lambda e: (e.commit_tick, e.commit_tx))
@@ -236,7 +244,7 @@ def to_dict(ev: Evaluation, dojo_salt: bytes | None = None, answer: str | None =
         "round_id": ev.round_id,
         "entries": [vars(e) for e in ev.entries],
         "strikes": ev.strikes,
-        "pot": ev.pot, "rake": ev.rake, "carry": ev.carry,
+        "pot": ev.pot, "seed_used": ev.seed_used, "rake": ev.rake, "carry": ev.carry,
         "winners": list(ev.winners),
         "payouts": [vars(p) for p in ev.payouts],
     }

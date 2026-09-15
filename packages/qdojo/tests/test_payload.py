@@ -18,6 +18,7 @@ def test_bow_roundtrip():
 def test_publish_roundtrip():
     roundtrip(P.Publish(7, 1000, 600, 300, b"\x11" * 32, b"\x22" * 32, "https://dojo.example/r/7.json"))
     roundtrip(P.Publish(7, 1000, 600, 300, b"\x11" * 32, b"\x22" * 32, "", P.MODE_SPLIT))
+    roundtrip(P.Publish(7, 1000, 600, 300, b"\x11" * 32, b"\x22" * 32, "", P.MODE_FIRST, 5000, 10000))
     with pytest.raises(P.PayloadError):
         P.encode(P.Publish(7, 1000, 600, 300, b"\x11" * 32, b"\x22" * 32, "", 9))
 
