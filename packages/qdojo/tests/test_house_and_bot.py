@@ -75,8 +75,8 @@ def make_bot(world, tmp_path, who, solver, name=None):
     return Bot(world.view(who), str(tmp_path / f"bot-{who[0]}"), solver, name=name)
 
 
-def publish_and_open(h, world, path, fee=1000, wc=50, wr=20):
-    meta = h.publish(path, fee, wc, wr)
+def publish_and_open(h, world, path, fee=1000, wc=50, wr=20, mode=payload.MODE_SPLIT):
+    meta = h.publish(path, fee, wc, wr, payout_mode=mode)
     world.core.advance(world.core.schedule_offset)
     return h.confirm_publish(meta["round_id"])
 

@@ -11,7 +11,7 @@ ANSWER = "42"
 def spec(**over):
     d = dict(round_id=1, publish_tick=100, entry_fee=1000, commit_window=50, reveal_window=20,
              riddle_hash=b"\x11" * 32, answer_commitment=hashing.answer_commitment(1, DOJO_SALT, ANSWER),
-             answer_format="integer", house_seed=10_000, rake_bps=500)
+             answer_format="integer", house_seed=10_000, rake_bps=500, payout_mode=P.MODE_SPLIT)
     d.update(over)
     return RoundSpec(**d)
 
@@ -183,3 +183,42 @@ def test_money_balances_in_every_case(txf, salt):
     ev = evaluate(s, obs, HOUSE, DOJO_SALT, ANSWER)
     refunds = sum(p.amount for p in ev.payouts if p.kind == "refund")
     assert ev.total_out + ev.rake + ev.carry == ev.pot + refunds
+
+
+def test_first_wins_pays_the_earliest_commit_tick_only(txf, salt):
+    s = spec(payout_mode=P.MODE_FIRST)
+    obs = [
+        txf.commit(BOB, 112, 1, salt, "42", amount=1000),
+        txf.commit(ALICE, 110, 1, salt, "42", amount=1000),
+        txf.commit(CARL, 110, 1, salt, "41", amount=1000),   # early but wrong
+        txf.reveal(ALICE, 160, 1, salt, "42"), txf.reveal(BOB, 161, 1, salt, "42"), txf.reveal(CARL, 162, 1, salt, "41"),
+    ]
+    ev = evaluate(s, obs, HOUSE, DOJO_SALT, ANSWER)
+    assert ev.winners == [ALICE]
+    assert {e.identity: e.verdict for e in ev.entries} == {BOB: "solved", ALICE: "winner", CARL: "wrong"}
+    assert ev.pot == 13_000 and ev.rake == 150
+    assert [(p.identity, p.amount) for p in ev.payouts] == [(ALICE, 13_000 - 150)]
+
+
+def test_first_wins_same_tick_shares(txf, salt):
+    s = spec(payout_mode=P.MODE_FIRST)
+    obs = [
+        txf.commit(ALICE, 110, 1, salt, "42", amount=1000), txf.commit(BOB, 110, 1, salt, "42", amount=1000),
+        txf.commit(CARL, 111, 1, salt, "42", amount=1000),
+        txf.reveal(ALICE, 160, 1, salt, "42"), txf.reveal(BOB, 160, 1, salt, "42"), txf.reveal(CARL, 160, 1, salt, "42"),
+    ]
+    ev = evaluate(s, obs, HOUSE, DOJO_SALT, ANSWER)
+    assert ev.winners == [ALICE, BOB]
+    share = (13_000 - 150) // 2
+    assert sorted((p.identity, p.amount) for p in ev.payouts) == [(ALICE, share), (BOB, share)]
+    assert ev.carry == 13_000 - 150 - 2 * share
+
+
+def test_first_wins_reveal_order_does_not_matter(txf, salt):
+    s = spec(payout_mode=P.MODE_FIRST)
+    obs = [
+        txf.commit(ALICE, 110, 1, salt, "42", amount=1000), txf.commit(BOB, 120, 1, salt, "42", amount=1000),
+        txf.reveal(BOB, 151, 1, salt, "42"), txf.reveal(ALICE, 170, 1, salt, "42"),   # Bob reveals first
+    ]
+    ev = evaluate(s, obs, HOUSE, DOJO_SALT, ANSWER)
+    assert ev.winners == [ALICE]

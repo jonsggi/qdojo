@@ -43,7 +43,8 @@ def _house(a, signing):
 
 def cmd_house_publish(a):
     h = _house(a, True)
-    meta = h.publish(a.riddle, a.entry_fee, a.commit_window, a.reveal_window, a.house_seed)
+    mode = {v: k for k, v in payload.MODE_NAMES.items()}[a.payout_mode]
+    meta = h.publish(a.riddle, a.entry_fee, a.commit_window, a.reveal_window, a.house_seed, payout_mode=mode)
     print(f"round {meta['round_id']} PUBLISH {meta['publish_tx']} scheduled for tick {meta['scheduled_tick']}")
     for _ in range(90):
         try:
@@ -124,7 +125,9 @@ def main(argv=None):
     s = hp.add_subparsers(dest="sub", required=True)
     d = s.add_parser("publish"); d.add_argument("riddle"); d.add_argument("--entry-fee", type=int, required=True)
     d.add_argument("--commit-window", type=int, default=600); d.add_argument("--reveal-window", type=int, default=300)
-    d.add_argument("--house-seed", type=int, default=None); d.set_defaults(fn=cmd_house_publish)
+    d.add_argument("--house-seed", type=int, default=None)
+    d.add_argument("--payout-mode", choices=sorted(payload.MODE_NAMES.values()), default="first")
+    d.set_defaults(fn=cmd_house_publish)
     d = s.add_parser("confirm"); d.add_argument("round", type=int); d.set_defaults(fn=cmd_house_confirm)
     d = s.add_parser("collect"); d.set_defaults(fn=cmd_house_collect)
     d = s.add_parser("settle"); d.add_argument("round", type=int); d.add_argument("--apply", action="store_true")

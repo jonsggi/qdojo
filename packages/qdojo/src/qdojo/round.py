@@ -9,7 +9,8 @@ from . import hashing, payload
 
 MAX_TX_PER_ROUND = 8  # more than this in one round is a strike (docs/spec.md §6)
 
-VERDICTS = ("pending", "winner", "wrong", "no_reveal", "late", "underpaid", "duplicate", "bad_reveal")
+VERDICTS = ("pending", "winner", "solved", "wrong", "no_reveal", "late", "underpaid", "duplicate", "bad_reveal")
+# "solved": a correct reveal that the payout mode did not pay (first-wins, not first)
 
 
 @dataclass(frozen=True, order=True)
@@ -36,6 +37,7 @@ class RoundSpec:
     answer_format: str
     house_seed: int = 0
     rake_bps: int = 0
+    payout_mode: int = payload.MODE_FIRST
 
     @property
     def commit_start(self):
@@ -198,12 +200,18 @@ def evaluate(spec: RoundSpec, observed, house: str, dojo_salt: bytes | None, can
         if e.verdict == "pending":
             e.verdict = "no_reveal"
 
-    counted = [e for e in ev.entries if e.verdict in ("winner", "wrong", "no_reveal", "bad_reveal")]
+    counted = [e for e in ev.entries if e.verdict in ("winner", "solved", "wrong", "no_reveal", "bad_reveal")]
     stakes = sum(e.stake for e in counted)
     ev.pot = spec.house_seed + stakes
     ev.rake = stakes * spec.rake_bps // 10000
     distributable = ev.pot - ev.rake
-    ev.winners = [e.identity for e in ev.entries if e.verdict == "winner"]
+    solved = sorted((e for e in ev.entries if e.verdict == "winner"), key=lambda e: (e.commit_tick, e.commit_tx))
+    if spec.payout_mode == payload.MODE_FIRST and solved:
+        first_tick = solved[0].commit_tick
+        for e in solved:
+            if e.commit_tick != first_tick:
+                e.verdict = "solved"
+    ev.winners = [e.identity for e in solved if e.verdict == "winner"]
     if ev.winners:
         share = distributable // len(ev.winners)
         ev.payouts = [Payout(w, share, "win") for w in ev.winners if share > 0]

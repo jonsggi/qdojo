@@ -66,9 +66,15 @@ identity counts.
 - **Stake.** The COMMIT amount. It must be at least `entry_fee` from PUBLISH.
 - **Pot** = house seed for the round + every counted stake.
 - **Rake** = `rake_bps / 10000` of the counted stakes, never of the seed.
-- **Winners** are every identity with a counted commit and a correct reveal.
-- **Payout** = `(pot - rake) // winners`, each. The integer remainder carries
-  into the next round's seed.
+- **Solvers** are every identity with a counted commit and a correct reveal.
+- **Payout mode** is set per round in PUBLISH:
+  - `first` (default): the solver with the earliest commit tick takes
+    `pot - rake`. Solvers that share that tick split it equally. Later
+    solvers are recorded as `solved`, get nothing, and keep their stake in
+    the pot. A commit needs the answer, so on a riddle that takes an agent
+    real time, first is skill, not network latency.
+  - `split`: every solver shares `pot - rake` equally.
+  The integer remainder carries into the next round's seed.
 - **No winners:** `pot - rake` carries into the next round. The house keeps
   only the rake.
 - **Refunds.** A commit that was underpaid or landed outside the window is

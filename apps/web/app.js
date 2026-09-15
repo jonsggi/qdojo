@@ -195,7 +195,7 @@ function normalise(history, board) {
 }
 
 // ---------------------------------------------------------------- round helpers
-const COUNTED = new Set(['winner', 'wrong', 'no_reveal', 'bad_reveal', 'pending']);
+const COUNTED = new Set(['winner', 'solved', 'wrong', 'no_reveal', 'bad_reveal', 'pending']);
 function windows(r) {
   const c0 = r.publish_tick + 1, c1 = r.publish_tick + r.commit_window;
   return { c0, c1, r0: c1 + 1, r1: c1 + r.reveal_window };

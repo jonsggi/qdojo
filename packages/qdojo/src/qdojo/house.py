@@ -92,7 +92,7 @@ class House:
 
     # --------------------------------------------------------------- publish
     def publish(self, riddle_path: str, entry_fee: int, commit_window: int, reveal_window: int,
-                house_seed: int | None = None) -> dict:
+                house_seed: int | None = None, payout_mode: int = payload.MODE_FIRST) -> dict:
         r, secret = R.load_authored(riddle_path)
         st = self.state()
         if r.round_id != st["next_round"]:
@@ -107,13 +107,14 @@ class House:
             raise HouseError(f"house balance below the seed it would promise")
         uri = f"{self.uri_base}/rounds/{r.round_id}.json" if self.uri_base else ""
         msg = payload.Publish(r.round_id, entry_fee, commit_window, reveal_window, r.hash(),
-                              R.commitment_for(r, secret), uri)
+                              R.commitment_for(r, secret), uri, payout_mode)
         os.makedirs(self.rdir(r.round_id), mode=0o700)
         _write(self._rpath(r.round_id, "riddle.json"), r.public())
         _write(self._rpath(r.round_id, "secret.json"),
                {"answer": secret.answer, "dojo_salt": secret.dojo_salt.hex()}, mode=0o600)
         meta = {"round_id": r.round_id, "entry_fee": entry_fee, "commit_window": commit_window,
                 "reveal_window": reveal_window, "house_seed": house_seed, "rake_bps": self.rake_bps,
+                "payout_mode": payload.MODE_NAMES[payout_mode],
                 "riddle_hash": r.hash().hex(), "answer_commitment": msg.answer_commitment.hex(), "uri": uri,
                 "publish_tx": None, "scheduled_tick": None, "publish_tick": None, "status": "publishing"}
         _write(self._rpath(r.round_id, "meta.json"), meta)
@@ -152,7 +153,8 @@ class House:
         r = R.from_public(_read(self._rpath(round_id, "riddle.json")))
         return RoundSpec(round_id, m["publish_tick"], m["entry_fee"], m["commit_window"], m["reveal_window"],
                          bytes.fromhex(m["riddle_hash"]), bytes.fromhex(m["answer_commitment"]),
-                         r.answer_format, m["house_seed"], m["rake_bps"])
+                         r.answer_format, m["house_seed"], m["rake_bps"],
+                         {v: k for k, v in payload.MODE_NAMES.items()}[m.get("payout_mode", "split")])
 
     # --------------------------------------------------------------- collect
     def collect(self, up_to_tick: int | None = None) -> int:
@@ -324,7 +326,7 @@ class House:
                                 "commit_tx": e["commit_tx"], "stake": e["stake"], "reveal_tick": e["reveal_tick"],
                                 "reveal_tx": e["reveal_tx"], "verdict": e["verdict"],
                                 "answer": e["answer"] if settled else None})
-                if e["verdict"] in ("winner", "wrong", "no_reveal", "bad_reveal", "pending"):
+                if e["verdict"] in ("winner", "solved", "wrong", "no_reveal", "bad_reveal", "pending"):
                     f["rounds_played"] += 1
                 if e["verdict"] == "winner":
                     f["wins"] += 1
@@ -340,7 +342,8 @@ class House:
             rd = {"round_id": rid, "title": rpub["title"], "state": state, "publish_tick": meta["publish_tick"],
                   "publish_tx": meta["publish_tx"], "commit_window": meta["commit_window"],
                   "reveal_window": meta["reveal_window"], "entry_fee": meta["entry_fee"],
-                  "house_seed": meta["house_seed"], "rake_bps": meta["rake_bps"], "riddle_hash": meta["riddle_hash"],
+                  "house_seed": meta["house_seed"], "rake_bps": meta["rake_bps"],
+                  "payout_mode": meta.get("payout_mode", "split"), "riddle_hash": meta["riddle_hash"],
                   "answer_commitment": meta["answer_commitment"], "riddle": rpub,
                   "entries": entries, "settlement": settlement}
             rounds.append(rd)

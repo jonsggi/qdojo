@@ -13,6 +13,8 @@ MAX_URI = 255
 MAX_ANSWER = 512
 
 KIND_BOW, KIND_PUBLISH, KIND_COMMIT, KIND_REVEAL, KIND_SETTLE = 1, 2, 3, 4, 5
+MODE_SPLIT, MODE_FIRST = 0, 1          # payout modes (docs/spec.md §5)
+MODE_NAMES = {0: "split", 1: "first"}
 KIND_NAMES = {1: "BOW", 2: "PUBLISH", 3: "COMMIT", 4: "REVEAL", 5: "SETTLE"}
 
 
@@ -35,6 +37,7 @@ class Publish:
     riddle_hash: bytes
     answer_commitment: bytes
     uri: str
+    payout_mode: int = MODE_FIRST
     kind = KIND_PUBLISH
 
 
@@ -88,13 +91,20 @@ def _u(n, bits, what):
     return n
 
 
+def _mode(n):
+    if n not in MODE_NAMES:
+        raise PayloadError(f"unknown payout mode {n!r}")
+    return n
+
+
 def encode(m: Message) -> bytes:
     if isinstance(m, Bow):
         out = _hdr(KIND_BOW) + _text(m.name, MAX_NAME, "name")
     elif isinstance(m, Publish):
         out = (_hdr(KIND_PUBLISH)
-               + struct.pack("<IQHH", _u(m.round_id, 32, "round_id"), _u(m.entry_fee, 64, "entry_fee"),
-                             _u(m.commit_window, 16, "commit_window"), _u(m.reveal_window, 16, "reveal_window"))
+               + struct.pack("<IQHHB", _u(m.round_id, 32, "round_id"), _u(m.entry_fee, 64, "entry_fee"),
+                             _u(m.commit_window, 16, "commit_window"), _u(m.reveal_window, 16, "reveal_window"),
+                             _mode(m.payout_mode))
                + _bytes(m.riddle_hash, HASH_LEN, "riddle_hash")
                + _bytes(m.answer_commitment, HASH_LEN, "answer_commitment")
                + _text(m.uri, MAX_URI, "uri"))
@@ -155,9 +165,9 @@ def decode(b: bytes) -> Message:
     if kind == KIND_BOW:
         m = Bow(name=r.text(MAX_NAME, "name"))
     elif kind == KIND_PUBLISH:
-        rid, fee, wc, wr = r.unpack("<IQHH", "publish header")
+        rid, fee, wc, wr, mode = r.unpack("<IQHHB", "publish header")
         m = Publish(rid, fee, wc, wr, r.take(HASH_LEN, "riddle_hash"), r.take(HASH_LEN, "answer_commitment"),
-                    r.text(MAX_URI, "uri"))
+                    r.text(MAX_URI, "uri"), _mode(mode))
     elif kind == KIND_COMMIT:
         (rid,) = r.unpack("<I", "round_id")
         m = Commit(rid, r.take(HASH_LEN, "commitment"))
