@@ -14,6 +14,10 @@ class BotError(Exception):
     pass
 
 
+MAX_SOLVER_ATTEMPTS = 2   # a solver that fails twice on a riddle is not asked again this round
+MAX_COMMIT_SENDS = 3      # a commit that did not land is resent while the window is open
+
+
 def fetch_board(source: str) -> dict:
     if source.startswith("http://") or source.startswith("https://"):
         req = urllib.request.Request(source, headers={"User-Agent": "qdojo-bot/0"})
@@ -46,6 +50,16 @@ class Bot:
         os.chmod(tmp, 0o600)
         os.replace(tmp, self.path)
 
+    def chain_offset(self) -> int:
+        return getattr(self.chain, "schedule_offset", 20)
+
+    def _send_commit(self, rid: str, round_id: int, fee: int, commitment: bytes) -> str:
+        res = self.chain.send(self.house, fee, payload.encode(payload.Commit(round_id, commitment)), payload.INPUT_TYPE)
+        st = self.rounds[rid]
+        st.update(commit_tx=res.tx_id, commit_tick=res.scheduled_tick, commit_sends=st.get("commit_sends", 0) + 1)
+        self._save()
+        return f"round {rid}: committed {res.tx_id[:8]}… for tick {res.scheduled_tick}"
+
     def bow(self) -> str:
         if not self.name:
             raise BotError("no name to bow with")
@@ -73,7 +87,7 @@ class Bot:
             commit_end = rd["publish_tick"] + rd["commit_window"]
             reveal_end = commit_end + rd["reveal_window"]
             st = self.rounds.get(rid)
-            if st is None:
+            if st is None or (st.get("solver_failures") and "answer" not in st):
                 if now > commit_end:
                     continue  # too late to enter
                 if self.max_stake is not None and rd["entry_fee"] > self.max_stake:
@@ -81,22 +95,23 @@ class Bot:
                     self.rounds[rid] = {"skipped": True}
                     self._save()
                     continue
+                failures = (st or {}).get("solver_failures", 0)
+                if failures >= MAX_SOLVER_ATTEMPTS:
+                    continue
                 try:
                     canon = run_solver(self.solver_cmd, r.public(), self.solver_timeout)
                 except SolverError as e:
-                    actions.append(f"round {rid}: solver failed: {e}")
+                    self.rounds[rid] = {"solver_failures": failures + 1}
+                    self._save()
+                    actions.append(f"round {rid}: solver failed ({failures + 1}/{MAX_SOLVER_ATTEMPTS}): {e}")
                     continue
                 salt = secrets.token_bytes(hashing.SALT_LEN)
                 c = hashing.player_commitment(r.round_id, self.chain.identity, salt, canon)
                 # record BEFORE sending so a crash mid-send cannot lead to a second commit
                 self.rounds[rid] = {"answer": canon, "salt": salt.hex(), "commit_tx": None, "reveal_tx": None,
-                                    "commit_end": commit_end, "reveal_end": reveal_end}
+                                    "commit_end": commit_end, "reveal_end": reveal_end, "commit_sends": 0}
                 self._save()
-                res = self.chain.send(self.house, rd["entry_fee"], payload.encode(payload.Commit(r.round_id, c)),
-                                      payload.INPUT_TYPE)
-                self.rounds[rid].update(commit_tx=res.tx_id, commit_tick=res.scheduled_tick)
-                self._save()
-                actions.append(f"round {rid}: committed {res.tx_id[:8]}… for tick {res.scheduled_tick}")
+                actions.append(self._send_commit(rid, r.round_id, rd["entry_fee"], c))
             elif st.get("skipped"):
                 continue
             elif st.get("commit_tx") is None:
@@ -118,4 +133,22 @@ class Bot:
                 self.rounds[rid].update(reveal_tx=res.tx_id, reveal_tick=res.scheduled_tick)
                 self._save()
                 actions.append(f"round {rid}: revealed {res.tx_id[:8]}… for tick {res.scheduled_tick}")
+            elif st.get("reveal_tx") is None and now <= commit_end and not st.get("dead"):
+                # Commit window still open: make sure the commit actually landed, resend if it did not.
+                if now < st["commit_tick"] + 2:
+                    continue
+                try:
+                    landed = self.chain.confirm(st["commit_tx"], st["commit_tick"])
+                except Unknown:
+                    continue
+                if landed or st.get("commit_sends", 1) >= MAX_COMMIT_SENDS:
+                    if not landed:
+                        self.rounds[rid]["dead"] = True; self._save()
+                        actions.append(f"round {rid}: commit lost {MAX_COMMIT_SENDS} times, sitting this one out")
+                    continue
+                if now + self.chain_offset() + 2 > commit_end:
+                    continue
+                c = hashing.player_commitment(r.round_id, self.chain.identity, bytes.fromhex(st["salt"]), st["answer"])
+                actions.append(f"round {rid}: commit {st['commit_tx'][:8]}… not in tick {st['commit_tick']}, resending")
+                actions.append(self._send_commit(rid, r.round_id, rd["entry_fee"], c))
         return actions

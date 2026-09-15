@@ -318,3 +318,36 @@ def test_matching_house_pays_nothing_into_an_empty_round(world, tmp_path):
     doc = h.settle(1, apply=True)
     assert doc["seed_used"] == 0 and doc["pot"] == 0 and doc["carry"] == 0
     assert world.core.balances[HOUSE] == before and h.state()["carry"] == 0
+
+
+def test_bot_resends_a_lost_commit_while_the_window_is_open(world, tmp_path):
+    h = make_house(world, tmp_path)
+    publish_and_open(h, world, riddle_file(tmp_path))
+    h.collect(); h.export(str(tmp_path / "web"))
+    board = json.load(open(tmp_path / "web" / "board.json"))
+    alice = make_bot(world, tmp_path, ALICE, SUM_SOLVER)
+    world.core.drop_next_send = True
+    alice.step(board)                                                 # first commit is lost
+    world.core.advance(world.core.schedule_offset + 2)
+    acts = alice.step(board)
+    assert any("resending" in a for a in acts) and any("committed" in a for a in acts)
+    world.core.advance(world.core.schedule_offset + 2)
+    assert alice.step(board) == []                                     # landed now, nothing to do
+    assert len([o for o in world.core.ledger if o.source == ALICE]) == 1
+    world.core.advance(1005 + 51 - world.core.tick); alice.step(board)
+    world.core.advance(1005 + 71 - world.core.tick + 25); h.collect()
+    assert h.settle(1, apply=False)["winners"] == [ALICE]
+
+
+def test_bot_gives_up_on_a_failing_solver_after_two_attempts(world, tmp_path):
+    h = make_house(world, tmp_path)
+    publish_and_open(h, world, riddle_file(tmp_path))
+    h.collect(); h.export(str(tmp_path / "web"))
+    board = json.load(open(tmp_path / "web" / "board.json"))
+    counter = tmp_path / "calls"
+    bad = [sys.executable, "-c", f"open({str(counter)!r}, 'a').write('x'); import sys; sys.exit(1)"]
+    alice = make_bot(world, tmp_path, ALICE, bad)
+    for _ in range(5):
+        alice.step(board)
+    assert len(counter.read_text()) == 2
+    assert not any(o.source == ALICE for o in world.core.ledger)
