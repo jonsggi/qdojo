@@ -218,7 +218,9 @@ class House:
             ledger = [{"identity": p.identity, "amount": p.amount, "kind": p.kind, "tx": None, "tick": None,
                        "confirmed": False} for p in ev.payouts]
             _write(self._ledger_path(round_id), ledger)
-        doc = to_dict(ev); doc.update(void=True, house=self.identity, lobby_tx=meta["lobby_tx"], payouts=ledger)
+        doc = to_dict(ev)
+        doc.update(void=True, house=self.identity, lobby_tx=meta["lobby_tx"], payouts=ledger,
+                   answer=None, dojo_salt=None, seed_used=0, carry=meta.get("carry_in", 0))
         if not apply:
             return doc
         self._pay_ledger(round_id, ledger)
@@ -482,9 +484,7 @@ class House:
                 fighter(idn)["strikes"] += len(reasons)
             settlement = None
             if doc and doc.get("void"):
-                settlement = {"void": True, "pot": 0, "rake": 0, "carry": meta.get("carry_in", 0), "answer": None,
-                              "dojo_salt": None, "winners": [], "payouts": doc["payouts"], "hash": doc.get("hash"),
-                              "settle_tx": doc.get("settle_tx")}
+                settlement = dict(doc)  # exactly the hashed document, like a settled round
             elif doc:
                 for p in doc["payouts"]:
                     if p["kind"] == "win" and p["confirmed"]:

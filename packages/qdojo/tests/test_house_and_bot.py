@@ -421,6 +421,8 @@ def test_lobby_that_does_not_fill_is_void_and_refunded(world, tmp_path):
     assert h.meta(1)["status"] == "void" and h.state()["next_round"] == 2
     hist = h.export(str(tmp_path / "web"))
     assert hist["rounds"][0]["state"] == "void" and hist["rounds"][0]["settlement"]["void"]
+    vs = hist["rounds"][0]["settlement"]
+    assert hashing.settlement_hash(vs).hex() == vs["hash"] and vs["answer"] is None and vs["carry"] == 0
     assert json.load(open(tmp_path / "web" / "board.json"))["rounds"] == []
 
 
