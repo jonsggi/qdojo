@@ -11,6 +11,7 @@ from .chain.rpc import Indexer
 from .chain.base import Unknown, ChainError
 from .house import House, HouseError
 from .bot import Bot, BotError, fetch_board
+from . import nodes, onboard
 
 
 def _chain(a, signing: bool):
@@ -83,7 +84,66 @@ def cmd_house_export(a):
     print(f"exported {len(hist['rounds'])} rounds, {len(hist['fighters'])} fighters to {a.out}")
 
 
+def _bot_defaults(a):
+    """Fill --cli/--conf/--identity/--node from the bot profile and node cache
+    when they were not given, so `qdojo bot run` works after `qdojo bot init`."""
+    prof = onboard.load_profile(a.state)
+    try:
+        a.cli = onboard.find_cli(a.cli if a.cli != "qubic-cli" else None)
+    except onboard.OnboardError as e:
+        sys.exit(f"qdojo: {e}")
+    a.conf = a.conf or prof.get("conf") or os.path.join(a.state, "bot.conf")
+    if not os.path.exists(os.path.expanduser(a.conf)):
+        sys.exit(f"qdojo: no seed conf at {a.conf}; run `qdojo bot init` first")
+    derived = onboard.derive_identity(a.cli, os.path.expanduser(a.conf))
+    if a.identity and a.identity != derived:
+        sys.exit(f"qdojo: --identity {a.identity[:8]}… does not match the conf, which signs as {derived[:8]}…")
+    a.identity = derived
+    if not a.node:
+        a.node = nodes.best_node(a.state, nodes.cli_probe(a.cli))
+        print(f"node: {a.node} (auto-detected)", file=sys.stderr)
+
+
+def cmd_bot_init(a):
+    try:
+        cli = onboard.find_cli(a.cli if a.cli != "qubic-cli" else None)
+    except onboard.OnboardError as e:
+        sys.exit(f"qdojo: {e}")
+    conf = os.path.expanduser(a.conf or os.path.join(a.state, "bot.conf"))
+    created = False
+    if not os.path.exists(conf):
+        if a.seed_from_stdin:
+            seed = sys.stdin.readline().strip()
+        else:
+            seed = None
+        onboard.create_conf(conf, seed)
+        created = True
+    identity = onboard.derive_identity(cli, conf)
+    found = nodes.discover(nodes.cli_probe(cli)) if not a.node else [{"ip": a.node, "tick": 0, "lag": 0}]
+    if not found:
+        sys.exit("qdojo: no live Qubic node reachable; check your network or pass --node")
+    nodes.save(a.state, found)
+    onboard.save_profile(a.state, {"conf": conf, "identity": identity, "name": a.name, "cli": cli})
+    print(f"identity : {identity}")
+    print(f"conf     : {conf}  ({'NEW seed created, back this file up' if created else 'existing seed'})")
+    print(f"node     : {found[0]['ip']}  ({len(found)} live nodes agree, cached in {nodes.cache_path(a.state)})")
+    print(f"qubic-cli: {cli}")
+    print("\nFund the identity above with QU to play, then:\n"
+          f"  qdojo bot run --board <board url> --solver <your solver>{' --name ' + a.name if a.name else ''}")
+
+
+def cmd_nodes(a):
+    cli = onboard.find_cli(a.cli if a.cli != "qubic-cli" else None)
+    found = nodes.discover(nodes.cli_probe(cli))
+    if not found:
+        sys.exit("qdojo: no live node found")
+    nodes.save(a.state, found)
+    for n in found:
+        print(f"{n['ip']:16} tick {n['tick']}  lag {n['lag']}")
+
+
 def cmd_bot_run(a):
+    _bot_defaults(a)
     chain = _chain(a, True)
     bot = Bot(chain, a.state, a.solver, name=a.name, max_stake=a.max_stake, solver_timeout=a.solver_timeout)
     while True:
@@ -135,9 +195,14 @@ def main(argv=None):
     d = s.add_parser("export"); d.add_argument("--out", default="apps/web/data"); d.set_defaults(fn=cmd_house_export)
 
     bp = sub.add_parser("bot")
+    bp.add_argument("--state", default=os.path.expanduser("~/.qdojo/bot"), help="bot state dir (seed conf, profile, node cache)")
     s = bp.add_subparsers(dest="sub", required=True)
+    d = s.add_parser("init", help="create a seed if there is none, derive the identity, find live nodes")
+    d.add_argument("--name"); d.add_argument("--seed-from-stdin", action="store_true", help="import an existing seed instead of creating one")
+    d.set_defaults(fn=cmd_bot_init)
+    d = s.add_parser("nodes", help="discover live nodes and refresh the cache"); d.set_defaults(fn=cmd_nodes)
     d = s.add_parser("run"); d.add_argument("--board", required=True); d.add_argument("--solver", nargs="+", required=True)
-    d.add_argument("--state", default=os.path.expanduser("~/.qdojo/bot")); d.add_argument("--name")
+    d.add_argument("--name")
     d.add_argument("--max-stake", type=int); d.add_argument("--solver-timeout", type=float, default=60.0)
     d.add_argument("--interval", type=float, default=5.0); d.add_argument("--once", action="store_true")
     d.set_defaults(fn=cmd_bot_run)
@@ -145,7 +210,7 @@ def main(argv=None):
     a = p.parse_args(argv)
     try:
         a.fn(a)
-    except (HouseError, BotError, ChainError, R.RiddleError, payload.PayloadError) as e:
+    except (HouseError, BotError, ChainError, R.RiddleError, payload.PayloadError, onboard.OnboardError, RuntimeError) as e:
         sys.exit(f"qdojo: {e}")
 
 

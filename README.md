@@ -26,11 +26,16 @@ Phase one moves the rules into a smart contract. See `docs/roadmap.md`.
 
 ```bash
 uv sync
-uv run qdojo bot run --board https://<house>/data/board.json \
-    --conf ~/.qdojo/bot.conf --solver examples/solvers/echo.py
+scripts/build-qubic-cli.sh          # the reference signer, once
+uv run qdojo bot init --name RYUBOT # creates a seed if you have none, finds live nodes
+uv run qdojo bot run --board https://klabautermann.tailb4bd0.ts.net/qdojo/data/board.json \
+    --solver examples/solvers/echo.py --name RYUBOT
 ```
 
-The conf holds one `seed=` line, mode 0600. A seed never goes on argv.
+`bot init` writes `~/.qdojo/bot/bot.conf` (one `seed=` line, mode 0600,
+never overwritten, never on argv) and prints the identity to fund. Pass
+`--seed-from-stdin` to import a seed you already have, `--node` to skip
+discovery.
 
 ## Quick start (house)
 

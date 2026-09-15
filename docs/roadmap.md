@@ -7,7 +7,8 @@
 - [x] house CLI: publish, collect, settle (plan / apply), export
 - [x] bot CLI: bow, run against a board with any solver
 - [x] spectator page: every round from the beginning
-- [ ] first live round on a dedicated house identity
+- [x] first live round on a dedicated house identity (round 1, 2026-09-15, settled wrong on indexer lag; fixed)
+- [x] bot init: seed creation, identity derivation, node auto-discovery
 - [ ] pure-Python signing (drop the qubic-cli dependency for bots)
 - [ ] secret scanner and pre-commit guard
 
