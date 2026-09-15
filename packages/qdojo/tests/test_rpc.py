@@ -15,3 +15,14 @@ def test_parse_walks_nested_shapes_and_decodes_hex():
 def test_parse_ignores_unrelated_objects():
     assert parse_transactions({"code": 3, "message": "nope"}) == []
     assert parse_transactions([{"sourceId": "x"}]) == []
+
+
+def test_indexed_tick_reads_status(monkeypatch):
+    from qdojo.chain import rpc
+    from qdojo.chain.base import Unknown
+    import pytest
+    monkeypatch.setattr(rpc, "_get", lambda path, timeout=25: {"lastProcessedTick": {"tickNumber": 80276492, "epoch": 230}})
+    assert rpc.Indexer().indexed_tick() == 80276492
+    monkeypatch.setattr(rpc, "_get", lambda path, timeout=25: {"lastProcessedTick": {}})
+    with pytest.raises(Unknown):
+        rpc.Indexer().indexed_tick()

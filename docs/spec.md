@@ -109,8 +109,14 @@ For every round the house publishes, on chain and on the page:
 
 ## 8. Verification rules the house obeys
 
-- Discovery of transactions goes through the indexer. Every transaction that
-  affects money is then confirmed against a node before it counts.
+- Discovery of transactions goes through the indexer, and only up to the
+  tick the indexer itself reports as processed, minus a margin. An empty
+  answer for ticks past that point is not "no entries", it is "not indexed
+  yet" (learned in round 1, 2026-09-15). The collector also re-reads a window
+  behind its pointer every pass.
+- Every transaction of every counted entry is then confirmed in its tick
+  against a node before settlement may plan a single payout. A node that
+  cannot answer aborts; a node that disagrees with the indexer aborts.
 - The house never trusts a send. It confirms inclusion, then re-reads its own
   balance and compares to the expected delta.
 - Balances are read at the moment they are needed and never stored as facts.

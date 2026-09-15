@@ -19,6 +19,10 @@ class HouseError(Exception):
     pass
 
 
+INDEX_MARGIN = 2     # never scan the last ticks the indexer claims, it may still be filling them
+RESCAN = 300         # re-read this many ticks behind the scan pointer every time; tx_id dedup makes it free
+
+
 def _read(path, default=None):
     try:
         with open(path, encoding="utf-8") as f:
@@ -122,7 +126,7 @@ class House:
         meta.update(publish_tx=res.tx_id, scheduled_tick=res.scheduled_tick)
         _write(self._rpath(r.round_id, "meta.json"), meta)
         st["next_round"] = r.round_id + 1
-        st["carry"] = st["carry"] - (house_seed - self.seed_per_round) if house_seed >= self.seed_per_round else 0
+        st["carry"] = max(0, st["carry"] - house_seed)   # the seed consumes carry first, never below zero
         self._save_state(st)
         return meta
 
@@ -161,9 +165,11 @@ class House:
         """Pull every transaction to the house since the last scan into the
         append-only observed log. Returns how many new ones were stored."""
         st = self.state()
-        end = up_to_tick if up_to_tick is not None else self.chain.current_tick()
-        start = st["scanned_to"] + 1
-        if end < start:
+        node = up_to_tick if up_to_tick is not None else self.chain.current_tick()
+        indexed = self.chain.indexed_tick() - INDEX_MARGIN   # raises Unknown: an unindexed tick is not an empty tick
+        end = min(node, indexed)
+        start = max(1, st["scanned_to"] + 1 - RESCAN)
+        if end <= st["scanned_to"]:
             return 0
         fresh = self.chain.transactions_to(self.identity, start, end)  # raises Unknown, never returns "nothing" on failure
         known = {o.tx_id for o in self.observed()}
@@ -201,6 +207,7 @@ class House:
         if meta["status"] != "open":
             raise HouseError(f"round {round_id} is {meta['status']}, not open")
         ev = self.plan(round_id, final=True)
+        self._confirm_entries(ev)
         ledger = _read(self._ledger_path(round_id), [])
         if not ledger:
             ledger = [{"identity": p.identity, "amount": p.amount, "kind": p.kind, "tx": None, "tick": None,
@@ -250,6 +257,20 @@ class House:
             self._save_state(st)
             return doc
         return self._settlement_doc(round_id, ev, ledger, meta)
+
+    def _confirm_entries(self, ev):
+        """The indexer only discovers. Before an entry can move money, a node
+        must confirm each of its transactions in its tick (docs/spec.md §8)."""
+        for e in ev.entries:
+            for tx, tick, what in ((e.commit_tx, e.commit_tick, "commit"), (e.reveal_tx, e.reveal_tick, "reveal")):
+                if tx is None:
+                    continue
+                try:
+                    ok = self.chain.confirm(tx, tick)
+                except Unknown as x:
+                    raise HouseError(f"cannot confirm {what} {tx[:8]}… of {e.identity[:8]}… at tick {tick} against a node ({x}); retry, do not settle")
+                if not ok:
+                    raise HouseError(f"{what} {tx[:8]}… of {e.identity[:8]}… is NOT in tick {tick} on the node; indexer and node disagree, refusing to settle")
 
     def _wait_confirm(self, entry, ledger, round_id, before, tries=60, sleep=1.0):
         for _ in range(tries):

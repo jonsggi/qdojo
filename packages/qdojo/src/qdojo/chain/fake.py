@@ -14,6 +14,7 @@ class FakeChain:
         self.n = 0
         self.fail_reads = False
         self.drop_next_send = False
+        self.indexed_lag = 0  # how many ticks the fake "indexer" trails the node
 
     # --- test controls
     def advance(self, n: int = 1):
@@ -42,6 +43,11 @@ class FakeChain:
             raise Unknown("fake: reads failing")
         return self.tick
 
+    def indexed_tick(self) -> int:
+        if self.fail_reads:
+            raise Unknown("fake: reads failing")
+        return self.tick - self.indexed_lag
+
     def balance(self, identity: str) -> int:
         if self.fail_reads:
             raise Unknown("fake: reads failing")
@@ -69,4 +75,6 @@ class FakeChain:
             raise Unknown("fake: reads failing")
         if end_tick > self.tick:
             raise Unknown(f"fake: tick {end_tick} not yet processed")
-        return sorted(o for o in self.ledger if o.dest == identity and start_tick <= o.tick <= end_tick)
+        # Like the real indexer: ticks it has not processed yet simply are not there.
+        return sorted(o for o in self.ledger
+                      if o.dest == identity and start_tick <= o.tick <= min(end_tick, self.indexed_tick()))

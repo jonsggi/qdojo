@@ -54,6 +54,15 @@ class Indexer:
             raise Unknown("indexer tick-info had no tick")
         return t
 
+    def indexed_tick(self) -> int:
+        """The last tick the archive has processed. Anything after it is not
+        absent, it is not indexed yet."""
+        d = _get("/v1/status", self.timeout)
+        t = (d.get("lastProcessedTick") or {}).get("tickNumber")
+        if not isinstance(t, int) or t <= 0:
+            raise Unknown("indexer status had no lastProcessedTick")
+        return t
+
     def transactions_to(self, identity: str, start_tick: int, end_tick: int) -> list[Observed]:
         d = _get(f"/v2/identities/{identity}/transfers?startTick={start_tick}&endTick={end_tick}", self.timeout)
         if "code" in d and "message" in d and "transactions" not in d:

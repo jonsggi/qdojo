@@ -94,6 +94,11 @@ class QubicCli:
             raise Unknown(f"tick {tick} not answerable yet for {tx_id[:8]}…")
         return r
 
+    def indexed_tick(self) -> int:
+        if self.indexer is None:
+            raise ChainError("no indexer configured")
+        return self.indexer.indexed_tick()
+
     def transactions_to(self, identity: str, start_tick: int, end_tick: int) -> list[Observed]:
         if self.indexer is None:
             raise ChainError("no indexer configured for transaction discovery")

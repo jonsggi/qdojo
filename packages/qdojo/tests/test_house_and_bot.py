@@ -43,6 +43,9 @@ class View:
     def current_tick(self):
         return self.core.current_tick()
 
+    def indexed_tick(self):
+        return self.core.indexed_tick()
+
     def balance(self, i):
         return self.core.balance(i)
 
@@ -109,7 +112,7 @@ def test_full_round_two_bots_one_wins(world, tmp_path):
 
     with pytest.raises(HouseError):                                 # window not over: refuse to settle
         h.collect(); h.settle(1)
-    world.core.advance(1005 + 70 + 1 - world.core.tick)
+    world.core.advance(1005 + 70 + 1 + 2 - world.core.tick)   # past the reveal window and the index margin
     h.collect()
     plan = h.settle(1, apply=False)
     assert plan["winners"] == [ALICE] and plan["payouts"][0]["confirmed"] is False
@@ -244,3 +247,64 @@ def test_bot_ignores_a_tampered_riddle(world, tmp_path):
     board["rounds"][0]["riddle"]["input"] = "1\n1"
     alice = make_bot(world, tmp_path, ALICE, SUM_SOLVER)
     assert alice.step(board) == ["round 1: riddle hash mismatch, ignoring"]
+
+
+def test_collect_never_scans_past_the_indexer_and_catches_up_later(world, tmp_path):
+    """Regression for round 1, 2026-09-15: the indexer lagged the node, an empty
+    answer for unindexed ticks was taken as final, and the round settled with no entries."""
+    h = make_house(world, tmp_path)
+    publish_and_open(h, world, riddle_file(tmp_path))
+    alice = make_bot(world, tmp_path, ALICE, SUM_SOLVER)
+    h.collect(); h.export(str(tmp_path / "web"))
+    board = json.load(open(tmp_path / "web" / "board.json"))
+    alice.step(board)                                                # commit scheduled for tick+5
+    world.core.indexed_lag = 40                                      # the indexer falls behind
+    world.core.advance(30)                                           # commit landed at tick 1040; index at ~1000
+    h.collect()
+    assert h.state()["scanned_to"] < 1040 - 5                        # the pointer stays behind the index
+    assert not any(o.source == ALICE for o in h.observed())
+    world.core.indexed_lag = 0                                       # the indexer catches up
+    h.collect()
+    assert any(o.source == ALICE for o in h.observed())              # the commit is found, not lost
+
+
+def test_collect_rescans_behind_the_pointer(world, tmp_path):
+    h = make_house(world, tmp_path)
+    publish_and_open(h, world, riddle_file(tmp_path))
+    h.collect()
+    seen = h.state()["scanned_to"]
+    # a transaction that the index only surfaces later, inside an already-scanned range
+    late = world.core.inject(BOB, HOUSE, 5, b"", 0, at_tick=seen - 10)
+    world.core.ledger.append(late); world.core.pending = [(t, o) for t, o in world.core.pending if o is not late]
+    world.core.advance(5)
+    h.collect()
+    assert any(o.tx_id == late.tx_id for o in h.observed())
+
+
+def test_settle_refuses_when_a_node_cannot_confirm_an_entry(world, tmp_path):
+    h = make_house(world, tmp_path)
+    publish_and_open(h, world, riddle_file(tmp_path))
+    alice = make_bot(world, tmp_path, ALICE, SUM_SOLVER)
+    h.collect(); h.export(str(tmp_path / "web"))
+    board = json.load(open(tmp_path / "web" / "board.json"))
+    alice.step(board); world.core.advance(1005 + 51 - world.core.tick); alice.step(board)
+    world.core.advance(1005 + 71 - world.core.tick + 25); h.collect()
+    real = h.chain.confirm
+    h.chain.confirm = lambda tx, tick: False                         # node says: not in that tick
+    with pytest.raises(HouseError):
+        h.settle(1, apply=False)
+    h.chain.confirm = lambda tx, tick: (_ for _ in ()).throw(Unknown("node down"))
+    with pytest.raises(HouseError):
+        h.settle(1, apply=False)
+    h.chain.confirm = real
+    assert h.settle(1, apply=False)["winners"] == [ALICE]
+
+
+def test_explicit_house_seed_never_drives_carry_negative(world, tmp_path):
+    h = make_house(world, tmp_path, seed=0)
+    meta = h.publish(riddle_file(tmp_path), 1000, 50, 20, house_seed=40_000)
+    assert meta["house_seed"] == 40_000 and h.state()["carry"] == 0
+    world.core.advance(world.core.schedule_offset); h.confirm_publish(1)
+    world.core.advance(1005 + 71 - world.core.tick + 25); h.collect()
+    doc = h.settle(1, apply=True)
+    assert doc["carry"] == 40_000 and h.state()["carry"] == 40_000  # round 1 on chain recorded 0 here
