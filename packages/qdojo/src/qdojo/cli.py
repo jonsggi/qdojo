@@ -11,7 +11,7 @@ from .chain.rpc import Indexer
 from .chain.base import Unknown, ChainError
 from .house import House, HouseError
 from .bot import Bot, BotError, fetch_board
-from . import nodes, onboard
+from . import nodes, onboard, spar
 
 
 def _chain(a, signing: bool):
@@ -76,6 +76,18 @@ def cmd_house_settle(a):
     print(json.dumps(doc, indent=2))
     if not a.apply:
         print("\nPLAN ONLY. Nothing was sent. Re-run with --apply to pay.", file=sys.stderr)
+
+
+def cmd_house_spar(a):
+    h = _house(a, True)
+    sp = spar.Spar(h, a.belts.split(","), a.entry_fee, a.commit_window, a.reveal_window,
+                   riddle_dir=os.path.join(a.data, "riddles"), web_out=a.out,
+                   metrics_path=os.path.join(a.data, "metrics.jsonl"), seed=a.rng_seed, poll=a.poll)
+    sp.run(a.rounds, stop_below=a.stop_below)
+
+
+def cmd_house_metrics(a):
+    print(json.dumps(spar.summarize(os.path.join(a.data, "metrics.jsonl")), indent=2))
 
 
 def cmd_house_export(a):
@@ -193,6 +205,13 @@ def main(argv=None):
     d = s.add_parser("settle"); d.add_argument("round", type=int); d.add_argument("--apply", action="store_true")
     d.add_argument("--no-collect", dest="collect", action="store_false"); d.set_defaults(fn=cmd_house_settle)
     d = s.add_parser("export"); d.add_argument("--out", default="apps/web/data"); d.set_defaults(fn=cmd_house_export)
+    d = s.add_parser("spar", help="generated riddles, rounds back to back, metrics per round")
+    d.add_argument("--rounds", type=int, default=10); d.add_argument("--belts", default="white,yellow,orange,green,blue")
+    d.add_argument("--entry-fee", type=int, default=1000); d.add_argument("--commit-window", type=int, default=300)
+    d.add_argument("--reveal-window", type=int, default=120); d.add_argument("--out", default="apps/web/data")
+    d.add_argument("--rng-seed", type=int, default=None); d.add_argument("--poll", type=int, default=15)
+    d.add_argument("--stop-below", type=int, default=0); d.set_defaults(fn=cmd_house_spar)
+    d = s.add_parser("metrics"); d.set_defaults(fn=cmd_house_metrics)
 
     bp = sub.add_parser("bot")
     bp.add_argument("--state", default=os.path.expanduser("~/.qdojo/bot"), help="bot state dir (seed conf, profile, node cache)")
