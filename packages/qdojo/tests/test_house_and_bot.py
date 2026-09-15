@@ -351,3 +351,74 @@ def test_bot_gives_up_on_a_failing_solver_after_two_attempts(world, tmp_path):
         alice.step(board)
     assert len(counter.read_text()) == 2
     assert not any(o.source == ALICE for o in world.core.ledger)
+
+
+def drive_settle(h, world):
+    orig = h.chain.confirm
+    def confirm_advancing(tx, tick):
+        if world.core.tick < tick:
+            world.core.advance(tick - world.core.tick)
+        return orig(tx, tick)
+    h.chain.confirm = confirm_advancing
+
+
+def test_lobby_round_end_to_end(world, tmp_path):
+    h = make_house(world, tmp_path, seed=5000, rake_bps=0)
+    meta = h.open_lobby(riddle_file(tmp_path), 1000, 2, 40, 50, 20, belt="white")
+    world.core.advance(world.core.schedule_offset)
+    assert h.confirm_lobby(1)["status"] == "lobby"
+    h.collect(); h.export(str(tmp_path / "web"))
+    board = json.load(open(tmp_path / "web" / "board.json"))
+    rd = board["rounds"][0]
+    assert rd["state"] == "lobby" and rd["riddle"] is None and rd["min_players"] == 2 and rd["publish_tick"] is None
+    alice = make_bot(world, tmp_path, ALICE, SUM_SOLVER)
+    bob = make_bot(world, tmp_path, BOB, WRONG_SOLVER)
+    acts = alice.step(board) + bob.step(board)
+    assert len([a for a in acts if "entered the lobby" in a]) == 2
+    assert alice.step(board) == []                                    # one seat per identity
+    world.core.advance(world.core.schedule_offset + 3); h.collect()
+    assert sorted(h.lobby_entrants(1)) == sorted([ALICE, BOB])
+    assert world.core.balances[HOUSE] == 100_000 + 2000
+    meta = h.publish_from_lobby(1)
+    world.core.advance(world.core.schedule_offset)
+    assert h.confirm_publish(1)["status"] == "open"
+    h.collect(); h.export(str(tmp_path / "web"))
+    board = json.load(open(tmp_path / "web" / "board.json"))
+    assert board["rounds"][0]["state"] == "commit" and board["rounds"][0]["riddle"] is not None
+    acts = alice.step(board) + bob.step(board)
+    assert len([a for a in acts if "committed" in a]) == 2
+    world.core.advance(world.core.schedule_offset)
+    assert world.core.balances[HOUSE] == 100_000 + 2000               # commits carried no money
+    spec = h.spec(1)
+    world.core.advance(spec.commit_end + 1 - world.core.tick); alice.step(board); bob.step(board)
+    world.core.advance(spec.reveal_end + 3 - world.core.tick); h.collect()
+    drive_settle(h, world)
+    doc = h.settle(1, apply=True)
+    assert doc["winners"] == [ALICE] and doc["pot"] == 2000 + 2000 and doc["seed_used"] == 2000
+    assert world.core.balances[ALICE] == 5000 - 1000 + 4000
+    hist = h.export(str(tmp_path / "web"))
+    assert hist["rounds"][0]["state"] == "settled" and hist["rounds"][0]["entrants"] == 2
+
+
+def test_lobby_that_does_not_fill_is_void_and_refunded(world, tmp_path):
+    h = make_house(world, tmp_path, seed=5000)
+    h.open_lobby(riddle_file(tmp_path), 1000, 3, 40, 50, 20)
+    world.core.advance(world.core.schedule_offset); h.confirm_lobby(1)
+    h.collect(); h.export(str(tmp_path / "web"))
+    board = json.load(open(tmp_path / "web" / "board.json"))
+    alice = make_bot(world, tmp_path, ALICE, SUM_SOLVER); alice.step(board)
+    world.core.advance(world.core.schedule_offset + 2); h.collect()
+    assert h.lobby_entrants(1) == [ALICE]
+    with pytest.raises(HouseError):
+        h.void(1, apply=True)                                          # window still open
+    spec = h.spec(1)
+    world.core.advance(spec.lobby_end + 4 - world.core.tick); h.collect()
+    before = world.core.balances[HOUSE]
+    drive_settle(h, world)
+    doc = h.void(1, apply=True)
+    assert doc["void"] and doc["payouts"][0]["confirmed"] and doc["payouts"][0]["amount"] == 1000
+    assert world.core.balances[ALICE] == 5000 and world.core.balances[HOUSE] == before - 1000
+    assert h.meta(1)["status"] == "void" and h.state()["next_round"] == 2
+    hist = h.export(str(tmp_path / "web"))
+    assert hist["rounds"][0]["state"] == "void" and hist["rounds"][0]["settlement"]["void"]
+    assert json.load(open(tmp_path / "web" / "board.json"))["rounds"] == []

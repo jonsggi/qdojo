@@ -12,10 +12,11 @@ MAX_NAME = 32
 MAX_URI = 255
 MAX_ANSWER = 512
 
-KIND_BOW, KIND_PUBLISH, KIND_COMMIT, KIND_REVEAL, KIND_SETTLE = 1, 2, 3, 4, 5
+KIND_BOW, KIND_PUBLISH, KIND_COMMIT, KIND_REVEAL, KIND_SETTLE, KIND_LOBBY, KIND_ENTER = 1, 2, 3, 4, 5, 6, 7
 MODE_SPLIT, MODE_FIRST = 0, 1          # payout modes (docs/spec.md §5)
 MODE_NAMES = {0: "split", 1: "first"}
-KIND_NAMES = {1: "BOW", 2: "PUBLISH", 3: "COMMIT", 4: "REVEAL", 5: "SETTLE"}
+KIND_NAMES = {1: "BOW", 2: "PUBLISH", 3: "COMMIT", 4: "REVEAL", 5: "SETTLE", 6: "LOBBY", 7: "ENTER"}
+MAX_BELT = 16
 
 
 class PayloadError(ValueError):
@@ -67,7 +68,29 @@ class Settle:
     kind = KIND_SETTLE
 
 
-Message = Bow | Publish | Commit | Reveal | Settle
+@dataclass(frozen=True)
+class Lobby:
+    """The table opens: buy your entry before the riddle exists."""
+    round_id: int
+    entry_fee: int
+    min_players: int
+    lobby_window: int
+    commit_window: int
+    reveal_window: int
+    payout_mode: int
+    seed_cap: int
+    match_bps: int
+    belt: str
+    kind = KIND_LOBBY
+
+
+@dataclass(frozen=True)
+class Enter:
+    round_id: int
+    kind = KIND_ENTER
+
+
+Message = Bow | Publish | Commit | Reveal | Settle | Lobby | Enter
 
 
 def _hdr(kind: int) -> bytes:
@@ -119,6 +142,15 @@ def encode(m: Message) -> bytes:
         out = (_hdr(KIND_SETTLE) + struct.pack("<I", _u(m.round_id, 32, "round_id"))
                + _bytes(m.dojo_salt, SALT_LEN, "dojo_salt") + _bytes(m.settlement_hash, HASH_LEN, "settlement_hash")
                + _text(m.uri, MAX_URI, "uri"))
+    elif isinstance(m, Lobby):
+        out = (_hdr(KIND_LOBBY)
+               + struct.pack("<IQHHHHBQH", _u(m.round_id, 32, "round_id"), _u(m.entry_fee, 64, "entry_fee"),
+                             _u(m.min_players, 16, "min_players"), _u(m.lobby_window, 16, "lobby_window"),
+                             _u(m.commit_window, 16, "commit_window"), _u(m.reveal_window, 16, "reveal_window"),
+                             _mode(m.payout_mode), _u(m.seed_cap, 64, "seed_cap"), _u(m.match_bps, 16, "match_bps"))
+               + _text(m.belt, MAX_BELT, "belt"))
+    elif isinstance(m, Enter):
+        out = _hdr(KIND_ENTER) + struct.pack("<I", _u(m.round_id, 32, "round_id"))
     else:
         raise PayloadError(f"not a dojo message: {m!r}")
     if len(out) > MAX_PAYLOAD:
@@ -179,6 +211,12 @@ def decode(b: bytes) -> Message:
     elif kind == KIND_SETTLE:
         (rid,) = r.unpack("<I", "round_id")
         m = Settle(rid, r.take(SALT_LEN, "dojo_salt"), r.take(HASH_LEN, "settlement_hash"), r.text(MAX_URI, "uri"))
+    elif kind == KIND_LOBBY:
+        rid, fee, mp, lw, wc, wr, mode, cap, bps = r.unpack("<IQHHHHBQH", "lobby header")
+        m = Lobby(rid, fee, mp, lw, wc, wr, _mode(mode), cap, bps, r.text(MAX_BELT, "belt"))
+    elif kind == KIND_ENTER:
+        (rid,) = r.unpack("<I", "round_id")
+        m = Enter(rid)
     else:
         raise PayloadError(f"unknown kind {kind}")
     r.done(KIND_NAMES[kind])

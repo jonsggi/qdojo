@@ -9,7 +9,8 @@ from . import hashing, payload
 
 MAX_TX_PER_ROUND = 8  # more than this in one round is a strike (docs/spec.md §6)
 
-VERDICTS = ("pending", "winner", "solved", "wrong", "no_reveal", "late", "underpaid", "duplicate", "bad_reveal")
+VERDICTS = ("pending", "winner", "solved", "wrong", "no_reveal", "no_commit", "late", "underpaid", "duplicate", "bad_reveal", "void")
+# "no_commit": bought a seat in the lobby, never committed; the stake stays in the pot
 # "solved": a correct reveal that the payout mode did not pay (first-wins, not first)
 
 
@@ -28,7 +29,7 @@ class Observed:
 @dataclass(frozen=True)
 class RoundSpec:
     round_id: int
-    publish_tick: int
+    publish_tick: int | None
     entry_fee: int
     commit_window: int
     reveal_window: int
@@ -40,6 +41,17 @@ class RoundSpec:
     payout_mode: int = payload.MODE_FIRST
     match_bps: int = 0           # 10000 = the house matches stakes 1:1 up to house_seed
     carry_in: int = 0            # pot money carried from earlier rounds, always in
+    lobby_tick: int | None = None   # set: entries are bought in a lobby before publish (docs/spec.md §2)
+    lobby_window: int = 0
+    min_players: int = 0
+
+    @property
+    def lobby(self) -> bool:
+        return self.lobby_tick is not None
+
+    @property
+    def lobby_end(self):
+        return self.lobby_tick + self.lobby_window
 
     def seed_for(self, stakes: int) -> int:
         matched = min(self.house_seed, stakes * self.match_bps // 10000) if self.match_bps else self.house_seed
@@ -47,11 +59,11 @@ class RoundSpec:
 
     @property
     def commit_start(self):
-        return self.publish_tick + 1
+        return (self.publish_tick or 0) + 1
 
     @property
     def commit_end(self):
-        return self.publish_tick + self.commit_window
+        return (self.publish_tick or 0) + self.commit_window
 
     @property
     def reveal_start(self):
@@ -62,6 +74,8 @@ class RoundSpec:
         return self.commit_end + self.reveal_window
 
     def state_at(self, tick: int) -> str:
+        if self.lobby and self.publish_tick is None:
+            return "lobby" if tick <= self.lobby_end else "lobby_closed"
         if tick <= self.commit_end:
             return "commit"
         if tick <= self.reveal_end:
@@ -72,9 +86,11 @@ class RoundSpec:
 @dataclass
 class Entry:
     identity: str
-    commit_tick: int
-    commit_tx: str
+    commit_tick: int | None
+    commit_tx: str | None
     stake: int
+    enter_tick: int | None = None
+    enter_tx: str | None = None
     reveal_tick: int | None = None
     reveal_tx: str | None = None
     answer: str | None = None
@@ -152,7 +168,48 @@ def evaluate(spec: RoundSpec, observed, house: str, dojo_salt: bytes | None, can
         if tx_count[src] == MAX_TX_PER_ROUND + 1:
             ev.strike(src, "too_many_transactions")
 
-        if isinstance(m, payload.Commit):
+        if isinstance(m, payload.Enter):
+            if not spec.lobby:
+                ev.strike(src, "enter_without_lobby")
+                if o.amount > 0:
+                    refunds.append(Payout(src, o.amount, "refund"))
+                continue
+            if src in by_identity:
+                ev.strike(src, "duplicate_enter")
+                if o.amount > 0:
+                    refunds.append(Payout(src, o.amount, "refund"))
+                continue
+            if not (spec.lobby_tick + 1 <= o.tick <= spec.lobby_end):
+                ev.entries.append(Entry(src, None, None, o.amount, o.tick, o.tx_id, verdict="late"))
+                if o.amount > 0:
+                    refunds.append(Payout(src, o.amount, "refund"))
+                continue
+            if o.amount < spec.entry_fee:
+                ev.entries.append(Entry(src, None, None, o.amount, o.tick, o.tx_id, verdict="underpaid"))
+                if o.amount > 0:
+                    refunds.append(Payout(src, o.amount, "refund"))
+                continue
+            e = Entry(src, None, None, o.amount, o.tick, o.tx_id)
+            by_identity[src] = e
+            ev.entries.append(e)
+
+        elif isinstance(m, payload.Commit) and spec.lobby:
+            # In a lobby round the seat was bought with ENTER; a commit carries no stake.
+            if o.amount > 0:
+                refunds.append(Payout(src, o.amount, "refund"))
+            e = by_identity.get(src)
+            if e is None:
+                ev.strike(src, "commit_without_entry")
+                continue
+            if e.commit_tx is not None:
+                ev.strike(src, "duplicate_commit")
+                continue
+            if spec.publish_tick is None or not (spec.commit_start <= o.tick <= spec.commit_end):
+                ev.strike(src, "commit_outside_window")
+                continue
+            e.commit_tick, e.commit_tx = o.tick, o.tx_id
+
+        elif isinstance(m, payload.Commit):
             in_window = spec.commit_start <= o.tick <= spec.commit_end
             if src in by_identity:
                 ev.strike(src, "duplicate_commit")
@@ -177,7 +234,7 @@ def evaluate(spec: RoundSpec, observed, house: str, dojo_salt: bytes | None, can
             if o.amount > 0:
                 refunds.append(Payout(src, o.amount, "refund"))
             e = by_identity.get(src)
-            if e is None:
+            if e is None or e.commit_tx is None:
                 ev.strike(src, "reveal_without_commit")
                 continue
             if e.reveal_tx is not None:
@@ -205,9 +262,9 @@ def evaluate(spec: RoundSpec, observed, house: str, dojo_salt: bytes | None, can
 
     for e in ev.entries:
         if e.verdict == "pending":
-            e.verdict = "no_reveal"
+            e.verdict = "no_reveal" if e.commit_tx else "no_commit"
 
-    counted = [e for e in ev.entries if e.verdict in ("winner", "solved", "wrong", "no_reveal", "bad_reveal")]
+    counted = [e for e in ev.entries if e.verdict in ("winner", "solved", "wrong", "no_reveal", "no_commit", "bad_reveal")]
     stakes = sum(e.stake for e in counted)
     ev.seed_used = spec.seed_for(stakes)
     ev.pot = ev.seed_used + stakes
@@ -232,11 +289,22 @@ def evaluate(spec: RoundSpec, observed, house: str, dojo_salt: bytes | None, can
 
 
 def _commitment_of(observed, e: Entry) -> bytes:
+    if e.commit_tx is None:
+        return b""
     for o in observed:
         if o.tx_id == e.commit_tx:
             m = payload.try_decode(o.payload)
             return m.commitment if isinstance(m, payload.Commit) else b""
     return b""
+
+
+def void(spec: RoundSpec, observed, house: str) -> Evaluation:
+    """A lobby that did not fill: refund every entrant, nothing else moves."""
+    ev = evaluate(spec, observed, house, None, None, final=False)
+    ev.payouts = [Payout(e.identity, e.stake, "refund") for e in ev.entries if e.stake > 0]
+    for e in ev.entries:
+        e.verdict = "void"
+    return ev
 
 
 def to_dict(ev: Evaluation, dojo_salt: bytes | None = None, answer: str | None = None) -> dict:

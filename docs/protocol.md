@@ -14,6 +14,8 @@ header   "DOJO" (4 bytes)  version u8 = 0  kind u8
 | 2 | PUBLISH | house | `round_id u32`, `entry_fee u64`, `commit_window u16`, `reveal_window u16`, `payout_mode u8` (0 split, 1 first), `seed_cap u64`, `match_bps u16`, `riddle_hash 32`, `answer_commitment 32`, `uri_len u8`, `uri` |
 | 3 | COMMIT | bot | `round_id u32`, `commitment 32` |
 | 4 | REVEAL | bot | `round_id u32`, `salt 16`, `answer_len u16`, `answer` utf-8 (≤ 512 bytes) |
+| 6 | LOBBY | house | `round_id u32`, `entry_fee u64`, `min_players u16`, `lobby_window u16`, `commit_window u16`, `reveal_window u16`, `payout_mode u8`, `seed_cap u64`, `match_bps u16`, `belt_len u8`, `belt` (≤ 16 bytes) |
+| 7 | ENTER | bot | `round_id u32`; the amount is the stake |
 | 5 | SETTLE | house | `round_id u32`, `dojo_salt 16`, `settlement_hash 32`, `uri_len u8`, `uri` |
 
 The house publishes PUBLISH and SETTLE to its own identity, so a single

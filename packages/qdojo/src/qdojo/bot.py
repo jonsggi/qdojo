@@ -80,14 +80,41 @@ class Bot:
         actions = []
         for rd in board.get("rounds", []):
             rid = str(rd["round_id"])
+            st = self.rounds.get(rid)
+            lobby = rd.get("lobby_tick") is not None
+            if lobby and rd.get("publish_tick") is None:
+                # The table is open: buy the seat now, the riddle comes later.
+                if st is not None and (st.get("entered") or st.get("skipped")):
+                    continue
+                if now > rd["lobby_tick"] + rd["lobby_window"]:
+                    continue
+                if self.max_stake is not None and rd["entry_fee"] > self.max_stake:
+                    self.rounds[rid] = {"skipped": True}; self._save()
+                    actions.append(f"round {rid}: entry fee {rd['entry_fee']} above max stake, not entering")
+                    continue
+                self.rounds[rid] = {"entered": True, "enter_tx": None}
+                self._save()
+                res = self.chain.send(self.house, rd["entry_fee"], payload.encode(payload.Enter(rd["round_id"])),
+                                      payload.INPUT_TYPE)
+                self.rounds[rid].update(enter_tx=res.tx_id, enter_tick=res.scheduled_tick, stake=rd["entry_fee"])
+                self._save()
+                actions.append(f"round {rid}: entered the lobby {res.tx_id[:8]}… for tick {res.scheduled_tick}, stake {rd['entry_fee']}")
+                continue
+            if rd.get("riddle") is None:
+                continue
             r = R.from_public(rd["riddle"])
             if r.hash().hex() != rd["riddle_hash"]:
                 actions.append(f"round {rid}: riddle hash mismatch, ignoring")
                 continue
             commit_end = rd["publish_tick"] + rd["commit_window"]
             reveal_end = commit_end + rd["reveal_window"]
-            st = self.rounds.get(rid)
-            if st is None or (st.get("solver_failures") and "answer" not in st):
+            if lobby:
+                if st is None or not st.get("entered"):
+                    continue  # we never bought a seat; a commit now would only be a strike
+                if "answer" not in st and not st.get("solver_failures"):
+                    st = None  # fall into the solve-and-commit path below, keeping the lobby record
+            stake = 0 if lobby else rd["entry_fee"]
+            if st is None or ("answer" not in st and not st.get("skipped") and st.get("commit_tx") is None and not st.get("dead")):
                 if now > commit_end:
                     continue  # too late to enter
                 if self.max_stake is not None and rd["entry_fee"] > self.max_stake:
@@ -98,20 +125,21 @@ class Bot:
                 failures = (st or {}).get("solver_failures", 0)
                 if failures >= MAX_SOLVER_ATTEMPTS:
                     continue
+                keep = {k: v for k, v in (self.rounds.get(rid) or {}).items() if k in ("entered", "enter_tx", "enter_tick", "stake")}
                 try:
                     canon = run_solver(self.solver_cmd, r.public(), self.solver_timeout)
                 except SolverError as e:
-                    self.rounds[rid] = {"solver_failures": failures + 1}
+                    self.rounds[rid] = {**keep, "solver_failures": failures + 1}
                     self._save()
                     actions.append(f"round {rid}: solver failed ({failures + 1}/{MAX_SOLVER_ATTEMPTS}): {e}")
                     continue
                 salt = secrets.token_bytes(hashing.SALT_LEN)
                 c = hashing.player_commitment(r.round_id, self.chain.identity, salt, canon)
                 # record BEFORE sending so a crash mid-send cannot lead to a second commit
-                self.rounds[rid] = {"answer": canon, "salt": salt.hex(), "commit_tx": None, "reveal_tx": None,
+                self.rounds[rid] = {**keep, "answer": canon, "salt": salt.hex(), "commit_tx": None, "reveal_tx": None,
                                     "commit_end": commit_end, "reveal_end": reveal_end, "commit_sends": 0}
                 self._save()
-                actions.append(self._send_commit(rid, r.round_id, rd["entry_fee"], c))
+                actions.append(self._send_commit(rid, r.round_id, stake, c))
             elif st.get("skipped"):
                 continue
             elif st.get("commit_tx") is None:
@@ -150,5 +178,5 @@ class Bot:
                     continue
                 c = hashing.player_commitment(r.round_id, self.chain.identity, bytes.fromhex(st["salt"]), st["answer"])
                 actions.append(f"round {rid}: commit {st['commit_tx'][:8]}… not in tick {st['commit_tick']}, resending")
-                actions.append(self._send_commit(rid, r.round_id, rd["entry_fee"], c))
+                actions.append(self._send_commit(rid, r.round_id, stake, c))
         return actions

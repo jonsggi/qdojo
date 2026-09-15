@@ -246,3 +246,52 @@ def test_carry_in_is_always_in_the_pot(txf, salt):
     s = spec(house_seed=5000, match_bps=10000, carry_in=800, payout_mode=P.MODE_SPLIT)
     ev = evaluate(s, [], HOUSE, DOJO_SALT, ANSWER)
     assert ev.seed_used == 800 and ev.pot == 800 and ev.carry == 800    # rolls on, untouched
+
+
+def lobby_spec(**over):
+    d = dict(lobby_tick=50, lobby_window=40, min_players=2, publish_tick=100, match_bps=10000, house_seed=5000,
+             rake_bps=0, payout_mode=P.MODE_FIRST)
+    d.update(over)
+    return spec(**d)
+
+
+def test_lobby_round_stake_rides_on_enter_not_commit(txf, salt):
+    s = lobby_spec()
+    obs = [
+        txf.tx(ALICE, 60, P.Enter(1), amount=1000), txf.tx(BOB, 61, P.Enter(1), amount=1000),
+        txf.tx(CARL, 62, P.Enter(1), amount=1000),
+        txf.commit(ALICE, 110, 1, salt, "42", amount=0), txf.commit(BOB, 111, 1, salt, "42", amount=7),  # 7 refunded
+        txf.reveal(ALICE, 160, 1, salt, "42"), txf.reveal(BOB, 160, 1, salt, "42"),
+    ]
+    ev = evaluate(s, obs, HOUSE, DOJO_SALT, ANSWER)
+    assert {e.identity: e.verdict for e in ev.entries} == {ALICE: "winner", BOB: "solved", CARL: "no_commit"}
+    assert ev.pot == 3000 + 3000 and ev.winners == [ALICE]        # three seats, matched 1:1
+    assert sorted((p.identity, p.amount, p.kind) for p in ev.payouts) == [(ALICE, 6000, "win"), (BOB, 7, "refund")]
+    assert all(e.enter_tx for e in ev.entries)
+
+
+def test_lobby_commit_without_seat_is_a_strike_and_late_enter_refunded(txf, salt):
+    s = lobby_spec()
+    obs = [
+        txf.tx(ALICE, 60, P.Enter(1), amount=1000),
+        txf.tx(BOB, 95, P.Enter(1), amount=1000),                        # after the lobby window
+        txf.tx(CARL, 61, P.Enter(1), amount=999),                        # underpaid
+        txf.tx(ALICE, 62, P.Enter(1), amount=1000),                      # duplicate seat, refunded
+        txf.commit(BOB, 110, 1, salt, "42"), txf.reveal(BOB, 160, 1, salt, "42"),
+        txf.commit(ALICE, 110, 1, salt, "42"), txf.reveal(ALICE, 160, 1, salt, "42"),
+    ]
+    ev = evaluate(s, obs, HOUSE, DOJO_SALT, ANSWER)
+    assert ev.winners == [ALICE]
+    assert ev.strikes[BOB] == ["commit_without_entry", "reveal_without_commit"]
+    assert ev.strikes[ALICE] == ["duplicate_enter"]
+    assert sorted((p.identity, p.amount) for p in ev.payouts if p.kind == "refund") == [(ALICE, 1000), (BOB, 1000), (CARL, 999)]
+
+
+def test_void_refunds_every_seat(txf):
+    from qdojo.round import void
+    s = lobby_spec(publish_tick=None)
+    obs = [txf.tx(ALICE, 60, P.Enter(1), amount=1000), txf.tx(BOB, 95, P.Enter(1), amount=1000)]
+    ev = void(s, obs, HOUSE)
+    assert sorted((p.identity, p.amount, p.kind) for p in ev.payouts) == [(ALICE, 1000, "refund"), (BOB, 1000, "refund")]
+    assert all(e.verdict == "void" for e in ev.entries)
+    assert s.state_at(60) == "lobby" and s.state_at(91) == "lobby_closed"

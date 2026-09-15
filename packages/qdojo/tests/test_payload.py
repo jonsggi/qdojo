@@ -64,3 +64,10 @@ def test_invalid_utf8_in_text_is_rejected():
     raw = b"DOJO\x00\x01" + bytes([2]) + b"\xff\xfe"
     with pytest.raises(P.PayloadError):
         P.decode(raw)
+
+
+def test_lobby_and_enter_roundtrip():
+    roundtrip(P.Lobby(9, 1000, 3, 240, 300, 120, P.MODE_FIRST, 5000, 10000, "white"))
+    roundtrip(P.Enter(9))
+    with pytest.raises(P.PayloadError):
+        P.encode(P.Lobby(9, 1000, 3, 240, 300, 120, P.MODE_FIRST, 5000, 10000, "x" * 17))

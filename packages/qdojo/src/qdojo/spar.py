@@ -18,12 +18,13 @@ def log(msg):
 
 class Spar:
     def __init__(self, house, belts, entry_fee, commit_window, reveal_window, riddle_dir, web_out, metrics_path,
-                 seed=None, payout_mode=1, poll=15, match_bps=10000):
+                 seed=None, payout_mode=1, poll=15, match_bps=10000, min_players=0, lobby_window=0):
         self.h, self.belts = house, belts
         self.entry_fee, self.wc, self.wr = entry_fee, commit_window, reveal_window
         self.riddle_dir, self.web_out, self.metrics_path = riddle_dir, web_out, metrics_path
         self.rng = random.Random(seed)
         self.payout_mode, self.poll, self.match_bps = payout_mode, poll, match_bps
+        self.min_players, self.lobby_window = min_players, lobby_window
         os.makedirs(riddle_dir, mode=0o700, exist_ok=True)
 
     def _export(self):
@@ -44,8 +45,46 @@ class Spar:
             json.dump(r, f, indent=2, ensure_ascii=False)
         os.chmod(path, 0o600)
         before = self.h.chain.balance(self.h.identity)
-        meta = self.h.publish(path, self.entry_fee, self.wc, self.wr, payout_mode=self.payout_mode, match_bps=self.match_bps)
-        log(f"round {rid} [{belt}/{r['kind']}] PUBLISH {meta['publish_tx'][:8]}… sched {meta['scheduled_tick']}")
+        if self.min_players:
+            meta = self.h.open_lobby(path, self.entry_fee, self.min_players, self.lobby_window, self.wc, self.wr,
+                                     payout_mode=self.payout_mode, match_bps=self.match_bps, belt=belt)
+            log(f"round {rid} [{belt}/{r['kind']}] LOBBY {meta['lobby_tx'][:8]}… sched {meta['lobby_scheduled_tick']}, needs {self.min_players}")
+            for _ in range(120):
+                try:
+                    meta = self.h.confirm_lobby(rid); break
+                except Unknown:
+                    time.sleep(2)
+            if meta["status"] != "lobby":
+                log(f"round {rid} lobby {meta['status']}; skipping"); return None
+            spec = self.h.spec(rid)
+            self._export()
+            while True:
+                n = len(self.h.lobby_entrants(rid))
+                scanned = self.h.state()["scanned_to"]
+                if n >= self.min_players:
+                    log(f"round {rid} table full: {n} fighters"); break
+                if scanned > spec.lobby_end:
+                    log(f"round {rid} lobby closed with {n} < {self.min_players}: void, refunding")
+                    for attempt in range(40):
+                        try:
+                            doc = self.h.void(rid, apply=True)
+                            if self.h.meta(rid)["status"] == "void": break
+                        except (HouseError, Unknown) as e:
+                            log(f"void attempt {attempt + 1}: {e}")
+                        time.sleep(self.poll)
+                    self._export()
+                    row = self.metrics_row(rid, belt, r, spec, None, before, self.h.chain.balance(self.h.identity))
+                    row.update(void=True, n_entrants=n)
+                    with open(self.metrics_path, "a", encoding="utf-8") as f:
+                        f.write(json.dumps(row, sort_keys=True) + "\n")
+                    return row
+                time.sleep(self.poll)
+                self._export()
+            meta = self.h.publish_from_lobby(rid)
+            log(f"round {rid} PUBLISH {meta['publish_tx'][:8]}… sched {meta['scheduled_tick']}")
+        else:
+            meta = self.h.publish(path, self.entry_fee, self.wc, self.wr, payout_mode=self.payout_mode, match_bps=self.match_bps)
+            log(f"round {rid} [{belt}/{r['kind']}] PUBLISH {meta['publish_tx'][:8]}… sched {meta['scheduled_tick']}")
         for _ in range(120):
             try:
                 meta = self.h.confirm_publish(rid)
@@ -84,7 +123,8 @@ class Spar:
         entries = []
         for e in (doc or {}).get("entries", []):
             entries.append({"identity": e["identity"], "name": names.get(e["identity"]), "verdict": e["verdict"],
-                            "stake": e["stake"], "commit_latency_ticks": e["commit_tick"] - spec.publish_tick,
+                            "stake": e["stake"],
+                            "commit_latency_ticks": (e["commit_tick"] - spec.publish_tick) if e["commit_tick"] else None,
                             "reveal_latency_ticks": (e["reveal_tick"] - spec.reveal_start) if e["reveal_tick"] else None,
                             "answer": e["answer"]})
         solved = [e for e in entries if e["verdict"] in ("winner", "solved")]
@@ -95,7 +135,8 @@ class Spar:
                 "pot": (doc or {}).get("pot"), "seed_used": (doc or {}).get("seed_used"), "match_bps": spec.match_bps,
                 "carry_in": spec.carry_in, "rake": (doc or {}).get("rake"), "carry": (doc or {}).get("carry"),
                 "n_entries": len(entries), "n_solved": len(solved),
-                "first_solve_latency_ticks": min((e["commit_latency_ticks"] for e in solved), default=None),
+                "first_solve_latency_ticks": min((e["commit_latency_ticks"] for e in solved if e["commit_latency_ticks"] is not None), default=None),
+                "lobby": spec.lobby, "min_players": spec.min_players, "void": False,
                 "stakes_in": sum(e["stake"] for e in entries),
                 "payouts_out": sum(p["amount"] for p in payouts if p["confirmed"]),
                 "house_before": before, "house_after": after, "house_delta": after - before,

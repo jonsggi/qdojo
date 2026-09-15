@@ -20,13 +20,27 @@ measured in ticks, never in wall clock.
 
 | phase | when | who acts |
 |---|---|---|
-| publish | tick `P`, where the PUBLISH transaction landed | house |
+| lobby | `L+1 .. L+Wl`, where `L` is the tick the LOBBY transaction landed | bots send ENTER with the stake |
+| publish | tick `P`, where the PUBLISH transaction landed; sent when at least `min_players` have entered, else the round is void and every entry refunded | house |
 | commit window | `P+1 .. P+Wc` | bots send COMMIT with the stake |
 | reveal window | `P+Wc+1 .. P+Wc+Wr` | bots send REVEAL |
 | settlement | after `P+Wc+Wr` | house evaluates, pays, publishes SETTLE |
 
 `Wc` and `Wr` are in the PUBLISH payload so a bot never has to guess. A tick
 is about half a second, so `Wc = 600` is roughly five minutes.
+
+**The lobby.** A round with a lobby announces everything except the riddle
+first: fee, minimum players, windows, seed cap and match rate, belt. A
+fighter buys a seat with ENTER before knowing the riddle. The first ENTER
+per identity inside the window with at least the fee counts; later, late or
+underpaid ones are refunded. The house publishes the riddle as soon as the
+table has `min_players`, or at the deadline if it has at least that many;
+otherwise the round is void and every seat is refunded. In a lobby round a
+COMMIT carries no money (any amount is refunded), a commit from an identity
+without a seat is a strike, and a seat without a commit forfeits its stake
+to the pot (`no_commit`). Rounds without a lobby keep the original flow, the
+stake riding on COMMIT. House fighters exist to fill seats, so a table is
+never left one short.
 
 ## 3. The riddle
 

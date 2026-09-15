@@ -84,7 +84,7 @@ def cmd_house_spar(a):
     sp = spar.Spar(h, a.belts.split(","), a.entry_fee, a.commit_window, a.reveal_window,
                    riddle_dir=os.path.join(a.data, "riddles"), web_out=a.out,
                    metrics_path=os.path.join(a.data, "metrics.jsonl"), seed=a.rng_seed, poll=a.poll,
-                   match_bps=a.match_bps)
+                   match_bps=a.match_bps, min_players=a.min_players, lobby_window=a.lobby_window)
     sp.run(a.rounds, stop_below=a.stop_below)
 
 
@@ -214,6 +214,8 @@ def main(argv=None):
     d.add_argument("--reveal-window", type=int, default=120); d.add_argument("--out", default="apps/web/data")
     d.add_argument("--rng-seed", type=int, default=None); d.add_argument("--poll", type=int, default=15)
     d.add_argument("--stop-below", type=int, default=0); d.add_argument("--match-bps", type=int, default=10000)
+    d.add_argument("--min-players", type=int, default=0, help="open a lobby and publish only with this many seats bought")
+    d.add_argument("--lobby-window", type=int, default=240, help="ticks the table stays open")
     d.set_defaults(fn=cmd_house_spar)
     d = s.add_parser("metrics"); d.set_defaults(fn=cmd_house_metrics)
 

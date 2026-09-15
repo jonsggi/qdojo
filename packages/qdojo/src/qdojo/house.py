@@ -11,7 +11,7 @@ import time
 from dataclasses import asdict
 
 from . import hashing, payload, riddle as R
-from .round import RoundSpec, Observed, evaluate, to_dict
+from .round import RoundSpec, Observed, evaluate, to_dict, void as void_eval
 from .chain.base import Unknown, ChainError
 
 
@@ -131,6 +131,109 @@ class House:
         self._save_state(st)
         return meta
 
+    # ---------------------------------------------------------------- lobby
+    def open_lobby(self, riddle_path: str, entry_fee: int, min_players: int, lobby_window: int, commit_window: int,
+                   reveal_window: int, house_seed: int | None = None, payout_mode: int = payload.MODE_FIRST,
+                   match_bps: int = 10000, belt: str = "") -> dict:
+        """Announce a round and open the table. The riddle is chosen now and
+        kept secret; PUBLISH follows when the table is full."""
+        r, secret = R.load_authored(riddle_path)
+        st = self.state()
+        if r.round_id != st["next_round"]:
+            raise HouseError(f"riddle is round {r.round_id}, next round is {st['next_round']}")
+        if os.path.exists(self.rdir(r.round_id)):
+            raise HouseError(f"round {r.round_id} already exists on disk")
+        carry_in = st["carry"]
+        if house_seed is None:
+            house_seed = self.seed_per_round
+        bal = self.chain.balance(self.identity)
+        if bal < house_seed + carry_in:
+            raise HouseError("house balance below the seed it would promise")
+        uri = f"{self.uri_base}/rounds/{r.round_id}.json" if self.uri_base else ""
+        msg = payload.Lobby(r.round_id, entry_fee, min_players, lobby_window, commit_window, reveal_window,
+                            payout_mode, house_seed, match_bps, belt)
+        os.makedirs(self.rdir(r.round_id), mode=0o700)
+        _write(self._rpath(r.round_id, "riddle.json"), r.public())
+        _write(self._rpath(r.round_id, "secret.json"),
+               {"answer": secret.answer, "dojo_salt": secret.dojo_salt.hex()}, mode=0o600)
+        meta = {"round_id": r.round_id, "entry_fee": entry_fee, "commit_window": commit_window,
+                "reveal_window": reveal_window, "house_seed": house_seed, "rake_bps": self.rake_bps,
+                "payout_mode": payload.MODE_NAMES[payout_mode], "match_bps": match_bps, "carry_in": carry_in,
+                "riddle_hash": r.hash().hex(), "answer_commitment": R.commitment_for(r, secret).hex(), "uri": uri,
+                "belt": belt, "min_players": min_players, "lobby_window": lobby_window,
+                "lobby_tx": None, "lobby_scheduled_tick": None, "lobby_tick": None,
+                "publish_tx": None, "scheduled_tick": None, "publish_tick": None, "status": "lobby_opening"}
+        _write(self._rpath(r.round_id, "meta.json"), meta)
+        res = self.chain.send(self.identity, 0, payload.encode(msg), payload.INPUT_TYPE)
+        meta.update(lobby_tx=res.tx_id, lobby_scheduled_tick=res.scheduled_tick)
+        _write(self._rpath(r.round_id, "meta.json"), meta)
+        st["next_round"] = r.round_id + 1
+        st["carry"] = 0
+        self._save_state(st)
+        return meta
+
+    def confirm_lobby(self, round_id: int) -> dict:
+        meta = self.meta(round_id)
+        if meta["status"] != "lobby_opening":
+            return meta
+        ok = self.chain.confirm(meta["lobby_tx"], meta["lobby_scheduled_tick"])
+        meta.update(lobby_tick=meta["lobby_scheduled_tick"] if ok else None, status="lobby" if ok else "failed")
+        _write(self._rpath(round_id, "meta.json"), meta)
+        return meta
+
+    def lobby_entrants(self, round_id: int) -> list:
+        """Identities with a counted ENTER so far (from the observed log)."""
+        ev = self.plan(round_id, final=False)
+        return [e.identity for e in ev.entries if e.verdict == "pending"]
+
+    def publish_from_lobby(self, round_id: int) -> dict:
+        """The table is full (or the window closed with enough players): publish the riddle."""
+        meta = self.meta(round_id)
+        if meta["status"] != "lobby":
+            raise HouseError(f"round {round_id} is {meta['status']}, not in lobby")
+        r = R.from_public(_read(self._rpath(round_id, "riddle.json")))
+        mode = {v: k for k, v in payload.MODE_NAMES.items()}[meta["payout_mode"]]
+        msg = payload.Publish(round_id, meta["entry_fee"], meta["commit_window"], meta["reveal_window"], r.hash(),
+                              bytes.fromhex(meta["answer_commitment"]), meta["uri"], mode, meta["house_seed"], meta["match_bps"])
+        res = self.chain.send(self.identity, 0, payload.encode(msg), payload.INPUT_TYPE)
+        meta.update(publish_tx=res.tx_id, scheduled_tick=res.scheduled_tick, status="publishing")
+        _write(self._rpath(round_id, "meta.json"), meta)
+        return meta
+
+    def void(self, round_id: int, apply: bool = False) -> dict:
+        """A lobby that did not fill by its deadline: refund every entrant and close the round."""
+        meta = self.meta(round_id)
+        if meta["status"] == "void":
+            return _read(self._rpath(round_id, "settlement.json"))
+        if meta["status"] != "lobby":
+            raise HouseError(f"round {round_id} is {meta['status']}, cannot void")
+        spec = self.spec(round_id)
+        if self.state()["scanned_to"] <= spec.lobby_end:
+            raise HouseError(f"lobby of round {round_id} runs until tick {spec.lobby_end}; not over yet")
+        obs = [o for o in self.observed() if spec.lobby_tick <= o.tick <= spec.lobby_end + 1]
+        ev = void_eval(spec, obs, self.identity)
+        self._confirm_entries(ev)
+        ledger = _read(self._ledger_path(round_id), [])
+        if not ledger:
+            ledger = [{"identity": p.identity, "amount": p.amount, "kind": p.kind, "tx": None, "tick": None,
+                       "confirmed": False} for p in ev.payouts]
+            _write(self._ledger_path(round_id), ledger)
+        doc = to_dict(ev); doc.update(void=True, house=self.identity, lobby_tx=meta["lobby_tx"], payouts=ledger)
+        if not apply:
+            return doc
+        self._pay_ledger(round_id, ledger)
+        if all(e["confirmed"] for e in ledger):
+            doc["hash"] = hashing.settlement_hash(doc).hex()
+            sec = _read(self._rpath(round_id, "secret.json"))
+            msg = payload.Settle(round_id, bytes.fromhex(sec["dojo_salt"]), bytes.fromhex(doc["hash"]),
+                                 f"{self.uri_base}/settlements/{round_id}.json" if self.uri_base else "")
+            res = self.chain.send(self.identity, 0, payload.encode(msg), payload.INPUT_TYPE)
+            doc["settle_tx"], doc["settle_tick"] = res.tx_id, res.scheduled_tick
+            _write(self._rpath(round_id, "settlement.json"), doc)
+            meta["status"] = "void"; _write(self._rpath(round_id, "meta.json"), meta)
+            st = self.state(); st["carry"] += meta["carry_in"]; self._save_state(st)   # the carry rolls on
+        return doc
+
     def confirm_publish(self, round_id: int) -> dict:
         meta = self.meta(round_id)
         if meta["status"] == "open":
@@ -153,14 +256,15 @@ class House:
 
     def spec(self, round_id: int) -> RoundSpec:
         m = self.meta(round_id)
-        if m["publish_tick"] is None:
+        if m["publish_tick"] is None and m.get("lobby_tick") is None:
             raise HouseError(f"round {round_id} has no confirmed publish tick")
         r = R.from_public(_read(self._rpath(round_id, "riddle.json")))
         return RoundSpec(round_id, m["publish_tick"], m["entry_fee"], m["commit_window"], m["reveal_window"],
                          bytes.fromhex(m["riddle_hash"]), bytes.fromhex(m["answer_commitment"]),
                          r.answer_format, m["house_seed"], m["rake_bps"],
                          {v: k for k, v in payload.MODE_NAMES.items()}[m.get("payout_mode", "split")],
-                         m.get("match_bps", 0), m.get("carry_in", 0))
+                         m.get("match_bps", 0), m.get("carry_in", 0),
+                         m.get("lobby_tick"), m.get("lobby_window", 0), m.get("min_players", 0))
 
     # --------------------------------------------------------------- collect
     def collect(self, up_to_tick: int | None = None) -> int:
@@ -189,7 +293,9 @@ class House:
         st = self.state()
         if final is None:
             final = st["scanned_to"] > spec.reveal_end
-        obs = [o for o in self.observed() if spec.publish_tick <= o.tick <= spec.reveal_end + 1]
+        first = spec.lobby_tick if spec.lobby else spec.publish_tick
+        last = spec.reveal_end + 1 if spec.publish_tick is not None else spec.lobby_end + 1
+        obs = [o for o in self.observed() if first <= o.tick <= last]
         if final:
             if st["scanned_to"] <= spec.reveal_end:
                 raise HouseError(f"round {round_id}: reveal window ends at tick {spec.reveal_end}, scanned only to {st['scanned_to']}")
@@ -222,6 +328,26 @@ class House:
         if not apply:
             return self._settlement_doc(round_id, ev, ledger, meta)
 
+        self._pay_ledger(round_id, ledger)
+
+        if all(e["confirmed"] for e in ledger):
+            doc = self._settlement_doc(round_id, ev, ledger, meta)
+            doc["hash"] = hashing.settlement_hash(doc).hex()
+            uri = f"{self.uri_base}/settlements/{round_id}.json" if self.uri_base else ""
+            sec = _read(self._rpath(round_id, "secret.json"))
+            msg = payload.Settle(round_id, bytes.fromhex(sec["dojo_salt"]), bytes.fromhex(doc["hash"]), uri)
+            res = self.chain.send(self.identity, 0, payload.encode(msg), payload.INPUT_TYPE)
+            doc["settle_tx"], doc["settle_tick"] = res.tx_id, res.scheduled_tick
+            _write(self._rpath(round_id, "settlement.json"), doc)
+            meta["status"] = "settled"
+            _write(self._rpath(round_id, "meta.json"), meta)
+            st = self.state()
+            st["carry"] += ev.carry
+            self._save_state(st)
+            return doc
+        return self._settlement_doc(round_id, ev, ledger, meta)
+
+    def _pay_ledger(self, round_id, ledger):
         for entry in ledger:
             if entry["confirmed"]:
                 continue
@@ -243,28 +369,12 @@ class House:
             _write(self._ledger_path(round_id), ledger)  # recorded before it is believed
             self._wait_confirm(entry, ledger, round_id, before)
 
-        if all(e["confirmed"] for e in ledger):
-            doc = self._settlement_doc(round_id, ev, ledger, meta)
-            doc["hash"] = hashing.settlement_hash(doc).hex()
-            uri = f"{self.uri_base}/settlements/{round_id}.json" if self.uri_base else ""
-            sec = _read(self._rpath(round_id, "secret.json"))
-            msg = payload.Settle(round_id, bytes.fromhex(sec["dojo_salt"]), bytes.fromhex(doc["hash"]), uri)
-            res = self.chain.send(self.identity, 0, payload.encode(msg), payload.INPUT_TYPE)
-            doc["settle_tx"], doc["settle_tick"] = res.tx_id, res.scheduled_tick
-            _write(self._rpath(round_id, "settlement.json"), doc)
-            meta["status"] = "settled"
-            _write(self._rpath(round_id, "meta.json"), meta)
-            st = self.state()
-            st["carry"] += ev.carry
-            self._save_state(st)
-            return doc
-        return self._settlement_doc(round_id, ev, ledger, meta)
-
     def _confirm_entries(self, ev):
         """The indexer only discovers. Before an entry can move money, a node
         must confirm each of its transactions in its tick (docs/spec.md §8)."""
         for e in ev.entries:
-            for tx, tick, what in ((e.commit_tx, e.commit_tick, "commit"), (e.reveal_tx, e.reveal_tick, "reveal")):
+            for tx, tick, what in ((e.enter_tx, e.enter_tick, "enter"), (e.commit_tx, e.commit_tick, "commit"),
+                                   (e.reveal_tx, e.reveal_tick, "reveal")):
                 if tx is None:
                     continue
                 try:
@@ -330,13 +440,15 @@ class House:
         rounds, open_rounds = [], []
         for rid in self.round_ids():
             meta = self.meta(rid)
-            if meta["status"] in ("publishing", "failed"):
+            if meta["status"] in ("lobby_opening", "failed") or (meta["status"] == "publishing" and meta.get("lobby_tick") is None):
                 continue
-            rpub = _read(self._rpath(rid, "riddle.json"))
-            _write(os.path.join(out_dir, "rounds", f"{rid}.json"), rpub)
             spec = self.spec(rid)
-            settled = meta["status"] == "settled"
-            state = "settled" if settled else spec.state_at(now)
+            published = meta["publish_tick"] is not None
+            rpub = _read(self._rpath(rid, "riddle.json")) if published else None
+            if published:
+                _write(os.path.join(out_dir, "rounds", f"{rid}.json"), rpub)
+            settled = meta["status"] in ("settled", "void")
+            state = meta["status"] if settled else ("lobby" if not published else spec.state_at(now))
             ev = self.plan(rid, final=False) if not settled else None
             doc = _read(self._rpath(rid, "settlement.json")) if settled else None
             if doc:
@@ -348,8 +460,9 @@ class House:
                 entries.append({"identity": e["identity"], "name": f["name"], "commit_tick": e["commit_tick"],
                                 "commit_tx": e["commit_tx"], "stake": e["stake"], "reveal_tick": e["reveal_tick"],
                                 "reveal_tx": e["reveal_tx"], "verdict": e["verdict"],
+                                "enter_tick": e.get("enter_tick"), "enter_tx": e.get("enter_tx"),
                                 "answer": e["answer"] if settled else None})
-                if e["verdict"] in ("winner", "solved", "wrong", "no_reveal", "bad_reveal", "pending"):
+                if e["verdict"] in ("winner", "solved", "wrong", "no_reveal", "no_commit", "bad_reveal", "pending"):
                     f["rounds_played"] += 1
                 if e["verdict"] == "winner":
                     f["wins"] += 1
@@ -357,21 +470,29 @@ class House:
             for idn, reasons in strikes.items():
                 fighter(idn)["strikes"] += len(reasons)
             settlement = None
-            if doc:
+            if doc and doc.get("void"):
+                settlement = {"void": True, "pot": 0, "rake": 0, "carry": meta.get("carry_in", 0), "answer": None,
+                              "dojo_salt": None, "winners": [], "payouts": doc["payouts"], "hash": doc.get("hash"),
+                              "settle_tx": doc.get("settle_tx")}
+            elif doc:
                 for p in doc["payouts"]:
                     if p["kind"] == "win" and p["confirmed"]:
                         fighter(p["identity"])["earned"] += p["amount"]
                 settlement = dict(doc)  # exactly the hashed document, so the page can re-verify it
-            rd = {"round_id": rid, "title": rpub["title"], "state": state, "publish_tick": meta["publish_tick"],
+            rd = {"round_id": rid, "title": rpub["title"] if rpub else f"{meta.get('belt') or 'open'} belt: at the table",
+                  "state": state, "publish_tick": meta["publish_tick"],
+                  "lobby_tick": meta.get("lobby_tick"), "lobby_window": meta.get("lobby_window", 0),
+                  "min_players": meta.get("min_players", 0), "belt": meta.get("belt", ""),
+                  "entrants": len([e for e in entries if e["verdict"] not in ("late", "underpaid")]),
                   "publish_tx": meta["publish_tx"], "commit_window": meta["commit_window"],
                   "reveal_window": meta["reveal_window"], "entry_fee": meta["entry_fee"],
                   "house_seed": meta["house_seed"], "rake_bps": meta["rake_bps"],
                   "payout_mode": meta.get("payout_mode", "split"), "match_bps": meta.get("match_bps", 0),
-                  "carry_in": meta.get("carry_in", 0), "riddle_hash": meta["riddle_hash"],
-                  "answer_commitment": meta["answer_commitment"], "riddle": rpub,
+                  "carry_in": meta.get("carry_in", 0), "riddle_hash": meta["riddle_hash"] if published else None,
+                  "answer_commitment": meta["answer_commitment"] if published else None, "riddle": rpub,
                   "entries": entries, "settlement": settlement}
             rounds.append(rd)
-            if state in ("commit", "reveal"):
+            if state in ("lobby", "commit", "reveal"):
                 open_rounds.append({k: v for k, v in rd.items() if k != "entries"})
         for idn in bows:
             fighter(idn)
