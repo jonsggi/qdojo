@@ -287,6 +287,17 @@ class House:
         self._save_state(st)
         return len(new)
 
+    def rescan(self, start_tick: int, end_tick: int) -> int:
+        """Re-read a past range into the observed log (never moves the scan pointer)."""
+        end = min(end_tick, self.chain.indexed_tick() - INDEX_MARGIN)
+        fresh = self.chain.transactions_to(self.identity, start_tick, end)
+        known = {o.tx_id for o in self.observed()}
+        new = [o for o in fresh if o.tx_id not in known and o.tx_id]
+        with open(self._observed_path(), "a", encoding="utf-8") as f:
+            for o in sorted(new):
+                f.write(json.dumps(_obs_to_json(o), sort_keys=True) + "\n")
+        return len(new)
+
     # ---------------------------------------------------------------- settle
     def plan(self, round_id: int, final: bool | None = None):
         spec = self.spec(round_id)

@@ -427,7 +427,7 @@ function sealedHTML(r) {
     : `RIDDLE SEALED UNTIL THE TABLE IS FULL`;
   return `<div class="sealed">
     <span class="sealed-lock" aria-hidden="true"><svg viewBox="0 0 8 8" shape-rendering="crispEdges"><rect x="2" y="0" width="4" height="1" fill="#24e6ff"/><rect x="1" y="1" width="1" height="2" fill="#24e6ff"/><rect x="6" y="1" width="1" height="2" fill="#24e6ff"/><rect x="0" y="3" width="8" height="5" fill="#ffd200"/><rect x="3" y="4" width="2" height="1" fill="#0a0f3d"/><rect x="3" y="5" width="2" height="2" fill="#0a0f3d"/></svg></span>
-    <div class="sealed-text${isVoid(r) ? '' : ' blink'}">${line}</div>
+    <div class="sealed-text${isVoid(r) ? '' : ' pulse'}">${line}</div>
     <p class="tiny muted">${isVoid(r) ? 'No PUBLISH was sent, so there is no riddle hash and no answer commitment to verify. Only the refunds were settled.' : 'The house sends PUBLISH with the riddle hash and the answer commitment the moment the last seat is bought. Until then nobody, not even a seated fighter, knows the riddle.'}</p>
   </div>`;
 }

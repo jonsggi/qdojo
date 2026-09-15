@@ -66,6 +66,10 @@ def cmd_house_confirm(a):
 
 def cmd_house_collect(a):
     h = _house(a, False)
+    if a.rescan:
+        lo, hi = (int(x) for x in a.rescan.split("-"))
+        print(f"rescanned {lo}-{hi}: {h.rescan(lo, hi)} new transactions")
+        return
     n = h.collect()
     print(f"stored {n} new transactions, scanned to tick {h.state()['scanned_to']}")
 
@@ -255,7 +259,7 @@ def main(argv=None):
     d.add_argument("--match-bps", type=int, default=10000, help="house seed = min(cap, stakes*bps/10000); 0 = fixed seed")
     d.set_defaults(fn=cmd_house_publish)
     d = s.add_parser("confirm"); d.add_argument("round", type=int); d.set_defaults(fn=cmd_house_confirm)
-    d = s.add_parser("collect"); d.set_defaults(fn=cmd_house_collect)
+    d = s.add_parser("collect"); d.add_argument("--rescan", help="TICK-TICK: re-read a past range"); d.set_defaults(fn=cmd_house_collect)
     d = s.add_parser("settle"); d.add_argument("round", type=int); d.add_argument("--apply", action="store_true")
     d.add_argument("--no-collect", dest="collect", action="store_false"); d.set_defaults(fn=cmd_house_settle)
     d = s.add_parser("export"); d.add_argument("--out", default="apps/web/data"); d.set_defaults(fn=cmd_house_export)
