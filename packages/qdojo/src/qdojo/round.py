@@ -9,7 +9,8 @@ from . import hashing, payload
 
 MAX_TX_PER_ROUND = 8  # more than this in one round is a strike (docs/spec.md §6)
 
-VERDICTS = ("pending", "winner", "solved", "wrong", "no_reveal", "no_commit", "late", "underpaid", "duplicate", "bad_reveal", "void")
+VERDICTS = ("pending", "winner", "solved", "wrong", "no_reveal", "no_commit", "late", "underpaid", "duplicate", "bad_reveal", "void", "outranked")
+# "outranked": sat down at a table below its belt; refused and refunded
 # "no_commit": bought a seat in the lobby, never committed; the stake stays in the pot
 # "solved": a correct reveal that the payout mode did not pay (first-wins, not first)
 
@@ -44,6 +45,7 @@ class RoundSpec:
     lobby_tick: int | None = None   # set: entries are bought in a lobby before publish (docs/spec.md §2)
     lobby_window: int = 0
     min_players: int = 0
+    belt_rank: int | None = None    # the riddle's belt; None = no belt gate on this round
 
     @property
     def lobby(self) -> bool:
@@ -140,7 +142,7 @@ def dojo_messages(observed, house: str, round_id: int):
 
 
 def evaluate(spec: RoundSpec, observed, house: str, dojo_salt: bytes | None, canonical_answer: str | None,
-             final: bool = True) -> Evaluation:
+             final: bool = True, belts: dict | None = None) -> Evaluation:
     """Evaluate a round.
 
     With `final=False` (a mid-round view for the page) no verdict beyond
@@ -179,6 +181,11 @@ def evaluate(spec: RoundSpec, observed, house: str, dojo_salt: bytes | None, can
                 if o.amount > 0:
                     refunds.append(Payout(src, o.amount, "refund"))
                 continue
+            if _outranked(spec, belts, src):
+                ev.entries.append(Entry(src, None, None, o.amount, o.tick, o.tx_id, verdict="outranked"))
+                if o.amount > 0:
+                    refunds.append(Payout(src, o.amount, "refund"))
+                continue
             if not (spec.lobby_tick + 1 <= o.tick <= spec.lobby_end):
                 ev.entries.append(Entry(src, None, None, o.amount, o.tick, o.tx_id, verdict="late"))
                 if o.amount > 0:
@@ -211,6 +218,11 @@ def evaluate(spec: RoundSpec, observed, house: str, dojo_salt: bytes | None, can
 
         elif isinstance(m, payload.Commit):
             in_window = spec.commit_start <= o.tick <= spec.commit_end
+            if src not in by_identity and _outranked(spec, belts, src):
+                ev.entries.append(Entry(src, o.tick, o.tx_id, o.amount, verdict="outranked"))
+                if o.amount > 0:
+                    refunds.append(Payout(src, o.amount, "refund"))
+                continue
             if src in by_identity:
                 ev.strike(src, "duplicate_commit")
                 if o.amount > 0:
@@ -286,6 +298,13 @@ def evaluate(spec: RoundSpec, observed, house: str, dojo_salt: bytes | None, can
     ev.payouts += refunds
     assert ev.total_out + ev.rake + ev.carry == ev.pot + sum(r.amount for r in refunds), "money must balance"
     return ev
+
+
+def _outranked(spec: RoundSpec, belts: dict | None, identity: str) -> bool:
+    if spec.belt_rank is None or not belts:
+        return False
+    from . import belts as B
+    return not B.may_enter(belts, identity, spec.belt_rank)
 
 
 def _commitment_of(observed, e: Entry) -> bytes:

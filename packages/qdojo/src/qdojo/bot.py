@@ -3,9 +3,11 @@ restart never double-commits."""
 import json
 import os
 import secrets
+import subprocess
 import urllib.request
 
 from . import hashing, payload, riddle as R
+from .belts import BELTS, RANKS
 from .solver import run_solver, SolverError
 from .chain.base import Unknown, ChainError
 
@@ -29,9 +31,10 @@ def fetch_board(source: str) -> dict:
 
 class Bot:
     def __init__(self, chain, state_dir: str, solver_cmd: list[str], name: str | None = None,
-                 max_stake: int | None = None, solver_timeout: float = 60.0):
+                 max_stake: int | None = None, solver_timeout: float = 60.0, strategy_cmd: list[str] | None = None):
         self.chain, self.state_dir, self.solver_cmd = chain, state_dir, solver_cmd
         self.name, self.max_stake, self.solver_timeout = name, max_stake, solver_timeout
+        self.strategy_cmd = strategy_cmd
         os.makedirs(state_dir, mode=0o700, exist_ok=True)
         self.path = os.path.join(state_dir, "rounds.json")
         self.rounds = self._load()
@@ -49,6 +52,29 @@ class Bot:
             json.dump(self.rounds, f, indent=2, sort_keys=True)
         os.chmod(tmp, 0o600)
         os.replace(tmp, self.path)
+
+    def _strategy_says_enter(self, rd: dict, my: dict, now: int, actions: list, rid: str) -> bool:
+        """Optional strategy program (docs/api.md): round + self context in,
+        {"enter": bool} out. No program, or a broken one, means enter."""
+        if not self.strategy_cmd:
+            return True
+        ctx = {"round": {k: v for k, v in rd.items() if k != "riddle"}, "me": {"identity": self.chain.identity,
+               "belt": my.get("belt", "white"), "rank": int(my.get("rank", 0)), "points": my.get("points", 0)},
+               "now_tick": now}
+        try:
+            bal = self.chain.balance(self.chain.identity)
+            ctx["me"]["balance"] = bal
+        except Unknown:
+            ctx["me"]["balance"] = None
+        try:
+            p = subprocess.run(self.strategy_cmd, input=json.dumps(ctx).encode(), capture_output=True, timeout=20)
+            d = json.loads(p.stdout.decode("utf-8", "replace").strip().splitlines()[-1])
+            if d.get("enter") is False:
+                actions.append(f"round {rid}: strategy says skip" + (f" ({d.get('why')})" if d.get("why") else ""))
+                return False
+        except Exception as e:  # a strategy bug must not stop the bot from fighting
+            actions.append(f"round {rid}: strategy program failed ({e}); entering anyway")
+        return True
 
     def _can_pay(self, stake: int, actions: list, rid: str) -> bool:
         """A transaction from an identity that cannot cover it is dropped by the
@@ -93,11 +119,20 @@ class Bot:
             rid = str(rd["round_id"])
             st = self.rounds.get(rid)
             lobby = rd.get("lobby_tick") is not None
+            my = (board.get("belts") or {}).get(self.chain.identity) or {}
+            my_rank, riddle_rank = int(my.get("rank", 0)), RANKS.get(rd.get("belt") or "", None)
             if lobby and rd.get("publish_tick") is None:
                 # The table is open: buy the seat now, the riddle comes later.
                 if st is not None and (st.get("entered") or st.get("skipped")):
                     continue
                 if now > rd["lobby_tick"] + rd["lobby_window"]:
+                    continue
+                if riddle_rank is not None and my_rank > riddle_rank:
+                    self.rounds[rid] = {"skipped": True}; self._save()
+                    actions.append(f"round {rid}: {rd['belt']} table is below my belt ({BELTS[my_rank]}), not entering")
+                    continue
+                if not self._strategy_says_enter(rd, my, now, actions, rid):
+                    self.rounds[rid] = {"skipped": True}; self._save()
                     continue
                 if self.max_stake is not None and rd["entry_fee"] > self.max_stake:
                     self.rounds[rid] = {"skipped": True}; self._save()
@@ -126,6 +161,14 @@ class Bot:
                     continue  # we never bought a seat; a commit now would only be a strike
                 if "answer" not in st and not st.get("solver_failures"):
                     st = None  # fall into the solve-and-commit path below, keeping the lobby record
+            elif st is None:
+                if riddle_rank is not None and my_rank > riddle_rank:
+                    self.rounds[rid] = {"skipped": True}; self._save()
+                    actions.append(f"round {rid}: {rd['belt']} riddle is below my belt ({BELTS[my_rank]}), not entering")
+                    continue
+                if not self._strategy_says_enter(rd, my, now, actions, rid):
+                    self.rounds[rid] = {"skipped": True}; self._save()
+                    continue
             stake = 0 if lobby else rd["entry_fee"]
             if st is None or ("answer" not in st and not st.get("skipped") and st.get("commit_tx") is None and not st.get("dead")):
                 if now > commit_end:

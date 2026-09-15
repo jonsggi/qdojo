@@ -450,3 +450,59 @@ def test_spar_tops_up_house_fighters_to_target(world, tmp_path):
     sent = sp.fund_npcs()
     assert sent == 2600 and world.core.balances[CARL] == 3000 and world.core.balances[BOB] == 5000  # Bob was above target
     assert sp.fund_npcs() == 0
+
+
+def test_belt_ladder_moves_and_locks_a_strong_bot_out_of_white(world, tmp_path):
+    h = make_house(world, tmp_path, seed=5000, rake_bps=0)
+    alice = make_bot(world, tmp_path, ALICE, SUM_SOLVER)
+    drive_settle(h, world)
+    for rid in (1, 2):                                   # two white-belt wins: +2 +2 -> promoted to yellow
+        h.publish(riddle_file(tmp_path, rid=rid), 1000, 50, 20, match_bps=0, belt="white")
+        world.core.advance(world.core.schedule_offset); h.confirm_publish(rid)
+        h.collect(); h.export(str(tmp_path / "web"))
+        board = json.load(open(tmp_path / "web" / "board.json"))
+        alice.step(board)
+        spec = h.spec(rid)
+        world.core.advance(spec.commit_end + 1 - world.core.tick); alice.step(board)
+        world.core.advance(spec.reveal_end + 3 - world.core.tick); h.collect()
+        doc = h.settle(rid, apply=True)
+        assert doc["winners"] == [ALICE]
+    assert h.belts()[ALICE] == {"rank": 1, "points": 0}
+    assert doc["belt_changes"][0]["reason"] == "promoted" and doc["belts_before"][ALICE] == {"rank": 0, "points": 2}
+    assert hashing.settlement_hash(doc).hex() == doc["hash"]
+    hist = h.export(str(tmp_path / "web"))
+    assert hist["belts"][ALICE]["belt"] == "yellow" and next(f for f in hist["fighters"] if f["identity"] == ALICE)["belt"] == "yellow"
+    fj = json.load(open(tmp_path / "web" / "fighters.json"))["fighters"][0]
+    assert fj["identity"] == ALICE and fj["wins"] == 2 and fj["solved"] == 2 and fj["staked"] == 2000
+    assert fj["earned"] == 2 * (5000 + 1000) and fj["net"] == fj["earned"] - 2000 and fj["solve_rate"] == 1.0
+    assert fj["by_belt"]["white"]["wins"] == 2 and fj["avg_solve_ticks"] == 5.0 and fj["best_solve_ticks"] == 5
+    assert fj["belt_history"] == [{"round_id": 2, "from": "white", "to": "yellow", "reason": "promoted"}]
+    # round 3 is white again: the bot declines, and if it tried anyway the house would refuse
+    h.publish(riddle_file(tmp_path, rid=3), 1000, 50, 20, match_bps=0, belt="white")
+    world.core.advance(world.core.schedule_offset); h.confirm_publish(3)
+    h.collect(); h.export(str(tmp_path / "web"))
+    board = json.load(open(tmp_path / "web" / "board.json"))
+    assert alice.step(board) == ["round 3: white riddle is below my belt (yellow), not entering"]
+    forced = make_bot(world, tmp_path, "F" * 60, SUM_SOLVER)
+    world.core.balances["F" * 60] = 5000
+    h_belts = h.belts(); h_belts["F" * 60] = {"rank": 2, "points": 0}; h._save_belts(h_belts)
+    board["belts"] = {}                                  # a bot that ignores the ladder
+    forced.step(board)
+    spec = h.spec(3)
+    world.core.advance(spec.reveal_end + 3 - world.core.tick); h.collect()
+    doc = h.settle(3, apply=True)
+    assert doc["entries"][0]["verdict"] == "outranked" and doc["payouts"][0]["kind"] == "refund"
+    assert world.core.balances["F" * 60] == 5000
+
+
+def test_strategy_program_can_decline_a_round(world, tmp_path):
+    h = make_house(world, tmp_path, seed=5000)
+    h.open_lobby(riddle_file(tmp_path), 1000, 2, 40, 50, 20, belt="green")
+    world.core.advance(world.core.schedule_offset); h.confirm_lobby(1)
+    h.collect(); h.export(str(tmp_path / "web"))
+    board = json.load(open(tmp_path / "web" / "board.json"))
+    cautious = [sys.executable, "-c",
+                "import json,sys; c=json.load(sys.stdin); print(json.dumps({'enter': c['round']['belt'] in ('white','yellow'), 'why': 'too hard'}))"]
+    alice = Bot(world.view(ALICE), str(tmp_path / "s"), SUM_SOLVER, strategy_cmd=cautious)
+    assert alice.step(board) == ["round 1: strategy says skip (too hard)"]
+    assert not any(o.source == ALICE for _, o in world.core.pending)

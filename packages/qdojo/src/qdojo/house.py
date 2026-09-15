@@ -10,7 +10,7 @@ import os
 import time
 from dataclasses import asdict
 
-from . import hashing, payload, riddle as R
+from . import hashing, payload, riddle as R, belts as B
 from .round import RoundSpec, Observed, evaluate, to_dict, void as void_eval
 from .chain.base import Unknown, ChainError
 
@@ -70,6 +70,15 @@ class House:
     def _save_state(self, st):
         _write(self._state_path(), st)
 
+    def _belts_path(self):
+        return os.path.join(self.data_dir, "belts.json")
+
+    def belts(self) -> dict:
+        return _read(self._belts_path(), {})
+
+    def _save_belts(self, st):
+        _write(self._belts_path(), st)
+
     def rdir(self, round_id: int) -> str:
         return os.path.join(self.data_dir, "rounds", f"{round_id:06d}")
 
@@ -96,7 +105,8 @@ class House:
 
     # --------------------------------------------------------------- publish
     def publish(self, riddle_path: str, entry_fee: int, commit_window: int, reveal_window: int,
-                house_seed: int | None = None, payout_mode: int = payload.MODE_FIRST, match_bps: int = 10000) -> dict:
+                house_seed: int | None = None, payout_mode: int = payload.MODE_FIRST, match_bps: int = 10000,
+                belt: str = "") -> dict:
         r, secret = R.load_authored(riddle_path)
         st = self.state()
         if r.round_id != st["next_round"]:
@@ -121,6 +131,7 @@ class House:
                 "reveal_window": reveal_window, "house_seed": house_seed, "rake_bps": self.rake_bps,
                 "payout_mode": payload.MODE_NAMES[payout_mode], "match_bps": match_bps, "carry_in": carry_in,
                 "riddle_hash": r.hash().hex(), "answer_commitment": msg.answer_commitment.hex(), "uri": uri,
+                "belt": belt,
                 "publish_tx": None, "scheduled_tick": None, "publish_tick": None, "status": "publishing"}
         _write(self._rpath(r.round_id, "meta.json"), meta)
         res = self.chain.send(self.identity, 0, payload.encode(msg), payload.INPUT_TYPE)
@@ -184,7 +195,7 @@ class House:
     def lobby_entrants(self, round_id: int) -> list:
         """Identities with a counted ENTER so far (from the observed log)."""
         ev = self.plan(round_id, final=False)
-        return [e.identity for e in ev.entries if e.verdict == "pending"]
+        return [e.identity for e in ev.entries if e.verdict == "pending"]  # outranked/late/underpaid never count
 
     def publish_from_lobby(self, round_id: int) -> dict:
         """The table is full (or the window closed with enough players): publish the riddle."""
@@ -266,7 +277,8 @@ class House:
                          r.answer_format, m["house_seed"], m["rake_bps"],
                          {v: k for k, v in payload.MODE_NAMES.items()}[m.get("payout_mode", "split")],
                          m.get("match_bps", 0), m.get("carry_in", 0),
-                         m.get("lobby_tick"), m.get("lobby_window", 0), m.get("min_players", 0))
+                         m.get("lobby_tick"), m.get("lobby_window", 0), m.get("min_players", 0),
+                         B.RANKS.get(m.get("belt") or "", None))
 
     # --------------------------------------------------------------- collect
     def collect(self, up_to_tick: int | None = None) -> int:
@@ -313,8 +325,18 @@ class House:
             if st["scanned_to"] <= spec.reveal_end:
                 raise HouseError(f"round {round_id}: reveal window ends at tick {spec.reveal_end}, scanned only to {st['scanned_to']}")
             sec = _read(self._rpath(round_id, "secret.json"))
-            return evaluate(spec, obs, self.identity, bytes.fromhex(sec["dojo_salt"]), sec["answer"], final=True)
-        return evaluate(spec, obs, self.identity, None, None, final=False)
+            return evaluate(spec, obs, self.identity, bytes.fromhex(sec["dojo_salt"]), sec["answer"], final=True,
+                            belts=self._belts_before(round_id))
+        return evaluate(spec, obs, self.identity, None, None, final=False, belts=self._belts_before(round_id))
+
+    def _belts_before(self, round_id: int) -> dict:
+        """The belt state that applied when this round opened: the persisted
+        state minus nothing for open rounds, and for settled rounds the state
+        recorded in their settlement (so a re-plan reproduces the verdicts)."""
+        doc = _read(self._rpath(round_id, "settlement.json"))
+        if doc and "belts_before" in doc:
+            return doc["belts_before"]
+        return self.belts()
 
     def _ledger_path(self, round_id):
         return self._rpath(round_id, "payouts.json")
@@ -345,6 +367,12 @@ class House:
 
         if all(e["confirmed"] for e in ledger):
             doc = self._settlement_doc(round_id, ev, ledger, meta)
+            spec = self.spec(round_id)
+            before = self.belts()
+            doc["belts_before"] = {k: dict(v) for k, v in before.items()}
+            if spec.belt_rank is not None:
+                changes = B.apply_settlement(before, spec.belt_rank, ev.entries)
+                doc["belt_changes"] = [vars(c) for c in changes]
             doc["hash"] = hashing.settlement_hash(doc).hex()
             uri = f"{self.uri_base}/settlements/{round_id}.json" if self.uri_base else ""
             sec = _read(self._rpath(round_id, "secret.json"))
@@ -354,6 +382,8 @@ class House:
             _write(self._rpath(round_id, "settlement.json"), doc)
             meta["status"] = "settled"
             _write(self._rpath(round_id, "meta.json"), meta)
+            if spec.belt_rank is not None:
+                self._save_belts(before)   # `before` was mutated into the after-state above
             st = self.state()
             st["carry"] += ev.carry
             self._save_state(st)
@@ -443,12 +473,18 @@ class House:
         st = self.state()
         now = now_tick if now_tick is not None else st["scanned_to"]
         bows = self.bows()
+        belts = B.public(self.belts())
         fighters: dict[str, dict] = {}
 
         def fighter(idn):
             return fighters.setdefault(idn, {"identity": idn, "name": bows.get(idn, {}).get("name"),
                                              "bow_tick": bows.get(idn, {}).get("bow_tick"),
-                                             "rounds_played": 0, "wins": 0, "earned": 0, "strikes": 0})
+                                             "belt": belts.get(idn, {}).get("belt", "white"),
+                                             "rank": belts.get(idn, {}).get("rank", 0),
+                                             "points": belts.get(idn, {}).get("points", 0),
+                                             "rounds_played": 0, "solved": 0, "wins": 0, "earned": 0, "staked": 0,
+                                             "net": 0, "strikes": 0, "solve_ticks": [], "by_belt": {},
+                                             "belt_history": []})
 
         rounds, open_rounds = [], []
         for rid in self.round_ids():
@@ -477,8 +513,21 @@ class House:
                                 "answer": e["answer"] if settled else None})
                 if e["verdict"] in ("winner", "solved", "wrong", "no_reveal", "no_commit", "bad_reveal", "pending"):
                     f["rounds_played"] += 1
-                if e["verdict"] == "winner":
-                    f["wins"] += 1
+                    f["staked"] += e["stake"] if settled else 0
+                    bb = f["by_belt"].setdefault(meta.get("belt") or "open", {"rounds": 0, "solved": 0, "wins": 0, "solve_ticks": []})
+                    bb["rounds"] += 1
+                    if e["verdict"] in ("winner", "solved"):
+                        f["solved"] += 1; bb["solved"] += 1
+                        if e["commit_tick"] and meta["publish_tick"]:
+                            lat = e["commit_tick"] - meta["publish_tick"]
+                            f["solve_ticks"].append(lat); bb["solve_ticks"].append(lat)
+                    if e["verdict"] == "winner":
+                        f["wins"] += 1; bb["wins"] += 1
+                if doc:
+                    for c in doc.get("belt_changes", []):
+                        if c["identity"] == e["identity"]:
+                            f["belt_history"].append({"round_id": rid, "from": B.belt_name(c["before"]),
+                                                      "to": B.belt_name(c["after"]), "reason": c["reason"]})
             strikes = doc["strikes"] if doc else ev.strikes
             for idn, reasons in strikes.items():
                 fighter(idn)["strikes"] += len(reasons)
@@ -507,10 +556,27 @@ class House:
                 open_rounds.append({k: v for k, v in rd.items() if k != "entries"})
         for idn in bows:
             fighter(idn)
+
+        def avg(xs):
+            return round(sum(xs) / len(xs), 1) if xs else None
+        for f in fighters.values():
+            f["net"] = f["earned"] - f["staked"]
+            f["avg_solve_ticks"], f["best_solve_ticks"] = avg(f["solve_ticks"]), (min(f["solve_ticks"]) if f["solve_ticks"] else None)
+            f["solve_rate"] = round(f["solved"] / f["rounds_played"], 2) if f["rounds_played"] else None
+            del f["solve_ticks"]
+            for bb in f["by_belt"].values():
+                bb["avg_solve_ticks"] = avg(bb["solve_ticks"]); del bb["solve_ticks"]
+            f["belt_history"] = sorted(f["belt_history"], key=lambda c: c["round_id"])
+        _write(os.path.join(out_dir, "fighters.json"), {"generated_tick": now, "fighters": sorted(
+            fighters.values(), key=lambda f: (-f["net"], -f["wins"], f["identity"]))})
+        _write(os.path.join(out_dir, "belts.json"), {"generated_tick": now, "ladder": list(B.BELTS), "rules": {
+            "promote_at": B.PROMOTE_AT, "demote_at": B.DEMOTE_AT, "winner": 2, "solved": 1, "failure": -1,
+            "win_above_belt": "promoted to that belt", "failure_above_belt": 0, "enter": "own belt or above"},
+            "belts": belts})
         history = {"house": self.identity, "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                   "generated_tick": now, "rounds": rounds,
+                   "generated_tick": now, "rounds": rounds, "belts": belts,
                    "fighters": sorted(fighters.values(), key=lambda f: (-f["earned"], -f["wins"], f["identity"]))}
-        board = {"house": self.identity, "generated_tick": now, "rounds": open_rounds}
+        board = {"house": self.identity, "generated_tick": now, "rounds": open_rounds, "belts": belts}
         _write(os.path.join(out_dir, "history.json"), history)
         _write(os.path.join(out_dir, "board.json"), board)
         return history

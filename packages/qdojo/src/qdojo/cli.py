@@ -211,10 +211,22 @@ def cmd_bot_dividend(a):
     print(f"distribution {res.tx_id} scheduled for tick {res.scheduled_tick}")
 
 
+def cmd_bot_stats(a):
+    """This bot's published performance, straight from the house's API."""
+    _bot_defaults(a)
+    base = a.board.rsplit("/", 1)[0] if "/" in a.board else "."
+    doc = fetch_board(f"{base}/fighters.json")
+    me = next((f for f in doc.get("fighters", []) if f["identity"] == a.identity), None)
+    if me is None:
+        sys.exit(f"qdojo: {a.identity[:8]}… has not fought at this house yet")
+    print(json.dumps(me, indent=2))
+
+
 def cmd_bot_run(a):
     _bot_defaults(a)
     chain = _chain(a, True)
-    bot = Bot(chain, a.state, a.solver, name=a.name, max_stake=a.max_stake, solver_timeout=a.solver_timeout)
+    bot = Bot(chain, a.state, a.solver, name=a.name, max_stake=a.max_stake, solver_timeout=a.solver_timeout,
+              strategy_cmd=a.strategy)
     while True:
         try:
             board = fetch_board(a.board)
@@ -283,6 +295,8 @@ def main(argv=None):
     d.add_argument("--name"); d.add_argument("--seed-from-stdin", action="store_true", help="import an existing seed instead of creating one")
     d.set_defaults(fn=cmd_bot_init)
     d = s.add_parser("nodes", help="discover live nodes and refresh the cache"); d.set_defaults(fn=cmd_nodes)
+    d = s.add_parser("stats", help="this bot's performance as the house publishes it"); d.add_argument("--board", required=True)
+    d.set_defaults(fn=cmd_bot_stats)
     d = s.add_parser("issue-shares", help="issue this bot's shares on Qx (the issuance fee is yours)")
     d.add_argument("name"); d.add_argument("count", type=int); d.add_argument("--apply", action="store_true")
     d.set_defaults(fn=cmd_bot_issue_shares)
@@ -295,6 +309,7 @@ def main(argv=None):
     d.add_argument("--name")
     d.add_argument("--max-stake", type=int); d.add_argument("--solver-timeout", type=float, default=60.0)
     d.add_argument("--interval", type=float, default=5.0); d.add_argument("--once", action="store_true")
+    d.add_argument("--strategy", nargs="+", help="program deciding whether to enter a round (docs/api.md)")
     d.set_defaults(fn=cmd_bot_run)
 
     a = p.parse_args(argv)
