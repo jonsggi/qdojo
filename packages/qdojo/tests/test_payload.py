@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from qdojo import payload as P
@@ -77,3 +79,14 @@ def test_sensei_flag_rides_on_publish_and_lobby():
     roundtrip(P.Publish(7, 1000, 600, 300, b"\x11" * 32, b"\x22" * 32, "", P.MODE_PODIUM, 5000, 10000, 5000, 3, 1))
     roundtrip(P.Lobby(9, 1000, 3, 240, 300, 120, P.MODE_PODIUM, 5000, 10000, "white", 5000, 3, 1))
     assert P.decode(P.encode(P.Publish(7, 1, 1, 1, b"\x11" * 32, b"\x22" * 32, "", 1, 0, 0, 0, 0, 1))).sensei == 1
+
+
+def test_decode_command_takes_hex_as_a_human_pastes_it(capsys):
+    from qdojo.cli import main
+    b = P.encode(P.Commit(7, b"\x33" * 32))
+    for arg in (b.hex(), "0x" + b.hex(), "0X" + b.hex().upper(), b.hex()[:8] + " " + b.hex()[8:]):
+        main(["payload", "decode", arg])
+        assert json.loads(capsys.readouterr().out)["kind"] == "COMMIT"
+    with pytest.raises(SystemExit) as e:
+        main(["payload", "decode", "0xnothex"])
+    assert "not hex" in str(e.value)

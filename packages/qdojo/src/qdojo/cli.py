@@ -27,8 +27,20 @@ def _chain(a, signing: bool):
                     schedule_offset=a.schedule_offset, indexer=idx, fallback_nodes=fallbacks)
 
 
+def _hex_arg(s: str) -> bytes:
+    """Hex as a human pastes it: explorers and wallets prefix it with 0x and
+    break it across lines. The wire format has neither (docs/protocol.md)."""
+    t = "".join(s.split())
+    if t[:2] in ("0x", "0X"):
+        t = t[2:]
+    try:
+        return bytes.fromhex(t)
+    except ValueError:
+        raise payload.PayloadError("not hex: expected hex digits in pairs, an optional 0x prefix")
+
+
 def cmd_payload_decode(a):
-    m = payload.decode(bytes.fromhex(a.hex))
+    m = payload.decode(_hex_arg(a.hex))
     d = {k: (v.hex() if isinstance(v, bytes) else v) for k, v in vars(m).items()}
     print(json.dumps({"kind": payload.KIND_NAMES[m.kind], **d}, indent=2))
 
