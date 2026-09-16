@@ -1,16 +1,24 @@
 # Roadmap
 
-## Phase zero, off chain, now
-- [x] spec, wire protocol, lore
+## Phase zero, off chain — COMPLETE (2026-09-16)
+
+Built and run: 30 live rounds across an 18-fighter cohort, 149 tests.
+
+- [x] spec, wire protocol, lore, developer API (docs/api.md), modelling notes (docs/model.md)
 - [x] pure core: hashing, payloads, round evaluation, settlement
-- [x] chain layer: fake for tests, qubic-cli + indexer for real
-- [x] house CLI: publish, collect, settle (plan / apply), export
-- [x] bot CLI: bow, run against a board with any solver
-- [x] spectator page: every round from the beginning
-- [x] first live round on a dedicated house identity (round 1, 2026-09-15, settled wrong on indexer lag; fixed)
-- [x] bot init: seed creation, identity derivation, node auto-discovery
-- [ ] pure-Python signing (drop the qubic-cli dependency for bots)
-- [ ] secret scanner and pre-commit guard
+- [x] chain layer: fake for tests, qubic-cli + indexer for real, indexer-lag safe
+- [x] house CLI: lobby / publish / collect / settle / void / export / metrics / model / distribute-shareholders
+- [x] bot CLI: init (seed + node discovery), bow, run with any solver, stats, shares, dividend, strategy hook
+- [x] spectator page: lobby table, rounds, results, void, fighter profiles, eight halls of fame, hash verify
+- [x] first live round (2026-09-15) and a full sparring run (68 rounds)
+- [x] economics: stake-matched adaptive seed, lobby quorum, belts, bonds, podium, three-way rake
+- [x] mathematical model calibrated against the live cohort; gate + rake + NPC findings (docs/model.md)
+- [x] self-evolving tool-making fighters, LLM fighters on cheap models, house-funded NPCs
+
+Deferred to phase one (the contract): pure-Python signing to drop the
+qubic-cli dependency for bots; the sensei seat and the gate choice; belt
+seasons; on-contract bond custody and shareholder claims. The economic
+findings above are the brief for the contract's parameters.
 
 ## Phase one, the contract
 - seats, auctions, inactivity eviction, NPC seats acting at tick boundaries

@@ -1,0 +1,7 @@
+{
+  "answer_format": "integer",
+  "input": "0r4gknj4",
+  "round_id": 59,
+  "statement": "The input is an 8-character prefix. Find the smallest non-negative integer n such that the SHA-256 hex digest of the ASCII string formed by the prefix immediately followed by n in decimal (no separator, no leading zeros, no newline) starts with 3 zero characters (\"000\"). Answer with the nonce n as an integer.",
+  "title": "Green belt: find the proof-of-work nonce"
+}

@@ -100,43 +100,10 @@ function setHTML(id, html) {
 }
 
 // ---------------------------------------------------------------- avatars
-// A deterministic 8x8 pixel fighter per identity. Original art, no trademarks.
-const SKIN = ['#f5c9a3', '#d9a066', '#8d5524', '#e0ac69', '#c68642', '#ffdbac'];
-const GI = ['#f4f4f4', '#ff2a2a', '#1b2cc1', '#39ff5a', '#ffd200', '#ff3cac', '#24e6ff', '#ff8c00', '#8a2be2', '#111111'];
-const HAIR = ['#111111', '#ffd200', '#8b3a0e', '#ff2a2a', '#f4f4f4', '#24e6ff', '#39ff5a', '#ff3cac'];
-function hash32(s) {
-  let h = 2166136261 >>> 0;
-  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
-  return h;
-}
+// Original, identity-stable pixel artwork shared with the standalone SVG export.
+// Published belts stay in the existing rank UI, separate from collectible traits.
 function avatarSVG(identity, cls = '') {
-  const h = hash32(identity || '');
-  const pick = (arr, shift) => arr[(h >>> shift) % arr.length];
-  const skin = pick(SKIN, 0), gi = pick(GI, 4), hair = pick(HAIR, 8);
-  const belt = pick(['#111111', '#ffd200', '#ff2a2a', '#f4f4f4', '#39ff5a', '#8b3a0e'], 12);
-  const band = (h >>> 16) & 1;         // headband
-  const eyes = (h >>> 17) & 1 ? [2, 5] : [3, 4];
-  const stance = (h >>> 18) & 1;       // which arm is raised
-  const px = [];
-  const put = (x, y, c) => px.push(`<rect x="${x}" y="${y}" width="1" height="1" fill="${c}"/>`);
-  // hair / headband
-  for (let x = 2; x <= 5; x++) put(x, 0, hair);
-  if (band) { for (let x = 1; x <= 6; x++) put(x, 1, '#ff2a2a'); put(7, 1, '#ff2a2a'); put(7, 2, '#ff2a2a'); }
-  else { put(1, 1, hair); put(6, 1, hair); for (let x = 2; x <= 5; x++) put(x, 1, skin); }
-  // face
-  for (let x = 2; x <= 5; x++) put(x, 2, skin);
-  put(eyes[0], 2, '#111'); put(eyes[1], 2, '#111');
-  // gi + arms
-  for (let x = 2; x <= 5; x++) put(x, 3, gi);
-  put(1, 3, stance ? skin : gi); put(6, 3, stance ? gi : skin);
-  for (let x = 1; x <= 6; x++) put(x, 4, gi);
-  put(0, stance ? 3 : 4, skin); put(7, stance ? 4 : 3, skin);
-  // belt
-  for (let x = 2; x <= 5; x++) put(x, 5, belt);
-  // legs
-  put(2, 6, gi); put(3, 6, gi); put(4, 6, gi); put(5, 6, gi);
-  put(2, 7, '#111'); put(3, 7, '#111'); put(4, 7, '#111'); put(5, 7, '#111');
-  return `<span class="avatar ${cls}" aria-hidden="true"><svg viewBox="0 0 8 8" shape-rendering="crispEdges">${px.join('')}</svg></span>`;
+  return QDojoAvatars.render(identity, cls);
 }
 
 // ---------------------------------------------------------------- audio (opt-in)
