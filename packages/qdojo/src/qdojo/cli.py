@@ -22,8 +22,9 @@ def _chain(a, signing: bool):
             sys.exit("a node is required to sign: --node IP[:PORT]")
         return idx
     ip, _, port = a.node.partition(":")
+    fallbacks = tuple(x for x in (os.environ.get("QDOJO_FALLBACK_NODES", "") or "").split(",") if x)
     return QubicCli(a.cli, ip, int(port or 21841), identity=a.identity or "", conf=a.conf if signing else None,
-                    schedule_offset=a.schedule_offset, indexer=idx)
+                    schedule_offset=a.schedule_offset, indexer=idx, fallback_nodes=fallbacks)
 
 
 def cmd_payload_decode(a):

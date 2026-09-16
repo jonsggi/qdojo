@@ -101,3 +101,23 @@ def test_read_only_chain_cannot_send(tmp_path):
     cli = fake_cli(tmp_path, 'print("")')
     with pytest.raises(ChainError):
         QubicCli(cli, "1.2.3.4").send("B" * 60, 1)
+
+
+def test_reads_fall_back_to_another_node_but_signing_does_not(tmp_path):
+    cli = fake_cli(tmp_path, f"""
+        a = sys.argv
+        ip = a[a.index("-nodeip") + 1]
+        if ip == "1.1.1.1":
+            print("Failed to connect to 1.1.1.1"); sys.exit(0)
+        if "-getcurrenttick" in a: print("Tick: 500\\nEpoch: 231")
+        if "-sendtoaddress" in a: print("Transaction has been sent!\\nTxHash: {TX}\\nTick: 520")
+    """)
+    c = QubicCli(cli, "1.1.1.1", identity=ID, conf=conf(tmp_path), fallback_nodes=("2.2.2.2",))
+    assert c.current_tick() == 500                       # the read fell through to the healthy node
+    with pytest.raises(Unknown):
+        c.send("B" * 60, 1)                              # the signed call stays on the dead primary
+    c2 = QubicCli(cli, "1.1.1.1", fallback_nodes=("3.3.3.3", "4.4.4.4"))
+    assert c2.current_tick() == 500
+    c3 = QubicCli(cli, "1.1.1.1", fallback_nodes=())
+    with pytest.raises(Unknown):
+        c3.current_tick()

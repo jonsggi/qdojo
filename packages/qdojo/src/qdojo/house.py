@@ -360,14 +360,14 @@ class House:
         return len(new)
 
     # ---------------------------------------------------------------- settle
-    def plan(self, round_id: int, final: bool | None = None):
+    def plan(self, round_id: int, final: bool | None = None, exclude=frozenset()):
         spec = self.spec(round_id)
         st = self.state()
         if final is None:
             final = st["scanned_to"] > spec.reveal_end
         first = spec.lobby_tick if spec.lobby else spec.publish_tick
         last = spec.reveal_end + 1 if spec.publish_tick is not None else spec.lobby_end + 1
-        obs = [o for o in self.observed() if first <= o.tick <= last]
+        obs = [o for o in self.observed() if first <= o.tick <= last and o.tx_id not in exclude]
         if final:
             if st["scanned_to"] <= spec.reveal_end:
                 raise HouseError(f"round {round_id}: reveal window ends at tick {spec.reveal_end}, scanned only to {st['scanned_to']}")
@@ -396,8 +396,13 @@ class House:
             return _read(self._rpath(round_id, "settlement.json"))
         if meta["status"] != "open":
             raise HouseError(f"round {round_id} is {meta['status']}, not open")
-        ev = self.plan(round_id, final=True)
-        self._confirm_entries(ev)
+        absent, ev = set(), None
+        for _ in range(4):
+            ev = self.plan(round_id, final=True, exclude=absent)
+            fresh = self._confirm_entries(ev)
+            if not fresh - absent:
+                break
+            absent |= fresh          # a node proved these never landed: re-evaluate without them
         spec = self.spec(round_id)
         bonds_after, releases, forfeited = self._bond_events(round_id, ev, spec)
         rake_payouts = []
@@ -425,6 +430,7 @@ class House:
             doc = self._settlement_doc(round_id, ev, ledger, meta)
             doc["bonds_released"] = releases
             doc["bonds_forfeited"] = forfeited
+            doc["unconfirmed_dropped"] = sorted(absent)
             st0 = self.state()
             share = ev.rake_split.get("shareholders", 0)
             doc["rake_split"] = ev.rake_split
@@ -476,9 +482,14 @@ class House:
             _write(self._ledger_path(round_id), ledger)  # recorded before it is believed
             self._wait_confirm(entry, ledger, round_id, before)
 
-    def _confirm_entries(self, ev):
+    def _confirm_entries(self, ev) -> set:
         """The indexer only discovers. Before an entry can move money, a node
-        must confirm each of its transactions in its tick (docs/spec.md §8)."""
+        must confirm each of its transactions in its tick (docs/spec.md §8).
+
+        Returns the tx ids a node is CERTAIN are not in their tick, so the
+        caller can re-evaluate the round without them. An undecidable answer
+        still aborts: we never pay on an unconfirmed message."""
+        absent = set()
         for e in ev.entries:
             for tx, tick, what in ((e.enter_tx, e.enter_tick, "enter"), (e.commit_tx, e.commit_tick, "commit"),
                                    (e.reveal_tx, e.reveal_tick, "reveal")):
@@ -489,7 +500,9 @@ class House:
                 except Unknown as x:
                     raise HouseError(f"cannot confirm {what} {tx[:8]}… of {e.identity[:8]}… at tick {tick} against a node ({x}); retry, do not settle")
                 if not ok:
-                    raise HouseError(f"{what} {tx[:8]}… of {e.identity[:8]}… is NOT in tick {tick} on the node; indexer and node disagree, refusing to settle")
+                    absent.add(tx)
+        return absent
+
 
     def _wait_confirm(self, entry, ledger, round_id, before, tries=60, sleep=1.0):
         for _ in range(tries):

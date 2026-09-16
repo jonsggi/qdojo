@@ -290,12 +290,21 @@ def test_settle_refuses_when_a_node_cannot_confirm_an_entry(world, tmp_path):
     alice.step(board); world.core.advance(1005 + 51 - world.core.tick); alice.step(board)
     world.core.advance(1005 + 71 - world.core.tick + 25); h.collect()
     real = h.chain.confirm
-    h.chain.confirm = lambda tx, tick: False                         # node says: not in that tick
-    with pytest.raises(HouseError):
-        h.settle(1, apply=False)
+    # A node that CANNOT decide blocks settlement: we never pay on an unconfirmed message.
     h.chain.confirm = lambda tx, tick: (_ for _ in ()).throw(Unknown("node down"))
     with pytest.raises(HouseError):
         h.settle(1, apply=False)
+    # A node CERTAIN the reveal is not in its tick drops that reveal instead of
+    # wedging the round for ever — the fighter simply did not reveal.
+    plan = h.plan(1, final=True)
+    reveal_tx = plan.entries[0].reveal_tx
+    h.chain.confirm = lambda tx, tick: tx != reveal_tx
+    doc = h.settle(1, apply=False)
+    assert doc["winners"] == [] and doc["entries"][0]["verdict"] == "no_reveal"
+    assert doc["entries"][0]["commit_tx"] is not None          # the commit still stands
+    # and everything absent means no entry at all, not a wedged round
+    h.chain.confirm = lambda tx, tick: False
+    assert h.settle(1, apply=False)["entries"] == []
     h.chain.confirm = real
     assert h.settle(1, apply=False)["winners"] == [ALICE]
 

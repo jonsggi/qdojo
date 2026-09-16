@@ -41,7 +41,10 @@ def check_seed_conf(path: str) -> None:
 class QubicCli:
     def __init__(self, binary: str, node_ip: str, node_port: int = 21841, identity: str = "",
                  conf: str | None = None, schedule_offset: int = DEFAULT_SCHEDULE_OFFSET, timeout: int = 30,
-                 indexer=None):
+                 indexer=None, fallback_nodes=()):
+        # One flaky node must not make every read Unknown for ever: reads fall
+        # back through these in order. Signing always uses the primary.
+        self.fallback_nodes = tuple(fallback_nodes)
         self.binary, self.node_ip, self.node_port = binary, node_ip, int(node_port)
         self.identity, self.conf, self.schedule_offset, self.timeout = identity, conf, schedule_offset, timeout
         self.indexer = indexer  # something with transactions_to(); the CLI has no history query
@@ -49,7 +52,23 @@ class QubicCli:
             check_seed_conf(conf)
 
     def _run(self, args: list[str], signed: bool = False) -> str:
-        argv = [self.binary, "-nodeip", self.node_ip, "-nodeport", str(self.node_port)]
+        """Run against the primary node; on a connection failure try the
+        fallbacks (reads only — a signed call always uses the primary, so a
+        transaction is never broadcast twice from two different nodes)."""
+        try:
+            return self._run_on(self.node_ip, args, signed)
+        except Unknown:
+            if signed:
+                raise
+            for ip in self.fallback_nodes:
+                try:
+                    return self._run_on(ip, args, False)
+                except Unknown:
+                    continue
+            raise
+
+    def _run_on(self, node_ip: str, args: list[str], signed: bool = False) -> str:
+        argv = [self.binary, "-nodeip", node_ip, "-nodeport", str(self.node_port)]
         if signed:
             if not self.conf:
                 raise ChainError("no seed conf: this chain is read-only")
@@ -63,7 +82,7 @@ class QubicCli:
             raise ChainError(f"qubic-cli not found at {self.binary}")
         out = p.stdout + ("\n" + p.stderr if p.stderr else "")
         if parse.connection_failed(out):
-            raise Unknown(f"qubic-cli could not reach {self.node_ip}:{self.node_port}")
+            raise Unknown(f"qubic-cli could not reach {node_ip}:{self.node_port}")
         return out
 
     def current_tick(self) -> int:
