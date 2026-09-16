@@ -11,7 +11,7 @@ from .chain.rpc import Indexer
 from .chain.base import Unknown, ChainError
 from .house import House, HouseError
 from .bot import Bot, BotError, fetch_board
-from . import nodes, onboard, spar
+from . import nodes, onboard, spar, events, lab, wizard, term
 from .shares import Shares, SharesError
 
 
@@ -41,8 +41,7 @@ def _hex_arg(s: str) -> bytes:
 
 def cmd_payload_decode(a):
     m = payload.decode(_hex_arg(a.hex))
-    d = {k: (v.hex() if isinstance(v, bytes) else v) for k, v in vars(m).items()}
-    print(json.dumps({"kind": payload.KIND_NAMES[m.kind], **d}, indent=2))
+    print(json.dumps({"kind": payload.KIND_NAMES[m.kind], **events.fields_of(m)}, indent=2))
 
 
 def cmd_riddle_hash(a):
@@ -169,8 +168,54 @@ def cmd_house_model(a):
 
 def cmd_house_export(a):
     h = _house(a, False)
-    hist = h.export(a.out)
+    hist = h.export(a.out, events_out=a.events, foreign=a.foreign)
     print(f"exported {len(hist['rounds'])} rounds, {len(hist['fighters'])} fighters to {a.out}")
+
+
+def cmd_house_lab(a):
+    """What the self-evolving fighters actually did. Summaries and statistics
+    only -- no tool source is ever published (docs/api.md)."""
+    def kv(pairs):
+        return dict(x.split("=", 1) for x in (pairs or []) if "=" in x)
+    root = a.evo_dir or os.environ.get("QDOJO_EVO_DIR")
+    if not lab.find_evo_dirs(root):
+        print(f"no evo directories found at {root or lab.DEFAULT_EVO_DIR}; nothing to publish")
+        return
+    doc = lab.build(root, identities=kv(a.map), models=kv(a.model))
+    if a.print_only:
+        print(json.dumps(doc, indent=2, sort_keys=True))
+        return
+    os.makedirs(a.out, exist_ok=True)
+    path = os.path.join(a.out, "lab.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(doc, f, indent=2, sort_keys=True, ensure_ascii=False)
+    t = doc["totals"]
+    print(f"lab: {t['bots']} bots, {t['kinds']} kinds, {t['tools']} tools, "
+          f"{t['solves']} solves -> {path}")
+
+
+def cmd_house_events(a):
+    """Every dojo message in a tick or a round, in English. The same describe()
+    the page uses, so this is both a debugging tool and a demo of the feature."""
+    h = _house(a, False)
+    names = {i: b["name"] for i, b in h.bows().items()}
+    metas, riddles = {}, {}
+    for rid in h.round_ids():
+        metas[rid] = json.load(open(h._rpath(rid, "meta.json"), encoding="utf-8"))
+        try:
+            riddles[rid] = json.load(open(h._rpath(rid, "riddle.json"), encoding="utf-8"))
+        except FileNotFoundError:
+            riddles[rid] = {}
+    recs = events.build(h.observed(), h.identity, h.tx_index(), h.payout_events(), names, metas, riddles,
+                        foreign=a.foreign)
+    recs = [r for r in recs if not r.get("foreign_only")
+            and (a.tick is None or r["tick"] == a.tick)
+            and (a.round is None or r.get("round_id") == a.round)]
+    if a.text:
+        for r in recs:
+            print(f"{r['tick']}  {r['text']}")
+    else:
+        print(json.dumps(recs, indent=2))
 
 
 def _bot_defaults(a):
@@ -191,34 +236,25 @@ def _bot_defaults(a):
     if not a.node:
         a.node = nodes.best_node(a.state, nodes.cli_probe(a.cli))
         print(f"node: {a.node} (auto-detected)", file=sys.stderr)
+    if getattr(a, "solver", None) is None:
+        a.solver = prof.get("solver")
+        if not a.solver:
+            sys.exit("qdojo: no solver: pass --solver, or run `qdojo bot setup` to record one")
+    # setdefault, never overwrite: an explicitly exported PI_MODEL=x still wins.
+    for k, v in (prof.get("solver_env") or {}).items():
+        os.environ.setdefault(k, str(v))
 
 
 def cmd_bot_init(a):
-    try:
-        cli = onboard.find_cli(a.cli if a.cli != "qubic-cli" else None)
-    except onboard.OnboardError as e:
-        sys.exit(f"qdojo: {e}")
-    conf = os.path.expanduser(a.conf or os.path.join(a.state, "bot.conf"))
-    created = False
-    if not os.path.exists(conf):
-        if a.seed_from_stdin:
-            seed = sys.stdin.readline().strip()
-        else:
-            seed = None
-        onboard.create_conf(conf, seed)
-        created = True
-    identity = onboard.derive_identity(cli, conf)
-    found = nodes.discover(nodes.cli_probe(cli)) if not a.node else [{"ip": a.node, "tick": 0, "lag": 0}]
-    if not found:
-        sys.exit("qdojo: no live Qubic node reachable; check your network or pass --node")
-    nodes.save(a.state, found)
-    onboard.save_profile(a.state, {"conf": conf, "identity": identity, "name": a.name, "cli": cli})
-    print(f"identity : {identity}")
-    print(f"conf     : {conf}  ({'NEW seed created, back this file up' if created else 'existing seed'})")
-    print(f"node     : {found[0]['ip']}  ({len(found)} live nodes agree, cached in {nodes.cache_path(a.state)})")
-    print(f"qubic-cli: {cli}")
-    print("\nFund the identity above with QU to play, then:\n"
-          f"  qdojo bot run --board <board url> --solver <your solver>{' --name ' + a.name if a.name else ''}")
+    """The bowing-in rite: signer, seed, name, node, mind, purse. Every stage
+    verifies rather than printing, and every prompt has a flag, so a
+    professional runs the whole thing on one non-interactive line."""
+    wizard.init(a)
+
+
+def cmd_bot_setup(a):
+    """Provider and model only, for a fighter that already has a seed."""
+    wizard.setup(a)
 
 
 def cmd_nodes(a):
@@ -349,7 +385,22 @@ def main(argv=None):
     d = s.add_parser("collect"); d.add_argument("--rescan", help="TICK-TICK: re-read a past range"); d.set_defaults(fn=cmd_house_collect)
     d = s.add_parser("settle"); d.add_argument("round", type=int); d.add_argument("--apply", action="store_true")
     d.add_argument("--no-collect", dest="collect", action="store_false"); d.set_defaults(fn=cmd_house_settle)
-    d = s.add_parser("export"); d.add_argument("--out", default="apps/web/data"); d.set_defaults(fn=cmd_house_export)
+    d = s.add_parser("export"); d.add_argument("--out", default="apps/web/data")
+    d.add_argument("--no-events", dest="events", action="store_false", help="skip the per-tick event shards")
+    d.add_argument("--foreign", choices=["count", "list", "drop"], default="count",
+                   help="transfers to the house carrying no dojo message")
+    d.set_defaults(fn=cmd_house_export)
+    d = s.add_parser("lab", help="what the self-evolving fighters learned (summaries only, never tool source)")
+    d.add_argument("--evo-dir"); d.add_argument("--out", default="apps/web/data")
+    d.add_argument("--map", action="append", metavar="NAME=IDENTITY", help="tie a bot directory to its chain identity")
+    d.add_argument("--model", action="append", metavar="NAME=MODEL")
+    d.add_argument("--print", dest="print_only", action="store_true")
+    d.set_defaults(fn=cmd_house_lab)
+    d = s.add_parser("events", help="every dojo message in a tick or a round, decoded to English")
+    d.add_argument("--tick", type=int); d.add_argument("--round", type=int)
+    d.add_argument("--text", action="store_true", help="just the sentences")
+    d.add_argument("--foreign", choices=["count", "list", "drop"], default="count")
+    d.set_defaults(fn=cmd_house_events)
     d = s.add_parser("distribute-shareholders", help="pay the accrued shareholder rake pool via QUtil")
     d.add_argument("asset"); d.add_argument("--apply", action="store_true"); d.set_defaults(fn=cmd_house_distribute)
     d = s.add_parser("spar", help="generated riddles, rounds back to back, metrics per round")
@@ -392,9 +443,32 @@ def main(argv=None):
     bp = sub.add_parser("bot")
     bp.add_argument("--state", default=os.path.expanduser("~/.qdojo/bot"), help="bot state dir (seed conf, profile, node cache)")
     s = bp.add_subparsers(dest="sub", required=True)
-    d = s.add_parser("init", help="create a seed if there is none, derive the identity, find live nodes")
+
+    def _setup_flags(d, init=False):
+        """Every prompt in the rite has a flag, so the whole thing is one line.
+        There is deliberately NO flag that takes an API key: a key on argv lands
+        in the shell history and in `ps`. --key-env names the variable instead."""
+        d.add_argument("--provider", choices=wizard.PROVIDER_KEYS)
+        d.add_argument("--model", help="a model id -- never a key")
+        d.add_argument("--base-url", help="an OpenAI-compatible endpoint, e.g. a local Ollama")
+        d.add_argument("--key-env", metavar="NAME", help="the NAME of the env var holding your key")
+        d.add_argument("--solver", nargs="+")
+        d.add_argument("--env", action="append", metavar="NAME=VALUE", help="refused if NAME looks secret")
+        d.add_argument("--pi")
+        d.add_argument("--board"); d.add_argument("--seat-fee", type=int)
+        d.add_argument("--skip-probe", action="store_true", help="do not make the test call")
+        d.add_argument("--probe-timeout", type=float, default=90.0)
+        d.add_argument("--yes", "-y", action="store_true", help="accept every default, never prompt")
+        d.add_argument("--no-color", dest="color", action="store_false", default=None)
+        if init:
+            d.add_argument("--no-setup", action="store_true", help="seed and node only, skip provider and model")
+        return d
+    d = s.add_parser("init", help="the bowing-in rite: seed, identity, live nodes, provider, model, purse")
     d.add_argument("--name"); d.add_argument("--seed-from-stdin", action="store_true", help="import an existing seed instead of creating one")
-    d.set_defaults(fn=cmd_bot_init)
+    _setup_flags(d, init=True).set_defaults(fn=cmd_bot_init)
+    d = s.add_parser("setup", help="choose a provider and a model for a fighter that already has a seed")
+    d.add_argument("--name")
+    _setup_flags(d).set_defaults(fn=cmd_bot_setup)
     d = s.add_parser("nodes", help="discover live nodes and refresh the cache"); d.set_defaults(fn=cmd_nodes)
     d = s.add_parser("stats", help="this bot's performance as the house publishes it"); d.add_argument("--board", required=True)
     d.set_defaults(fn=cmd_bot_stats)
@@ -406,7 +480,7 @@ def main(argv=None):
     d = s.add_parser("dividend", help="distribute QU to this bot's shareholders pro rata via QUtil")
     d.add_argument("name"); d.add_argument("amount", type=int); d.add_argument("--apply", action="store_true")
     d.set_defaults(fn=cmd_bot_dividend)
-    d = s.add_parser("run"); d.add_argument("--board", required=True); d.add_argument("--solver", nargs="+", required=True)
+    d = s.add_parser("run"); d.add_argument("--board", required=True); d.add_argument("--solver", nargs="+")
     d.add_argument("--name")
     d.add_argument("--max-stake", type=int); d.add_argument("--solver-timeout", type=float, default=60.0)
     d.add_argument("--interval", type=float, default=5.0); d.add_argument("--once", action="store_true")
@@ -416,7 +490,7 @@ def main(argv=None):
     a = p.parse_args(argv)
     try:
         a.fn(a)
-    except (HouseError, BotError, ChainError, R.RiddleError, payload.PayloadError, onboard.OnboardError, SharesError, RuntimeError) as e:
+    except (HouseError, BotError, ChainError, R.RiddleError, payload.PayloadError, onboard.OnboardError, SharesError, term.TermError, RuntimeError) as e:
         sys.exit(f"qdojo: {e}")
 
 

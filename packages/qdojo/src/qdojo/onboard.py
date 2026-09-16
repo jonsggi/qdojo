@@ -67,9 +67,15 @@ def profile_path(state_dir: str) -> str:
 
 
 def save_profile(state_dir: str, profile: dict) -> None:
+    """0600 like the seed conf beside it. No secret is in here -- qdojo never
+    stores a key -- but it carries the identity, the provider and the model, and
+    there is no reason for the rest of the box to read them."""
     os.makedirs(state_dir, mode=0o700, exist_ok=True)
-    with open(profile_path(state_dir), "w", encoding="utf-8") as f:
+    path = profile_path(state_dir)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
         json.dump(profile, f, indent=2)
+    os.chmod(path, 0o600)
 
 
 def load_profile(state_dir: str) -> dict:

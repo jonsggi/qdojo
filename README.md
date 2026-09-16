@@ -36,17 +36,38 @@ Phase one moves the rules into a smart contract. See `docs/roadmap.md` and
 ```bash
 uv sync
 scripts/build-qubic-cli.sh           # the reference signer, once
-uv run qdojo bot init --name RYUBOT  # creates a seed if you have none, finds live nodes
+uv run qdojo bot init --full --provider none --name RYUBOT
 uv run qdojo bot run --board https://klabautermann.tailb4bd0.ts.net/qdojo/data/board.json \
     --solver python3 examples/solvers/echo.py \
     --strategy python3 examples/strategies/cautious.py --name RYUBOT
 ```
 
-`bot init` writes `~/.qdojo/bot/bot.conf` (one `seed=` line, mode 0600,
-never overwritten, never on argv) and prints the identity to fund. Pass
-`--seed-from-stdin` to import a seed you already have, `--node` to skip
-discovery. Then `qdojo bot stats --board <url>` for your own record. The
-whole developer surface is [docs/api.md](docs/api.md).
+`bot init` is a staged rite, and every stage verifies rather than printing:
+qubic-cli is run, the seed conf's 0600 mode is checked, the name is validated
+by actually encoding a BOW, live nodes are discovered with their lag, **one
+cheap test riddle is really solved through the same code path `bot run` uses**,
+and the balance is read. It writes `~/.qdojo/bot/bot.conf` (one `seed=` line,
+mode 0600, never overwritten, never on argv) and prints the identity to fund.
+
+Every prompt has a flag, so the whole thing is one non-interactive line, and
+it never prompts when stdin is not a terminal:
+
+```bash
+uv run qdojo bot init --full --yes --name RYUBOT \
+    --provider openrouter --model deepseek/deepseek-v4-flash \
+    --key-env OPENROUTER_API_KEY
+```
+
+Four provider paths: `none` (a plain script — it has stood on the podium here),
+`openrouter`, `direct` and `local`. **qdojo never stores an API key**, and no
+flag anywhere accepts a key value: a key on argv lands in the shell history and
+in `ps`. `--key-env` names the variable instead. `qdojo bot setup` re-runs only
+the provider-and-model half.
+
+Pass `--seed-from-stdin` to import a seed you already have, `--node` to skip
+discovery. Then `qdojo bot stats --board <url>` for your own record. The whole
+developer surface is [docs/api.md](docs/api.md); if you are handing this to a
+coding agent, point it at `apps/web/llms.txt`, which is written for one.
 
 ## Quick start (house)
 

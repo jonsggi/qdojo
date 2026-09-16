@@ -10,7 +10,7 @@ import os
 import time
 from dataclasses import asdict
 
-from . import hashing, payload, riddle as R, belts as B
+from . import hashing, payload, riddle as R, belts as B, events
 from .round import RoundSpec, Observed, evaluate, to_dict, void as void_eval
 from .chain.base import Unknown, ChainError
 
@@ -44,6 +44,26 @@ def _write(path, obj, mode=0o644):
         json.dump(obj, f, indent=2, sort_keys=True, ensure_ascii=False)
     os.chmod(tmp, mode)
     os.replace(tmp, path)
+
+
+def _write_if_changed(path, obj, mode=0o644, compact=False) -> bool:
+    """Write only when the bytes differ. The supervisor re-exports ~15 times a
+    round; rewriting a hundred unchanged tick shards every poll is pure churn.
+    Shards are compact: nothing reads them but the page."""
+    body = (json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":")) if compact
+            else json.dumps(obj, indent=2, sort_keys=True, ensure_ascii=False))
+    try:
+        with open(path, encoding="utf-8") as f:
+            if f.read() == body:
+                return False
+    except (OSError, ValueError):
+        pass
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(body)
+    os.chmod(tmp, mode)
+    os.replace(tmp, path)
+    return True
 
 
 def _obs_to_json(o: Observed) -> dict:
@@ -559,7 +579,66 @@ class House:
                 out[o.source] = {"name": m.name, "bow_tick": o.tick}
         return out
 
-    def export(self, out_dir: str, now_tick: int | None = None) -> dict:
+    def tx_index(self) -> dict[str, dict]:
+        """tx_id -> {round_id, kind, identity?, verdict?, payout_kind?} from the
+        round dirs. This is what saves the 131 legacy PUBLISH/LOBBY frames that
+        no longer decode: we still hold the authoritative record of what we sent,
+        so there is nothing to guess. It also hands every fighter message its
+        verdict for free, without re-evaluating anything."""
+        idx = {}
+        for rid in self.round_ids():
+            meta = _read(self._rpath(rid, "meta.json")) or {}
+            for key, kind in (("publish_tx", "PUBLISH"), ("lobby_tx", "LOBBY")):
+                if meta.get(key):
+                    idx[meta[key]] = {"round_id": rid, "kind": kind}
+            doc = _read(self._rpath(rid, "settlement.json"))
+            if not doc:
+                continue
+            if doc.get("settle_tx"):
+                idx[doc["settle_tx"]] = {"round_id": rid, "kind": "SETTLE"}
+            for e in doc.get("entries", []):
+                for key, kind in (("enter_tx", "ENTER"), ("commit_tx", "COMMIT"), ("reveal_tx", "REVEAL")):
+                    if e.get(key):
+                        idx[e[key]] = {"round_id": rid, "kind": kind, "identity": e["identity"],
+                                       "verdict": e.get("verdict")}
+            for p in doc.get("payouts", []):
+                if p.get("tx"):
+                    idx[p["tx"]] = {"round_id": rid, "kind": events.KIND_PAYOUT,
+                                    "identity": p.get("identity"), "payout_kind": p.get("kind")}
+        return idx
+
+    def payout_events(self) -> list[dict]:
+        """Every payout the house made, with its round. These are outbound and so
+        appear nowhere in observed.jsonl, which only holds what arrived."""
+        out = []
+        for rid in self.round_ids():
+            doc = _read(self._rpath(rid, "settlement.json")) or {}
+            for p in doc.get("payouts", []):
+                out.append({**p, "round_id": rid})
+        return out
+
+    def _export_events(self, out_dir, now, foreign="count") -> int:
+        """Sharded ticks/<tick // 1000>.json plus ticks/index.json, both fetched
+        lazily by the page. Never part of the 10 s poll set: ~4,000 records is
+        far too much to re-stringify every poll for a screen most visitors never
+        open."""
+        d = os.path.join(out_dir, "ticks")
+        os.makedirs(d, exist_ok=True)
+        names = {i: b["name"] for i, b in self.bows().items()}
+        metas, riddles = {}, {}
+        for rid in self.round_ids():
+            metas[rid] = _read(self._rpath(rid, "meta.json")) or {}
+            riddles[rid] = _read(self._rpath(rid, "riddle.json")) or {}
+        recs = events.build(self.observed(), self.identity, self.tx_index(), self.payout_events(),
+                            names, metas, riddles, foreign=foreign)
+        shards = events.bucketize(recs)
+        for b, s in shards.items():
+            _write_if_changed(os.path.join(d, f"{b}.json"), s, compact=True)
+        _write_if_changed(os.path.join(d, "index.json"), events.index_doc(shards, now), compact=True)
+        return len(recs)
+
+    def export(self, out_dir: str, now_tick: int | None = None, events_out: bool = True,
+               foreign: str = "count") -> dict:
         """Write board.json and history.json (docs/protocol.md, apps/web)."""
         os.makedirs(out_dir, exist_ok=True)
         os.makedirs(os.path.join(out_dir, "rounds"), exist_ok=True)
@@ -688,4 +767,10 @@ class House:
         board = {"house": self.identity, "generated_tick": now, "rounds": open_rounds, "belts": belts}
         _write(os.path.join(out_dir, "history.json"), history)
         _write(os.path.join(out_dir, "board.json"), board)
+        if events_out:
+            # A broken tick export must never take down history.json.
+            try:
+                self._export_events(out_dir, now, foreign)
+            except (OSError, ValueError, KeyError) as e:
+                print(f"qdojo: tick export skipped: {e}")
         return history

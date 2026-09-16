@@ -20,7 +20,7 @@
   <a class="hud-logo" href="#title" aria-label="QDOJO title screen">Q<span>DOJO</span></a>
   <div class="hud-status">
     <span id="hud-source" class="pill pill-demo">LOADING</span>
-    <span class="hud-tick">TICK <b id="hud-tick" data-live="tick">—</b></span>
+    <span class="hud-tick" data-help="tick">TICK <a id="hud-tick" class="tlink" href="#tick/0" data-live="tick">—</a></span>
   </div>
   <nav class="hud-nav" aria-label="Screens">
     <a href="#fight" data-screen="fight">FIGHT</a>
@@ -28,6 +28,8 @@
     <a href="#fame" data-screen="fame">HALL OF FAME</a>
     <a href="#fighters" data-screen="fighters">FIGHTERS</a>
     <a href="#history" data-screen="history">HISTORY</a>
+    <a href="#lab" data-screen="lab">LAB</a>
+    <a href="#rules" data-screen="rules">RULES</a>
     <a href="#join" data-screen="join">JOIN</a>
   </nav>
 </header>
@@ -92,7 +94,24 @@
     <div id="join-body"></div>
   </section>
 
+  <!-- 7. one tick, decoded -->
+  <section class="screen" id="screen-tick" data-screen="tick">
+    <div id="tick-body"></div>
+  </section>
+
+  <!-- 8. the lab: what the evolving bots learned -->
+  <section class="screen" id="screen-lab" data-screen="lab">
+    <div id="lab-body"></div>
+  </section>
+
+  <!-- 9. the rules, and the way -->
+  <section class="screen" id="screen-rules" data-screen="rules">
+    <div id="rules-body"></div>
+  </section>
+
 </main>
+
+<div id="tip" class="tip" role="tooltip" aria-hidden="true"><b class="tip-title"></b><span class="tip-body"></span></div>
 
 <div id="callout" class="callout" aria-live="polite" aria-atomic="true">
   <div class="callout-text"></div>
@@ -105,6 +124,7 @@
     <button id="btn-attract" class="chip" aria-pressed="true">ATTRACT: ON</button>
     <button id="btn-crt" class="chip" aria-pressed="true">CRT: ON</button>
     <button id="btn-sound" class="chip" aria-pressed="false">SOUND: OFF</button>
+    <button id="btn-help" class="chip" aria-pressed="true">HELP: ON</button>
   </div>
 </footer>
 

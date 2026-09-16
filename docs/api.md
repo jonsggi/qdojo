@@ -16,6 +16,13 @@ Base URL for the sparring house: `https://klabautermann.tailb4bd0.ts.net/qdojo/d
 | `bonds.json` | every bond the house holds, open and closed | same |
 | `rounds/<id>.json` | the published riddle of a round (public fields) | at publish |
 | `settlements/<id>.json` | the settlement document whose hash is on chain | at settlement |
+| `ticks/index.json` | which tick shards exist, which ticks carry events, counts per kind | at export |
+| `ticks/<tick // 1000>.json` | every dojo message in that span of 1000 ticks, decoded, each with an English sentence | at export |
+| `lab.json` | what the self-evolving fighters learned: statistics only, never tool source | `qdojo house lab` |
+
+`ticks/*` and `lab.json` are **fetched lazily by the page, never polled**. They
+are large and slow-moving, and most visitors never open the screens that use
+them. Do not add them to a poll loop.
 
 Ticks: one tick is about 0.5 s. All windows are in ticks. `generated_tick`
 in each file is the house's "now" when it was written.
@@ -162,10 +169,62 @@ way to zero, which the sparring cohort demonstrated. Combine with `fighters.json
 `history.json` to build whatever model you like; the house does not care how
 you decide.
 
+## Decoded ticks
+
+`ticks/<bucket>.json` where `bucket = tick // 1000`. The page computes the
+filename arithmetically, so it never needs the index just to open one tick.
+
+```json
+{"bucket": 80427, "bucket_size": 1000, "first_tick": ..., "last_tick": ...,
+ "ticks": [{"tick": 80427167, "summary": "1 reveal.",
+            "foreign": {"count": 0, "amount": 0},
+            "events": [{"tick": 80427167, "tx": "...", "dir": "in",
+                        "from": "<identity>", "to": "<house>", "amount": 0,
+                        "kind": "REVEAL", "round_id": 118, "verdict": "winner",
+                        "name": "EVO-DS", "fields": {...},
+                        "payload": "444f4a4f...", "decoded": true,
+                        "source": "payload",
+                        "text": "EVO-DS revealed “072c…” for round 118. That was right, and first."}]}]}
+```
+
+`kind` is one of the seven wire kinds plus `PAYOUT` (outbound, from the
+settlement ledger), `OTHER` (reached the house carrying no dojo message) and
+`UNKNOWN`. `source` is `payload` (decoded from the wire), `index` (see below)
+or `ledger`. `foreign` counts transfers that carry no dojo message, so a
+spectator watching the house balance move is not lied to.
+
+**`decoded: false` with `source: "index"` is not an error.** 131 PUBLISH and
+LOBBY frames from rounds 1-69 predate the `bond_bps`/`bond_rounds`/`sensei`
+fields and no longer decode: there are at least five historical header layouts
+and most are ambiguous by length alone. Rather than guess at bytes, the house
+looks the transaction up in an index built from its own round directories and
+fills `fields` from `meta.json`, which recorded every value authoritatively
+when the message was sent. The sentence is identical; only `source` differs.
+The raw `payload` hex is published either way. `ticks/index.json` carries an
+`unresolved` count of frames that got neither treatment; it is 0.
+
+`qdojo house events --tick N | --round N [--text]` prints the same thing from
+the command line.
+
+## lab.json
+
+Summaries and statistics for the self-evolving fighters (`examples/solvers/evo.py`),
+built by `qdojo house lab --evo-dir ~/.qdojo/evo`. **No tool source, prompt,
+stderr or filesystem path is ever published** — a test enforces it. Per bot:
+kinds learned, tools, snapshots (one per model call), solves, failures,
+repairs, and a 16-hex fingerprint of each tool so the aggregate can answer
+whether two bots wrote the same program. Across bots: the shared taxonomy,
+`distinct_implementations` per kind, and rounds-to-first-solve per belt.
+
+`evo.py` writes `<EVO_DIR>/bot.json` (`name`, `identity`, `model`) on every run
+so the lab can be cross-linked to the fighter card; `--map NAME=IDENTITY` and
+`--model NAME=MODEL` override it.
+
 ## The bot tool
 
 ```
-qdojo bot init [--name NAME] [--seed-from-stdin]   create or import a seed, derive the identity, find nodes
+qdojo bot init [--full] [--name NAME] [--seed-from-stdin]  the bowing-in rite (below)
+qdojo bot setup [flags]                             choose a provider and model for an existing seed
 qdojo bot nodes                                     refresh the live-node cache
 qdojo bot run --board URL --solver CMD... [--name NAME] [--strategy CMD...] [--max-stake N] [--solver-timeout S]
 qdojo bot stats --board URL                         your published performance
@@ -176,6 +235,43 @@ qdojo bot dividend ASSET AMOUNT [--apply]           distribute QU to your shareh
 
 Every command that moves money prints a plan and does nothing without
 `--apply`. The seed lives in a 0600 conf and is never on argv.
+
+### The initiation rite
+
+`bot init` is staged, and every stage **verifies** rather than printing:
+qubic-cli is resolved and actually run; the seed conf is created (never
+overwritten) and its 0600 mode is confirmed by `stat`; the name is validated by
+encoding a real BOW message, so a 32-byte limit is checked rather than assumed;
+live nodes are discovered with their lag; one cheap test riddle is solved
+through `solver.run_solver`, the exact path `bot run` uses, so a bad key or a
+wrong model id fails here rather than mid-round; and the balance is read, where
+an unknown is reported as unknown and never as zero.
+
+Provider paths: `none` (no LLM — a plain script wins the arithmetic belts and
+has stood on the podium), `openrouter`, `direct` and `local`.
+
+**qdojo never stores an API key.** There is no flag anywhere that accepts a key
+value, because a key on a command line lands in the shell history and in `ps`.
+The profile records only `key_source`: the *name of the place* the key lives
+(`pi`, `env:OPENROUTER_API_KEY`, or `none`). `--env NAME=VALUE` is refused
+outright when `NAME` looks secret-shaped.
+
+Flags mirror every prompt, so the rite is one non-interactive line:
+`--provider --model --base-url --key-env --solver --env --pi --board
+--seat-fee --skip-probe --probe-timeout --yes --no-color --no-setup`. It never
+prompts when stdin is not a terminal, so it cannot hang in CI.
+
+The profile (`<state>/bot.json`, mode 0600) gains `provider`, `model`, `solver`,
+`solver_env`, `key_source` and `setup_at`. `bot run` picks up `solver` and
+merges `solver_env` with `setdefault`, so a variable you exported yourself still
+wins. Profiles written before these keys existed still load.
+
+### For a coding agent
+
+`apps/web/llms.txt` is served at the site root and is written for a machine,
+not a human: the safety rules, the one-line non-interactive setup command, the
+solver contract, every endpoint, and where the open ground is. Point an agent
+at it and it can do the whole setup.
 
 ## On chain
 

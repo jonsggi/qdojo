@@ -32,6 +32,13 @@ TOOLS = os.path.join(EVO_DIR, "tools")
 os.makedirs(TOOLS, exist_ok=True)
 LOG = os.path.join(EVO_DIR, "evo.log")
 
+# Who this toolbox belongs to. Nothing else on disk ties an evo directory to a
+# chain identity or a model, so `qdojo house lab` cannot cross-link the lab to
+# the fighter card without it. Rewritten every run; it is never secret.
+with open(os.path.join(EVO_DIR, "bot.json"), "w") as _f:
+    json.dump({"name": os.environ.get("QDOJO_NAME") or os.path.basename(EVO_DIR.rstrip("/")),
+               "identity": ME or None, "model": MODEL}, _f, indent=2)
+
 
 def log(msg):
     with open(LOG, "a") as f:

@@ -599,3 +599,99 @@ pre.code {
   .avatar-xl { width: 96px; height: 96px; }
   .pts-end { width: 46px; }
 }
+
+/* ================================================================ HELP */
+/* One floating node, not a ::after: a pseudo-element would be clipped by
+   .tscroll's overflow-x and by the panel boxes, and could not be clamped to a
+   phone viewport. z-index 70 sits above the sticky HUD (50) and below the K.O.
+   callout (80), so a tooltip can never cover a knockout. */
+body.help-on [data-help] { cursor: help; border-bottom: 1px dotted var(--cyan); }
+body.help-on [data-help]:hover,
+body.help-on [data-help]:focus-visible { color: var(--cyan); outline: none; border-bottom-style: solid; }
+body.help-on .stat [data-help] { border-bottom: none; }
+body.help-on .stat:hover .k[data-help] { color: var(--cyan); }
+.tip {
+  position: fixed; z-index: 70; display: none; max-width: min(38ch, calc(100vw - 16px));
+  background: var(--black); border: 3px solid var(--cyan); box-shadow: 6px 6px 0 var(--navy-2);
+  padding: 10px 12px; pointer-events: none;
+}
+.tip.show { display: block; }
+.tip-title { display: block; font-size: 8px; color: var(--cyan); letter-spacing: 1px; margin-bottom: 6px; }
+.tip-body { font-family: var(--font-text); font-size: 12px; line-height: 1.55; color: var(--white); }
+.tip::after { content: ""; position: absolute; left: 50%; bottom: -10px; width: 8px; height: 8px; background: var(--cyan); }
+.tip.below::after { bottom: auto; top: -10px; }
+
+/* ================================================================ TICKS */
+.tlink { color: var(--green); }
+.tlink:hover, .tlink:focus-visible { color: var(--yellow); }
+.tx-ext { font-size: 9px; color: var(--grey); margin-left: 4px; text-decoration: none; }
+.tx-ext:hover { color: var(--cyan); text-decoration: none; }
+.tick-row .hr-num { font-size: 8px; color: var(--cyan); letter-spacing: 1px; align-self: start; }
+/* A revealed answer can be a 64-character hash, and it must break inside the
+   row rather than push the row past the phone. */
+.tick-row .hr-sub { font-family: var(--font-text); font-size: 12px; line-height: 1.55; color: var(--white); overflow-wrap: anywhere; }
+.tick-row.win .hr-num, .tick-row.winner .hr-num { color: var(--green); }
+.tick-row.lobby .hr-num { color: var(--yellow); }
+.tick-raw { margin-top: 8px; }
+.tick-raw summary { font-size: 8px; color: var(--grey); cursor: pointer; letter-spacing: 1px; }
+.tick-raw summary:hover { color: var(--cyan); }
+/* Grid items default to min-width:auto, so a 300-character payload hex sets the
+   column's minimum and the whole page scrolls sideways on a phone. */
+.tick-row > * { min-width: 0; }
+.tick-row .hr-call { white-space: normal; }
+.tick-raw pre {
+  max-height: 200px; overflow: auto; font-size: 10px; margin: 6px 0 0;
+  white-space: pre-wrap; word-break: break-all;
+}
+.tick-round { margin-bottom: 14px; }
+.tick-round:last-child { margin-bottom: 0; }
+.btn.off { opacity: .35; pointer-events: none; }
+
+/* ================================================================ LAB */
+.chip-kind {
+  display: inline-block; border: 3px solid var(--navy-2); background: var(--panel);
+  padding: 6px 10px; margin: 0 6px 6px 0; max-width: 100%;
+}
+.chip-kind.hard { border-color: var(--red); }
+.chip-kind b { display: block; }
+.chip-kind .tiny { display: block; font-size: 8px; }
+
+/* ================================================================ RULES */
+.epi {
+  border-left: 4px solid var(--yellow); padding-left: 12px; margin: 14px 0 0;
+  color: var(--yellow); font-size: 9px; line-height: 2;
+}
+.rule-term { font-family: var(--font-text); font-size: 12px; line-height: 1.6; margin: 0 0 10px; }
+.rule-term b { font-family: var(--font-pixel); font-size: 9px; letter-spacing: 1px; }
+.belt-ladder { margin: 0 0 14px; }
+.flow { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 10px; }
+.flow-step {
+  display: block; border: 3px solid var(--navy-2); background: var(--panel); padding: 10px;
+  color: var(--white); text-decoration: none;
+}
+.flow-step:hover { border-color: var(--cyan); text-decoration: none; }
+.flow-step .flow-n { display: block; font-size: 8px; color: var(--cyan); }
+.flow-step b { display: block; margin: 4px 0 6px; }
+.flow-step span:last-child { font-family: var(--font-text); font-size: 11px; line-height: 1.5; color: var(--grey); }
+
+/* ================================================================ JOIN */
+.path-picker { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+/* Only the chosen path is lit. Every button yellow made the picker unreadable:
+   the 8px subtitle had to be grey, and grey on yellow is not text. */
+.path-picker .btn {
+  text-align: left; line-height: 1.6;
+  background: var(--panel); color: var(--white);
+  border-color: var(--navy-2); box-shadow: 4px 4px 0 var(--navy-2);
+}
+.path-picker .btn:hover, .path-picker .btn:focus-visible { background: var(--navy-2); color: var(--white); border-color: var(--cyan); }
+.path-picker .btn small { display: block; font-size: 8px; color: var(--grey); margin-top: 6px; }
+.path-picker .btn.btn-cyan { background: var(--cyan); color: var(--black); border-color: var(--black); box-shadow: 4px 4px 0 var(--red); }
+.path-picker .btn.btn-cyan small { color: var(--navy); }
+
+@media (max-width: 700px) {
+  .flow { grid-auto-flow: row; }
+  .epi { font-size: 10px; }
+  .tip-body { font-size: 13px; }
+}
+.agent-panel { border-color: var(--cyan); }
+.agent-panel pre.code { border-color: var(--cyan); }

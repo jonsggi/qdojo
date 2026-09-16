@@ -91,11 +91,20 @@ def test_bot_init_end_to_end(tmp_path, monkeypatch, capsys):
     cli = fake_cli(tmp_path)
     state = str(tmp_path / "state")
     monkeypatch.setattr(nodes, "cli_probe", lambda binary, timeout=6.0: (lambda ip: (1000, [])))
-    main(["--cli", cli, "bot", "--state", state, "init", "--name", "RYUBOT"])
+    main(["--cli", cli, "bot", "--state", state, "init", "--name", "RYUBOT",
+          "--provider", "none", "--skip-probe", "--yes", "--no-color"])
     out = capsys.readouterr().out
-    assert "identity :" in out and "NEW seed created" in out
+    assert "identity derived" in out and "new seed created" in out
     prof = onboard.load_profile(state)
     assert prof["name"] == "RYUBOT" and len(prof["identity"]) == 60 and os.path.exists(prof["conf"])
     assert nodes.load(state)[0]["ip"] in nodes.BOOTSTRAP
-    main(["--cli", cli, "bot", "--state", state, "init"])                 # second run keeps the seed
-    assert "existing seed" in capsys.readouterr().out
+    assert prof["identity"] in out          # printed in full, outside the box, so it can be funded
+    with open(prof["conf"]) as f:
+        seed_line = f.read()
+    assert seed_line.split("=", 1)[1].strip() not in out   # and the seed never is
+    main(["--cli", cli, "bot", "--state", state, "init", "--provider", "none",
+          "--skip-probe", "--yes", "--no-color"])          # second run keeps the seed
+    out2 = capsys.readouterr().out
+    assert "existing seed" in out2
+    with open(prof["conf"]) as f:
+        assert f.read() == seed_line                        # byte-identical, never overwritten

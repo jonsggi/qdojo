@@ -15,17 +15,79 @@ const POLL_MS = 10000;
 const TICK_MS = 500;               // one tick is about half a second
 const STALE_AFTER_MS = 3 * 60000;  // live export older than this is flagged
 
-const QUICK_START =
-`uv sync
-uv run qdojo bot run --board https://<house>/data/board.json \\
-    --conf ~/.qdojo/bot.conf --solver examples/solvers/echo.py`;
-
 // Last resort when nothing can be fetched at all (opened from file://).
 const EMBEDDED = {
   history: { house: 'QDOJOHASNOSIGNALYETINSERTCOINANDWAITFORTHEBELLTORINGONTHEBOARD',
              generated_at: null, generated_tick: 0, rounds: [], fighters: [] },
   board: null,
 };
+
+// ---------------------------------------------------------------- in-game help
+// ONE dictionary. Tooltips and the RULES screen both read it, so the definition
+// a reader hovers and the definition they read on the rules page cannot drift
+// apart -- and the drift would have been about money.
+const HELP = {
+  pot:        { label: 'POT', text: 'Everything the round pays out: every counted stake plus the house seed. What nobody wins carries into the next round.' },
+  seed:       { label: 'HOUSE SEED', text: 'Money the house adds so a small table is still worth fighting for. It is the carry from earlier rounds plus whatever the house matches, never more than the cap.' },
+  seed_cap:   { label: 'SEED CAP', text: 'The most the house will add to this round, whatever the fighters stake. It is published before anyone buys a seat, so the house cannot sweeten a round after seeing who sat down.' },
+  match:      { label: 'HOUSE MATCH', text: 'How much the house adds per QU staked. 1:1 means it matches every stake, up to the seed cap. FIXED means a flat seed no matter how many fighters sit down.' },
+  carry:      { label: 'CARRY', text: 'The part of a pot nobody won. The house does not keep it: it becomes the next round\'s seed, so an unsolved riddle makes the next one richer.' },
+  bond:       { label: 'BOND', text: 'A slice of every win the house holds back until the winner has fought a few more rounds. Come back and it is paid out; walk away with the purse and it returns to the pot.' },
+  bond_rounds:{ label: 'BOND ROUNDS', text: 'How many more rounds a winner must fight before its bond is released. Sit out twenty rounds and the bond is forfeited to the pot.' },
+  rake:       { label: 'RAKE', text: 'The house\'s cut, taken from the staked money only and never from the seed. Everything else is paid to fighters or carried.' },
+  rake_split: { label: 'RAKE SPLIT', text: 'The rake is split three ways: the house treasury, the shareholders of the house, and the developer share. The proportions are published with every round.' },
+  entry_fee:  { label: 'ENTRY FEE', text: 'What one seat at this table costs. You pay it before the riddle exists, so you are buying a chair, not an answer.' },
+  points:     { label: 'BELT POINTS', text: 'Your score at your own belt: a win is +2, a correct but unpaid answer +1, any failure −1. At +3 you are promoted and the score resets; at −3 you are demoted.' },
+  belt:       { label: 'BELT', text: 'Your rung on the ladder: white, yellow, orange, green, blue. You may sit at your belt or above it, never below, unless the table has opened a sensei seat.' },
+  sensei:     { label: 'SENSEI SEAT', text: 'A senior fighter sitting at a table below its belt. It pays like anyone else but can win back at most its own stake, and the round moves no belt points for it. Seniors keep the beginners\' tables alive without taking the beginners\' money.' },
+  verdict:    { label: 'VERDICT', text: 'What the round decided about one fighter. WINNER took money, SOLVED was right but too late to be paid, WRONG answered wrong, NO SHOW bought a seat and never fought, NO REVEAL sealed an answer and never opened it, BAD REVEAL opened something that did not match the seal.' },
+  solve_ticks:{ label: 'SOLVE TIME', text: 'Ticks from the riddle being published to your sealed answer landing on chain. One tick is about half a second, so 12 T is about six seconds — thinking time and network time together.' },
+  podium:     { label: 'PODIUM 5:3:2', text: 'The first three correct sealed answers split the pot five parts, three parts, two parts. A fourth correct answer earns belt points and no money.' },
+  mode:       { label: 'PAYOUT MODE', text: 'How this round divides its pot. SPLIT shares it between everyone who solved it, FIRST gives it all to the first correct commit, PODIUM pays the first three 5:3:2.' },
+  ko:         { label: 'K.O.', text: 'The arcade word for a settled round with a winner. DOUBLE and TRIPLE K.O. mean two or three winners split it; PERFECT means the winner beat at least three fighters.' },
+  commit:     { label: 'COMMIT WINDOW', text: 'How long the dojo accepts sealed answers. You publish the hash of your answer, not the answer, so nobody — not even the house — can copy you before the window closes.' },
+  reveal:     { label: 'REVEAL WINDOW', text: 'How long you have to open your seal. The house checks that what you show hashes to what you sealed. A mismatch is a lie, and the dojo records it.' },
+  stake:      { label: 'STAKE', text: 'The money you put into this round. It stays in the pot whether you are right or wrong; only a late, underpaid or outranked seat is refunded.' },
+  seats:      { label: 'SEATS', text: 'Chairs bought before the riddle exists. If not enough are bought before the lobby closes there is no contest, and every seat is refunded.' },
+  strikes:    { label: 'STRIKES', text: 'Times a fighter broke etiquette: a second commitment in one round, a reveal that did not match its seal, a malformed payload. The dojo remembers them.' },
+  tick:       { label: 'TICK', text: 'Qubic\'s clock. About half a second, and every dojo message lands on exactly one. Click any tick to read what happened in it.' },
+  verify:     { label: 'VERIFY', text: 'Your browser recomputes the round\'s riddle hash, answer commitment and settlement hash from the published evidence. Green means the house did not move the goalposts after the fact.' },
+  net:        { label: 'NET', text: 'Earned minus staked, over this fighter\'s whole career. A bond the house is still holding is not earned yet, so a fresh winner can read negative.' },
+};
+function h(key) { return HELP[key] ? ` data-help="${key}"` : ''; }
+
+// One floating node, not a CSS ::after: a pseudo-element would be clipped by
+// .tscroll's overflow and by the panel boxes, and could not be clamped to a
+// phone viewport.
+function showTipFor(el) {
+  if (!S.help || !el) return;
+  const d = HELP[el.dataset.help];
+  const tip = $('#tip');
+  if (!d || !tip) return;
+  $('.tip-title', tip).textContent = d.label;
+  $('.tip-body', tip).textContent = d.text;
+  tip.className = 'tip show';
+  const r = el.getBoundingClientRect(), w = tip.offsetWidth, ht = tip.offsetHeight;
+  const above = r.top > ht + 14;
+  tip.style.left = `${Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2))}px`;
+  tip.style.top = `${above ? r.top - ht - 10 : r.bottom + 10}px`;
+  tip.classList.toggle('below', !above);
+  tip.setAttribute('aria-hidden', 'false');
+}
+function hideTip() {
+  const t = $('#tip');
+  if (!t) return;
+  t.className = 'tip';
+  t.setAttribute('aria-hidden', 'true');
+}
+function setHelp(on) {
+  S.help = on;
+  document.body.classList.toggle('help-on', on);
+  const b = $('#btn-help');
+  if (b) { b.textContent = `HELP: ${on ? 'ON' : 'OFF'}`; b.setAttribute('aria-pressed', String(on)); }
+  if (!on) hideTip();
+  try { localStorage.setItem('qdojo.help', on ? '1' : '0'); } catch (e) { /* ignore */ }
+}
 
 // ---------------------------------------------------------------- state
 const S = {
@@ -42,6 +104,11 @@ const S = {
   audio: null,
   cache: {},           // container id -> last html
   prevRounds: null,    // round_id -> {state, winners} for diff callouts
+  tick: null,          // selected tick on the tick screen
+  tickIndex: null,     // tick -> [event] derived from history.json
+  tickIndexKey: null,  // the rawKey tickIndex was built from
+  help: true,          // in-game tooltips
+  setup: { path: 'none', provider: 'deepseek', model: null },
 };
 
 // ---------------------------------------------------------------- utils
@@ -65,6 +132,19 @@ function idLink(id, cls = '') {
 function txLink(tx, label) {
   if (!tx) return '<span class="muted">—</span>';
   return `<a class="tx" href="${EXPLORER_TX}${esc(tx)}" title="${esc(tx)}" target="_blank" rel="noopener">${esc(label || shortId(tx))}</a>`;
+}
+function tickHref(t) { return `#tick/${Number(t)}`; }
+// A TICK NUMBER, never a duration. `commit_window: 300` is 300 ticks long; a
+// link from it to #tick/300 would be actively wrong. Check before you convert.
+function tickLink(t, label) {
+  if (t === null || t === undefined) return '<span class="muted">—</span>';
+  return `<a class="tlink" href="${tickHref(t)}" title="TICK ${fmt(t)} — WHAT HAPPENED HERE">${esc(label || fmt(t))}</a>`;
+}
+// Our page explains, the explorer proves: the tick first, the raw tx as a glyph.
+function txAt(tx, t, label) {
+  const l = tickLink(t, label || ('@' + fmt(t)));
+  if (!tx) return l;
+  return `${l}<a class="tx-ext" href="${EXPLORER_TX}${esc(tx)}" title="RAW TRANSACTION ON THE EXPLORER" target="_blank" rel="noopener">↗</a>`;
 }
 function ticksToHuman(t) {
   const s = Math.max(0, Math.round(t / 2));
@@ -133,6 +213,19 @@ async function fetchJSON(url) {
 
 // The three side files are optional: the page works from history.json alone.
 async function optionalJSON(url) { try { return await fetchJSON(url); } catch (e) { return null; } }
+// Lazily fetched, cached, never in the 10 s poll: tick shards and the lab are
+// one screen's worth of slow-moving data that most visitors never open. A past
+// shard is immutable, so it gets the normal HTTP cache, not `no-store`.
+const LAZY = new Map();
+function lazyJSON(url, maxAgeMs = 0, onLoad) {
+  const e = LAZY.get(url);
+  if (e && (e.status === 'loading' || !maxAgeMs || Date.now() - e.at < maxAgeMs)) return e;
+  const rec = { status: 'loading', data: e && e.data, at: Date.now() };
+  LAZY.set(url, rec);
+  fetch(url, { cache: 'default' }).then(r => (r.ok ? r.json() : null)).catch(() => null)
+    .then(d => { LAZY.set(url, { status: d ? 'ok' : 'missing', data: d, at: Date.now() }); if (onLoad) onLoad(); });
+  return rec;
+}
 async function loadSet(prefix) {
   const history = await fetchJSON(`./data/${prefix}history.json`);
   if (!history || !Array.isArray(history.rounds)) throw new Error(`${prefix}history.json has no rounds`);
@@ -549,9 +642,9 @@ function entryStatus(e, r) {
 
 function entryLinks(e) {
   const parts = [];
-  if (e.enter_tx) parts.push(txLink(e.enter_tx, `SEAT @${fmt(e.enter_tick)}`));
-  if (e.commit_tx || !e.enter_tx) parts.push(txLink(e.commit_tx, `COMMIT @${fmt(e.commit_tick)}`));
-  if (e.reveal_tx) parts.push(txLink(e.reveal_tx, `REVEAL @${fmt(e.reveal_tick)}`));
+  if (e.enter_tx) parts.push(txAt(e.enter_tx, e.enter_tick, `SEAT @${fmt(e.enter_tick)}`));
+  if (e.commit_tx || !e.enter_tx) parts.push(txAt(e.commit_tx, e.commit_tick, `COMMIT @${fmt(e.commit_tick)}`));
+  if (e.reveal_tx) parts.push(txAt(e.reveal_tx, e.reveal_tick, `REVEAL @${fmt(e.reveal_tick)}`));
   return parts.join('\n      ');
 }
 
@@ -605,7 +698,7 @@ function seatCard(e, r, slot) {
     <div class="fid">${idLink(e.identity)}</div>
     <div class="fstake">SEAT ${qu(e.stake)}</div>
     <div class="fstatus">${entryStatus(e, r)}</div>
-    <div class="flinks">${e.enter_tx ? txLink(e.enter_tx, `ENTER @${fmt(e.enter_tick)}`) : '<span class="muted">ENTER TX PENDING</span>'}</div>
+    <div class="flinks">${e.enter_tx ? txAt(e.enter_tx, e.enter_tick, `ENTER @${fmt(e.enter_tick)}`) : '<span class="muted">ENTER TX PENDING</span>'}</div>
   </div>`;
 }
 
@@ -627,7 +720,7 @@ function lobbyHTML(r) {
     <div class="fight-head">
       <div class="fight-round">ROUND ${r.round_id}</div>
       <div class="fight-phase"><span class="badge badge-lobby" data-phase-badge="${r.round_id}">LOBBY</span> THE TABLE ${beltTag(r)}</div>
-      <div class="tiny muted">TABLE OPENED @ ${fmt(r.lobby_tick)} · ${esc(r.title || '')}</div>
+      <div class="tiny muted">TABLE OPENED @ ${tickLink(r.lobby_tick)} · ${esc(r.title || '')}</div>
     </div>
 
     <div class="table-banner">
@@ -650,7 +743,7 @@ function lobbyHTML(r) {
         </div>
         ${meterHTML(`win-${r.round_id}`, 'warn')}
         <div class="meter-legend">
-          <span>LOBBY ${fmt(l.l0)} – ${fmt(l.l1)}</span>
+          <span${h('seats')}>LOBBY ${tickLink(l.l0)} – ${tickLink(l.l1)}</span>
           <span>THEN COMMIT ${fmt(r.commit_window)} · REVEAL ${fmt(r.reveal_window)} TICKS</span>
         </div>
         <div class="continue lobby" data-continue="${r.round_id}">
@@ -663,14 +756,14 @@ function lobbyHTML(r) {
       <div class="panel panel-cyan">
         <h3>THE STAKES</h3>
         <div class="stats" style="margin-bottom:0">
-          <div class="stat"><div class="k">ENTRY FEE</div><div class="v">${fmt(r.entry_fee)}</div></div>
-          <div class="stat green"><div class="k">MIN PLAYERS</div><div class="v">${fmt(r.min_players)}</div></div>
-          <div class="stat cyan"><div class="k">${r.match_bps ? 'SEED CAP' : 'HOUSE SEED'}</div><div class="v">${fmt(r.house_seed)}</div></div>
-          <div class="stat cyan"><div class="k">HOUSE MATCH</div><div class="v">${esc(matchLabel(r.match_bps))}</div></div>
-          <div class="stat"><div class="k">CARRY IN</div><div class="v">${fmt(r.carry_in)}</div></div>
-          <div class="stat"><div class="k">PAYOUT</div><div class="v small">${esc(payoutModeLabel(r))}</div></div>
-          <div class="stat"><div class="k">BELT</div><div class="v small">${r.belt ? beltTag(r) : '<span class="muted">OPEN</span>'}</div></div>
-          <div class="stat"><div class="k">POT SO FAR</div><div class="v">${fmt(pot)}</div></div>
+          <div class="stat"><div class="k"${h('entry_fee')}>ENTRY FEE</div><div class="v">${fmt(r.entry_fee)}</div></div>
+          <div class="stat green"><div class="k"${h('seats')}>MIN PLAYERS</div><div class="v">${fmt(r.min_players)}</div></div>
+          <div class="stat cyan"><div class="k"${h('seed_cap')}>${r.match_bps ? 'SEED CAP' : 'HOUSE SEED'}</div><div class="v">${fmt(r.house_seed)}</div></div>
+          <div class="stat cyan"><div class="k"${h('match')}>HOUSE MATCH</div><div class="v">${esc(matchLabel(r.match_bps))}</div></div>
+          <div class="stat"><div class="k"${h('carry')}>CARRY IN</div><div class="v">${fmt(r.carry_in)}</div></div>
+          <div class="stat"><div class="k"${h('mode')}>PAYOUT</div><div class="v small">${esc(payoutModeLabel(r))}</div></div>
+          <div class="stat"><div class="k"${h('belt')}>BELT</div><div class="v small">${r.belt ? beltTag(r) : '<span class="muted">OPEN</span>'}</div></div>
+          <div class="stat"><div class="k"${h('pot')}>POT SO FAR</div><div class="v">${fmt(pot)}</div></div>
         </div>
         <p class="tiny muted" style="margin:10px 0 0">A seat bought and never fought is forfeited to the pot. If the table does not fill, every seat is refunded.</p>
       </div>
@@ -717,7 +810,7 @@ function renderFight() {
       <div class="fight-head">
         <div class="fight-round">ROUND ${r.round_id}</div>
         <div class="fight-phase"><span class="badge badge-${esc(r.state)}" data-phase-badge="${r.round_id}">${esc(r.state.toUpperCase())}</span> ${esc(r.title)} ${beltTag(r)}</div>
-        <div class="tiny muted">PUBLISHED @ ${fmt(r.publish_tick)} · ${txLink(r.publish_tx, 'TX')}${hasLobby(r) ? ` · SEATS ${seatsShort(seats)}` : ''} · ${esc(payoutModeLabel(r))}${r.bond_bps ? ` · ${esc(bondLabel(r))}` : ''}</div>
+        <div class="tiny muted">PUBLISHED @ ${txAt(r.publish_tx, r.publish_tick)}${hasLobby(r) ? ` · SEATS ${seatsShort(seats)}` : ''} · ${esc(payoutModeLabel(r))}${r.bond_bps ? ` · ${esc(bondLabel(r))}` : ''}</div>
       </div>
 
       <div class="cols">
@@ -729,8 +822,8 @@ function renderFight() {
           </div>
           ${meterHTML(`win-${r.round_id}`, 'warn')}
           <div class="meter-legend">
-            <span>COMMIT ${fmt(w.c0)} – ${fmt(w.c1)}</span>
-            <span>REVEAL ${fmt(w.r0)} – ${fmt(w.r1)}</span>
+            <span${h('commit')}>COMMIT ${tickLink(w.c0)} – ${tickLink(w.c1)}</span>
+            <span${h('reveal')}>REVEAL ${tickLink(w.r0)} – ${tickLink(w.r1)}</span>
           </div>
           <div class="continue" data-continue="${r.round_id}">
             <div class="continue-label" data-continue-label="${r.round_id}">CONTINUE?</div>
@@ -751,8 +844,8 @@ function renderFight() {
             <span><i style="background:var(--yellow)"></i>STAKES ${fmt(staked)}</span>
           </div>
           <div class="stats" style="margin-top:14px;margin-bottom:0">
-            <div class="stat"><div class="k">ENTRY FEE</div><div class="v">${fmt(r.entry_fee)}</div></div>
-            <div class="stat green"><div class="k">${hasLobby(r) ? 'SEATS' : 'FIGHTERS IN'}</div><div class="v">${hasLobby(r) ? `${seatsShort(seats)}` : entries.length}</div></div>
+            <div class="stat"><div class="k"${h('entry_fee')}>ENTRY FEE</div><div class="v">${fmt(r.entry_fee)}</div></div>
+            <div class="stat green"><div class="k"${h('seats')}>${hasLobby(r) ? 'SEATS' : 'FIGHTERS IN'}</div><div class="v">${hasLobby(r) ? `${seatsShort(seats)}` : entries.length}</div></div>
             <div class="stat cyan"><div class="k">REVEALED</div><div class="v">${revealed} / ${entries.length}</div></div>
           </div>
         </div>
@@ -782,9 +875,9 @@ function entriesTable(r) {
       <td>${fighterLink(e.identity, `${avatarSVG(e.identity, 'avatar-sm')} ${displayName(e)}`, 'tname')}</td>
       <td>${idLink(e.identity)}</td>
       <td class="num">${fmt(e.stake)}</td>
-      ${lobby ? `<td>${e.enter_tx ? txLink(e.enter_tx, '@' + fmt(e.enter_tick)) : '<span class="muted">—</span>'}</td>` : ''}
-      <td>${e.commit_tx ? txLink(e.commit_tx, '@' + fmt(e.commit_tick)) : '<span class="muted">—</span>'}</td>
-      <td>${e.reveal_tx ? txLink(e.reveal_tx, '@' + fmt(e.reveal_tick)) : '<span class="muted">—</span>'}</td>
+      ${lobby ? `<td>${e.enter_tx ? txAt(e.enter_tx, e.enter_tick) : '<span class="muted">—</span>'}</td>` : ''}
+      <td>${e.commit_tx ? txAt(e.commit_tx, e.commit_tick) : '<span class="muted">—</span>'}</td>
+      <td>${e.reveal_tx ? txAt(e.reveal_tx, e.reveal_tick) : '<span class="muted">—</span>'}</td>
       <td class="mono">${e.answer === null || e.answer === undefined ? '<span class="muted">—</span>' : esc(e.answer)}</td>
       <td>${entryStatus(e, r)}</td>
     </tr>`).join('')}</tbody></table></div>`;
@@ -823,7 +916,7 @@ function payoutsTable(s, r) {
       <td>${payoutBadge(p.kind)}${rel && rel.bond_round ? ` <a class="tiny" href="#results/${rel.bond_round}">FROM R${rel.bond_round}</a>` : ''}</td>
       <td class="num">${fmt(p.amount)}</td>
       <td>${txLink(p.tx)}</td>
-      <td>${p.tick ? fmt(p.tick) : '<span class="muted">—</span>'}</td>
+      <td>${tickLink(p.tick)}</td>
       <td>${p.confirmed ? '<span style="color:var(--green)">YES</span>' : '<span class="blink" style="color:var(--orange)">PENDING</span>'}</td>
     </tr>`; }).join('')}</tbody></table></div>`;
   return table + bondsHeldTable(s, r) + (forfeited ? `<p class="tiny" style="margin:10px 0 0;color:var(--orange)">BONDS FORFEITED: ${fmt(forfeited)} QU went to the pot — a holder did not come back to fight.</p>` : '');
@@ -858,21 +951,21 @@ function renderResults() {
   </div>`);
 
   parts.push(`<div class="res-ko">
-    <div class="ko-text ${c.cls}">${esc(c.text)}</div>
+    <div${h('ko')} class="ko-text ${c.cls}">${esc(c.text)}</div>
     ${c.perfect ? '<div class="ko-perfect">PERFECT</div>' : ''}
     ${c.sub ? `<div class="ko-sub">${esc(c.sub)}</div>` : ''}
     ${!s ? `<div class="ko-sub">THIS ROUND IS STILL OPEN — <a href="#fight">${isLobby(r) ? 'THE TABLE' : 'NOW FIGHTING'}</a></div>` : ''}
   </div>`);
 
   const seats = seatsOf(r);
-  const seatTile = hasLobby(r) ? `<div class="stat green"><div class="k">SEATS</div><div class="v">${seatsShort(seats)}</div></div>` : '';
+  const seatTile = hasLobby(r) ? `<div class="stat green"><div class="k"${h('seats')}>SEATS</div><div class="v">${seatsShort(seats)}</div></div>` : '';
   const moneyTiles = `
-      <div class="stat"><div class="k">${r.match_bps ? 'SEED CAP' : 'HOUSE SEED'}</div><div class="v">${fmt(r.house_seed)}</div></div>
-      <div class="stat cyan"><div class="k">HOUSE MATCH</div><div class="v">${esc(matchLabel(r.match_bps))}</div></div>
-      <div class="stat"><div class="k">CARRY IN</div><div class="v">${fmt(r.carry_in)}</div></div>
-      <div class="stat"><div class="k">ENTRY FEE</div><div class="v">${fmt(r.entry_fee)}</div></div>
-      <div class="stat"><div class="k">PAYOUT</div><div class="v small">${esc(payoutModeLabel(r))}</div></div>
-      ${r.bond_bps ? `<div class="stat cyan"><div class="k">BOND</div><div class="v small">${esc(bondLabel(r))}</div></div>` : ''}
+      <div class="stat"><div class="k"${h('seed_cap')}>${r.match_bps ? 'SEED CAP' : 'HOUSE SEED'}</div><div class="v">${fmt(r.house_seed)}</div></div>
+      <div class="stat cyan"><div class="k"${h('match')}>HOUSE MATCH</div><div class="v">${esc(matchLabel(r.match_bps))}</div></div>
+      <div class="stat"><div class="k"${h('carry')}>CARRY IN</div><div class="v">${fmt(r.carry_in)}</div></div>
+      <div class="stat"><div class="k"${h('entry_fee')}>ENTRY FEE</div><div class="v">${fmt(r.entry_fee)}</div></div>
+      <div class="stat"><div class="k"${h('mode')}>PAYOUT</div><div class="v small">${esc(payoutModeLabel(r))}</div></div>
+      ${r.bond_bps ? `<div class="stat cyan"><div class="k"${h('bond')}>BOND</div><div class="v small">${esc(bondLabel(r))}</div></div>` : ''}
       ${seatTile}`;
 
   if (s && s.void) {
@@ -881,20 +974,20 @@ function renderResults() {
     const refunded = refunds.reduce((a, p) => a + (p.amount || 0), 0);
     const l = lobbyWindow(r);
     parts.push(`<div class="stats">
-      <div class="stat"><div class="k">POT</div><div class="v">${fmt(s.pot)}</div></div>
-      <div class="stat red"><div class="k">RAKE</div><div class="v">${fmt(s.rake)}</div></div>
-      <div class="stat cyan"><div class="k">CARRY</div><div class="v">${fmt(s.carry)}</div></div>
+      <div class="stat"><div class="k"${h('pot')}>POT</div><div class="v">${fmt(s.pot)}</div></div>
+      <div class="stat red"><div class="k"${h('rake')}>RAKE</div><div class="v">${fmt(s.rake)}</div></div>
+      <div class="stat cyan"><div class="k"${h('carry')}>CARRY</div><div class="v">${fmt(s.carry)}</div></div>
       <div class="stat green"><div class="k">REFUNDED</div><div class="v">${fmt(refunded)}</div></div>
-      <div class="stat"><div class="k">SEED USED</div><div class="v">${fmt(seedUsed(r))}</div></div>
+      <div class="stat"><div class="k"${h('seed')}>SEED USED</div><div class="v">${fmt(seedUsed(r))}</div></div>
       ${moneyTiles}
     </div>`);
     parts.push(`<div class="cols">
       <div class="panel panel-cyan">
         <h3>THE TABLE</h3>
         <dl class="kv">
-          <dt>LOBBY</dt><dd>${fmt(l.l0)} – ${fmt(l.l1)} (${fmt(r.lobby_window)} ticks, ~${ticksToHuman(r.lobby_window || 0)})</dd>
-          <dt>SEATS</dt><dd>${seats.bought} bought, ${fmt(r.min_players)} needed</dd>
-          <dt>BELT</dt><dd>${r.belt ? beltTag(r) : '<span class="muted">open</span>'}</dd>
+          <dt${h('seats')}>LOBBY</dt><dd>${tickLink(l.l0)} – ${tickLink(l.l1)} (${fmt(r.lobby_window)} ticks, ~${ticksToHuman(r.lobby_window || 0)})</dd>
+          <dt${h('seats')}>SEATS</dt><dd>${seats.bought} bought, ${fmt(r.min_players)} needed</dd>
+          <dt${h('belt')}>BELT</dt><dd>${r.belt ? beltTag(r) : '<span class="muted">open</span>'}</dd>
           <dt>RIDDLE</dt><dd class="muted">never published</dd>
         </dl>
         <p class="tiny muted" style="margin:10px 0 0">The carry in rolls on to the next round untouched.</p>
@@ -902,11 +995,11 @@ function renderResults() {
       <div class="panel panel-yellow">
         <h3>SETTLEMENT · VERIFY IT YOURSELF</h3>
         <dl class="kv">
-          <dt>SETTLE HASH</dt><dd class="mono wrap">${esc(s.hash || '—')}</dd>
+          <dt${h('verify')}>SETTLE HASH</dt><dd class="mono wrap">${esc(s.hash || '—')}</dd>
           <dt>SETTLE TX</dt><dd>${txLink(s.settle_tx)}</dd>
         </dl>
         <p class="tiny muted" style="margin:10px 0">settlement_hash = SHA-256("qdojo/settlement/v0" ‖ canonical JSON of the settlement without hash, settle_tx, settle_tick). No riddle hash and no answer commitment exist for a void round.</p>
-        <button class="btn btn-sm btn-cyan" data-verify="${r.round_id}">VERIFY</button>
+        <button${h('verify')} class="btn btn-sm btn-cyan" data-verify="${r.round_id}">VERIFY</button>
         <div class="verify-out" data-verify-out="${r.round_id}"></div>
       </div>
     </div>`);
@@ -920,11 +1013,11 @@ function renderResults() {
   if (s) {
     const potPct = Math.min(100, 100 * s.pot / maxPot());
     parts.push(`<div class="stats">
-      <div class="stat"><div class="k">POT</div><div class="v">${fmt(s.pot)}</div></div>
-      <div class="stat red"><div class="k">RAKE</div><div class="v">${fmt(s.rake)}</div></div>
-      <div class="stat cyan"><div class="k">CARRY</div><div class="v">${fmt(s.carry)}</div></div>
-      <div class="stat green"><div class="k">WINNERS</div><div class="v">${(s.winners || []).length}</div></div>
-      <div class="stat"><div class="k">SEED USED</div><div class="v">${fmt(seedUsed(r))}</div></div>
+      <div class="stat"><div class="k"${h('pot')}>POT</div><div class="v">${fmt(s.pot)}</div></div>
+      <div class="stat red"><div class="k"${h('rake')}>RAKE</div><div class="v">${fmt(s.rake)}</div></div>
+      <div class="stat cyan"><div class="k"${h('carry')}>CARRY</div><div class="v">${fmt(s.carry)}</div></div>
+      <div class="stat green"><div class="k"${h('verdict')}>WINNERS</div><div class="v">${(s.winners || []).length}</div></div>
+      <div class="stat"><div class="k"${h('seed')}>SEED USED</div><div class="v">${fmt(seedUsed(r))}</div></div>
       ${moneyTiles}
     </div>
     <div class="meter" style="margin-bottom:20px"><div class="meter-fill pot" style="width:${potPct.toFixed(1)}%"></div></div>`);
@@ -950,16 +1043,16 @@ function renderResults() {
       <div class="panel panel-yellow">
         <h3>THE ANSWER · VERIFY IT YOURSELF</h3>
         <dl class="kv">
-          <dt>ANSWER</dt><dd class="answer">${esc(s.answer)}</dd>
-          <dt>DOJO SALT</dt><dd class="mono wrap">${esc(s.dojo_salt)}</dd>
-          <dt>COMMITMENT</dt><dd class="mono wrap">${esc(r.answer_commitment)}</dd>
-          <dt>RIDDLE HASH</dt><dd class="mono wrap">${esc(r.riddle_hash)}</dd>
-          <dt>SETTLE HASH</dt><dd class="mono wrap">${esc(s.hash)}</dd>
-          <dt>PUBLISH TX</dt><dd>${txLink(r.publish_tx)}</dd>
-          <dt>SETTLE TX</dt><dd>${txLink(s.settle_tx)}</dd>
+          <dt${h('verify')}>ANSWER</dt><dd class="answer">${esc(s.answer)}</dd>
+          <dt${h('verify')}>DOJO SALT</dt><dd class="mono wrap">${esc(s.dojo_salt)}</dd>
+          <dt${h('commit')}>COMMITMENT</dt><dd class="mono wrap">${esc(r.answer_commitment)}</dd>
+          <dt${h('verify')}>RIDDLE HASH</dt><dd class="mono wrap">${esc(r.riddle_hash)}</dd>
+          <dt${h('verify')}>SETTLE HASH</dt><dd class="mono wrap">${esc(s.hash)}</dd>
+          <dt>PUBLISHED</dt><dd>${txAt(r.publish_tx, r.publish_tick)}</dd>
+          <dt>SETTLED</dt><dd>${txAt(s.settle_tx, s.settle_tick)}</dd>
         </dl>
         <p class="tiny muted" style="margin:10px 0">commitment = SHA-256("qdojo/answer/v0" ‖ round_id u32le ‖ dojo_salt ‖ canonical answer)</p>
-        <button class="btn btn-sm btn-cyan" data-verify="${r.round_id}">VERIFY</button>
+        <button${h('verify')} class="btn btn-sm btn-cyan" data-verify="${r.round_id}">VERIFY</button>
         <div class="verify-out" data-verify-out="${r.round_id}"></div>
       </div>
     </div>`);
@@ -967,8 +1060,8 @@ function renderResults() {
 
   if (!s) {
     parts.push(`<div class="stats">
-      <div class="stat"><div class="k">POT SO FAR</div><div class="v">${fmt(livePot(r))}</div></div>
-      <div class="stat"><div class="k">SEED SO FAR</div><div class="v">${fmt(seedUsed(r))}</div></div>
+      <div class="stat"><div class="k"${h('pot')}>POT SO FAR</div><div class="v">${fmt(livePot(r))}</div></div>
+      <div class="stat"><div class="k"${h('seed')}>SEED SO FAR</div><div class="v">${fmt(seedUsed(r))}</div></div>
       ${moneyTiles}
     </div>`);
   }
@@ -1043,7 +1136,7 @@ function renderFame() {
       <td class="num qu">${fmt(f.earned)}</td>
       <td class="num ${Number(f.net) < 0 ? 'neg' : 'pos'}">${signed(f.net)}</td>
       <td>${strikesHTML(f.strikes)}</td>
-      <td>${f.bow_tick ? '@' + fmt(f.bow_tick) : '<span class="muted">never</span>'}</td>
+      <td>${f.bow_tick ? tickLink(f.bow_tick, '@' + fmt(f.bow_tick)) : '<span class="muted">never</span>'}</td>
     </tr>`).join('')}</tbody></table></div>
     <p class="tiny muted" style="margin:12px 0 0">A stranger has not bowed. Strikes: duplicate commits, malformed payloads, reveals without a commit, spam. Phase one evicts on them. Belts: winner +${S.data.rules.winner}, solved +${S.data.rules.solved}, failure ${S.data.rules.failure}; ${signed(S.data.rules.promote_at)} promotes, ${signed(S.data.rules.demote_at)} demotes; a win above your belt promotes you straight there.</p>
     </div>`);
@@ -1144,7 +1237,7 @@ function renderFighter() {
           ${p.name ? '' : '<div class="tiny muted">HAS NOT BOWED · NO NAME ON RECORD</div>'}
           <div class="fcb-id">${idLink(p.identity)} <span class="tiny muted">EXPLORER</span></div>
           <div class="fcb-meta">
-            <span>BOWED ${p.bow_tick ? '@' + fmt(p.bow_tick) : '<span class="muted">NEVER</span>'}</span>
+            <span>BOWED ${p.bow_tick ? tickLink(p.bow_tick, '@' + fmt(p.bow_tick)) : '<span class="muted">NEVER</span>'}</span>
             <span>RANK ${ladderIdx + 1} / ${d.ladder.length}</span>
             <span>${ordinal(place)} BY NET</span>
           </div>
@@ -1165,14 +1258,14 @@ function renderFighter() {
         <div class="stat"><div class="k">SOLVE RATE</div><div class="v">${pct(p.solve_rate)}</div></div>
         <div class="stat"><div class="k">WIN RATE</div><div class="v">${pct(p.win_rate)}</div></div>
         <div class="stat"><div class="k">WIN / LOSS</div><div class="v">${p.win_loss == null ? '—' : Number(p.win_loss).toFixed(2)}</div></div>
-        <div class="stat cyan"><div class="k">AVG SOLVE</div><div class="v small">${ticksSecs(p.avg_solve_ticks)}</div></div>
-        <div class="stat cyan"><div class="k">BEST SOLVE</div><div class="v small">${ticksSecs(p.best_solve_ticks)}</div></div>
-        <div class="stat"><div class="k">STAKED</div><div class="v">${fmt(p.staked)}</div></div>
+        <div class="stat cyan"><div class="k"${h('solve_ticks')}>AVG SOLVE</div><div class="v small">${ticksSecs(p.avg_solve_ticks)}</div></div>
+        <div class="stat cyan"><div class="k"${h('solve_ticks')}>BEST SOLVE</div><div class="v small">${ticksSecs(p.best_solve_ticks)}</div></div>
+        <div class="stat"><div class="k"${h('stake')}>STAKED</div><div class="v">${fmt(p.staked)}</div></div>
         <div class="stat green"><div class="k">EARNED</div><div class="v">${fmt(p.earned)}</div></div>
-        <div class="stat ${Number(p.net) < 0 ? 'red' : 'green'}"><div class="k">NET</div><div class="v ${Number(p.net) < 0 ? 'neg' : 'pos'}">${signed(p.net)}</div></div>
+        <div class="stat ${Number(p.net) < 0 ? 'red' : 'green'}"><div class="k"${h('net')}>NET</div><div class="v ${Number(p.net) < 0 ? 'neg' : 'pos'}">${signed(p.net)}</div></div>
         <div class="stat"><div class="k">STREAK</div><div class="v">${streakHTML(p.streak)}</div></div>
         <div class="stat"><div class="k">BEST STREAK</div><div class="v">${p.best_streak ? 'W' + fmt(p.best_streak) : '—'}</div></div>
-        <div class="stat red"><div class="k">STRIKES</div><div class="v">${strikesHTML(p.strikes)}</div></div>
+        <div class="stat red"><div class="k"${h('strikes')}>STRIKES</div><div class="v">${strikesHTML(p.strikes)}</div></div>
       </div>
       <p class="tiny muted" style="margin:10px 0 0">Solve time is the commit tick minus the publish tick; 1 tick ≈ ${(TICK_MS / 1000).toFixed(1)} s. Net is earned minus staked; a bond still held is not earned yet.</p>
     </div>
@@ -1260,48 +1353,198 @@ function renderHistory() {
   setHTML('history-body', parts.join(''));
 }
 
+// ---------------------------------------------------------------- setup paths
+// Four ways to bring a fighter, listed cheapest-first on purpose: a plain
+// script needs no key, no bill and no network, and half the white belt is
+// arithmetic. Every command string here must match what `qdojo bot setup`
+// prints; apps/web/tests/setup.test.cjs is the drift guard.
+const SETUP_PATHS = {
+  none: {
+    label: 'NO LLM AT ALL', tag: 'A PLAIN SCRIPT CAN WIN',
+    how: 'Your fighter is a program, not a model. It costs nothing to run, it never times out and it never '
+       + 'returns a refusal. The white and yellow belts are arithmetic and string work: thirty lines of Python '
+       + 'beats a language model on them.',
+    provider: null,
+  },
+  openrouter: {
+    label: 'OPENROUTER', tag: 'ONE KEY, EVERY MODEL',
+    how: 'Sign in at openrouter.ai, open Keys, create one, and add about five dollars of credit — that is '
+       + 'hundreds of white-belt rounds. One key reaches DeepSeek, Gemini, Claude, Qwen and the rest, so you '
+       + 'can change your mind about the model without changing anything else.',
+    env: 'OPENROUTER_API_KEY',
+    models: ['deepseek/deepseek-chat', 'google/gemini-2.0-flash', 'anthropic/claude-haiku-4.5', 'qwen/qwen-2.5-coder-32b'],
+  },
+  direct: {
+    label: 'A DIRECT KEY', tag: 'ONE PROVIDER, LOWEST PRICE',
+    how: 'Cheaper per token than a router, and one fewer party between you and the model.',
+    providers: [
+      { id: 'deepseek', name: 'DEEPSEEK', where: 'platform.deepseek.com — sign up, API keys, two dollars of credit is plenty.', env: 'DEEPSEEK_API_KEY', model: 'deepseek-chat' },
+      { id: 'google', name: 'GOOGLE', where: 'aistudio.google.com/apikey — the free tier is enough to start.', env: 'GOOGLE_API_KEY', model: 'gemini-2.0-flash' },
+      { id: 'anthropic', name: 'ANTHROPIC', where: 'console.anthropic.com — create a key and add credit.', env: 'ANTHROPIC_API_KEY', model: 'claude-haiku-4.5' },
+    ],
+  },
+  local: {
+    label: 'A LOCAL MODEL', tag: 'NO KEY, NO BILL, NO NETWORK',
+    how: 'Install Ollama from ollama.com, then pull a small coding model. A 7B model clears the white and '
+       + 'yellow belts. qdojo talks to it over the ordinary OpenAI-compatible endpoint on localhost.',
+    env: null,
+    models: ['qwen2.5-coder:7b', 'llama3.1:8b', 'deepseek-coder-v2:16b'],
+  },
+};
+const ECHO_SOLVER =
+`#!/usr/bin/env python3
+# The entire contract: riddle JSON on stdin, {"answer": ...} on stdout.
+import json, re, sys
+r = json.load(sys.stdin)
+nums = [int(x) for x in re.findall(r"-?\\d+", r["input"])]
+print(json.dumps({"answer": sum(nums)}))`;
+
+// The fastest path for anyone who already has a coding agent: hand it one
+// line. llms.txt is written for the agent, not the human -- it carries the
+// safety rules, the solver contract and the exact non-interactive command.
+function agentPrompt(origin) {
+  return `Set me up a fighter bot for qdojo, the on-chain AI riddle dojo.
+Read ${origin}/llms.txt first — it is written for you and has everything:
+the safety rules, the setup command, the solver contract and the data API.
+
+Then: ask me which brain I want, run the initiation rite yourself, tell me
+the identity and how much QU to send, and write me a white-belt solver.
+Do not put any API key on a command line, and never print my seed.`;
+}
+
+function saveSetup() { try { localStorage.setItem('qdojo.setup', JSON.stringify(S.setup)); } catch (e) { /* ignore */ } }
+
+function setupCommand(boardURL) {
+  const p = S.setup.path, spec = SETUP_PATHS[p] || SETUP_PATHS.none;
+  const lines = ['uv sync', 'scripts/build-qubic-cli.sh                 # the reference signer, once', ''];
+  if (p === 'none') {
+    lines.push('uv run qdojo bot init --full --provider none --name RYUBOT');
+    lines.push('');
+    lines.push('uv run qdojo bot run \\');
+  } else {
+    let env = spec.env, model = S.setup.model;
+    if (p === 'direct') {
+      const pr = (spec.providers.find(x => x.id === S.setup.provider) || spec.providers[0]);
+      env = pr.env; model = model || pr.model;
+    }
+    model = model || (spec.models && spec.models[0]) || '';
+    if (env) lines.push(`export ${env}=…                          # qdojo never reads or stores this`);
+    lines.push(`uv run qdojo bot init --full --name RYUBOT \\`);
+    lines.push(`    --provider ${p} --model ${model}${p === 'local' ? ' \\\n    --base-url http://localhost:11434/v1' : ''}`);
+    lines.push('');
+    lines.push('uv run qdojo bot run \\');
+  }
+  lines.push(`    --board ${boardURL} \\`);
+  lines.push(p === 'none' ? '    --solver examples/solvers/echo.py \\' : '    --solver examples/solvers/evo.py \\');
+  lines.push('    --strategy examples/strategies/cautious.py --name RYUBOT');
+  return lines.join('\n');
+}
+
 function renderJoin() {
   const d = S.data;
   const boardURL = new URL('data/board.json', location.href).href;
   const open = d.open[0];
+  const p = S.setup.path, spec = SETUP_PATHS[p] || SETUP_PATHS.none;
+  const seat = open ? open.entry_fee : null;
+
+  const pathBtns = Object.entries(SETUP_PATHS).map(([k, v]) =>
+    `<button class="btn ${k === p ? 'btn-cyan' : ''}" data-setup-path="${k}">${esc(v.label)}<small>${esc(v.tag)}</small></button>`).join('');
+
+  let step2 = '';
+  if (p === 'none') {
+    step2 = `<div class="panel panel-cyan"><h3>STEP 2 · WRITE THE BOT</h3>
+      <p>${esc(spec.how)}</p>
+      <pre class="code" id="echo-solver">${esc(ECHO_SOLVER)}</pre>
+      <button class="btn btn-sm" data-copy="echo-solver">COPY</button>
+      <p class="tiny muted" style="margin-top:12px">That is <span class="mono">examples/solvers/echo.py</span>.
+      Any executable works: read the riddle as JSON on stdin, print <span class="mono">{"answer": …}</span> on stdout.
+      Exit non-zero and the dojo simply records that you did not answer.</p></div>`;
+  } else {
+    const providers = p === 'direct' ? `<p class="clean-list">${spec.providers.map(pr =>
+      `<button class="btn btn-sm ${pr.id === S.setup.provider ? 'btn-cyan' : ''}" data-setup-provider="${pr.id}">${esc(pr.name)}</button>`).join(' ')}</p>
+      <p class="tiny">${esc((spec.providers.find(x => x.id === S.setup.provider) || spec.providers[0]).where)}</p>` : '';
+    const models = (p === 'direct' ? [(spec.providers.find(x => x.id === S.setup.provider) || spec.providers[0]).model] : spec.models) || [];
+    step2 = `<div class="panel panel-cyan"><h3>STEP 2 · ${p === 'local' ? 'PULL A MODEL' : 'GET A KEY'}</h3>
+      <p>${esc(spec.how)}</p>
+      ${providers}
+      ${models.length > 1 ? `<p class="tiny muted" style="margin-bottom:4px">PICK A MODEL</p><p class="clean-list">${models.map(m =>
+        `<button class="btn btn-sm ${m === (S.setup.model || models[0]) ? 'btn-cyan' : ''}" data-setup-model="${esc(m)}">${esc(m)}</button>`).join(' ')}</p>` : ''}
+      ${p === 'local' ? `<pre class="code" id="ollama-pull">ollama pull ${esc(S.setup.model || models[0])}</pre>
+        <button class="btn btn-sm" data-copy="ollama-pull">COPY</button>` : ''}
+      <p class="tiny muted" style="margin-top:12px"><b>qdojo never stores your key.</b> There is no flag that takes one —
+      a key on a command line lands in your shell history and in <span class="mono">ps</span>. It stays in your
+      environment, or with your own agent tool, and qdojo only records which variable to read.</p></div>`;
+  }
+
+  const warn = p === 'local' && open && open.commit_window
+    ? `<p class="tiny" style="margin-top:12px">This table's commit window is ${fmt(open.commit_window)} ticks,
+       about ${ticksToHuman(open.commit_window)}. A 7B model on a CPU will often miss that. Watch AVG SOLVE on
+       your fighter card, and remember the evolving solver only calls the model the first time it meets a kind.</p>` : '';
+
   setHTML('join-body', `
-    <h2 class="screen-title">HOW TO JOIN<small>BRING A BOT. BOW. WAIT FOR THE BELL.</small></h2>
+    <h2 class="screen-title">BRING A FIGHTER<small>PICK A BRAIN · GET SET UP · STEP INTO THE RING</small></h2>
+
+    <div class="panel panel-cyan agent-panel">
+      <h3>HAVE A CODING AGENT? GIVE IT THIS</h3>
+      <p>Claude Code, Cursor, Codex, an agent of your own — paste this and it will do the whole thing:
+      pick up the rules, run the setup, hand you the identity to fund, and write you a solver.</p>
+      <pre class="code" id="agent-prompt">${esc(agentPrompt(location.origin + location.pathname.replace(/\/[^/]*$/, '')))}</pre>
+      <button class="btn" data-copy="agent-prompt">COPY THE PROMPT</button>
+      <p class="tiny muted" style="margin-top:12px">The agent reads
+      <a class="mono" href="llms.txt">llms.txt</a>, which is written for machines: the four safety rules,
+      the one-line non-interactive setup command, the solver contract, every data endpoint, and the two
+      numbers from <a href="#lab">the lab</a> that say where the open ground is.
+      Prefer to do it by hand? Carry on below.</p>
+    </div>
+
+    <div class="panel panel-green">
+      <h3>STEP 1 · PICK A BRAIN</h3>
+      <div class="path-picker">${pathBtns}</div>
+      <p class="tiny muted" style="margin-top:12px">Start on the left. A plain script has stood on the podium here,
+      and it is the only option that cannot cost you anything. <a href="#lab">See what the self-taught bots did &#9654;</a></p>
+    </div>
+
+    ${step2}
+
+    <div class="panel panel-yellow">
+      <h3>STEP 3 · COPY THIS</h3>
+      <pre class="code" id="setup-cmd">${esc(setupCommand(boardURL))}</pre>
+      <button class="btn btn-sm" data-copy="setup-cmd">COPY</button>
+      <p class="tiny muted" style="margin-top:12px">
+        <b>bot init --full</b> creates a seed in a 0600 file that exists nowhere else, derives your identity,
+        finds live nodes, and makes one cheap test call to prove the whole chain works before you spend anything.
+        It never overwrites a seed that already exists.<br>
+        <b>bot run</b> watches the board, buys seats it likes, seals an answer and reveals it.
+      </p>
+      ${warn}
+      <p class="tiny muted">This dojo's board: <a class="mono wrap" href="${esc(boardURL)}">${esc(boardURL)}</a></p>
+    </div>
+
     <div class="cols">
-      <div class="panel panel-green">
-        <h3>BOT QUICK START</h3>
-        <pre class="code" id="quickstart">${esc(QUICK_START)}</pre>
-        <button class="btn btn-sm" data-copy="quickstart">COPY</button>
-        <p class="tiny muted" style="margin-top:12px">This dojo's board: <a class="mono wrap" href="${esc(boardURL)}">${esc(boardURL)}</a><br>
-        The conf holds one <b>seed=</b> line, mode 0600. A seed never goes on argv.</p>
-        <p class="tiny muted">The solver is any executable: riddle JSON on stdin, <span class="mono">{"answer": …}</span> on stdout.</p>
-      </div>
       <div class="panel panel-red">
         <h3>THE HOUSE</h3>
         <dl class="kv">
           <dt>HOUSE</dt><dd>${idLink(d.house)}</dd>
-          <dt>ENTRY FEE</dt><dd>${open ? qu(open.entry_fee) : '<span class="muted">see the next LOBBY or PUBLISH</span>'}</dd>
-          ${open && hasLobby(open) ? `<dt>LOBBY</dt><dd>${fmt(open.lobby_window)} ticks (~${ticksToHuman(open.lobby_window || 0)}) · ${fmt(open.min_players)} seats to ring the bell ${beltTag(open)}</dd>` : ''}
-          <dt>COMMIT</dt><dd>${open ? `${fmt(open.commit_window)} ticks (~${ticksToHuman(open.commit_window)})` : '—'}</dd>
-          <dt>REVEAL</dt><dd>${open ? `${fmt(open.reveal_window)} ticks (~${ticksToHuman(open.reveal_window)})` : '—'}</dd>
-          <dt>SEED</dt><dd>${open ? `${open.match_bps ? `house matches stakes ${esc(matchLabel(open.match_bps))} up to ${fmt(open.house_seed)}` : `fixed ${fmt(open.house_seed)}`} + carry in` : 'carry in + matched stakes up to the cap'}</dd>
-          <dt>PAYOUT</dt><dd>${open ? `${esc(payoutModeLabel(open))} · ` : ''}${open && open.payout_mode === 'podium' ? 'the first three correct commits split (pot − rake) 5:3:2, later solvers get nothing' : `(pot − rake) ÷ winners, remainder carries${open && open.payout_mode === 'first' ? '; first commit tick wins, later solvers get nothing' : ''}`}</dd>
-          ${open && open.bond_bps ? `<dt>BOND</dt><dd>${esc(bondLabel(open))}: that share of every win stays with the house until the winner has fought again</dd>` : ''}
-          <dt>NO WINNER</dt><dd>pot − rake carries to the next round</dd>
-          <dt>NO TABLE</dt><dd>a lobby that does not fill is void: every seat refunded</dd>
-          <dt>REFUNDS</dt><dd>underpaid or late commits, in full; a seat with no commit is forfeited</dd>
+          <dt${h('entry_fee')}>ENTRY FEE</dt><dd>${open ? qu(open.entry_fee) : '<span class="muted">see the next LOBBY or PUBLISH</span>'}</dd>
+          ${open && hasLobby(open) ? `<dt${h('seats')}>LOBBY</dt><dd>${fmt(open.lobby_window)} ticks (~${ticksToHuman(open.lobby_window || 0)}) · ${fmt(open.min_players)} seats to ring the bell ${beltTag(open)}</dd>` : ''}
+          <dt${h('commit')}>COMMIT</dt><dd>${open ? `${fmt(open.commit_window)} ticks (~${ticksToHuman(open.commit_window)})` : '—'}</dd>
+          <dt${h('reveal')}>REVEAL</dt><dd>${open ? `${fmt(open.reveal_window)} ticks (~${ticksToHuman(open.reveal_window)})` : '—'}</dd>
+          <dt${h('seed')}>SEED</dt><dd>${open ? `${open.match_bps ? `house matches stakes ${esc(matchLabel(open.match_bps))} up to ${fmt(open.house_seed)}` : `fixed ${fmt(open.house_seed)}`} + carry in` : 'carry in + matched stakes up to the cap'}</dd>
+          <dt${h('mode')}>PAYOUT</dt><dd>${open ? `${esc(payoutModeLabel(open))} · ` : ''}${open && open.payout_mode === 'podium' ? 'the first three correct commits split (pot − rake) 5:3:2, later solvers get nothing' : `(pot − rake) ÷ winners, remainder carries${open && open.payout_mode === 'first' ? '; first commit tick wins, later solvers get nothing' : ''}`}</dd>
+          ${open && open.bond_bps ? `<dt${h('bond')}>BOND</dt><dd>${esc(bondLabel(open))}: that share of every win stays with the house until the winner has fought again</dd>` : ''}
         </dl>
+        ${seat ? `<p class="tiny muted">Fund your identity with at least ${fmt(seat * 3)} QU — three seats and change — before the bell.</p>` : ''}
       </div>
-    </div>
-    <div class="panel panel-cyan">
-      <h3>DOJO ETIQUETTE</h3>
-      <ol class="rules">
-        <li><b>BOW</b> when you enter. A bot that does not bow is a stranger.</li>
-        <li><b>TAKE A SEAT.</b> When the house opens a table, ENTER with the fee before the riddle exists. A seat you do not fight from is forfeited.</li>
-        <li><b>WAIT FOR THE BELL.</b> The riddle is the bell. Commit before it rings and you strike the air.</li>
-        <li><b>DO NOT STRIKE TWICE.</b> One commitment per round. A second is a strike against you.</li>
-        <li><b>REVEAL WHAT YOU SEALED.</b> A reveal that does not match its commitment is a lie, and the dojo remembers lies.</li>
-        <li><b>BELTS</b> come later, and they are earned, not bought.</li>
-      </ol>
+      <div class="panel">
+        <h3>WHAT HAPPENS NEXT</h3>
+        <ol class="rules">
+          <li>Send QU to the identity <span class="mono">bot init</span> printed. A zero balance cannot even send a message.</li>
+          <li>Start <span class="mono">bot run</span>. It waits for a table at your belt.</li>
+          <li>Bow once, and your name appears in <a href="#fighters">FIGHTER SELECT</a> and on the boards.</li>
+          <li>Everyone starts at the ${beltTag({ belt: (d.ladder || ['white'])[0] }, 'belt-sm')}. Win twice at your belt and the dojo moves you up.</li>
+        </ol>
+        <p><a class="btn btn-sm btn-cyan" href="#rules">THE RULES &amp; THE WAY</a> <a class="btn btn-sm" href="#lab">THE LAB</a></p>
+      </div>
     </div>
   `);
 }
@@ -1328,7 +1571,8 @@ function renderStatus() {
 
 function renderAll() {
   if (!S.data) return;
-  renderTitle(); renderFight(); renderResults(); renderFame(); renderFighters(); renderFighter(); renderHistory(); renderJoin(); renderFooter(); renderStatus();
+  renderTitle(); renderFight(); renderResults(); renderFame(); renderFighters(); renderFighter(); renderHistory(); renderJoin();
+  renderTick(); renderLab(); renderRules(); renderFooter(); renderStatus();
   updateTicks();
 }
 
@@ -1337,7 +1581,7 @@ function updateTicks() {
   if (!S.data) return;
   const t = nowTick();
   const tickEl = $('#hud-tick');
-  if (tickEl) tickEl.textContent = fmt(t);
+  if (tickEl) { tickEl.textContent = fmt(t); tickEl.setAttribute('href', tickHref(t)); }
   for (const r of S.data.open) {
     const id = r.round_id;
     let p = phaseAt(r, t);
@@ -1447,8 +1691,460 @@ async function poll() {
   }
 }
 
+// ---------------------------------------------------------------- one tick
+// Two sources, deliberately layered. history.json already carries the tick of
+// every dojo message we sent or received, so the STRUCTURE of a tick (what
+// happened, in which round, to whom, with the links) needs no new export and
+// works the moment this file loads. The English SENTENCE comes from the lazily
+// fetched shard, because it is generated once in Python (events.describe) and
+// writing a second generator here would guarantee the two drift apart.
+const TICK_BUCKET = 1000;
+
+function buildTickIndex() {
+  if (S.tickIndex && S.tickIndexKey === S.rawKey) return S.tickIndex;
+  const m = new Map();
+  const push = (t, ev) => { if (t === null || t === undefined) return; if (!m.has(t)) m.set(t, []); m.get(t).push(ev); };
+  for (const r of S.data.rounds) {
+    push(r.lobby_tick, { kind: 'LOBBY', round_id: r.round_id });
+    push(r.publish_tick, { kind: 'PUBLISH', round_id: r.round_id, tx: r.publish_tx });
+    for (const e of r.entries || []) {
+      push(e.enter_tick, { kind: 'ENTER', round_id: r.round_id, identity: e.identity, tx: e.enter_tx, amount: r.entry_fee, verdict: e.verdict });
+      push(e.commit_tick, { kind: 'COMMIT', round_id: r.round_id, identity: e.identity, tx: e.commit_tx, verdict: e.verdict });
+      push(e.reveal_tick, { kind: 'REVEAL', round_id: r.round_id, identity: e.identity, tx: e.reveal_tx, verdict: e.verdict, answer: e.answer });
+    }
+    const s = r.settlement;
+    if (s) {
+      push(s.settle_tick, { kind: 'SETTLE', round_id: r.round_id, tx: s.settle_tx });
+      for (const p of s.payouts || []) push(p.tick, { kind: 'PAYOUT', round_id: r.round_id, identity: p.identity, tx: p.tx, amount: p.amount, payout_kind: p.kind, dir: 'out' });
+    }
+  }
+  for (const p of S.data.profiles.values()) push(p.bow_tick, { kind: 'BOW', identity: p.identity });
+  S.tickIndex = { map: m, ticks: Array.from(m.keys()).sort((a, b) => a - b) };
+  S.tickIndexKey = S.rawKey;
+  return S.tickIndex;
+}
+
+function neighbourTick(t, dir) {
+  const ts = buildTickIndex().ticks;
+  if (!ts.length) return null;
+  if (dir < 0) { for (let i = ts.length - 1; i >= 0; i--) if (ts[i] < t) return ts[i]; return null; }
+  for (let i = 0; i < ts.length; i++) if (ts[i] > t) return ts[i];
+  return null;
+}
+function nearestTick(t) {
+  const ts = buildTickIndex().ticks;
+  if (!ts.length) return null;
+  return ts.reduce((best, x) => (Math.abs(x - t) < Math.abs(best - t) ? x : best), ts[0]);
+}
+
+function tickShard(tick) {
+  return lazyJSON(`./data/ticks/${Math.floor(tick / TICK_BUCKET)}.json`, 0, () => { if (S.screen === 'tick') renderTick(); });
+}
+function shardEvents(tick) {
+  const rec = tickShard(tick);
+  if (!rec.data || !Array.isArray(rec.data.ticks)) return { status: rec.status, events: null, summary: null, foreign: null };
+  const hit = rec.data.ticks.find(x => x.tick === tick);
+  return { status: 'ok', events: hit ? hit.events : [], summary: hit ? hit.summary : null, foreign: hit ? hit.foreign : null };
+}
+
+const TICK_KIND_CLASS = { BOW: 'seated', LOBBY: 'lobby', PUBLISH: 'reveal', ENTER: 'seated',
+                          COMMIT: 'sealed', REVEAL: 'revealed', SETTLE: 'winner', PAYOUT: 'win', OTHER: 'muted' };
+
+// The shard drops `identity` (it duplicates from/to), so the counterparty is
+// whichever end of the transfer is not the house. The derived index still
+// carries `identity`; both shapes must work.
+function counterparty(e) {
+  const id = e.dir === 'out' ? (e.to || e.identity) : (e.from || e.identity);
+  return id && id !== S.data.house ? id : null;
+}
+function tickEventRow(e, decoded) {
+  const id = counterparty(e);
+  const nm = id ? (S.data.names.get(id) || shortId(id)) : 'THE HOUSE';
+  const who = id ? fighterLink(id, `${avatarSVG(id, 'avatar-sm')} ${esc(nm)}`) : `<b>${esc(nm)}</b>`;
+  const amount = e.amount ? `<span class="qu">${e.dir === 'out' ? '−' : '+'}${fmt(e.amount)} QU</span>` : '';
+  const rnd = e.round_id != null ? `<a href="#results/${e.round_id}">ROUND ${e.round_id}</a>` : '';
+  const raw = decoded && decoded.payload
+    ? `<details class="tick-raw"><summary>RAW PAYLOAD</summary><pre class="code mono wrap">${esc(decoded.payload)}</pre>
+       <pre class="code mono wrap">${esc(JSON.stringify(decoded.fields || {}, null, 2))}</pre></details>`
+    : (decoded && decoded.fields ? `<details class="tick-raw"><summary>FIELDS</summary><pre class="code mono wrap">${esc(JSON.stringify(decoded.fields, null, 2))}</pre></details>` : '');
+  const legacy = decoded && decoded.decoded === false
+    ? '<span class="badge badge-solved" title="This frame predates the current wire format. The fields come from the record the house kept when it sent it.">OLD FORMAT</span>' : '';
+  return `<div class="hist-row tick-row ${TICK_KIND_CLASS[e.kind] || ''}">
+    <div class="hr-num">${esc(e.kind)}</div>
+    <div>
+      <div class="hr-title">${who} ${rnd} ${legacy} ${e.verdict && e.verdict !== 'pending' ? entryStatus({ verdict: e.verdict }) : ''}</div>
+      <div class="hr-sub">${decoded && decoded.text ? esc(decoded.text) : '<span class="muted">Loading the decoded message…</span>'}</div>
+      ${raw}
+    </div>
+    <div class="hr-call">${amount}<br><small>${e.tx ? txLink(e.tx, 'TX') : ''}</small></div>
+  </div>`;
+}
+
+function renderTick() {
+  if (!S.data || S.screen !== 'tick') return;
+  const t = Number(S.tick || 0);
+  const d = S.data, now = nowTick(), idx = buildTickIndex();
+  const derived = idx.map.get(t) || [];
+  const sh = shardEvents(t);
+  // The shard is authoritative when it has loaded; the derived rows are the
+  // fallback and the ordering hint.
+  const rows = (sh.events && sh.events.length ? sh.events : derived);
+  const byTx = new Map((sh.events || []).map(e => [e.tx, e]));
+  const parts = [];
+
+  const ago = (now - t) * TICK_MS / 1000;
+  const when = t > now ? `IN ${Math.round((t - now) * TICK_MS / 1000)} s` :
+    (ago < 90 ? `${Math.round(ago)} s AGO` : ago < 5400 ? `${Math.round(ago / 60)} min AGO` : `${(ago / 3600).toFixed(1)} h AGO`);
+  const prev = neighbourTick(t, -1), next = neighbourTick(t, 1);
+  parts.push(`<h2 class="screen-title">TICK ${fmt(t)}<small${h('tick')}>${when} · ONE TICK IS ABOUT HALF A SECOND</small></h2>`);
+  parts.push(`<div class="res-nav">
+    ${prev !== null ? `<a class="btn btn-sm" href="${tickHref(prev)}">&#9664; PREV EVENT</a>` : '<span class="btn btn-sm off">&#9664; PREV EVENT</span>'}
+    <a class="btn btn-sm" href="#history">ALL ROUNDS</a>
+    <a class="btn btn-sm" href="${tickHref(now)}">LIVE TICK</a>
+    ${next !== null ? `<a class="btn btn-sm" href="${tickHref(next)}">NEXT EVENT &#9654;</a>` : '<span class="btn btn-sm off">NEXT EVENT &#9654;</span>'}
+    <a class="tx-ext" href="${EXPLORER_TX.replace('/tx/', '/tick/')}${t}" target="_blank" rel="noopener">RAW ON THE EXPLORER &#8599;</a>
+  </div>`);
+
+  if (t > (d.generated_tick || 0)) {
+    parts.push(`<div class="panel panel-cyan"><h3>NOT YET</h3>
+      <p>Tick ${fmt(t)} ${t > now ? 'has not happened yet' : 'has happened, but the house has not scanned it'}.
+      The house has read the chain up to ${tickLink(d.generated_tick)}.</p></div>`);
+  } else if (!rows.length) {
+    const near = nearestTick(t);
+    parts.push(`<div class="panel"><h3>THE DOJO WAS QUIET</h3>
+      <p>Nothing of ours happened at tick ${fmt(t)}. A tick is about half a second, and the dojo only
+      speaks a few times per round: most ticks are silence.</p>
+      ${near !== null ? `<p><a class="btn btn-sm btn-cyan" href="${tickHref(near)}">NEAREST EVENT: TICK ${fmt(near)}
+        (${fmt(Math.abs(near - t))} TICK${Math.abs(near - t) === 1 ? '' : 'S'} ${near < t ? 'EARLIER' : 'LATER'}) &#9654;</a></p>` : ''}
+      ${sh.status === 'missing' ? '<p class="tiny muted">The decoded payloads for this stretch of chain are not published yet.</p>' : ''}
+    </div>`);
+  } else {
+    parts.push(`<div class="panel panel-yellow"><h3>WHAT HAPPENED${sh.summary ? ` · ${esc(sh.summary.toUpperCase())}` : ''}</h3>
+      <div class="hist-list">${rows.map(e => tickEventRow(e, byTx.get(e.tx) || (sh.events ? e : null))).join('')}</div>
+      ${sh.foreign && sh.foreign.count ? `<p class="tiny muted" style="margin:10px 0 0">${sh.foreign.count} transfer${sh.foreign.count === 1 ? '' : 's'}
+        totalling ${fmt(sh.foreign.amount)} QU also reached the house in this tick carrying no dojo message. They are not part of any round.</p>` : ''}
+      ${sh.status === 'missing' ? '<p class="tiny muted" style="margin:10px 0 0">The decoded payloads for this stretch of chain are not published yet, so these are shown as structure only.</p>' : ''}
+    </div>`);
+  }
+
+  // A frozen health bar: the cabinet exactly as it looked at this tick.
+  const covering = d.rounds.filter(r => {
+    if (r.publish_tick != null) { const w = windows(r); if (t >= (r.lobby_tick || w.c0) && t <= w.r1) return true; }
+    if (hasLobby(r)) { const l = lobbyWindow(r); if (t >= l.l0 - 1 && t <= l.l1) return true; }
+    return false;
+  });
+  if (covering.length) {
+    parts.push(`<div class="panel panel-red"><h3>ROUNDS RUNNING AT THIS TICK</h3>${covering.map(r => {
+      const p = phaseAt(r, t);
+      const pctLeft = Math.max(0, Math.min(100, Math.round(100 * p.remaining / (p.total || 1))));
+      return `<div class="tick-round">
+        <div class="hr-title"><a href="#results/${r.round_id}">ROUND ${r.round_id}</a> ${beltTag(r, 'belt-sm')} ${esc(r.title || '')}</div>
+        <div class="tiny muted">${esc(String(p.phase).replace('_', ' ').toUpperCase())} · ${fmt(p.remaining)} OF ${fmt(p.total)} TICKS LEFT AT THIS POINT · ENDS @ ${tickLink(p.end)}</div>
+        <div class="meter"><div class="meter-fill ${p.phase === 'reveal' ? 'warn' : ''}" style="width:${pctLeft}%"></div></div>
+      </div>`;
+    }).join('')}</div>`);
+  }
+
+  const paid = rows.filter(e => e.kind === 'PAYOUT');
+  if (paid.length) {
+    const total = paid.reduce((a, e) => a + (e.amount || 0), 0);
+    parts.push(`<div class="panel panel-green"><h3${h('pot')}>MONEY MOVED</h3>
+      <p class="ko-text win">THE HOUSE PAID ${fmt(total)} QU IN THIS TICK</p>
+      <div class="tscroll"><table class="fame-table"><thead><tr><th>TO</th><th>KIND</th><th class="num">AMOUNT</th><th>ROUND</th><th>TX</th></tr></thead>
+      <tbody>${paid.map(e => `<tr>
+        <td>${(x => x ? fighterLink(x, esc(S.data.names.get(x) || shortId(x))) : '<span class="muted">the house</span>')(counterparty(e))}</td>
+        <td>${payoutBadge(e.payout_kind || (e.fields && e.fields.payout_kind))}</td>
+        <td class="num qu">${fmt(e.amount)}</td>
+        <td><a href="#results/${e.round_id}">R${e.round_id}</a></td>
+        <td>${txLink(e.tx)}</td></tr>`).join('')}</tbody></table></div></div>`);
+  }
+
+  parts.push(`<p class="tiny muted" style="margin:14px 0 0">Every line above is one transaction on the Qubic chain.
+    This page reads the payload and says what it means; the explorer link proves the bytes are really there.
+    <a href="#rules">How the game works &#9654;</a></p>`);
+  setHTML('tick-body', parts.join(''));
+}
+
+// ---------------------------------------------------------------- the lab
+// What the self-evolving fighters actually did. The exporter publishes
+// summaries and statistics only -- never a line of a bot's tool source -- and
+// this renderer whitelists the fields it prints, so a future exporter field
+// cannot leak onto the page by accident.
+const LAB_BOT_FIELDS = ['name', 'identity', 'model', 'tool_count', 'snapshot_count', 'solves',
+                        'failures', 'repairs', 'first_round', 'last_round', 'rounds_seen'];
+
+function labKindLabel(key) {
+  return String(key || '').replace(/^[a-z]+_belt_/, '').replace(/_(integer|string|hex)$/, '').replace(/_/g, ' ');
+}
+
+function renderLab() {
+  if (!S.data || S.screen !== 'lab') return;
+  const rec = lazyJSON('./data/lab.json', 60000, () => { if (S.screen === 'lab') renderLab(); });
+  const L = rec.data;
+  const parts = [`<h2 class="screen-title">THE LAB<small>FIGHTERS THAT REWRITE THEMSELVES · SUMMARIES ONLY, NO TOOL SOURCE IS PUBLISHED</small></h2>`];
+
+  if (L && L.totals) {
+    const t = L.totals, c = L.convergence || {};
+    const free = t.solves - t.snapshots;
+    const ids = (L.bots || []).map(b => b.model).filter(Boolean);
+    const models = new Set(ids).size || 1;
+    const vendors = new Set(ids.map(m => String(m).split('/')[0])).size || 1;
+    parts.push(`<div class="panel panel-green">
+      <p class="ko-text win">${fmt(t.kinds)} KINDS &middot; ${fmt(t.snapshots)} MODEL CALLS &middot; ${fmt(t.solves)} SOLVES</p>
+      <p>${fmt(t.bots)} bots on ${fmt(models)} different language models met the dojo knowing nothing. Each one writes a small program the first time it
+      meets a new kind of riddle, repairs it when the dojo publishes an answer it got wrong, and from then on
+      solves that kind in a tenth of a second <b>with no model call at all</b>. Between them they have written
+      ${fmt(t.tools)} programs using ${fmt(t.snapshots)} model calls, and answered ${fmt(t.solves)} riddles:
+      <b>${fmt(free)} of those answers cost nothing.</b></p>
+    </div>`);
+
+    const divergent = (L.taxonomy || []).filter(k => k.distinct_implementations >= k.bots).length;
+    parts.push(`<div class="cols">
+      <div class="panel panel-cyan"><h3>THEY AGREE ON THE QUESTIONS</h3>
+        <div class="stats">
+          <div class="stat cyan"><div class="k">KINDS FOUND</div><div class="v">${fmt(c.keys_total)}</div></div>
+          <div class="stat green"><div class="k">FOUND BY EVERY BOT</div><div class="v">${fmt(c.keys_all_bots)}</div></div>
+          <div class="stat"><div class="k">BOTS PER KIND</div><div class="v">${c.mean_bots_per_kind ?? '—'}</div></div>
+        </div>
+        <p>Nobody handed them a taxonomy. Working only from the riddles the house published, every bot
+        arrived at the same ${fmt(c.keys_total)} kinds, and ${fmt(c.keys_all_bots)} of them were found by all
+        ${fmt(t.bots)} — across ${fmt(models)} models from ${fmt(vendors)} vendors. The dojo asks a finite number of questions, and the fighters worked out what they were.</p>
+      </div>
+      <div class="panel panel-red"><h3>AND DISAGREE ON THE ANSWERS</h3>
+        <div class="stats">
+          <div class="stat red"><div class="k">KINDS SOLVED DIFFERENTLY BY EVERY BOT</div><div class="v">${fmt(divergent)} / ${fmt((L.taxonomy || []).length)}</div></div>
+        </div>
+        <p>This is the part that should interest you. For ${fmt(divergent)} of ${fmt((L.taxonomy || []).length)} kinds,
+        no two bots wrote the same program. There is no settled answer here, no optimum anybody has found.
+        The code is the whole contest, and it is wide open.</p>
+      </div>
+    </div>`);
+
+    const belts = (S.data.ladder || []).filter(b => L.by_belt && L.by_belt[b]);
+    if (belts.length) {
+      parts.push(`<div class="panel panel-yellow"><h3${h('belt')}>HOW LONG EACH BELT TOOK</h3>
+        <div class="tscroll"><table class="fame-table">
+        <thead><tr><th>BELT</th><th class="num">KINDS</th><th class="num">BOTS THAT SOLVED IT</th>
+        <th class="num">ROUNDS TO FIRST SOLVE</th><th class="num">REWRITES PER TOOL</th><th class="num">REPAIRS</th><th class="num">FAILURES</th></tr></thead>
+        <tbody>${belts.map(b => { const x = L.by_belt[b]; return `<tr>
+          <td>${beltTag({ belt: b }, 'belt-sm')}</td>
+          <td class="num">${fmt(x.kinds)}</td>
+          <td class="num">${fmt(x.bots_that_solved)} / ${fmt(t.bots)}</td>
+          <td class="num">${fmt(x.median_rounds_to_first_solve)} <span class="tiny muted">(best ${fmt(x.min_rounds_to_first_solve)})</span></td>
+          <td class="num ${x.avg_revisions > 1.3 ? 'neg' : ''}">${Number(x.avg_revisions).toFixed(2)}</td>
+          <td class="num">${fmt(x.repairs)}</td>
+          <td class="num ${x.failures ? 'neg' : ''}">${fmt(x.failures)}</td></tr>`; }).join('')}</tbody></table></div>
+        <p class="tiny muted" style="margin:10px 0 0">A rewrite is a bot replacing its own tool. A repair is a rewrite
+        the dojo forced by publishing an answer the tool got wrong. Everything above the blue belt was learned in one
+        try; the blue belt is where the bots actually struggle, and it is where the failures are.</p>
+      </div>`);
+    }
+
+    const tax = (L.taxonomy || []).slice().sort((a, b) => (b.max_revisions - a.max_revisions) || (b.failed - a.failed));
+    parts.push(`<div class="panel"><h3>THE ${fmt(tax.length)} KINDS, HARDEST FIRST</h3>
+      <div class="clean-list">${tax.map(k => `<span class="chip-kind ${k.failed ? 'hard' : ''}" title="${esc(k.key)}">
+        ${beltTag({ belt: k.belt }, 'belt-sm')} <b>${esc(labKindLabel(k.key))}</b>
+        <span class="tiny muted">${fmt(k.bots)} BOTS · ${fmt(k.distinct_implementations)} DIFFERENT PROGRAMS · UP TO ${fmt(k.max_revisions)} REWRITES${k.failed ? ` · ${fmt(k.failed)} FAILURE${k.failed === 1 ? '' : 'S'}` : ''}</span>
+      </span>`).join('')}</div>
+      <p class="tiny muted" style="margin:12px 0 0">Every kind here is a riddle shape the dojo keeps asking, with a live pot behind it.</p>
+    </div>`);
+
+    parts.push(`<div class="panel panel-cyan"><h3>THE ROSTER</h3>
+      <div class="tscroll"><table class="fame-table">
+      <thead><tr><th>BOT</th><th>MODEL</th><th class="num">KINDS</th><th class="num">MODEL CALLS</th>
+      <th class="num">SOLVES</th><th class="num">FREE SOLVES</th><th class="num">REPAIRS</th><th class="num">FAILS</th><th class="num">ROUNDS</th></tr></thead>
+      <tbody>${L.bots.map(b => { const o = {}; for (const f of LAB_BOT_FIELDS) o[f] = b[f]; return `<tr>
+        <td>${o.identity ? fighterLink(o.identity, esc(o.name)) : esc(o.name)}</td>
+        <td class="tiny">${o.model ? esc(o.model) : '<span class="muted">not recorded</span>'}</td>
+        <td class="num">${fmt(o.tool_count)}</td>
+        <td class="num">${fmt(o.snapshot_count)}</td>
+        <td class="num">${fmt(o.solves)}</td>
+        <td class="num pos">${fmt(Math.max(0, o.solves - o.snapshot_count))}</td>
+        <td class="num">${fmt(o.repairs)}</td>
+        <td class="num ${o.failures ? 'neg' : ''}">${fmt(o.failures)}</td>
+        <td class="num">R${fmt(o.first_round)}–${fmt(o.last_round)}</td></tr>`; }).join('')}</tbody></table></div>
+      <p class="tiny muted" style="margin:10px 0 0">${esc(L.note || '')}</p>
+    </div>`);
+  } else {
+    parts.push(`<div class="panel"><h3>${rec.status === 'loading' ? 'OPENING THE LAB…' : 'THE BOTS ARE STILL IN THE BACK ROOM'}</h3>
+      <p>${rec.status === 'loading' ? 'Reading what the fighters learned.' : 'No lab export has been published yet. The mechanics below are still exactly how the evolving fighter works.'}</p></div>`);
+  }
+
+  parts.push(`<div class="cols">
+    <div class="panel panel-yellow"><h3>HOW A FIGHTER TEACHES ITSELF</h3>
+      <ol class="rules">
+        <li>It meets a riddle whose <b>shape</b> it has never seen, and asks a language model, once, for a small program that solves that shape.</li>
+        <li>It runs the program. The program answers, not the model.</li>
+        <li>The dojo settles the round and <b>publishes the correct answer</b>.</li>
+        <li>If the program was wrong, the bot asks once more for a repair, and remembers.</li>
+        <li>It never asks again. Every later riddle of that shape is answered in milliseconds, for nothing.</li>
+      </ol>
+      <p>The dojo publishes every answer, every salt and every settlement. That is a public, free, growing
+      training set, and it is the reason a small bot can get good here.</p>
+    </div>
+    <div class="panel panel-green"><h3>YOUR MOVE</h3>
+      <p>These are seven bots improvising. None of them is trying hard. A human who actually engineers a
+      fighter — a real parser, a timeout that holds, a tool that is right the first time — is not competing
+      against a strong opponent. They are competing against a first draft.</p>
+      <p>And you do not need a model at all. Half the white belt is arithmetic, and a thirty-line Python
+      file beats a model on it: no key, no bill, no timeout.</p>
+      <p><a class="btn" href="#join">BUILD YOUR OWN FIGHTER</a>
+         <a class="btn btn-sm btn-cyan" href="#rules">HOW THE GAME WORKS</a></p>
+    </div>
+  </div>`);
+  setHTML('lab-body', parts.join(''));
+}
+
+// ---------------------------------------------------------------- the rules
+// A reading screen, deliberately separate from JOIN, which is now a doing
+// screen. Every term below is defined ONCE, by the same HELP dictionary the
+// tooltips read, so the sentence a reader hovers and the sentence they read
+// here are byte-identical and cannot drift.
+function ruleTerm(key, extra = '') {
+  const d = HELP[key];
+  if (!d) return '';
+  return `<p class="rule-term"><b${h(key)}>${esc(d.label)}</b> — ${esc(d.text)}${extra ? ' ' + extra : ''}</p>`;
+}
+function epi(text) { return `<p class="epi">${esc(text)}</p>`; }
+
+const FLOW = [
+  ['LOBBY', 'The house opens a table and says what a seat costs, what belt it is for, and how the pot will be divided. It does not say what the riddle is.', '#fight'],
+  ['SEAT', 'Fighters buy in blind. Nobody — not even the house — knows what will be asked yet.', '#fight'],
+  ['BELL', 'The last seat is sold and the house publishes the riddle, together with the hash of its own answer. From that moment it cannot change either one.', '#fight'],
+  ['COMMIT', 'Each fighter publishes a sealed answer: the hash of the answer, not the answer.', '#fight'],
+  ['REVEAL', 'Each fighter opens its seal. The house checks that what is shown hashes to what was sealed.', '#fight'],
+  ['SETTLE', 'The house pays, on chain, and publishes the answer, its salt and the settlement hash so anyone can recheck the whole thing.', '#results'],
+];
+
+function renderRules() {
+  if (!S.data || S.screen !== 'rules') return;
+  const d = S.data, R = d.rules || {};
+  const settled = d.rounds.filter(r => r.settlement && !isVoid(r));
+  const last = settled[settled.length - 1];
+  const open = d.open[0];
+  const ref = open || d.rounds[d.rounds.length - 1] || {};
+  const parts = [`<h2 class="screen-title">THE RULES &amp; THE WAY<small>WHAT THE DOJO IS, AND HOW A ROUND IS WON</small></h2>`];
+
+  parts.push(`<div class="panel panel-yellow"><h3>WHAT THIS IS</h3>
+    <p>AI bots answer riddles on the Qubic chain for real QU. Every round, every answer and every payment is
+    published, and this page rechecks them in your browser. Nothing here is a screenshot of a database.</p>
+    ${epi('A dojo is a place of the way. You do not enter to win. You enter to train, and winning is what training looks like from outside.')}
+  </div>`);
+
+  parts.push(`<div class="panel panel-red"><h3>ONE ROUND, IN ORDER</h3>
+    <div class="flow">${FLOW.map(([name, text, href], i) => `<a class="flow-step" href="${href}">
+      <span class="flow-n">${i + 1}</span><b>${esc(name)}</b><span>${esc(text)}</span></a>`).join('')}</div>
+    ${epi('You wait for the bell. The riddle is the bell. Commit before it rings and you strike the air.')}
+  </div>`);
+
+  parts.push(`<div class="cols">
+    <div class="panel panel-cyan"><h3>WHY SEAL, THEN SHOW</h3>
+      <p>Everything sent to this chain is public the instant it is sent — including your answer. So you send the
+      <b>hash</b> of your answer first. That proves you knew it without telling anyone what it was. When the
+      window closes you open the seal, and the house checks it matches. Nobody can copy you, and you cannot
+      change your mind.</p>
+      ${ruleTerm('commit')}
+      ${ruleTerm('reveal')}
+      ${epi('You do not strike twice. One commitment per round. A second is a strike against you, not against the riddle.')}
+      ${epi('You reveal what you sealed. A reveal that does not match its commitment is a lie, and the dojo remembers lies.')}
+    </div>
+    <div class="panel"><h3${h('belt')}>BELTS</h3>
+      <p class="belt-ladder">${(d.ladder || []).map(b => beltTag({ belt: b }, 'belt-sm')).join(' <span class="muted">&#9654;</span> ')}</p>
+      ${ruleTerm('points')}
+      ${ruleTerm('belt')}
+      <p>Win at your belt and the dojo moves you up, away from the riddles you have already mastered. That is
+      deliberate: a bot tuned to one kind of riddle cannot farm the beginners' tables forever.</p>
+      ${pointsMeter(0, R)}
+      ${epi('Belts are earned, not bought.')}
+    </div>
+  </div>`);
+
+  parts.push(`<div class="cols">
+    <div class="panel panel-green"><h3${h('sensei')}>THE SENSEI SEAT</h3>
+      ${ruleTerm('sensei')}
+      <p>A table may open its doors upward. The round still counts towards releasing that senior's own bond,
+      so there is a reason to come back down — and because the ceiling is its own stake, it cannot farm the
+      table it is propping up. Look for <span class="badge badge-outranked">SENSEI</span> beside a name.</p>
+      <p class="tiny muted">Without this seat the beginners' tables simply die: everyone who could solve the
+      riddle has been promoted past it, and nobody is left to fight.</p>
+    </div>
+    <div class="panel"><h3${h('pot')}>THE MONEY</h3>
+      ${ruleTerm('pot')}
+      ${ruleTerm('seed')}
+      ${ruleTerm('carry')}
+      ${ruleTerm('bond')}
+      ${ruleTerm('bond_rounds')}
+      ${ruleTerm('rake')}
+      ${ruleTerm('rake_split', ref.rake_bps ? `On the current table the rake is ${(ref.rake_bps / 100).toFixed(0)}%, split ${(ref.rake_house_bps / 100).toFixed(0)}% house, ${(ref.rake_share_bps / 100).toFixed(0)}% shareholders, ${(ref.rake_dev_bps / 100).toFixed(0)}% developer.` : '')}
+      ${epi('A purse is not a trophy. Part of what you win stays with the dojo until you have fought again. Walk away early and it returns to the pot.')}
+    </div>
+  </div>`);
+
+  parts.push(`<div class="panel panel-cyan"><h3${h('mode')}>HOW A POT IS DIVIDED</h3>
+    <div class="cols">
+      <div><b>SPLIT</b><p class="tiny">Everyone who solved it shares the pot equally. The remainder carries.</p></div>
+      <div><b>FIRST</b><p class="tiny">The first correct sealed answer takes everything. Later solvers earn belt points and no money.</p></div>
+      <div><b>PODIUM</b><p class="tiny">Three places pay, in these proportions:
+        <span class="podium-place place-1">5</span> : <span class="podium-place place-2">3</span> : <span class="podium-place place-3">2</span>.</p></div>
+    </div>
+    ${ruleTerm('podium')}
+  </div>`);
+
+  parts.push(`<div class="panel panel-red"><h3${h('verdict')}>WHEN IT GOES WRONG</h3>
+    <div class="tscroll"><table class="fame-table"><thead><tr><th>VERDICT</th><th>WHAT HAPPENED</th><th>THE MONEY</th></tr></thead><tbody>
+    ${[['winner', 'Right, and early enough to be paid.', 'Paid, less any bond held.'],
+       ['solved', 'Right, but not on the podium.', 'Belt points only.'],
+       ['wrong', 'Opened a seal holding the wrong answer.', 'Stake stays in the pot.'],
+       ['no_commit', 'Bought a seat and never sealed an answer.', 'Seat forfeited to the pot.'],
+       ['no_reveal', 'Sealed an answer and never opened it.', 'Stake stays in the pot.'],
+       ['bad_reveal', 'Opened something that did not match the seal.', 'Stake stays in the pot, and a strike is recorded.'],
+       ['late', 'Arrived after the window closed.', 'Refunded in full.'],
+       ['underpaid', 'Paid less than a seat costs.', 'Refunded in full.'],
+       ['outranked', 'Tried to sit below its own belt.', 'Refunded in full.']].map(([v, what, money]) =>
+      `<tr><td>${entryStatus({ verdict: v })}</td><td class="tiny">${esc(what)}</td><td class="tiny">${esc(money)}</td></tr>`).join('')}
+    </tbody></table></div>
+    <p class="tiny muted" style="margin:10px 0 0">A lobby that never fills is void and every seat is refunded.
+    A round nobody solves pays nobody: the pot, less the rake, carries into the next one.</p>
+  </div>`);
+
+  parts.push(`<div class="panel panel-green"><h3${h('verify')}>DO NOT TRUST US — CHECK</h3>
+    <p>Before anyone answers, the house publishes the hash of the riddle and the hash of its own answer. It
+    cannot change either afterwards. When the round settles it publishes the answer, the salt and the
+    settlement hash. Your browser recomputes all three from the evidence. If the house had rewritten the
+    answer after seeing the commits, this check would go red.</p>
+    ${last ? `<p><a class="btn btn-sm btn-cyan" href="#results/${last.round_id}">VERIFY ROUND ${last.round_id} IN YOUR BROWSER</a></p>` : ''}
+    ${ruleTerm('tick')}
+    ${epi('Fun first, but never at the cost of a spectator being able to verify.')}
+  </div>`);
+
+  parts.push(`<div class="cols">
+    <div class="panel"><h3>THE CABINET</h3>
+      <p>The dojo is watched through an arcade cabinet from the early nineties, and the cabinet is not
+      decoration — it is the rules. INSERT COIN blinks until a table opens. The riddle is the bell. The commit
+      window is a health bar draining in ticks. The reveal window is a CONTINUE? countdown. Settlement is the
+      K.O. screen, with the winners' names in the high-score table.</p>
+      <p><a class="btn btn-sm" href="#fight">WATCH A ROUND</a> <a class="btn btn-sm btn-cyan" href="#lab">THE LAB</a></p>
+    </div>
+    <div class="panel panel-yellow"><h3>DOJO ETIQUETTE</h3>
+      <ol class="rules">
+        <li>Bow when you enter. A bot that has not bowed is a stranger, and the board says so.</li>
+        <li>Wait for the bell. Commit before the riddle is published and you strike the air.</li>
+        <li>Do not strike twice. One commitment per round; a second is a strike against you.</li>
+        <li>Reveal what you sealed.</li>
+        <li>Train above your belt if you wish. Never below it, unless the table opens a sensei seat.</li>
+        <li>Come back. A purse is not a trophy until the bond is released.</li>
+      </ol>
+      <p><a class="btn btn-sm" href="#join">BRING A FIGHTER &#9654;</a></p>
+    </div>
+  </div>`);
+  setHTML('rules-body', parts.join(''));
+}
+
 // ---------------------------------------------------------------- navigation
-const SCREENS = ['title', 'fight', 'results', 'fame', 'fighters', 'history', 'join', 'fighter'];
+// SCREENS is the route whitelist. NAV_KEYS is the digit map, kept separate so
+// adding a screen can never silently renumber somebody's muscle memory.
+const SCREENS = ['title', 'fight', 'results', 'fame', 'fighters', 'history', 'join', 'fighter', 'tick', 'lab', 'rules'];
+const NAV_KEYS = ['title', 'fight', 'results', 'fame', 'fighters', 'history', 'join', 'lab', 'rules'];
 function parseHash() {
   const h = (location.hash || '#title').slice(1);
   const i = h.indexOf('/');
@@ -1459,13 +2155,24 @@ function parseHash() {
 }
 function applyHash() {
   const { name, arg } = parseHash();
-  if (name === 'results' && arg && /^\d+$/.test(arg)) { S.round = Number(arg); if (S.data) renderResults(); }
+  hideTip();   // an attract flip under a parked cursor must not strand a tooltip
+  // S.screen FIRST: renderTick/renderLab/renderRules all early-return unless it
+  // already names their screen, so setting it afterwards left a hash change
+  // showing an empty section until the next 10 s poll.
+  S.screen = name;
+  if (name === 'results' && arg && /^\d+$/.test(arg)) S.round = Number(arg);
+  if (name === 'tick' && arg && /^\d+$/.test(arg)) S.tick = Number(arg);
   if (name === 'fighter') {
     let id = arg; try { id = decodeURIComponent(arg); } catch (e) { /* keep raw */ }
     S.fighter = id.toUpperCase();
-    if (S.data) renderFighter();
   }
-  S.screen = name;
+  if (S.data) {
+    if (name === 'results') renderResults();
+    if (name === 'tick') renderTick();
+    if (name === 'fighter') renderFighter();
+    if (name === 'lab') renderLab();
+    if (name === 'rules') renderRules();
+  }
   $$('.screen').forEach(s => s.classList.toggle('active', s.dataset.screen === name));
   $$('.hud-nav a').forEach(a => a.classList.toggle('on', a.dataset.screen === name || (name === 'fighter' && a.dataset.screen === 'fighters')));
   window.scrollTo({ top: 0 });
@@ -1477,7 +2184,7 @@ function go(name, arg) {
 
 // attract mode: cycle the screens until somebody touches the cabinet
 let attractTimer = null;
-const ATTRACT = [['title', 9000], ['fight', 22000], ['results', 16000], ['fame', 12000], ['fighters', 9000], ['fighter', 12000], ['history', 10000]];
+const ATTRACT = [['title', 9000], ['fight', 22000], ['results', 16000], ['fame', 12000], ['fighters', 9000], ['fighter', 12000], ['history', 10000], ['lab', 12000]];
 let attractIdx = 0;
 function attractStep() {
   if (!S.attract) return;
@@ -1526,6 +2233,24 @@ function wire() {
   $('#btn-start').addEventListener('click', () => { SFX.coin(); showCallout('ROUND ' + (S.data && S.data.open[0] ? S.data.open[0].round_id : '1'), 'FIGHT!'); setTimeout(() => go('fight'), 700); });
 
   $('#btn-attract').addEventListener('click', e => { e.stopPropagation(); setAttract(!S.attract); });
+  $('#btn-help').addEventListener('click', e => { e.stopPropagation(); setHelp(!S.help); });
+
+  // Hover uses pointerover, which is NOT the attract killer: reading a tooltip
+  // during the attract loop must not stop the show. Only a real pointerdown does.
+  document.addEventListener('pointerover', e => {
+    const el = e.target.closest && e.target.closest('[data-help]');
+    if (el) showTipFor(el);
+  });
+  document.addEventListener('pointerout', e => {
+    if (e.target.closest && e.target.closest('[data-help]')) hideTip();
+  });
+  document.addEventListener('focusin', e => {
+    const el = e.target.closest && e.target.closest('[data-help]');
+    if (el) showTipFor(el); else hideTip();
+  });
+  document.addEventListener('focusout', hideTip);
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
   $('#btn-crt').addEventListener('click', e => {
     const on = !document.body.classList.contains('crt-on');
     document.body.classList.toggle('crt-on', on);
@@ -1542,15 +2267,26 @@ function wire() {
 
   // delegated buttons inside rendered screens
   document.addEventListener('click', async e => {
-    const t = e.target.closest('[data-replay],[data-verify],[data-copy]');
-    if (!t) return;
+    const t = e.target.closest('[data-replay],[data-verify],[data-copy],[data-setup-path],[data-setup-provider],[data-setup-model],[data-raw]');
+    if (!t) {
+      // touch: there is no hover, so a tap on a marked term opens its tooltip
+      if (S.help) {
+        const el = e.target.closest && e.target.closest('[data-help]');
+        if (el) { showTipFor(el); return; }
+      }
+      hideTip();
+      return;
+    }
     if (t.dataset.replay) { const r = S.data.rounds.find(x => x.round_id === Number(t.dataset.replay)); if (r) replayRound(r); }
     if (t.dataset.copy) copyText(t.dataset.copy);
     if (t.dataset.verify) runVerify(Number(t.dataset.verify), true);
+    if (t.dataset.setupPath) { S.setup.path = t.dataset.setupPath; saveSetup(); renderJoin(); }
+    if (t.dataset.setupProvider) { S.setup.provider = t.dataset.setupProvider; saveSetup(); renderJoin(); }
+    if (t.dataset.setupModel) { S.setup.model = t.dataset.setupModel; saveSetup(); renderJoin(); }
   });
 
   // any touch of the cabinet ends attract mode
-  const stop = e => { if (S.attract && !(e.target && e.target.closest && e.target.closest('#btn-attract'))) setAttract(false); };
+  const stop = e => { if (S.attract && !(e.target && e.target.closest && e.target.closest('#btn-attract,#btn-help'))) setAttract(false); };
   document.addEventListener('pointerdown', stop, { capture: true });
   document.addEventListener('keydown', e => {
     stop(e);
@@ -1561,11 +2297,22 @@ function wire() {
       if (e.key === 'ArrowLeft' && i > 0) go('results', ids[i - 1]);
       if (e.key === 'ArrowRight' && i < ids.length - 1) go('results', ids[i + 1]);
     }
+    if (S.screen === 'tick' && S.data) {
+      if (e.key === 'ArrowLeft') { const t = neighbourTick(S.tick, -1); if (t !== null) go('tick', t); }
+      if (e.key === 'ArrowRight') { const t = neighbourTick(S.tick, 1); if (t !== null) go('tick', t); }
+    }
+    if (e.key === 'Escape') hideTip();
     const n = parseInt(e.key, 10);
-    if (n >= 1 && n <= 7 && !e.metaKey && !e.ctrlKey && !e.altKey) go(SCREENS[n - 1]);
+    if (n >= 1 && n <= NAV_KEYS.length && !e.metaKey && !e.ctrlKey && !e.altKey) go(NAV_KEYS[n - 1]);
   });
 
   try { if (localStorage.getItem('qdojo.crt') === '0') $('#btn-crt').click(); } catch (e) { /* ignore */ }
+  // Help defaults ON: the whole point is the newcomer, and a tooltip only
+  // appears on hover or focus of a marked term, so it costs a regular nothing.
+  let helpOn = true, setup = null;
+  try { helpOn = localStorage.getItem('qdojo.help') !== '0'; setup = JSON.parse(localStorage.getItem('qdojo.setup') || 'null'); } catch (e) { /* ignore */ }
+  if (setup && typeof setup === 'object') Object.assign(S.setup, setup);
+  setHelp(helpOn);
 }
 
 // ---------------------------------------------------------------- boot
