@@ -127,7 +127,7 @@ class Bot:
                     continue
                 if now > rd["lobby_tick"] + rd["lobby_window"]:
                     continue
-                if riddle_rank is not None and my_rank > riddle_rank:
+                if riddle_rank is not None and my_rank > riddle_rank and not rd.get("sensei"):
                     self.rounds[rid] = {"skipped": True}; self._save()
                     actions.append(f"round {rid}: {rd['belt']} table is below my belt ({BELTS[my_rank]}), not entering")
                     continue
@@ -146,7 +146,8 @@ class Bot:
                                       payload.INPUT_TYPE)
                 self.rounds[rid].update(enter_tx=res.tx_id, enter_tick=res.scheduled_tick, stake=rd["entry_fee"])
                 self._save()
-                actions.append(f"round {rid}: entered the lobby {res.tx_id[:8]}… for tick {res.scheduled_tick}, stake {rd['entry_fee']}")
+                how = " as a sensei" if (riddle_rank is not None and my_rank > riddle_rank) else ""
+                actions.append(f"round {rid}: entered the lobby{how} {res.tx_id[:8]}… for tick {res.scheduled_tick}, stake {rd['entry_fee']}")
                 continue
             if rd.get("riddle") is None:
                 continue
@@ -162,7 +163,7 @@ class Bot:
                 if "answer" not in st and not st.get("solver_failures"):
                     st = None  # fall into the solve-and-commit path below, keeping the lobby record
             elif st is None:
-                if riddle_rank is not None and my_rank > riddle_rank:
+                if riddle_rank is not None and my_rank > riddle_rank and not rd.get("sensei"):
                     self.rounds[rid] = {"skipped": True}; self._save()
                     actions.append(f"round {rid}: {rd['belt']} riddle is below my belt ({BELTS[my_rank]}), not entering")
                     continue

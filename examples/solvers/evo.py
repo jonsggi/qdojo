@@ -21,6 +21,9 @@ import urllib.request
 riddle = json.load(sys.stdin)
 EVO_DIR = os.path.expanduser(os.environ.get("EVO_DIR", "~/.qdojo/evo"))
 MODEL = os.environ.get("EVO_MODEL")
+if not MODEL:
+    print("evo.py: set EVO_MODEL — refusing to fall back to pi's default model", file=sys.stderr)
+    sys.exit(2)
 THINKING = os.environ.get("EVO_THINKING", "low")
 BOARD = os.environ.get("EVO_BOARD")
 ME = os.environ.get("QDOJO_IDENTITY", "")

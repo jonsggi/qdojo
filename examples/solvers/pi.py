@@ -14,6 +14,9 @@ tools = os.environ.get("PI_TOOLS", "")
 thinking = os.environ.get("PI_THINKING", "low")
 timeout = float(os.environ.get("PI_TIMEOUT", "150"))
 model = os.environ.get("PI_MODEL")
+if not model:
+    print("pi.py: set PI_MODEL — refusing to fall back to pi's default model", file=sys.stderr)
+    sys.exit(2)
 
 system = ("You are a fighter in a riddle dojo. Solve the riddle exactly as stated. "
           "Think and compute as needed" + (" (you may run shell commands)" if tools else "") + ". "

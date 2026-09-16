@@ -67,6 +67,58 @@ class Spar:
                 sent += need
         return sent
 
+    def resume(self, rid: int) -> dict | None:
+        """Drive a round that is already open (a supervisor died mid-round) to
+        settlement: publish it if its lobby has quorum, else void it, then wait
+        out the windows, settle and export."""
+        meta = self.h.meta(rid)
+        log(f"resuming round {rid} ({meta['status']})")
+        if meta["status"] == "lobby":
+            self._export()
+            spec = self.h.spec(rid)
+            while True:
+                n = len(self.h.lobby_entrants(rid))
+                scanned = self.h.state()["scanned_to"]
+                if n >= meta.get("min_players", 1):
+                    log(f"round {rid} table has {n}: publishing"); break
+                if scanned > spec.lobby_end:
+                    log(f"round {rid} lobby closed with {n}: voiding")
+                    for _ in range(40):
+                        try:
+                            self.h.void(rid, apply=True)
+                            if self.h.meta(rid)["status"] == "void":
+                                self._export(); return None
+                        except (HouseError, Unknown) as e:
+                            log(f"void: {e}")
+                        time.sleep(self.poll)
+                time.sleep(self.poll); self._export()
+            meta = self.h.publish_from_lobby(rid)
+        if meta["status"] == "publishing":
+            for _ in range(120):
+                try:
+                    meta = self.h.confirm_publish(rid); break
+                except Unknown:
+                    time.sleep(2)
+        if meta["status"] != "open":
+            log(f"round {rid} is {meta['status']}; nothing to resume"); return None
+        spec = self.h.spec(rid)
+        log(f"round {rid} open at {spec.publish_tick}, reveal ends {spec.reveal_end}")
+        self._export()
+        while self.h.state()["scanned_to"] <= spec.reveal_end:
+            time.sleep(self.poll); self._export()
+        doc = None
+        for attempt in range(40):
+            try:
+                doc = self.h.settle(rid, apply=True)
+                if self.h.meta(rid)["status"] == "settled":
+                    break
+            except (HouseError, Unknown) as e:
+                log(f"settle attempt {attempt + 1}: {e}")
+            time.sleep(self.poll)
+        self._export()
+        log(f"round {rid} resumed and settled: winners {(doc or {}).get('winners')}")
+        return doc
+
     def one_round(self, belt: str) -> dict | None:
         rid = self.h.state()["next_round"]
         npc_funding = self.fund_npcs() if self.npcs else 0

@@ -564,3 +564,19 @@ def test_spar_skips_tables_no_outsider_may_sit_at(world, tmp_path):
     assert not sp.live_belt("white") and sp.live_belt("orange")      # only the NPC could sit at white now
     world.core.balances[ALICE] = 500
     assert not sp.live_belt("orange")                                # eligible but broke: the table is dead
+
+
+def test_bot_takes_a_sensei_seat_when_the_round_offers_one(world, tmp_path):
+    h = make_house(world, tmp_path, seed=0)
+    h.open_lobby(riddle_file(tmp_path), 1000, 2, 40, 50, 20, belt="white", sensei=True)
+    world.core.advance(world.core.schedule_offset); h.confirm_lobby(1)
+    h.collect(); h.export(str(tmp_path / "web"))
+    board = json.load(open(tmp_path / "web" / "board.json"))
+    board["belts"] = {ALICE: {"rank": 4, "belt": "blue", "points": 0}}   # Alice is blue, the table is white
+    alice = make_bot(world, tmp_path, ALICE, SUM_SOLVER)
+    acts = alice.step(board)
+    assert any("as a sensei" in a for a in acts), acts
+    board["rounds"][0]["sensei"] = False                                  # the same table with the seat closed
+    bob = make_bot(world, tmp_path, BOB, SUM_SOLVER)
+    board["belts"][BOB] = {"rank": 4, "belt": "blue", "points": 0}
+    assert any("below my belt" in a for a in bob.step(board))

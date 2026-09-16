@@ -99,6 +99,13 @@ def cmd_house_spar(a):
     sp.run(a.rounds, stop_below=a.stop_below)
 
 
+def cmd_house_resume(a):
+    h = _house(a, True)
+    sp = spar.Spar(h, ["white"], a.entry_fee, 300, 120, riddle_dir=os.path.join(a.data, "riddles"),
+                   web_out=a.out, metrics_path=os.path.join(a.data, "metrics.jsonl"), poll=a.poll)
+    sp.resume(a.round)
+
+
 def cmd_house_metrics(a):
     print(json.dumps(spar.summarize(os.path.join(a.data, "metrics.jsonl")), indent=2))
 
@@ -348,6 +355,10 @@ def main(argv=None):
     d.add_argument("--dead-tables", action="store_true", help="publish belts even when no outsider may sit there")
     d.add_argument("--sensei", action="store_true", help="let a fighter sit below its belt, capped to its stake, no belt points")
     d.set_defaults(fn=cmd_house_spar)
+    d = s.add_parser("resume", help="drive a round left open by a dead supervisor to settlement")
+    d.add_argument("round", type=int); d.add_argument("--entry-fee", type=int, default=1000)
+    d.add_argument("--out", default="apps/web/data"); d.add_argument("--poll", type=int, default=15)
+    d.set_defaults(fn=cmd_house_resume)
     d = s.add_parser("metrics"); d.set_defaults(fn=cmd_house_metrics)
     d = s.add_parser("model", help="offline model of the mechanics through the real evaluator and ladder (house-side)")
     d.add_argument("--rounds", type=int, default=200); d.add_argument("--replicates", type=int, default=10); d.add_argument("--seed", type=int, default=1)
