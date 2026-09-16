@@ -187,6 +187,11 @@ def describe(ev: dict) -> str:
             return f"The house paid the developer's share of the rake, {amt}, for {r}."
         return f"The house {_PAYOUT_VERB.get(pk, 'sent')} {amt} to {w} for {r}."
 
+    if k == "DOC":
+        return (f"The house put its name to a document: it hashes to {short(f.get('doc_hash'))} and is"
+                f" published at {f.get('uri') or 'the URI in the message'}. This transaction is the"
+                f" signature, and the tick it landed in is the publication date.")
+
     if k == KIND_OTHER:
         return f"{qu(ev.get('amount'))} arrived from {w} carrying no dojo message. It is not part of any round."
 
@@ -203,12 +208,15 @@ def summarise(tick_events: list[dict]) -> str:
                        ("LOBBY", "The table for round {} opened.")):
         if by.get(kind):
             return tmpl.format(by[kind][0].get("round_id"))
+    words = {"ENTER": "seat", "COMMIT": "commit", "REVEAL": "reveal", KIND_PAYOUT: "payout",
+             "BOW": "fighter bowing in", "DOC": "signed document", KIND_OTHER: "foreign transfer"}
     bits = []
-    for kind, word in (("ENTER", "seat"), ("COMMIT", "commit"), ("REVEAL", "reveal"),
-                       (KIND_PAYOUT, "payout"), ("BOW", "fighter bowing in"), (KIND_OTHER, "foreign transfer")):
-        n = len(by.get(kind, []))
-        if n:
-            bits.append(f"{n} {word}{'s' if n != 1 else ''}")
+    for kind in sorted(by, key=lambda k: (list(words).index(k) if k in words else len(words), k)):
+        # A kind with no word still gets counted: saying "nothing happened" while
+        # rendering an event is worse than saying "1 UNKNOWN".
+        n = len(by[kind])
+        word = words.get(kind, kind)
+        bits.append(f"{n} {word}{'s' if n != 1 and kind in words else ''}")
     return (", ".join(bits) + ".").capitalize() if bits else "Nothing of ours happened here."
 
 

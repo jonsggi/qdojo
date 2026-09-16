@@ -579,6 +579,33 @@ class House:
                 out[o.source] = {"name": m.name, "bow_tick": o.tick}
         return out
 
+    def sign_doc(self, path: str, uri: str, apply: bool = False) -> dict:
+        """Put the house's name to a document by publishing its hash on chain.
+
+        There is no detached-signature primitive in qubic-cli, and there does not
+        need to be: a transaction signed by the house identity, carrying the
+        document's hash, IS the signature, and the tick it lands in IS the
+        publication date. Anyone can check both with a block explorer.
+
+        The hash covers the document's body only -- everything above the
+        provenance marker -- so the block naming the tick and the transaction can
+        be appended afterwards without invalidating what was signed. A settlement
+        hashes itself the same way.
+        """
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        h = hashing.doc_hash(text)
+        m = payload.Doc(h, uri)
+        plan = {"file": path, "uri": uri, "doc_hash": h.hex(), "house": self.identity,
+                "bytes": len(payload.encode(m))}
+        if not apply:
+            return plan | {"applied": False}
+        r = self.chain.send(self.identity, 0, payload.encode(m), payload.INPUT_TYPE)
+        plan |= {"tx": r.tx_id, "scheduled_tick": r.scheduled_tick, "applied": True}
+        if not self.chain.confirm(r.tx_id, r.scheduled_tick):
+            raise HouseError(f"the signature tx {r.tx_id[:8]}… was not included in tick {r.scheduled_tick}; try again")
+        return plan | {"tick": r.scheduled_tick}
+
     def tx_index(self) -> dict[str, dict]:
         """tx_id -> {round_id, kind, identity?, verdict?, payout_kind?} from the
         round dirs. This is what saves the 131 legacy PUBLISH/LOBBY frames that

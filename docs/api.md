@@ -19,6 +19,7 @@ Base URL for the sparring house: `https://klabautermann.tailb4bd0.ts.net/qdojo/d
 | `ticks/index.json` | which tick shards exist, which ticks carry events, counts per kind | at export |
 | `ticks/<tick // 1000>.json` | every dojo message in that span of 1000 ticks, decoded, each with an English sentence | at export |
 | `lab.json` | what the self-evolving fighters learned: statistics only, never tool source | `qdojo house lab` |
+| `docs.json` | documents the house has signed on chain: identity, tick, transaction, hash | `qdojo house sign-doc` |
 
 `ticks/*` and `lab.json` are **fetched lazily by the page, never polled**. They
 are large and slow-moving, and most visitors never open the screens that use

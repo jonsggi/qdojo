@@ -5,7 +5,7 @@ import os
 import sys
 import time
 
-from . import __version__, payload, riddle as R
+from . import __version__, payload, riddle as R, hashing
 from .chain.cli import QubicCli
 from .chain.rpc import Indexer
 from .chain.base import Unknown, ChainError
@@ -170,6 +170,88 @@ def cmd_house_export(a):
     h = _house(a, False)
     hist = h.export(a.out, events_out=a.events, foreign=a.foreign)
     print(f"exported {len(hist['rounds'])} rounds, {len(hist['fighters'])} fighters to {a.out}")
+
+
+PROVENANCE = """{marker}
+This document was published by the qdojo house and its hash is on the Qubic
+chain. Nothing above this line has changed since; the hash covers the body
+only, which is why this block can name the tick it was published in.
+
+  house      {house}
+  published  tick {tick}
+  signature  {tx}
+  doc_hash   sha256("qdojo/doc/v0" + the body above) = {doc_hash}
+  uri        {uri}
+
+Check it yourself, from a clean copy of this file:
+
+  qdojo doc verify llms.txt --node <any live node>
+
+or by hand: cut everything from the marker line down, strip trailing blank
+lines, append one newline, and sha256 it with the domain tag above. Then look
+up the transaction on any Qubic explorer and read the 32 bytes after the
+6-byte header: they are the same hash, signed by the house, in that tick.
+"""
+
+
+def cmd_house_sign_doc(a):
+    """Put the house's name to a document by publishing its hash on chain."""
+    h = _house(a, a.apply)
+    plan = h.sign_doc(a.file, a.uri, apply=a.apply)
+    if not a.apply:
+        print(json.dumps(plan, indent=2))
+        print("\nnothing sent. re-run with --apply to sign it on chain.")
+        return
+    block = PROVENANCE.format(marker=hashing.DOC_MARKER, house=plan["house"], tick=plan["tick"],
+                              tx=plan["tx"], doc_hash=plan["doc_hash"], uri=plan["uri"])
+    with open(a.file, encoding="utf-8") as f:
+        body = hashing.doc_body(f.read()).rstrip() + "\n"
+    with open(a.file, "w", encoding="utf-8") as f:
+        f.write(body + "\n" + block)
+    if a.out:
+        # So the page can show the signature without anyone running a command.
+        os.makedirs(a.out, exist_ok=True)
+        docs = {}
+        try:
+            with open(os.path.join(a.out, "docs.json"), encoding="utf-8") as f:
+                docs = json.load(f)
+        except (OSError, ValueError):
+            pass
+        docs[os.path.basename(a.file)] = {k: plan[k] for k in ("house", "tick", "tx", "doc_hash", "uri")}
+        with open(os.path.join(a.out, "docs.json"), "w", encoding="utf-8") as f:
+            json.dump(docs, f, indent=2, sort_keys=True)
+    print(f"signed {a.file} as {plan['house'][:8]}… in tick {plan['tick']}")
+    print(f"  tx       {plan['tx']}")
+    print(f"  doc_hash {plan['doc_hash']}")
+
+
+def cmd_doc_verify(a):
+    """Recompute a published document's hash and, with a node, check the chain."""
+    import re
+    with open(a.file, encoding="utf-8") as f:
+        text = f.read()
+    got = hashing.doc_hash(text).hex()
+    claimed = dict(re.findall(r"^\s{2}(house|published|signature|doc_hash|uri)\s+(.+?)\s*$", text, re.M))
+    if not claimed:
+        sys.exit(f"qdojo: {a.file} carries no provenance block; it has never been signed")
+    want = (claimed.get("doc_hash", "").split("= ")[-1]).strip()
+    tick = int(claimed.get("published", "tick 0").split()[-1])
+    tx, house = claimed.get("signature", ""), claimed.get("house", "")
+    print(f"body hash  {got}")
+    print(f"claimed    {want}")
+    if got != want:
+        sys.exit("qdojo: MISMATCH — the body has changed since it was signed")
+    print("the body matches the hash in the document.")
+    if not a.node:
+        print("pass --node IP to also check the signature is on chain in that tick.")
+        return
+    ch = _chain(a, False)
+    for o in ch.transactions_to(house, tick, tick):
+        m = payload.try_decode(o.payload) if o.tx_id == tx else None
+        if isinstance(m, payload.Doc) and m.doc_hash.hex() == got:
+            print(f"on chain   tx {tx[:8]}… in tick {tick}, signed by {house[:8]}…  VERIFIED")
+            return
+    sys.exit(f"qdojo: no matching DOC from {house[:8]}… in tick {tick} on this node")
 
 
 def cmd_house_lab(a):
@@ -360,6 +442,10 @@ def main(argv=None):
     s = sub.add_parser("payload").add_subparsers(dest="sub", required=True)
     d = s.add_parser("decode"); d.add_argument("hex"); d.set_defaults(fn=cmd_payload_decode)
 
+    s = sub.add_parser("doc").add_subparsers(dest="sub", required=True)
+    d = s.add_parser("verify", help="recheck a published document against its on-chain signature")
+    d.add_argument("file"); d.set_defaults(fn=cmd_doc_verify)
+
     s = sub.add_parser("riddle").add_subparsers(dest="sub", required=True)
     d = s.add_parser("hash"); d.add_argument("file"); d.set_defaults(fn=cmd_riddle_hash)
 
@@ -390,6 +476,10 @@ def main(argv=None):
     d.add_argument("--foreign", choices=["count", "list", "drop"], default="count",
                    help="transfers to the house carrying no dojo message")
     d.set_defaults(fn=cmd_house_export)
+    d = s.add_parser("sign-doc", help="publish a document's hash on chain: the house's signature and its date")
+    d.add_argument("file"); d.add_argument("--uri", required=True, help="where the document is published")
+    d.add_argument("--apply", action="store_true"); d.add_argument("--out", default="apps/web/data")
+    d.set_defaults(fn=cmd_house_sign_doc)
     d = s.add_parser("lab", help="what the self-evolving fighters learned (summaries only, never tool source)")
     d.add_argument("--evo-dir"); d.add_argument("--out", default="apps/web/data")
     d.add_argument("--map", action="append", metavar="NAME=IDENTITY", help="tie a bot directory to its chain identity")

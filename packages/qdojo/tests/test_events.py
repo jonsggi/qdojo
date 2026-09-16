@@ -219,7 +219,9 @@ def test_real_log_every_event_gets_text_and_a_round():
     assert len(real) > 3000
     assert all(r["text"] for r in real)
     assert all("{" not in r["text"] for r in real)
-    assert not [r for r in real if r["kind"] not in ("BOW", events.KIND_OTHER, events.KIND_UNKNOWN)
-                and r["round_id"] is None]
+    # BOW, a signed document and foreign traffic belong to no round; everything
+    # else must name one.
+    roundless = ("BOW", "DOC", events.KIND_OTHER, events.KIND_UNKNOWN)
+    assert not [r for r in real if r["kind"] not in roundless and r["round_id"] is None]
     assert [r for r in real if r["source"] == "index"], "the legacy path is not being exercised"
     assert events.index_doc(events.bucketize(recs), 0)["unresolved"] == 0

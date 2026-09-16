@@ -90,3 +90,14 @@ def test_decode_command_takes_hex_as_a_human_pastes_it(capsys):
     with pytest.raises(SystemExit) as e:
         main(["payload", "decode", "0xnothex"])
     assert "not hex" in str(e.value)
+
+
+def test_doc_roundtrip():
+    m = P.Doc(b"\x11" * 32, "https://example.test/llms.txt")
+    assert P.decode(P.encode(m)) == m
+    assert P.KIND_NAMES[m.kind] == "DOC"
+
+
+def test_doc_rejects_a_short_hash():
+    with pytest.raises(P.PayloadError):
+        P.encode(P.Doc(b"\x11" * 31, "u"))

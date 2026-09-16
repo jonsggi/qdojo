@@ -9,6 +9,7 @@ TAG_RIDDLE = b"qdojo/riddle/v0"
 TAG_ANSWER = b"qdojo/answer/v0"
 TAG_COMMIT = b"qdojo/commit/v0"
 TAG_SETTLE = b"qdojo/settlement/v0"
+TAG_DOC = b"qdojo/doc/v0"
 
 ANSWER_FORMATS = ("integer", "string", "hex")
 IDENTITY_RE = re.compile(r"^[A-Z]{60}$")
@@ -88,6 +89,25 @@ def player_commitment(round_id: int, identity: str, salt: bytes, canonical: str)
 
 
 SETTLEMENT_UNHASHED = ("hash", "settle_tx", "settle_tick")  # only known after the hash is sent
+
+
+# Everything below this line in a published document is provenance the house
+# adds AFTER hashing, so the hash is taken over the body alone -- exactly as a
+# settlement hashes itself without its own hash, settle_tx and settle_tick.
+DOC_MARKER = "-- signed by the house ------------------------------------------------------"
+
+
+def doc_body(text: str) -> str:
+    """The part of a document that is hashed: everything above the marker."""
+    i = text.find(DOC_MARKER)
+    return text if i < 0 else text[:i]
+
+
+def doc_hash(text: str) -> bytes:
+    """Domain-tagged hash of a document's body. Newlines are normalised so a
+    checkout with different line endings still verifies."""
+    body = doc_body(text).replace("\r\n", "\n").rstrip() + "\n"
+    return sha256(TAG_DOC, body.encode("utf-8"))
 
 
 def settlement_hash(settlement: dict) -> bytes:

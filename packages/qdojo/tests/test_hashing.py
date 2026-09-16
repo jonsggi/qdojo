@@ -61,3 +61,21 @@ def test_settlement_hash_ignores_its_own_field():
 
 def test_canonical_json_is_stable():
     assert hashing.canonical_json({"b": 1, "a": [1, 2]}) == b'{"a":[1,2],"b":1}'
+
+
+def test_doc_hash_covers_the_body_only():
+    """The provenance block names the tick the document was signed in, so it is
+    written after signing and must not change the hash."""
+    body = "the document\n"
+    signed = body + "\n" + hashing.DOC_MARKER + "\n  published  tick 80437002\n"
+    assert hashing.doc_hash(body) == hashing.doc_hash(signed)
+    assert hashing.doc_hash(body) != hashing.doc_hash("the document, edited\n")
+
+
+def test_doc_hash_normalises_line_endings_and_trailing_space():
+    assert hashing.doc_hash("a\r\nb\r\n") == hashing.doc_hash("a\nb\n")
+    assert hashing.doc_hash("a\nb\n\n\n") == hashing.doc_hash("a\nb")
+
+
+def test_doc_hash_is_domain_tagged():
+    assert hashing.doc_hash("x") != hashing.sha256(b"x\n")

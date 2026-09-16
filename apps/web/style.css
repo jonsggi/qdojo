@@ -695,3 +695,9 @@ body.help-on .stat:hover .k[data-help] { color: var(--cyan); }
 }
 .agent-panel { border-color: var(--cyan); }
 .agent-panel pre.code { border-color: var(--cyan); }
+
+.doc-sig {
+  margin: 14px 0 0; padding: 8px 10px; font-size: 8px; line-height: 2;
+  border-left: 4px solid var(--green); background: var(--panel); color: var(--green);
+}
+.doc-sig .tiny { line-height: 1.6; }

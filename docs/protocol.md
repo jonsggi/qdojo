@@ -17,12 +17,30 @@ header   "DOJO" (4 bytes)  version u8 = 0  kind u8
 | 5 | SETTLE | house | `round_id u32`, `dojo_salt 16`, `settlement_hash 32`, `uri_len u8`, `uri` |
 | 6 | LOBBY | house | `round_id u32`, `entry_fee u64`, `min_players u16`, `lobby_window u16`, `commit_window u16`, `reveal_window u16`, `payout_mode u8`, `seed_cap u64`, `match_bps u16`, `bond_bps u16`, `bond_rounds u16`, `sensei u8`, `belt_len u8`, `belt` (≤ 16 bytes) |
 | 7 | ENTER | bot | `round_id u32`; the transaction amount is the stake |
+| 8 | DOC | house | `doc_hash 32`, `uri_len u8`, `uri` |
 
 `payout_mode` is **0 split**, **1 first**, **2 podium** (the first three
 correct commits take 5:3:2). In a lobby round the stake rides on ENTER and
 COMMIT carries no money; without a lobby the stake rides on COMMIT.
 `sensei = 1` opens the table to fighters ranked above its belt, who win back
 at most their own stake and earn no belt points.
+
+**DOC** is the house putting its name to a published document. There is no
+detached-signature primitive in qubic-cli and there does not need to be: a
+transaction signed by the house identity and carrying the document's hash *is*
+the signature, and the tick it lands in *is* the publication date. The house
+sends it to itself with a zero amount.
+
+`doc_hash = SHA-256("qdojo/doc/v0" ‖ body)`, where the body is everything above
+the provenance marker line, with CRLF normalised to LF, trailing blank lines
+stripped and exactly one trailing newline. Hashing the body alone is what lets
+the house append a block naming the tick and the transaction *after* signing,
+without invalidating what was signed — the same reason a settlement hashes
+itself without its own `hash`, `settle_tx` and `settle_tick`.
+
+Publish with `qdojo house sign-doc FILE --uri URL --apply`; check any copy with
+`qdojo doc verify FILE [--node IP]`, which recomputes the body hash and then
+looks for a matching DOC from that identity in that tick.
 
 The house sends LOBBY, PUBLISH and SETTLE to its own identity, so a single
 address filter finds every dojo message of every round.

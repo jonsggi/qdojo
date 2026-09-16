@@ -13,10 +13,12 @@ MAX_URI = 255
 MAX_ANSWER = 512
 
 KIND_BOW, KIND_PUBLISH, KIND_COMMIT, KIND_REVEAL, KIND_SETTLE, KIND_LOBBY, KIND_ENTER = 1, 2, 3, 4, 5, 6, 7
+KIND_DOC = 8   # the house signing a published document: its hash, and where to read it
 MODE_SPLIT, MODE_FIRST, MODE_PODIUM = 0, 1, 2   # payout modes (docs/spec.md §5)
 MODE_NAMES = {0: "split", 1: "first", 2: "podium"}
 PODIUM_WEIGHTS = (5, 3, 2)                       # first, second, third correct commit
-KIND_NAMES = {1: "BOW", 2: "PUBLISH", 3: "COMMIT", 4: "REVEAL", 5: "SETTLE", 6: "LOBBY", 7: "ENTER"}
+KIND_NAMES = {1: "BOW", 2: "PUBLISH", 3: "COMMIT", 4: "REVEAL", 5: "SETTLE", 6: "LOBBY", 7: "ENTER",
+               8: "DOC"}
 MAX_BELT = 16
 
 
@@ -97,7 +99,16 @@ class Enter:
     kind = KIND_ENTER
 
 
-Message = Bow | Publish | Commit | Reveal | Settle | Lobby | Enter
+@dataclass(frozen=True)
+class Doc:
+    """The house putting its name to a document. The tick this lands in is the
+    publication date and the signature on the transaction is the signature."""
+    doc_hash: bytes
+    uri: str
+    kind = KIND_DOC
+
+
+Message = Bow | Publish | Commit | Reveal | Settle | Lobby | Enter | Doc
 
 
 def _hdr(kind: int) -> bytes:
@@ -162,6 +173,8 @@ def encode(m: Message) -> bytes:
                + _text(m.belt, MAX_BELT, "belt"))
     elif isinstance(m, Enter):
         out = _hdr(KIND_ENTER) + struct.pack("<I", _u(m.round_id, 32, "round_id"))
+    elif isinstance(m, Doc):
+        out = _hdr(KIND_DOC) + _bytes(m.doc_hash, HASH_LEN, "doc_hash") + _text(m.uri, MAX_URI, "uri")
     else:
         raise PayloadError(f"not a dojo message: {m!r}")
     if len(out) > MAX_PAYLOAD:
@@ -228,6 +241,8 @@ def decode(b: bytes) -> Message:
     elif kind == KIND_ENTER:
         (rid,) = r.unpack("<I", "round_id")
         m = Enter(rid)
+    elif kind == KIND_DOC:
+        m = Doc(r.take(HASH_LEN, "doc_hash"), r.text(MAX_URI, "uri"))
     else:
         raise PayloadError(f"unknown kind {kind}")
     r.done(KIND_NAMES[kind])

@@ -1402,6 +1402,24 @@ print(json.dumps({"answer": sum(nums)}))`;
 // The fastest path for anyone who already has a coding agent: hand it one
 // line. llms.txt is written for the agent, not the human -- it carries the
 // safety rules, the solver contract and the exact non-interactive command.
+// The page may be served from a sub-path (/qdojo/), so llms.txt is resolved
+// against the document, never against the origin.
+// A published document is signed the way a round is: the house puts its hash on
+// chain, so the transaction is the signature and the tick is the date.
+function docSignature(name) {
+  const rec = lazyJSON('./data/docs.json', 300000, () => { if (S.screen === 'join') renderJoin(); });
+  const d = rec.data && rec.data[name];
+  if (!d) return '';
+  return `<p class="doc-sig"${h('verify')}>SIGNED BY THE HOUSE ${idLink(d.house)} IN TICK ${tickLink(d.tick)}
+    &middot; ${txLink(d.tx, 'THE SIGNATURE')}<br>
+    <span class="tiny muted">The house published this file's hash on chain before you read it, so nothing in it
+    has been changed since. Recheck it yourself with <span class="mono">qdojo doc verify llms.txt</span>,
+    or read <a href="${tickHref(d.tick)}">what happened in that tick</a>.</span></p>`;
+}
+
+function llmsBase() { return new URL('.', location.href).href.replace(/\/$/, ''); }
+function llmsURL() { return new URL('llms.txt', location.href).href; }
+
 function agentPrompt(origin) {
   return `Set me up a fighter bot for qdojo, the on-chain AI riddle dojo.
 Read ${origin}/llms.txt first — it is written for you and has everything:
@@ -1488,13 +1506,17 @@ function renderJoin() {
       <h3>HAVE A CODING AGENT? GIVE IT THIS</h3>
       <p>Claude Code, Cursor, Codex, an agent of your own — paste this and it will do the whole thing:
       pick up the rules, run the setup, hand you the identity to fund, and write you a solver.</p>
-      <pre class="code" id="agent-prompt">${esc(agentPrompt(location.origin + location.pathname.replace(/\/[^/]*$/, '')))}</pre>
-      <button class="btn" data-copy="agent-prompt">COPY THE PROMPT</button>
-      <p class="tiny muted" style="margin-top:12px">The agent reads
-      <a class="mono" href="llms.txt">llms.txt</a>, which is written for machines: the four safety rules,
-      the one-line non-interactive setup command, the solver contract, every data endpoint, and the two
-      numbers from <a href="#lab">the lab</a> that say where the open ground is.
-      Prefer to do it by hand? Carry on below.</p>
+      <pre class="code" id="agent-prompt">${esc(agentPrompt(llmsBase()))}</pre>
+      <p class="clean-list">
+        <button class="btn" data-copy="agent-prompt">COPY THE PROMPT</button>
+        <a class="btn btn-cyan" href="${esc(llmsURL())}" target="_blank" rel="noopener">READ LLMS.TXT &#8599;</a>
+      </p>
+      ${docSignature('llms.txt')}
+      <p class="tiny muted" style="margin-top:12px">Read it yourself first if you like — it is plain text and
+      it is short: <a class="mono wrap" href="${esc(llmsURL())}" target="_blank" rel="noopener">${esc(llmsURL())}</a><br>
+      It is written for machines: the four safety rules, the one-line non-interactive setup command, the
+      solver contract, every data endpoint, and the two numbers from <a href="#lab">the lab</a> that say
+      where the open ground is. Prefer to do the whole thing by hand? Carry on below.</p>
     </div>
 
     <div class="panel panel-green">
