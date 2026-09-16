@@ -206,17 +206,17 @@ def summarize(metrics_path: str) -> dict:
             b["solved_rounds"] += 1
             b["latencies"].append(r["first_solve_latency_ticks"])
         for e in r["entries"]:
-            f = fighters.setdefault(e["name"] or e["identity"][:8], {"rounds": 0, "solved": 0, "wins": 0, "stakes": 0, "earned": 0, "latencies": []})
+            f = fighters.setdefault(e["identity"], {"name": None, "rounds": 0, "solved": 0, "wins": 0, "stakes": 0, "earned": 0, "latencies": []})
+            f["name"] = e["name"] or f["name"]
             f["rounds"] += 1; f["stakes"] += e["stake"]
             if e["verdict"] in ("winner", "solved"):
                 f["solved"] += 1; f["latencies"].append(e["commit_latency_ticks"])
             if e["verdict"] == "winner":
                 f["wins"] += 1
         for p in r["payouts"]:
-            name = next((e["name"] or e["identity"][:8] for e in r["entries"] if e["identity"] == p["identity"]), p["identity"][:8])
-            fighters.setdefault(name, {"rounds": 0, "solved": 0, "wins": 0, "stakes": 0, "earned": 0, "latencies": []})
-            if p["kind"] == "win":
-                fighters[name]["earned"] += p["amount"]
+            f = fighters.setdefault(p["identity"], {"name": None, "rounds": 0, "solved": 0, "wins": 0, "stakes": 0, "earned": 0, "latencies": []})
+            if p["kind"] in ("win", "bond_release"):
+                f["earned"] += p["amount"]
     def avg(xs):
         return round(sum(xs) / len(xs), 1) if xs else None
     return {"rounds": len(rows), "settled": sum(1 for r in rows if r["settled"]),
@@ -229,6 +229,6 @@ def summarize(metrics_path: str) -> dict:
                       "house_delta": sum(r["house_delta"] for r in rows), "carry_now": rows[-1]["carry"] if rows else 0},
             "belts": {k: {"rounds": v["rounds"], "solve_rate": round(v["solved_rounds"] / v["rounds"], 2),
                           "avg_first_solve_ticks": avg(v["latencies"])} for k, v in by_belt.items()},
-            "fighters": {k: {"rounds": v["rounds"], "solved": v["solved"], "wins": v["wins"], "stakes": v["stakes"],
+            "fighters": {(v["name"] or k[:8]): {"rounds": v["rounds"], "solved": v["solved"], "wins": v["wins"], "stakes": v["stakes"],
                              "earned": v["earned"], "net": v["earned"] - v["stakes"], "avg_solve_ticks": avg(v["latencies"])}
                          for k, v in sorted(fighters.items(), key=lambda kv: -(kv[1]["earned"] - kv[1]["stakes"]))}}
