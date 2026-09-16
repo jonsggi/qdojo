@@ -93,17 +93,26 @@ class QubicCli:
             raise Unknown(f"qubic-cli could not reach {node_ip}:{self.node_port}")
         return out
 
+    def _read(self, args, parser, what: str):
+        """Run a read on the primary, then each fallback, until one returns a
+        USABLE answer. A node that answers badly is as useless as one that
+        does not answer at all, so both move us to the next node."""
+        for ip in (self.node_ip,) + self.fallback_nodes:
+            try:
+                out = self._run_on(ip, args, False)
+            except Unknown:
+                continue
+            v = parser(out)
+            if v is not None:
+                return v
+        raise Unknown(f"no usable {what} from any of {1 + len(self.fallback_nodes)} nodes")
+
     def current_tick(self) -> int:
-        t = parse.current_tick(self._run(["-getcurrenttick"]))
-        if t is None:
-            raise Unknown("no Tick/Epoch in -getcurrenttick output")
-        return t
+        return self._read(["-getcurrenttick"], parse.current_tick, "tick")
 
     def balance(self, identity: str) -> int:
-        b = parse.balance(self._run(["-getbalance", identity]), identity)
-        if b is None:
-            raise Unknown(f"no usable balance for {identity[:8]}…")
-        return b
+        return self._read(["-getbalance", identity], lambda o: parse.balance(o, identity),
+                          f"balance for {identity[:8]}…")
 
     def send(self, dest: str, amount: int, payload: bytes = b"", input_type: int = 0) -> SendResult:
         if payload:
@@ -116,10 +125,15 @@ class QubicCli:
         return SendResult(*r)
 
     def confirm(self, tx_id: str, tick: int) -> bool:
-        out = self._run(["-checktxontick", str(tick), tx_id])
-        r = parse.check_tx_on_tick(out, tx_id, tick)
-        if r is not None:
-            return r
+        out = ""
+        for ip in (self.node_ip,) + self.fallback_nodes:
+            try:
+                out = self._run_on(ip, ["-checktxontick", str(tick), tx_id], False)
+            except Unknown:
+                continue
+            r = parse.check_tx_on_tick(out, tx_id, tick)
+            if r is not None:
+                return r
         # Undecidable so far. A Qubic transaction is only valid for the tick
         # signed into it: if that tick is safely in the past and still inside
         # this epoch, "no data for that tick" means the transaction never

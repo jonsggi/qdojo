@@ -9,7 +9,7 @@ import time
 
 from . import riddles
 from .house import HouseError
-from .chain.base import Unknown
+from .chain.base import Unknown, ChainError
 
 
 def log(msg):
@@ -254,20 +254,30 @@ class Spar:
         skipped = 0
         for i in range(rounds):
             belt = self.belts[i % len(self.belts)]
-            if self.skip_dead and not self.live_belt(belt):
+            try:
+                dead = self.skip_dead and not self.live_belt(belt)
+            except (Unknown, ChainError) as e:
+                log(f"could not judge whether {belt} is live ({e}); publishing anyway")
+                dead = False
+            if dead:
                 skipped += 1
                 log(f"skipping a {belt} table: no fighter outside the house may sit there ({skipped} skipped so far)")
                 if skipped >= len(self.belts) * 2:
                     log("every table is dead for outsiders; sleeping a round before trying again")
                     time.sleep(60); skipped = 0
                 continue
-            bal = self.h.chain.balance(self.h.identity)
+            try:
+                bal = self.h.chain.balance(self.h.identity)
+            except (Unknown, ChainError) as e:
+                log(f"could not read the house balance ({e}); waiting, not stopping")
+                time.sleep(self.poll)
+                continue
             if bal < max(stop_below, self.h.seed_per_round + self.h.state()["carry"]):
                 log(f"house balance {bal} too low to seed the next round; stopping")
                 return
             try:
                 self.one_round(belt)
-            except (HouseError, Unknown) as e:
+            except (HouseError, Unknown, ChainError) as e:
                 log(f"round aborted: {e}")
                 time.sleep(self.poll)
 

@@ -137,3 +137,18 @@ def test_an_empty_past_tick_in_this_epoch_means_the_tx_never_landed(tmp_path):
         c.confirm(TX, 80386790)                    # only 5 ticks back: still too fresh to judge
     with pytest.raises(Unknown):
         c.confirm(TX, 80300000)                    # before this epoch: the data is simply gone
+
+
+def test_a_node_that_answers_badly_moves_the_read_to_the_next_node(tmp_path):
+    cli = fake_cli(tmp_path, f"""
+        a = sys.argv
+        ip = a[a.index("-nodeip") + 1]
+        if ip == "1.1.1.1":
+            print("garbage that parses to nothing"); sys.exit(0)   # reachable, useless
+        if "-getbalance" in a: print("Identity: {ID}\\nBalance: 77\\nTick: 500")
+        if "-getcurrenttick" in a: print("Tick: 500\\nEpoch: 231")
+    """)
+    c = QubicCli(cli, "1.1.1.1", fallback_nodes=("2.2.2.2",))
+    assert c.balance(ID) == 77 and c.current_tick() == 500
+    with pytest.raises(Unknown):
+        QubicCli(cli, "1.1.1.1").balance(ID)        # no fallback: still Unknown
