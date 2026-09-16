@@ -30,3 +30,10 @@ def test_calibrate_reads_fighters_json():
     fj = {"fighters": [{"identity": "A" * 60, "name": "X", "rounds_played": 5, "by_belt": {"white": {"rounds": 3, "solved": 2, "wins": 1, "avg_solve_ticks": 12.0}}}]}
     c = model.calibrate(fj)
     assert c[0]["solve"]["white"] == 0.67 and c[0]["solve"]["blue"] == 0.0 and c[0]["latency"]["white"][0] == 12.0
+
+
+def test_calibrate_house_funded_comes_from_identities_not_names():
+    fj = {"fighters": [{"identity": "A" * 60, "name": "NPC-FAKE", "rounds_played": 5, "by_belt": {}},
+                       {"identity": "B" * 60, "name": "REAL", "rounds_played": 5, "by_belt": {}}]}
+    c = {x["name"]: x for x in model.calibrate(fj, npcs={"B" * 60})}
+    assert c["NPC-FAKE"]["house_funded"] is False and c["REAL"]["house_funded"] is True

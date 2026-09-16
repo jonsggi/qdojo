@@ -254,9 +254,13 @@ def _belt_dist(names):
     return {k: round(v / tot, 2) for k, v in sorted(d.items(), key=lambda kv: B.RANKS[kv[0]])}
 
 
-def calibrate(fighters_json: dict, min_rounds: int = 3) -> list[dict]:
+def calibrate(fighters_json: dict, min_rounds: int = 3, npcs: set | None = None) -> list[dict]:
     """Archetypes measured from a live fighters.json: one per named fighter
-    with enough rounds, solve probability and mean latency per belt."""
+    with enough rounds, solve probability and mean latency per belt.
+
+    `npcs` is the set of house-funded IDENTITIES (the same list the house
+    tops up). Names are player-chosen and untrusted: the "NPC" prefix is
+    used only when no list is given, and only for an offline model."""
     out = []
     for f in fighters_json.get("fighters", []):
         if f.get("rounds_played", 0) < min_rounds:
@@ -267,8 +271,8 @@ def calibrate(fighters_json: dict, min_rounds: int = 3) -> list[dict]:
             solve[b] = round(bb["solved"] / bb["rounds"], 2) if bb and bb["rounds"] else 0.0
             lat[b] = [bb["avg_solve_ticks"] or 30, max(3, (bb["avg_solve_ticks"] or 30) * 0.3)] if bb else [30, 10]
         name = f.get("name") or f["identity"][:8]
-        out.append({"name": name, "solve": solve, "latency": lat, "count": 1,
-                    "house_funded": name.upper().startswith("NPC")})   # the house's own fighters, by naming convention
+        funded = (f["identity"] in npcs) if npcs is not None else name.upper().startswith("NPC")
+        out.append({"name": name, "solve": solve, "latency": lat, "count": 1, "house_funded": funded})
     return out
 
 

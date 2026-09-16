@@ -110,7 +110,8 @@ def cmd_house_model(a):
     if a.cohort:
         cohort = json.load(open(a.cohort))
     elif a.calibrate:
-        cohort = model.calibrate(json.load(open(a.calibrate)))
+        cohort = model.calibrate(json.load(open(a.calibrate)),
+                                 npcs=set(x for x in (a.npcs or "").split(",") if x) if a.npcs else None)
         if a.clones > 1:
             for c in cohort:
                 c["count"] = a.clones
@@ -326,6 +327,7 @@ def main(argv=None):
     d.add_argument("--start-balance", type=int, default=20000)
     d.add_argument("--cohort", help="JSON list of archetypes"); d.add_argument("--calibrate", help="a fighters.json to derive archetypes from")
     d.add_argument("--clones", type=int, default=1, help="with --calibrate: copies of each measured fighter")
+    d.add_argument("--npcs", help="with --calibrate: comma-separated house-funded identities (names are untrusted)")
     d.add_argument("--sweep", nargs="+", help="param=v1,v2,... (e.g. match_bps=0,5000,10000 bond_bps=0,5000)")
     d.set_defaults(fn=cmd_house_model)
 
