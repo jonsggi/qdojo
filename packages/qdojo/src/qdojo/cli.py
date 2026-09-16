@@ -106,7 +106,7 @@ def cmd_house_model(a):
     p = model.Params(rounds=a.rounds, entry_fee=a.entry_fee, seed_cap=a.seed_cap, match_bps=a.match_bps,
                      rake_bps=a.rake_bps, payout_mode={v: k for k, v in payload.MODE_NAMES.items()}[a.payout_mode],
                      bond_bps=a.bond_bps, bond_rounds=a.bond_rounds, min_players=a.min_players,
-                     ladder=not a.no_ladder, start_balance=a.start_balance)
+                     ladder=not a.no_ladder, start_balance=a.start_balance, gate=a.gate, season=a.season)
     cohort = None
     if a.cohort:
         cohort = json.load(open(a.cohort))
@@ -120,7 +120,7 @@ def cmd_house_model(a):
         grid = {}
         for item in a.sweep:
             k, vs = item.split("=")
-            grid[k] = [int(v) for v in vs.split(",")]
+            grid[k] = [int(v) if v.lstrip("-").isdigit() else v for v in vs.split(",")]
         print(json.dumps(model.sweep(p, grid, cohort, a.replicates, a.seed), indent=2))
     else:
         print(json.dumps(model.run(p, cohort, a.replicates, a.seed), indent=2))
@@ -326,6 +326,8 @@ def main(argv=None):
     d.add_argument("--bond-bps", type=int, default=5000); d.add_argument("--bond-rounds", type=int, default=3)
     d.add_argument("--min-players", type=int, default=3); d.add_argument("--no-ladder", action="store_true")
     d.add_argument("--start-balance", type=int, default=20000)
+    d.add_argument("--gate", choices=["strict", "soft", "handicap"], default="strict")
+    d.add_argument("--season", type=int, default=0, help="reset the ladder every N rounds")
     d.add_argument("--cohort", help="JSON list of archetypes"); d.add_argument("--calibrate", help="a fighters.json to derive archetypes from")
     d.add_argument("--clones", type=int, default=1, help="with --calibrate: copies of each measured fighter")
     d.add_argument("--npcs", help="with --calibrate: comma-separated house-funded identities (names are untrusted)")

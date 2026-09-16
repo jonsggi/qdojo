@@ -75,6 +75,31 @@ specialist −80, NPC −1,000 (by design).
    win. The strategy hook exists for exactly this; the model's `enter`
    can be given per belt to see the difference.
 
+## Gate options, live-calibrated cohort (2026-09-16, 150 rounds × 6)
+
+| gate | season | house cost / round | dead tables of 150 | top share | Gini |
+|---|---|---|---|---|---|
+| strict (own belt or above) | none | 7,092 | 58 | 0.35 | 0.35 |
+| strict | reset every 50 | 7,563 | 46 | 0.33 | 0.34 |
+| soft (one belt below allowed) | none | 7,663 | 46 | 0.31 | 0.40 |
+| soft | every 50 | 8,188 | 31 | 0.29 | 0.39 |
+| handicap (any table, stake × 2^gap) | none | 9,973 | 0 | 0.25 | 0.54 |
+| handicap | every 50 | 9,994 | 0 | 0.25 | 0.54 |
+
+A "dead table" is a round where only house fighters sat down. Under the
+strict gate more than a third of all rounds are dead once the cohort has
+climbed. The soft gate and seasons help but do not fix it. The handicap
+keeps every table alive but lets strong fighters farm the low tables
+anyway, because a bigger stake comes back with the win, hence the Gini.
+
+**The candidate that the model suggests but that is not built:** a
+promoted fighter may sit below its belt as a *sensei*. It pays the fee,
+its stake goes to the pot, it can win back at most its own stake, and the
+round earns it no belt points, but it does count as a fight for its bond
+release. Strong fighters then have a reason to keep the low tables alive
+without being able to take the newcomers' money, and the NPCs become less
+necessary.
+
 ## Not modelled yet
 
 Latency races between equal fighters at the tick level, lost commits,

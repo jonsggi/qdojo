@@ -71,6 +71,8 @@ class Params:
     reveal_window: int = 120
     start_balance: int = 20000
     npc_rounds: int = 3        # house tops NPCs up to this many stakes before each round
+    gate: str = "strict"       # strict: own belt or above | soft: one belt below allowed | handicap: any table, stake x 2^gap below
+    season: int = 0            # reset the ladder every N rounds (0 = never)
 
 
 @dataclass
@@ -120,8 +122,17 @@ def simulate(params: Params, cohort: list[Archetype], rng: random.Random) -> dic
                 need = params.entry_fee * params.npc_rounds - f.balance
                 if need > 0:
                     f.balance += need; house -= need; npc_funding_total += need
-        eligible = [f for f in fighters if f.balance >= params.entry_fee and
-                    (not params.ladder or B.may_enter(belt_state, f.identity, rank)) and rng.random() < _enter_p(f.arch, belt)]
+        if params.season and r % params.season == 1 and r > 1:
+            belt_state.clear()
+        def stake_for(f):
+            gap = B.rank_of(belt_state, f.identity) - rank
+            return params.entry_fee * (2 ** gap if params.gate == "handicap" and gap > 0 else 1)
+        def allowed(f):
+            if not params.ladder or params.gate == "handicap":
+                return True
+            gap = B.rank_of(belt_state, f.identity) - rank
+            return gap <= (1 if params.gate == "soft" else 0)
+        eligible = [f for f in fighters if allowed(f) and f.balance >= stake_for(f) and rng.random() < _enter_p(f.arch, belt)]
         if len(eligible) < params.min_players:
             void_rounds += 1
             continue
@@ -129,13 +140,13 @@ def simulate(params: Params, cohort: list[Archetype], rng: random.Random) -> dic
         spec = RoundSpec(r, publish, params.entry_fee, params.commit_window, params.reveal_window, b"\x11" * 32,
                          hashing.answer_commitment(r, dojo_salt, answer), "integer", params.seed_cap, params.rake_bps,
                          params.payout_mode, params.match_bps, carry, lobby_tick=900, lobby_window=50,
-                         min_players=params.min_players, belt_rank=rank if params.ladder else None,
+                         min_players=params.min_players, belt_rank=rank if (params.ladder and params.gate == "strict") else None,
                          bond_bps=params.bond_bps, bond_rounds=params.bond_rounds,
                          house_fighters=tuple(f.identity for f in fighters if f.arch.house_funded))
         obs, n = [], 0
         for f in eligible:
             n += 1
-            obs.append(Observed(910, f"e{r}_{n:04d}", f.identity, HOUSE, params.entry_fee, payload.INPUT_TYPE,
+            obs.append(Observed(910, f"e{r}_{n:04d}", f.identity, HOUSE, stake_for(f), payload.INPUT_TYPE,
                                 payload.encode(payload.Enter(r))))
             solved = rng.random() < f.arch.solve[belt]
             mean, sd = f.arch.latency[belt]
@@ -151,6 +162,8 @@ def simulate(params: Params, cohort: list[Archetype], rng: random.Random) -> dic
                                 payload.encode(payload.Reveal(r, salt, ans))))
         ev = evaluate(spec, obs, HOUSE, dojo_salt, answer, final=True, belts=belt_state)
         rounds_played += 1
+        if not any(not f.arch.house_funded for f in eligible):
+            void_reasons["dead_table"] = void_reasons.get("dead_table", 0) + 1
         # money
         for e in ev.entries:
             if e.verdict in ("winner", "solved", "wrong", "no_reveal", "no_commit", "bad_reveal"):
@@ -199,7 +212,7 @@ def simulate(params: Params, cohort: list[Archetype], rng: random.Random) -> dic
                            "earned_share": round(sum(f.earned for f in fs) / total_earn, 3),
                            "final_belts": [B.belt_name(B.rank_of(belt_state, f.identity)) for f in fs],
                            "broke": sum(1 for f in fs if f.balance < params.entry_fee)}
-    return {"rounds_played": rounds_played, "void_rounds": void_rounds,
+    return {"rounds_played": rounds_played, "void_rounds": void_rounds, "dead_tables": void_reasons.get("dead_table", 0),
             "house_cost_per_round": round(sum(house_cost) / max(1, len(house_cost)), 1),
             "npc_funding_per_round": round(npc_funding_total / max(1, rounds_played), 1),
             "house_total": house, "avg_pot": round(statistics.mean(pots), 1) if pots else 0,
@@ -235,6 +248,7 @@ def run(params: Params, cohort_spec=None, replicates: int = 10, seed: int = 1) -
            "top_share_of_pot": agg("top_share_of_pot"), "gini_net": agg("gini_net"),
            "max_fighter_share_of_earnings": agg("max_fighter_share_of_earnings"),
            "promotions": agg("promotions"), "demotions": agg("demotions"), "void_rounds": agg("void_rounds"),
+           "dead_tables": agg("dead_tables"),
            "bonds_forfeited": agg("bonds_forfeited"),
            "by_archetype": {}}
     for name in runs[0]["by_archetype"]:
@@ -278,7 +292,7 @@ def calibrate(fighters_json: dict, min_rounds: int = 3, npcs: set | None = None)
 
 
 def sweep(base: Params, grid: dict, cohort_spec=None, replicates: int = 5, seed: int = 1) -> list[dict]:
-    """grid: {"match_bps": [0, 5000, 10000], "bond_bps": [0, 5000]} -> one result per combination."""
+    """grid: {"match_bps": [0, 5000, 10000], "gate": ["strict", "soft"]} -> one result per combination."""
     import itertools
     keys = list(grid)
     results = []
@@ -289,5 +303,6 @@ def sweep(base: Params, grid: dict, cohort_spec=None, replicates: int = 5, seed:
                         "top_share_of_pot": (r["top_share_of_pot"] or {}).get("mean"), "gini_net": r["gini_net"]["mean"],
                         "max_fighter_share": r["max_fighter_share_of_earnings"]["mean"],
                         "promotions": r["promotions"]["mean"], "void_rounds": r["void_rounds"]["mean"],
+                        "dead_tables": r["dead_tables"]["mean"],
                         "by_archetype": {k: v["net_per_round"] for k, v in r["by_archetype"].items()}})
     return results
