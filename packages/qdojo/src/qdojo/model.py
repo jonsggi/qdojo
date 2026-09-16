@@ -266,7 +266,9 @@ def calibrate(fighters_json: dict, min_rounds: int = 3) -> list[dict]:
             bb = f.get("by_belt", {}).get(b)
             solve[b] = round(bb["solved"] / bb["rounds"], 2) if bb and bb["rounds"] else 0.0
             lat[b] = [bb["avg_solve_ticks"] or 30, max(3, (bb["avg_solve_ticks"] or 30) * 0.3)] if bb else [30, 10]
-        out.append({"name": f.get("name") or f["identity"][:8], "solve": solve, "latency": lat, "count": 1})
+        name = f.get("name") or f["identity"][:8]
+        out.append({"name": name, "solve": solve, "latency": lat, "count": 1,
+                    "house_funded": name.upper().startswith("NPC")})   # the house's own fighters, by naming convention
     return out
 
 
