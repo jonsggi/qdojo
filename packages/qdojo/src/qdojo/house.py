@@ -53,11 +53,12 @@ def _obs_from_json(d: dict) -> Observed:
 
 class House:
     def __init__(self, chain, data_dir: str, identity: str, rake_bps: int = 0, seed_per_round: int = 0,
-                 uri_base: str = ""):
+                 uri_base: str = "", house_fighters: tuple = ()):
         if not hashing.is_identity(identity):
             raise HouseError("house identity must be 60 uppercase letters")
         self.chain, self.data_dir, self.identity = chain, data_dir, identity
         self.rake_bps, self.seed_per_round, self.uri_base = rake_bps, seed_per_round, uri_base.rstrip("/")
+        self.house_fighters = tuple(house_fighters)
         os.makedirs(os.path.join(data_dir, "rounds"), exist_ok=True)
         os.chmod(data_dir, 0o700)
 
@@ -163,7 +164,7 @@ class House:
                 "reveal_window": reveal_window, "house_seed": house_seed, "rake_bps": self.rake_bps,
                 "payout_mode": payload.MODE_NAMES[payout_mode], "match_bps": match_bps, "carry_in": carry_in,
                 "riddle_hash": r.hash().hex(), "answer_commitment": msg.answer_commitment.hex(), "uri": uri,
-                "belt": belt, "bond_bps": bond_bps, "bond_rounds": bond_rounds,
+                "belt": belt, "bond_bps": bond_bps, "bond_rounds": bond_rounds, "house_fighters": list(self.house_fighters),
                 "publish_tx": None, "scheduled_tick": None, "publish_tick": None, "status": "publishing"}
         _write(self._rpath(r.round_id, "meta.json"), meta)
         res = self.chain.send(self.identity, 0, payload.encode(msg), payload.INPUT_TYPE)
@@ -204,7 +205,7 @@ class House:
                 "payout_mode": payload.MODE_NAMES[payout_mode], "match_bps": match_bps, "carry_in": carry_in,
                 "riddle_hash": r.hash().hex(), "answer_commitment": R.commitment_for(r, secret).hex(), "uri": uri,
                 "belt": belt, "min_players": min_players, "lobby_window": lobby_window,
-                "bond_bps": bond_bps, "bond_rounds": bond_rounds,
+                "bond_bps": bond_bps, "bond_rounds": bond_rounds, "house_fighters": list(self.house_fighters),
                 "lobby_tx": None, "lobby_scheduled_tick": None, "lobby_tick": None,
                 "publish_tx": None, "scheduled_tick": None, "publish_tick": None, "status": "lobby_opening"}
         _write(self._rpath(r.round_id, "meta.json"), meta)
@@ -312,7 +313,8 @@ class House:
                          {v: k for k, v in payload.MODE_NAMES.items()}[m.get("payout_mode", "split")],
                          m.get("match_bps", 0), m.get("carry_in", 0),
                          m.get("lobby_tick"), m.get("lobby_window", 0), m.get("min_players", 0),
-                         B.RANKS.get(m.get("belt") or "", None), m.get("bond_bps", 0), m.get("bond_rounds", 0))
+                         B.RANKS.get(m.get("belt") or "", None), m.get("bond_bps", 0), m.get("bond_rounds", 0),
+                         tuple(m.get("house_fighters", [])))
 
     # --------------------------------------------------------------- collect
     def collect(self, up_to_tick: int | None = None) -> int:

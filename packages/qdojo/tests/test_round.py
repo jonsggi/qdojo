@@ -319,3 +319,14 @@ def test_bond_is_held_from_every_win_and_money_still_balances(txf, salt):
     assert ev.pot == 10_000 and ev.payouts[0].amount == 5000 and ev.bonds[0].amount == 5000   # Bob's 7 is underpaid: refunded, not in the pot
     assert [p for p in ev.payouts if p.kind == "refund"][0].amount == 7
     assert ev.payouts[0].amount + ev.bonds[0].amount + ev.carry == ev.pot
+
+
+def test_house_fighter_stakes_join_the_pot_but_are_not_matched(txf, salt):
+    s = spec(house_seed=5000, match_bps=10000, rake_bps=0, payout_mode=P.MODE_SPLIT, house_fighters=(BOB, CARL))
+    obs = [txf.commit(ALICE, 110, 1, salt, "42", amount=1000), txf.commit(BOB, 111, 1, salt, "1", amount=1000),
+           txf.commit(CARL, 112, 1, salt, "1", amount=1000), txf.reveal(ALICE, 160, 1, salt, "42")]
+    ev = evaluate(s, obs, HOUSE, DOJO_SALT, ANSWER)
+    assert ev.seed_used == 1000 and ev.pot == 4000                     # matched Alice only; all three stakes in the pot
+    only_npcs = [txf.commit(BOB, 111, 1, salt, "1", amount=1000), txf.commit(CARL, 112, 1, salt, "1", amount=1000)]
+    ev2 = evaluate(s, only_npcs, HOUSE, DOJO_SALT, ANSWER)
+    assert ev2.seed_used == 0 and ev2.pot == 2000 and ev2.carry == 2000  # an NPC-only table costs the house nothing new

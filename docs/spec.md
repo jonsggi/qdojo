@@ -84,6 +84,9 @@ identity counts.
   fighters one to one: an empty round costs nothing, and one fighter alone
   can never take out more than a multiple of what they put in. With
   `match_bps = 0` the seed is fixed at `seed_cap` (the round-one behaviour).
+  Stakes of the house's own fighters join the pot but are never matched:
+  the house does not match its own money, so a table with only house
+  fighters at it adds no seed and simply carries.
 - **Pot** = seed actually added + carry in + every counted stake.
 - **Rake** = `rake_bps / 10000` of the counted stakes, never of the seed.
 - **Solvers** are every identity with a counted commit and a correct reveal.

@@ -130,7 +130,8 @@ def simulate(params: Params, cohort: list[Archetype], rng: random.Random) -> dic
                          hashing.answer_commitment(r, dojo_salt, answer), "integer", params.seed_cap, params.rake_bps,
                          params.payout_mode, params.match_bps, carry, lobby_tick=900, lobby_window=50,
                          min_players=params.min_players, belt_rank=rank if params.ladder else None,
-                         bond_bps=params.bond_bps, bond_rounds=params.bond_rounds)
+                         bond_bps=params.bond_bps, bond_rounds=params.bond_rounds,
+                         house_fighters=tuple(f.identity for f in fighters if f.arch.house_funded))
         obs, n = [], 0
         for f in eligible:
             n += 1

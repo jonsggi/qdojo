@@ -39,8 +39,9 @@ def cmd_riddle_hash(a):
 
 
 def _house(a, signing):
+    npcs = tuple(x for x in (getattr(a, "npcs", None) or "").split(",") if x)
     return House(_chain(a, signing), a.data, a.identity, rake_bps=a.rake_bps, seed_per_round=a.seed,
-                 uri_base=a.uri_base)
+                 uri_base=a.uri_base, house_fighters=npcs)
 
 
 def cmd_house_publish(a):

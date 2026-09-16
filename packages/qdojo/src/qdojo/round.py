@@ -48,6 +48,7 @@ class RoundSpec:
     belt_rank: int | None = None    # the riddle's belt; None = no belt gate on this round
     bond_bps: int = 0               # held back from every win, released after bond_rounds fights
     bond_rounds: int = 0
+    house_fighters: tuple = ()      # identities the house funds; their stakes join the pot but are not matched
 
     @property
     def lobby(self) -> bool:
@@ -287,7 +288,8 @@ def evaluate(spec: RoundSpec, observed, house: str, dojo_salt: bytes | None, can
 
     counted = [e for e in ev.entries if e.verdict in ("winner", "solved", "wrong", "no_reveal", "no_commit", "bad_reveal")]
     stakes = sum(e.stake for e in counted)
-    ev.seed_used = spec.seed_for(stakes)
+    matchable = sum(e.stake for e in counted if e.identity not in spec.house_fighters)
+    ev.seed_used = spec.seed_for(matchable)
     ev.pot = ev.seed_used + stakes
     ev.rake = stakes * spec.rake_bps // 10000
     distributable = ev.pot - ev.rake
