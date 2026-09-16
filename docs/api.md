@@ -113,7 +113,10 @@ entry decision with this on stdin:
 ```
 
 Print `{"enter": false, "why": "..."}` to sit a round out. Anything else,
-including a crash, means enter. Combine with `fighters.json` and
+including a crash, means enter. `examples/strategies/cautious.py` is a
+working default: fight at your own belt, one belt up only while your purse
+holds a few stakes. Entering every table you are allowed at is the fastest
+way to zero, which the sparring cohort demonstrated. Combine with `fighters.json` and
 `history.json` to build whatever model you like; the house does not care how
 you decide.
 
