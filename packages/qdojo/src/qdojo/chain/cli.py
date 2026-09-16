@@ -11,6 +11,14 @@ from . import parse
 from .base import SendResult, Unknown, ChainError
 
 DEFAULT_SCHEDULE_OFFSET = 20
+DEAD_TICK_MARGIN = 50   # ticks past the scheduled tick before "no data" means "never landed"
+
+
+def _int(v):
+    try:
+        return int(str(v).strip())
+    except (TypeError, ValueError):
+        return None
 
 
 class SeedConfError(ChainError):
@@ -108,10 +116,21 @@ class QubicCli:
         return SendResult(*r)
 
     def confirm(self, tx_id: str, tick: int) -> bool:
-        r = parse.check_tx_on_tick(self._run(["-checktxontick", str(tick), tx_id]), tx_id, tick)
-        if r is None:
-            raise Unknown(f"tick {tick} not answerable yet for {tx_id[:8]}…")
-        return r
+        out = self._run(["-checktxontick", str(tick), tx_id])
+        r = parse.check_tx_on_tick(out, tx_id, tick)
+        if r is not None:
+            return r
+        # Undecidable so far. A Qubic transaction is only valid for the tick
+        # signed into it: if that tick is safely in the past and still inside
+        # this epoch, "no data for that tick" means the transaction never
+        # landed and never can. Before the epoch's initial tick the data is
+        # simply gone, so there we stay undecided.
+        if "not in current epoch or in the future" in out or "is empty" in out:
+            d = parse.kv(self._run(["-getcurrenttick"]))
+            cur, init = _int(d.get("Tick")), _int(d.get("Initial tick"))
+            if cur and init and tick >= init and cur > tick + DEAD_TICK_MARGIN:
+                return False
+        raise Unknown(f"tick {tick} not answerable yet for {tx_id[:8]}…")
 
     def indexed_tick(self) -> int:
         if self.indexer is None:

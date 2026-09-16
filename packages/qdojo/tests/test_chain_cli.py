@@ -121,3 +121,19 @@ def test_reads_fall_back_to_another_node_but_signing_does_not(tmp_path):
     c3 = QubicCli(cli, "1.1.1.1", fallback_nodes=())
     with pytest.raises(Unknown):
         c3.current_tick()
+
+
+def test_an_empty_past_tick_in_this_epoch_means_the_tx_never_landed(tmp_path):
+    """A transaction is only valid for the tick signed into it, so once that
+    tick has passed with no data, it is dead — not 'undecided for ever'."""
+    cli = fake_cli(tmp_path, f"""
+        a = sys.argv
+        if "-checktxontick" in a: print("Tick " + a[a.index("-checktxontick")+1] + " is empty, not in current epoch or in the future")
+        if "-getcurrenttick" in a: print("Tick: 80386795\\nEpoch: 231\\nInitial tick: 80371514")
+    """)
+    c = QubicCli(cli, "1.2.3.4")
+    assert c.confirm(TX, 80384089) is False        # well past, inside this epoch: dead
+    with pytest.raises(Unknown):
+        c.confirm(TX, 80386790)                    # only 5 ticks back: still too fresh to judge
+    with pytest.raises(Unknown):
+        c.confirm(TX, 80300000)                    # before this epoch: the data is simply gone
