@@ -194,6 +194,10 @@ class Spar:
 
 def summarize(metrics_path: str) -> dict:
     rows = [json.loads(l) for l in open(metrics_path, encoding="utf-8") if l.strip()]
+    cohort_path = os.path.join(os.path.dirname(metrics_path), "cohort-funding.jsonl")
+    cohort_funding = 0
+    if os.path.exists(cohort_path):
+        cohort_funding = sum(json.loads(l)["amount"] for l in open(cohort_path) if l.strip() and json.loads(l).get("status") == "confirmed")
     by_belt, fighters = {}, {}
     for r in rows:
         b = by_belt.setdefault(r["belt"], {"rounds": 0, "solved_rounds": 0, "latencies": []})
@@ -218,6 +222,10 @@ def summarize(metrics_path: str) -> dict:
     return {"rounds": len(rows), "settled": sum(1 for r in rows if r["settled"]),
             "money": {"stakes_in": sum(r["stakes_in"] for r in rows), "payouts_out": sum(r["payouts_out"] for r in rows),
                       "npc_funding": sum(r.get("npc_funding", 0) for r in rows),
+                      "cohort_funding": cohort_funding,
+                      "bonds_held_total": sum(r.get("bonds_held", 0) for r in rows),
+                      "bonds_released_total": sum(r.get("bonds_released", 0) for r in rows),
+                      "house_delta_ex_funding": sum(r["house_delta"] for r in rows) + cohort_funding,
                       "house_delta": sum(r["house_delta"] for r in rows), "carry_now": rows[-1]["carry"] if rows else 0},
             "belts": {k: {"rounds": v["rounds"], "solve_rate": round(v["solved_rounds"] / v["rounds"], 2),
                           "avg_first_solve_ticks": avg(v["latencies"])} for k, v in by_belt.items()},
