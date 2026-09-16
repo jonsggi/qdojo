@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 
 riddle = json.load(sys.stdin)
 tools = os.environ.get("PI_TOOLS", "")
@@ -25,6 +26,26 @@ args += ["--tools", tools] if tools else ["--no-tools"]
 if model:
     args += ["--model", model]
 args.append(prompt)
+# ---- concurrency limit: the box cannot host every fighter's model process at once
+import fcntl as _fcntl
+def _slot(max_slots=int(os.environ.get("PI_MAX_CONCURRENT", "4")), wait=float(os.environ.get("PI_SLOT_WAIT", "90"))):
+    """Hold one of max_slots file locks; wait up to `wait` seconds for one."""
+    os.makedirs("/tmp/qdojo-pi-slots", exist_ok=True)
+    deadline = time.time() + wait
+    while True:
+        for i in range(max_slots):
+            f = open(f"/tmp/qdojo-pi-slots/{i}", "w")
+            try:
+                _fcntl.flock(f, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+                return f
+            except OSError:
+                f.close()
+        if time.time() > deadline:
+            print("no model slot free", file=sys.stderr); sys.exit(3)
+        time.sleep(1.0)
+
+
+_held = _slot()
 with tempfile.TemporaryDirectory() as cwd:
     try:
         p = subprocess.run(args, capture_output=True, text=True, timeout=timeout, cwd=cwd)
