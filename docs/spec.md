@@ -94,7 +94,16 @@ identity counts.
     the pot. A commit needs the answer, so on a riddle that takes an agent
     real time, first is skill, not network latency.
   - `split`: every solver shares `pot - rake` equally.
+  - `podium`: the first three correct commits take 5:3:2 of `pot - rake`
+    (5:3 for two, all for one); same-tick solvers are ordered by
+    transaction id. Later solvers are `solved`, unpaid.
   The integer remainder carries into the next round's seed.
+- **Bond.** PUBLISH announces `bond_bps` and `bond_rounds`. That share of
+  every win stays with the house as the winner's bond and is paid out with
+  the settlement of the round in which the winner completes `bond_rounds`
+  further fights. A holder who has not done so within 20 rounds forfeits the
+  bond to the pot. Bonds are listed in `bonds.json`; every hold, release and
+  forfeit is in the hashed settlement.
 - **No winners:** `pot - rake` carries into the next round. The house keeps
   only the rake.
 - **Refunds.** A commit that was underpaid or landed outside the window is
