@@ -549,3 +549,16 @@ def test_bond_is_forfeited_to_the_pot_when_the_holder_stops_fighting(world, tmp_
     d3 = play_round(h, world, bob, 3, tmp_path)                          # round 3: bond aged 2 rounds, forfeited
     assert d3["bonds_forfeited"] == 3000 and h.bonds()[0]["forfeited"] == 3
     assert h.state()["carry"] == d3["carry"] + 3000
+
+
+def test_spar_skips_tables_no_outsider_may_sit_at(world, tmp_path):
+    from qdojo import spar as S
+    h = make_house(world, tmp_path, seed=0)
+    sp = S.Spar(h, ["white", "orange"], 1000, 50, 20, str(tmp_path / "r"), str(tmp_path / "web"), str(tmp_path / "m.jsonl"),
+                npcs=[CARL])
+    world.core.inject(ALICE, HOUSE, 0, payload.encode(payload.Bow("A")), payload.INPUT_TYPE)
+    world.core.inject(CARL, HOUSE, 0, payload.encode(payload.Bow("NPC")), payload.INPUT_TYPE)
+    world.core.advance(5); h.collect()                                # past the index margin
+    assert sp.live_belt("white") and sp.live_belt("orange")          # Alice is white: may sit anywhere
+    b = h.belts(); b[ALICE] = {"rank": 2, "points": 0}; h._save_belts(b)
+    assert not sp.live_belt("white") and sp.live_belt("orange")      # only the NPC could sit at white now

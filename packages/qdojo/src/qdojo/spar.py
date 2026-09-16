@@ -19,7 +19,7 @@ def log(msg):
 class Spar:
     def __init__(self, house, belts, entry_fee, commit_window, reveal_window, riddle_dir, web_out, metrics_path,
                  seed=None, payout_mode=1, poll=15, match_bps=10000, min_players=0, lobby_window=0,
-                 npcs=(), npc_rounds=3, bond_bps=0, bond_rounds=0):
+                 npcs=(), npc_rounds=3, bond_bps=0, bond_rounds=0, skip_dead=True):
         self.h, self.belts = house, belts
         self.entry_fee, self.wc, self.wr = entry_fee, commit_window, reveal_window
         self.riddle_dir, self.web_out, self.metrics_path = riddle_dir, web_out, metrics_path
@@ -28,6 +28,7 @@ class Spar:
         self.min_players, self.lobby_window = min_players, lobby_window
         self.npcs, self.npc_rounds = list(npcs), npc_rounds
         self.bond_bps, self.bond_rounds = bond_bps, bond_rounds
+        self.skip_dead = skip_dead
         os.makedirs(riddle_dir, mode=0o700, exist_ok=True)
 
     def _export(self):
@@ -178,9 +179,29 @@ class Spar:
                 "entries": entries, "payouts": [{"identity": p["identity"], "amount": p["amount"], "kind": p["kind"]} for p in payouts],
                 "strikes": (doc or {}).get("strikes", {})}
 
+    def live_belt(self, belt: str) -> bool:
+        """Would any fighter the house does not fund be allowed at this table?
+        Known fighters = everyone who has bowed; ladder = the house's belt state."""
+        from . import belts as B
+        rank = B.RANKS.get(belt)
+        if rank is None:
+            return True
+        ladder = self.h.belts()
+        known = set(self.h.bows()) | set(ladder)
+        outsiders = [i for i in known if i not in self.npcs]
+        return any(B.may_enter(ladder, i, rank) for i in outsiders)
+
     def run(self, rounds: int, stop_below: int = 0):
+        skipped = 0
         for i in range(rounds):
             belt = self.belts[i % len(self.belts)]
+            if self.skip_dead and not self.live_belt(belt):
+                skipped += 1
+                log(f"skipping a {belt} table: no fighter outside the house may sit there ({skipped} skipped so far)")
+                if skipped >= len(self.belts) * 2:
+                    log("every table is dead for outsiders; sleeping a round before trying again")
+                    time.sleep(60); skipped = 0
+                continue
             bal = self.h.chain.balance(self.h.identity)
             if bal < max(stop_below, self.h.seed_per_round + self.h.state()["carry"]):
                 log(f"house balance {bal} too low to seed the next round; stopping")

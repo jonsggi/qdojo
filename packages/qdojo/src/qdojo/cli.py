@@ -92,7 +92,7 @@ def cmd_house_spar(a):
                    metrics_path=os.path.join(a.data, "metrics.jsonl"), seed=a.rng_seed, poll=a.poll,
                    match_bps=a.match_bps, min_players=a.min_players, lobby_window=a.lobby_window,
                    npcs=[x for x in (a.npcs or "").split(",") if x], npc_rounds=a.npc_rounds,
-                   bond_bps=a.bond_bps, bond_rounds=a.bond_rounds)
+                   bond_bps=a.bond_bps, bond_rounds=a.bond_rounds, skip_dead=not a.dead_tables)
     sp.payout_mode = {v: k for k, v in payload.MODE_NAMES.items()}[a.payout_mode]
     sp.run(a.rounds, stop_below=a.stop_below)
 
@@ -316,6 +316,7 @@ def main(argv=None):
     d.add_argument("--payout-mode", choices=sorted(payload.MODE_NAMES.values()), default="first")
     d.add_argument("--bond-bps", type=int, default=0, help="share of each win held as a bond")
     d.add_argument("--bond-rounds", type=int, default=0, help="rounds the winner must fight before release")
+    d.add_argument("--dead-tables", action="store_true", help="publish belts even when no outsider may sit there")
     d.set_defaults(fn=cmd_house_spar)
     d = s.add_parser("metrics"); d.set_defaults(fn=cmd_house_metrics)
     d = s.add_parser("model", help="offline model of the mechanics through the real evaluator and ladder (house-side)")
