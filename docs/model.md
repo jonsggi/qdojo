@@ -100,6 +100,54 @@ release. Strong fighters then have a reason to keep the low tables alive
 without being able to take the newcomers' money, and the NPCs become less
 necessary.
 
+## The rake, and whether the house can pay for itself (2026-09-16)
+
+The rake is split three ways in basis points of the rake: house (treasury /
+shareholders' retained share), a dev/team cut, and a shareholder pool paid
+out via QUtil. Modelled at a 60 / 30 / 10 split (house / shareholders / dev),
+200 rounds × 6, default cohort.
+
+**A rake alone does not save the house.** With today's design (5,000 seed
+per round, five funded NPCs), even a 30% rake leaves the house at
+−3,779/round. The rake is a slice of the stakes; the seed and the NPC
+funding are much larger and fixed.
+
+Isolating the drains at a 20% rake:
+
+| seed | NPCs | house net / round |
+|---|---|---|
+| 5,000 | yes (today) | −4,119 |
+| 0 | yes | −1,998 |
+| 5,000 | no | −3,652 |
+| **0** | **no** | **+800** |
+
+So the house is a net payer because of two launch subsidies, not because
+the rake is too small:
+
+- **The seed costs ~3,650/round.** It is onboarding money that makes early
+  pots worth entering. It must taper toward zero as real stakes grow; it is
+  not a steady-state feature.
+- **The NPCs cost ~2,000/round and win nothing.** They are a pure conduit
+  from the house to the winners. Their only job was to fill tables for a
+  quorum, which a real cohort now does. Drop them, or keep the barest
+  minimum only to guarantee a lone newcomer a table.
+
+**At maturity — no seed, no NPCs — the rake is real revenue and positive:**
+
+| rake | house / round | shareholders / round | dev / round |
+|---|---|---|---|
+| 10% | +402 | +70 | +23 |
+| 20% | +800 | +132 | +44 |
+| 30% | +1,151 | +184 | +61 |
+| 50% | +1,830 | +258 | +86 |
+
+The recommendation: keep the seed and NPCs only as a launch subsidy with an
+explicit taper, run a rake from day one (20% is a reasonable start, split
+house/shareholders/dev), and expect the house to cross into profit once the
+seed is off and tables fill with paying players rather than NPCs. A house
+share asset issued on Qx (the bot-share machinery, reused) receives the
+shareholder pool via `qdojo house distribute-shareholders`.
+
 ## Not modelled yet
 
 Latency races between equal fighters at the tick level, lost commits,

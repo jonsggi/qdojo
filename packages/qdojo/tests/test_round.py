@@ -330,3 +330,11 @@ def test_house_fighter_stakes_join_the_pot_but_are_not_matched(txf, salt):
     only_npcs = [txf.commit(BOB, 111, 1, salt, "1", amount=1000), txf.commit(CARL, 112, 1, salt, "1", amount=1000)]
     ev2 = evaluate(s, only_npcs, HOUSE, DOJO_SALT, ANSWER)
     assert ev2.seed_used == 0 and ev2.pot == 2000 and ev2.carry == 2000  # an NPC-only table costs the house nothing new
+
+
+def test_rake_splits_three_ways(txf, salt):
+    s = spec(rake_bps=1000, rake_house_bps=6000, rake_dev_bps=1000, rake_share_bps=3000, house_seed=0, payout_mode=P.MODE_SPLIT)
+    obs = [txf.commit(ALICE, 110, 1, salt, "42", amount=10000), txf.reveal(ALICE, 160, 1, salt, "42")]
+    ev = evaluate(s, obs, HOUSE, DOJO_SALT, ANSWER)
+    assert ev.rake == 1000 and ev.rake_split == {"house": 600, "dev": 100, "shareholders": 300}
+    assert ev.payouts[0].amount == 10000 - 1000                       # winner still gets pot minus the whole rake

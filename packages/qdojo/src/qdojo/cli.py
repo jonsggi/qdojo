@@ -41,7 +41,9 @@ def cmd_riddle_hash(a):
 def _house(a, signing):
     npcs = tuple(x for x in (getattr(a, "npcs", None) or "").split(",") if x)
     return House(_chain(a, signing), a.data, a.identity, rake_bps=a.rake_bps, seed_per_round=a.seed,
-                 uri_base=a.uri_base, house_fighters=npcs)
+                 uri_base=a.uri_base, house_fighters=npcs, dev_identity=getattr(a, "dev_identity", "") or "",
+                 rake_house_bps=getattr(a, "rake_house_bps", 10000), rake_dev_bps=getattr(a, "rake_dev_bps", 0),
+                 rake_share_bps=getattr(a, "rake_share_bps", 0))
 
 
 def cmd_house_publish(a):
@@ -101,12 +103,31 @@ def cmd_house_metrics(a):
     print(json.dumps(spar.summarize(os.path.join(a.data, "metrics.jsonl")), indent=2))
 
 
+def cmd_house_distribute(a):
+    """Pay the accrued shareholder rake pool to the house asset's holders via QUtil."""
+    from .shares import Shares
+    h = _house(a, a.apply)
+    pool = h.state().get("shareholder_pool", 0)
+    print(f"shareholder pool: {pool} QU")
+    if pool <= 0:
+        print("nothing to distribute"); return
+    sh = Shares(h.chain)
+    plan = sh.plan_dividend(a.asset, pool)
+    print(json.dumps(plan, indent=2))
+    if not a.apply:
+        print("\nPLAN ONLY. Re-run with --apply to distribute.", file=sys.stderr); return
+    res = sh.pay_dividend(a.asset, pool)
+    st = h.state(); st["shareholder_pool"] = 0; st["shareholder_paid"] = st.get("shareholder_paid", 0) + pool; h._save_state(st)
+    print(f"distributed {pool} to holders of {a.asset}: {res.tx_id} tick {res.scheduled_tick}")
+
+
 def cmd_house_model(a):
     from . import model
     p = model.Params(rounds=a.rounds, entry_fee=a.entry_fee, seed_cap=a.seed_cap, match_bps=a.match_bps,
                      rake_bps=a.rake_bps, payout_mode={v: k for k, v in payload.MODE_NAMES.items()}[a.payout_mode],
                      bond_bps=a.bond_bps, bond_rounds=a.bond_rounds, min_players=a.min_players,
-                     ladder=not a.no_ladder, start_balance=a.start_balance, gate=a.gate, season=a.season)
+                     ladder=not a.no_ladder, start_balance=a.start_balance, gate=a.gate, season=a.season,
+                     rake_house_bps=a.rake_house_bps, rake_dev_bps=a.rake_dev_bps, rake_share_bps=a.rake_share_bps)
     cohort = None
     if a.cohort:
         cohort = json.load(open(a.cohort))
@@ -291,6 +312,10 @@ def main(argv=None):
     hp.add_argument("--rake-bps", type=int, default=int(os.environ.get("QDOJO_RAKE_BPS", "0")))
     hp.add_argument("--seed", type=int, default=int(os.environ.get("QDOJO_SEED_PER_ROUND", "0")))
     hp.add_argument("--uri-base", default=os.environ.get("QDOJO_URI_BASE", ""))
+    hp.add_argument("--dev-identity", default=os.environ.get("QDOJO_DEV_IDENTITY", ""), help="who receives the dev/team rake share")
+    hp.add_argument("--rake-house-bps", type=int, default=int(os.environ.get("QDOJO_RAKE_HOUSE_BPS", "10000")))
+    hp.add_argument("--rake-dev-bps", type=int, default=int(os.environ.get("QDOJO_RAKE_DEV_BPS", "0")))
+    hp.add_argument("--rake-share-bps", type=int, default=int(os.environ.get("QDOJO_RAKE_SHARE_BPS", "0")))
     s = hp.add_subparsers(dest="sub", required=True)
     d = s.add_parser("publish"); d.add_argument("riddle"); d.add_argument("--entry-fee", type=int, required=True)
     d.add_argument("--commit-window", type=int, default=600); d.add_argument("--reveal-window", type=int, default=300)
@@ -303,6 +328,8 @@ def main(argv=None):
     d = s.add_parser("settle"); d.add_argument("round", type=int); d.add_argument("--apply", action="store_true")
     d.add_argument("--no-collect", dest="collect", action="store_false"); d.set_defaults(fn=cmd_house_settle)
     d = s.add_parser("export"); d.add_argument("--out", default="apps/web/data"); d.set_defaults(fn=cmd_house_export)
+    d = s.add_parser("distribute-shareholders", help="pay the accrued shareholder rake pool via QUtil")
+    d.add_argument("asset"); d.add_argument("--apply", action="store_true"); d.set_defaults(fn=cmd_house_distribute)
     d = s.add_parser("spar", help="generated riddles, rounds back to back, metrics per round")
     d.add_argument("--rounds", type=int, default=10); d.add_argument("--belts", default="white,yellow,orange,green,blue")
     d.add_argument("--entry-fee", type=int, default=1000); d.add_argument("--commit-window", type=int, default=300)

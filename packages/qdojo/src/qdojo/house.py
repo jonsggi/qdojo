@@ -53,12 +53,15 @@ def _obs_from_json(d: dict) -> Observed:
 
 class House:
     def __init__(self, chain, data_dir: str, identity: str, rake_bps: int = 0, seed_per_round: int = 0,
-                 uri_base: str = "", house_fighters: tuple = ()):
+                 uri_base: str = "", house_fighters: tuple = (), dev_identity: str = "",
+                 rake_house_bps: int = 10000, rake_dev_bps: int = 0, rake_share_bps: int = 0):
         if not hashing.is_identity(identity):
             raise HouseError("house identity must be 60 uppercase letters")
         self.chain, self.data_dir, self.identity = chain, data_dir, identity
         self.rake_bps, self.seed_per_round, self.uri_base = rake_bps, seed_per_round, uri_base.rstrip("/")
         self.house_fighters = tuple(house_fighters)
+        self.dev_identity = dev_identity
+        self.rake_house_bps, self.rake_dev_bps, self.rake_share_bps = rake_house_bps, rake_dev_bps, rake_share_bps
         os.makedirs(os.path.join(data_dir, "rounds"), exist_ok=True)
         os.chmod(data_dir, 0o700)
 
@@ -165,6 +168,7 @@ class House:
                 "payout_mode": payload.MODE_NAMES[payout_mode], "match_bps": match_bps, "carry_in": carry_in,
                 "riddle_hash": r.hash().hex(), "answer_commitment": msg.answer_commitment.hex(), "uri": uri,
                 "belt": belt, "bond_bps": bond_bps, "bond_rounds": bond_rounds, "house_fighters": list(self.house_fighters),
+                "rake_house_bps": self.rake_house_bps, "rake_dev_bps": self.rake_dev_bps, "rake_share_bps": self.rake_share_bps,
                 "publish_tx": None, "scheduled_tick": None, "publish_tick": None, "status": "publishing"}
         _write(self._rpath(r.round_id, "meta.json"), meta)
         res = self.chain.send(self.identity, 0, payload.encode(msg), payload.INPUT_TYPE)
@@ -206,6 +210,7 @@ class House:
                 "riddle_hash": r.hash().hex(), "answer_commitment": R.commitment_for(r, secret).hex(), "uri": uri,
                 "belt": belt, "min_players": min_players, "lobby_window": lobby_window,
                 "bond_bps": bond_bps, "bond_rounds": bond_rounds, "house_fighters": list(self.house_fighters),
+                "rake_house_bps": self.rake_house_bps, "rake_dev_bps": self.rake_dev_bps, "rake_share_bps": self.rake_share_bps,
                 "lobby_tx": None, "lobby_scheduled_tick": None, "lobby_tick": None,
                 "publish_tx": None, "scheduled_tick": None, "publish_tick": None, "status": "lobby_opening"}
         _write(self._rpath(r.round_id, "meta.json"), meta)
@@ -314,7 +319,9 @@ class House:
                          m.get("match_bps", 0), m.get("carry_in", 0),
                          m.get("lobby_tick"), m.get("lobby_window", 0), m.get("min_players", 0),
                          B.RANKS.get(m.get("belt") or "", None), m.get("bond_bps", 0), m.get("bond_rounds", 0),
-                         tuple(m.get("house_fighters", [])))
+                         tuple(m.get("house_fighters", [])),
+                         rake_house_bps=m.get("rake_house_bps", 10000), rake_dev_bps=m.get("rake_dev_bps", 0),
+                         rake_share_bps=m.get("rake_share_bps", 0))
 
     # --------------------------------------------------------------- collect
     def collect(self, up_to_tick: int | None = None) -> int:
@@ -389,7 +396,11 @@ class House:
         self._confirm_entries(ev)
         spec = self.spec(round_id)
         bonds_after, releases, forfeited = self._bond_events(round_id, ev, spec)
-        planned_payouts = [(p.identity, p.amount, p.kind) for p in ev.payouts] + [(r["identity"], r["amount"], r["kind"]) for r in releases]
+        rake_payouts = []
+        if self.dev_identity and ev.rake_split.get("dev", 0) > 0:
+            rake_payouts.append((self.dev_identity, ev.rake_split["dev"], "rake_dev"))
+        planned_payouts = ([(p.identity, p.amount, p.kind) for p in ev.payouts]
+                           + [(r["identity"], r["amount"], r["kind"]) for r in releases] + rake_payouts)
         ledger = _read(self._ledger_path(round_id), [])
         if not ledger:
             ledger = [{"identity": i, "amount": a, "kind": k, "tx": None, "tick": None, "confirmed": False}
@@ -410,6 +421,10 @@ class House:
             doc = self._settlement_doc(round_id, ev, ledger, meta)
             doc["bonds_released"] = releases
             doc["bonds_forfeited"] = forfeited
+            st0 = self.state()
+            share = ev.rake_split.get("shareholders", 0)
+            doc["rake_split"] = ev.rake_split
+            doc["shareholder_pool_after"] = st0.get("shareholder_pool", 0) + share
             before = self.belts()
             doc["belts_before"] = {k: dict(v) for k, v in before.items()}
             if spec.belt_rank is not None:
@@ -429,6 +444,8 @@ class House:
             self._save_bonds(bonds_after)
             st = self.state()
             st["carry"] += ev.carry + forfeited
+            st["shareholder_pool"] = st.get("shareholder_pool", 0) + ev.rake_split.get("shareholders", 0)
+            st["dev_paid"] = st.get("dev_paid", 0) + ev.rake_split.get("dev", 0)
             self._save_state(st)
             return doc
         return self._settlement_doc(round_id, ev, ledger, meta)
@@ -598,6 +615,8 @@ class House:
                   "house_seed": meta["house_seed"], "rake_bps": meta["rake_bps"],
                   "payout_mode": meta.get("payout_mode", "split"), "match_bps": meta.get("match_bps", 0),
                   "bond_bps": meta.get("bond_bps", 0), "bond_rounds": meta.get("bond_rounds", 0),
+                  "rake_house_bps": meta.get("rake_house_bps", 10000), "rake_dev_bps": meta.get("rake_dev_bps", 0),
+                  "rake_share_bps": meta.get("rake_share_bps", 0),
                   "carry_in": meta.get("carry_in", 0), "riddle_hash": meta["riddle_hash"] if published else None,
                   "answer_commitment": meta["answer_commitment"] if published else None, "riddle": rpub,
                   "entries": entries, "settlement": settlement}

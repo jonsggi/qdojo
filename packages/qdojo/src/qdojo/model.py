@@ -62,6 +62,9 @@ class Params:
     seed_cap: int = 5000
     match_bps: int = 10000
     rake_bps: int = 0
+    rake_house_bps: int = 10000
+    rake_dev_bps: int = 0
+    rake_share_bps: int = 0
     payout_mode: int = payload.MODE_PODIUM
     bond_bps: int = 5000
     bond_rounds: int = 3
@@ -114,6 +117,7 @@ def simulate(params: Params, cohort: list[Archetype], rng: random.Random) -> dic
     HOUSE = "H" * 60
     dojo_salt, answer = b"\x0d" * 16, "42"
     npc_funding_total, void_reasons = 0, {"no_quorum": 0}
+    dev_take, share_take = 0, 0
     for r in range(1, params.rounds + 1):
         belt = params.belts[(r - 1) % len(params.belts)]
         rank = B.RANKS[belt]
@@ -142,7 +146,9 @@ def simulate(params: Params, cohort: list[Archetype], rng: random.Random) -> dic
                          params.payout_mode, params.match_bps, carry, lobby_tick=900, lobby_window=50,
                          min_players=params.min_players, belt_rank=rank if (params.ladder and params.gate == "strict") else None,
                          bond_bps=params.bond_bps, bond_rounds=params.bond_rounds,
-                         house_fighters=tuple(f.identity for f in fighters if f.arch.house_funded))
+                         house_fighters=tuple(f.identity for f in fighters if f.arch.house_funded),
+                         rake_house_bps=params.rake_house_bps, rake_dev_bps=params.rake_dev_bps,
+                         rake_share_bps=params.rake_share_bps)
         obs, n = [], 0
         for f in eligible:
             n += 1
@@ -187,7 +193,8 @@ def simulate(params: Params, cohort: list[Archetype], rng: random.Random) -> dic
         for bd in ev.bonds:
             by_id[bd.identity].bonds.append({"round": r, "amount": bd.amount, "fought": 0})
         cost = ev.seed_used - carry          # the house's own money into this pot
-        house -= cost; house += ev.rake
+        house -= cost; house += ev.rake_split.get("house", ev.rake)
+        dev_take += ev.rake_split.get("dev", 0); share_take += ev.rake_split.get("shareholders", 0)
         carry = ev.carry + forfeited
         npc_stakes = sum(e.stake for e in ev.entries if by_id[e.identity].arch.house_funded
                          and e.verdict in ("winner", "solved", "wrong", "no_reveal", "no_commit", "bad_reveal"))
@@ -215,7 +222,9 @@ def simulate(params: Params, cohort: list[Archetype], rng: random.Random) -> dic
     return {"rounds_played": rounds_played, "void_rounds": void_rounds, "dead_tables": void_reasons.get("dead_table", 0),
             "house_cost_per_round": round(sum(house_cost) / max(1, len(house_cost)), 1),
             "npc_funding_per_round": round(npc_funding_total / max(1, rounds_played), 1),
-            "house_total": house, "avg_pot": round(statistics.mean(pots), 1) if pots else 0,
+            "house_total": house, "dev_take": dev_take, "share_take": share_take,
+            "house_net_per_round": round(house / max(1, rounds_played), 1),
+            "avg_pot": round(statistics.mean(pots), 1) if pots else 0,
             "top_share_of_pot": round(statistics.mean(per_round_top), 3) if per_round_top else None,
             "gini_net": round(_gini([n - min(nets) for n in nets]), 3) if nets else None,
             "max_fighter_share_of_earnings": round(max(f.earned for f in fighters) / total_earn, 3),
@@ -244,6 +253,7 @@ def run(params: Params, cohort_spec=None, replicates: int = 10, seed: int = 1) -
         return {"mean": round(m, 2), "ci95": round(ci, 2)}
     out = {"params": vars(params) | {"payout_mode": payload.MODE_NAMES[params.payout_mode]}, "replicates": replicates,
            "house_cost_per_round": agg("house_cost_per_round"), "npc_funding_per_round": agg("npc_funding_per_round"),
+           "house_net_per_round": agg("house_net_per_round"), "dev_take": agg("dev_take"), "share_take": agg("share_take"),
            "avg_pot": agg("avg_pot"),
            "top_share_of_pot": agg("top_share_of_pot"), "gini_net": agg("gini_net"),
            "max_fighter_share_of_earnings": agg("max_fighter_share_of_earnings"),

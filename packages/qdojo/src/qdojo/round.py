@@ -49,6 +49,9 @@ class RoundSpec:
     bond_bps: int = 0               # held back from every win, released after bond_rounds fights
     bond_rounds: int = 0
     house_fighters: tuple = ()      # identities the house funds; their stakes join the pot but are not matched
+    rake_house_bps: int = 10000     # split of the rake: house / dev / shareholders, sum 10000
+    rake_dev_bps: int = 0
+    rake_share_bps: int = 0
 
     @property
     def lobby(self) -> bool:
@@ -123,6 +126,7 @@ class Evaluation:
     pot: int = 0
     seed_used: int = 0
     rake: int = 0
+    rake_split: dict = field(default_factory=dict)   # {"house":.., "dev":.., "shareholders":..}
     carry: int = 0
     winners: list[str] = field(default_factory=list)
     payouts: list[Payout] = field(default_factory=list)
@@ -292,6 +296,9 @@ def evaluate(spec: RoundSpec, observed, house: str, dojo_salt: bytes | None, can
     ev.seed_used = spec.seed_for(matchable)
     ev.pot = ev.seed_used + stakes
     ev.rake = stakes * spec.rake_bps // 10000
+    dev = ev.rake * spec.rake_dev_bps // 10000
+    share = ev.rake * spec.rake_share_bps // 10000
+    ev.rake_split = {"house": ev.rake - dev - share, "dev": dev, "shareholders": share}
     distributable = ev.pot - ev.rake
     solved = sorted((e for e in ev.entries if e.verdict == "winner"), key=lambda e: (e.commit_tick, e.commit_tx))
     if spec.payout_mode == payload.MODE_FIRST and solved:
@@ -360,7 +367,7 @@ def to_dict(ev: Evaluation, dojo_salt: bytes | None = None, answer: str | None =
         "round_id": ev.round_id,
         "entries": [vars(e) for e in ev.entries],
         "strikes": ev.strikes,
-        "pot": ev.pot, "seed_used": ev.seed_used, "rake": ev.rake, "carry": ev.carry,
+        "pot": ev.pot, "seed_used": ev.seed_used, "rake": ev.rake, "rake_split": ev.rake_split, "carry": ev.carry,
         "winners": list(ev.winners),
         "payouts": [vars(p) for p in ev.payouts],
         "bonds_held": [vars(b) for b in ev.bonds],
