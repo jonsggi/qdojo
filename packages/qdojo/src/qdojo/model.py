@@ -29,13 +29,14 @@ class Archetype:
     solve: dict            # belt -> probability of a correct answer
     latency: dict          # belt -> (mean ticks, sd ticks) to commit when solving
     wrong_latency: float = 40.0
-    enter: float = 1.0     # probability of sitting down when eligible
+    enter: object = 1.0    # probability of sitting down when eligible; a number, or {belt: p} for a strategy
     count: int = 1
+    house_funded: bool = False   # an NPC: the house tops it up before every round, at its own cost
 
     @staticmethod
     def from_dict(d):
         return Archetype(d["name"], d["solve"], {k: tuple(v) for k, v in d["latency"].items()},
-                         d.get("wrong_latency", 40.0), d.get("enter", 1.0), d.get("count", 1))
+                         d.get("wrong_latency", 40.0), d.get("enter", 1.0), d.get("count", 1), d.get("house_funded", False))
 
 
 DEFAULT_COHORT = [
@@ -48,7 +49,8 @@ DEFAULT_COHORT = [
     {"name": "evo", "solve": {"white": 0.7, "yellow": 0.5, "orange": 0.3, "green": 0.2, "blue": 0.1},
      "latency": {"white": [5, 2], "yellow": [6, 2], "orange": [15, 10], "green": [15, 10], "blue": [30, 10]}, "count": 3},
     {"name": "npc", "solve": {"white": 0.0, "yellow": 0.0, "orange": 0.0, "green": 0.0, "blue": 0.0},
-     "latency": {"white": [10, 3], "yellow": [10, 3], "orange": [10, 3], "green": [10, 3], "blue": [10, 3]}, "count": 3},
+     "latency": {"white": [10, 3], "yellow": [10, 3], "orange": [10, 3], "green": [10, 3], "blue": [10, 3]}, "count": 3,
+     "house_funded": True},
 ]
 
 
@@ -68,6 +70,7 @@ class Params:
     commit_window: int = 300
     reveal_window: int = 120
     start_balance: int = 20000
+    npc_rounds: int = 3        # house tops NPCs up to this many stakes before each round
 
 
 @dataclass
@@ -78,6 +81,11 @@ class Fighter:
     staked: int = 0
     earned: int = 0
     bonds: list = field(default_factory=list)
+
+
+def _enter_p(arch, belt):
+    e = arch.enter
+    return e.get(belt, 0.0) if isinstance(e, dict) else float(e)
 
 
 def _ident(i):
@@ -103,11 +111,17 @@ def simulate(params: Params, cohort: list[Archetype], rng: random.Random) -> dic
     per_round_top = []
     HOUSE = "H" * 60
     dojo_salt, answer = b"\x0d" * 16, "42"
+    npc_funding_total, void_reasons = 0, {"no_quorum": 0}
     for r in range(1, params.rounds + 1):
         belt = params.belts[(r - 1) % len(params.belts)]
         rank = B.RANKS[belt]
+        for f in fighters:
+            if f.arch.house_funded:
+                need = params.entry_fee * params.npc_rounds - f.balance
+                if need > 0:
+                    f.balance += need; house -= need; npc_funding_total += need
         eligible = [f for f in fighters if f.balance >= params.entry_fee and
-                    (not params.ladder or B.may_enter(belt_state, f.identity, rank)) and rng.random() < f.arch.enter]
+                    (not params.ladder or B.may_enter(belt_state, f.identity, rank)) and rng.random() < _enter_p(f.arch, belt)]
         if len(eligible) < params.min_players:
             void_rounds += 1
             continue
@@ -161,7 +175,9 @@ def simulate(params: Params, cohort: list[Archetype], rng: random.Random) -> dic
         cost = ev.seed_used - carry          # the house's own money into this pot
         house -= cost; house += ev.rake
         carry = ev.carry + forfeited
-        house_cost.append(cost - ev.rake)
+        npc_stakes = sum(e.stake for e in ev.entries if by_id[e.identity].arch.house_funded
+                         and e.verdict in ("winner", "solved", "wrong", "no_reveal", "no_commit", "bad_reveal"))
+        house_cost.append(cost - ev.rake + npc_stakes)   # NPC stakes are house money passing through the pot
         pots.append(ev.pot)
         if params.ladder:
             ch = B.apply_settlement(belt_state, rank, ev.entries)
@@ -184,6 +200,7 @@ def simulate(params: Params, cohort: list[Archetype], rng: random.Random) -> dic
                            "broke": sum(1 for f in fs if f.balance < params.entry_fee)}
     return {"rounds_played": rounds_played, "void_rounds": void_rounds,
             "house_cost_per_round": round(sum(house_cost) / max(1, len(house_cost)), 1),
+            "npc_funding_per_round": round(npc_funding_total / max(1, rounds_played), 1),
             "house_total": house, "avg_pot": round(statistics.mean(pots), 1) if pots else 0,
             "top_share_of_pot": round(statistics.mean(per_round_top), 3) if per_round_top else None,
             "gini_net": round(_gini([n - min(nets) for n in nets]), 3) if nets else None,
@@ -212,7 +229,8 @@ def run(params: Params, cohort_spec=None, replicates: int = 10, seed: int = 1) -
         ci = 1.96 * statistics.stdev(vals) / (len(vals) ** 0.5) if len(vals) > 1 else 0
         return {"mean": round(m, 2), "ci95": round(ci, 2)}
     out = {"params": vars(params) | {"payout_mode": payload.MODE_NAMES[params.payout_mode]}, "replicates": replicates,
-           "house_cost_per_round": agg("house_cost_per_round"), "avg_pot": agg("avg_pot"),
+           "house_cost_per_round": agg("house_cost_per_round"), "npc_funding_per_round": agg("npc_funding_per_round"),
+           "avg_pot": agg("avg_pot"),
            "top_share_of_pot": agg("top_share_of_pot"), "gini_net": agg("gini_net"),
            "max_fighter_share_of_earnings": agg("max_fighter_share_of_earnings"),
            "promotions": agg("promotions"), "demotions": agg("demotions"), "void_rounds": agg("void_rounds"),
