@@ -19,6 +19,12 @@ class HouseError(Exception):
     pass
 
 
+def _log_note(house, round_id, note):
+    path = os.path.join(house.rdir(round_id), "notes.jsonl")
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps({"utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "note": note}) + "\n")
+
+
 INDEX_MARGIN = 2     # never scan the last ticks the indexer claims, it may still be filling them
 BOND_EXPIRY_ROUNDS = 20   # a bond whose holder has not fought enough rounds by then is forfeited to the pot
 RESCAN = 300         # re-read this many ticks behind the scan pointer every time; tx_id dedup makes it free
@@ -418,7 +424,13 @@ class House:
         else:
             planned = planned_payouts
             if [(l["identity"], l["amount"], l["kind"]) for l in ledger] != planned:
-                raise HouseError("existing payout ledger disagrees with a fresh evaluation; refusing to touch money")
+                if any(l["confirmed"] for l in ledger):
+                    # Some of this round is already paid. A re-evaluation can
+                    # legitimately differ (a message proved absent since), but
+                    # money already sent fixes the plan: finish THIS ledger.
+                    _log_note(self, round_id, "ledger kept: a fresh evaluation differs but payouts are already confirmed")
+                else:
+                    raise HouseError("existing payout ledger disagrees with a fresh evaluation and nothing is paid yet; refusing to touch money")
         if not apply:
             d = self._settlement_doc(round_id, ev, ledger, meta)
             d["bonds_released"], d["bonds_forfeited"] = releases, forfeited

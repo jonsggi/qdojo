@@ -589,3 +589,29 @@ def test_bot_takes_a_sensei_seat_when_the_round_offers_one(world, tmp_path):
     bob = make_bot(world, tmp_path, BOB, SUM_SOLVER)
     board["belts"][BOB] = {"rank": 4, "belt": "blue", "points": 0}
     assert any("below my belt" in a for a in bob.step(board))
+
+
+def test_a_partly_paid_round_keeps_its_ledger_when_a_re_evaluation_differs(world, tmp_path):
+    h = make_house(world, tmp_path, seed=5000, rake_bps=0)
+    publish_and_open(h, world, riddle_file(tmp_path))
+    alice = make_bot(world, tmp_path, ALICE, SUM_SOLVER)
+    h.collect(); h.export(str(tmp_path / "web"))
+    board = json.load(open(tmp_path / "web" / "board.json"))
+    alice.step(board)
+    spec = h.spec(1)
+    world.core.advance(spec.commit_end + 1 - world.core.tick); alice.step(board)
+    world.core.advance(spec.reveal_end + 3 - world.core.tick); h.collect()
+    drive_settle(h, world)
+    h.settle(1, apply=True)
+    assert h.meta(1)["status"] == "settled"
+    # forge the situation: mark the round unsettled with a confirmed ledger, and
+    # make a fresh evaluation differ by hiding the reveal
+    meta = h.meta(1); meta["status"] = "open"; _write = __import__("qdojo.house", fromlist=["_write"])._write
+    _write(h._rpath(1, "meta.json"), meta)
+    real = h.chain.confirm
+    plan = h.plan(1, final=True)
+    h.chain.confirm = lambda tx, tick: tx != plan.entries[0].reveal_tx
+    doc = h.settle(1, apply=True)                      # must not raise: the ledger stands
+    assert doc["payouts"][0]["confirmed"]
+    assert os.path.exists(os.path.join(h.rdir(1), "notes.jsonl"))
+    h.chain.confirm = real
