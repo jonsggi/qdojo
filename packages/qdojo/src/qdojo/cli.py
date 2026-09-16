@@ -50,7 +50,7 @@ def cmd_house_publish(a):
     h = _house(a, True)
     mode = {v: k for k, v in payload.MODE_NAMES.items()}[a.payout_mode]
     meta = h.publish(a.riddle, a.entry_fee, a.commit_window, a.reveal_window, a.house_seed, payout_mode=mode,
-                     match_bps=a.match_bps)
+                     match_bps=a.match_bps, belt=a.belt, sensei=a.sensei)
     print(f"round {meta['round_id']} PUBLISH {meta['publish_tx']} scheduled for tick {meta['scheduled_tick']}")
     for _ in range(90):
         try:
@@ -94,7 +94,7 @@ def cmd_house_spar(a):
                    metrics_path=os.path.join(a.data, "metrics.jsonl"), seed=a.rng_seed, poll=a.poll,
                    match_bps=a.match_bps, min_players=a.min_players, lobby_window=a.lobby_window,
                    npcs=[x for x in (a.npcs or "").split(",") if x], npc_rounds=a.npc_rounds,
-                   bond_bps=a.bond_bps, bond_rounds=a.bond_rounds, skip_dead=not a.dead_tables)
+                   bond_bps=a.bond_bps, bond_rounds=a.bond_rounds, skip_dead=not a.dead_tables, sensei=a.sensei)
     sp.payout_mode = {v: k for k, v in payload.MODE_NAMES.items()}[a.payout_mode]
     sp.run(a.rounds, stop_below=a.stop_below)
 
@@ -322,6 +322,8 @@ def main(argv=None):
     d.add_argument("--house-seed", type=int, default=None)
     d.add_argument("--payout-mode", choices=sorted(payload.MODE_NAMES.values()), default="first")
     d.add_argument("--match-bps", type=int, default=10000, help="house seed = min(cap, stakes*bps/10000); 0 = fixed seed")
+    d.add_argument("--belt", default="", help="the riddle's belt (white..blue); empty = no belt gate")
+    d.add_argument("--sensei", action="store_true", help="allow sensei seats from above the belt")
     d.set_defaults(fn=cmd_house_publish)
     d = s.add_parser("confirm"); d.add_argument("round", type=int); d.set_defaults(fn=cmd_house_confirm)
     d = s.add_parser("collect"); d.add_argument("--rescan", help="TICK-TICK: re-read a past range"); d.set_defaults(fn=cmd_house_collect)
@@ -344,6 +346,7 @@ def main(argv=None):
     d.add_argument("--bond-bps", type=int, default=0, help="share of each win held as a bond")
     d.add_argument("--bond-rounds", type=int, default=0, help="rounds the winner must fight before release")
     d.add_argument("--dead-tables", action="store_true", help="publish belts even when no outsider may sit there")
+    d.add_argument("--sensei", action="store_true", help="let a fighter sit below its belt, capped to its stake, no belt points")
     d.set_defaults(fn=cmd_house_spar)
     d = s.add_parser("metrics"); d.set_defaults(fn=cmd_house_metrics)
     d = s.add_parser("model", help="offline model of the mechanics through the real evaluator and ladder (house-side)")
@@ -354,7 +357,7 @@ def main(argv=None):
     d.add_argument("--bond-bps", type=int, default=5000); d.add_argument("--bond-rounds", type=int, default=3)
     d.add_argument("--min-players", type=int, default=3); d.add_argument("--no-ladder", action="store_true")
     d.add_argument("--start-balance", type=int, default=20000)
-    d.add_argument("--gate", choices=["strict", "soft", "handicap"], default="strict")
+    d.add_argument("--gate", choices=["strict", "soft", "handicap", "sensei"], default="strict")
     d.add_argument("--season", type=int, default=0, help="reset the ladder every N rounds")
     d.add_argument("--cohort", help="JSON list of archetypes"); d.add_argument("--calibrate", help="a fighters.json to derive archetypes from")
     d.add_argument("--clones", type=int, default=1, help="with --calibrate: copies of each measured fighter")

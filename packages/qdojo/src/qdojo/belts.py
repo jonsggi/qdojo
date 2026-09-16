@@ -11,6 +11,8 @@ Rules (docs/spec.md §6):
   are demoted one belt (points reset).
 - Results ABOVE your belt: a win promotes you straight to that belt, a solve
   gives +1, a failure costs nothing. Ambition is not punished.
+- A sensei (sitting BELOW your belt, where the round allows it) moves no
+  points at all, and can win back at most its own stake.
 """
 from dataclasses import dataclass
 
@@ -49,6 +51,8 @@ def apply_settlement(state: dict, riddle_rank: int, entries) -> list[Change]:
     for e in entries:
         idn = e["identity"] if isinstance(e, dict) else e.identity
         verdict = e["verdict"] if isinstance(e, dict) else e.verdict
+        if (e.get("sensei") if isinstance(e, dict) else getattr(e, "sensei", False)):
+            continue   # sat below its belt: teaches, does not climb or fall
         cur = state.setdefault(idn, {"rank": 0, "points": 0})
         before, above = cur["rank"], riddle_rank > cur["rank"]
         if verdict == "winner":

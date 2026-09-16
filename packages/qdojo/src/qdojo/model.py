@@ -74,7 +74,7 @@ class Params:
     reveal_window: int = 120
     start_balance: int = 20000
     npc_rounds: int = 3        # house tops NPCs up to this many stakes before each round
-    gate: str = "strict"       # strict: own belt or above | soft: one belt below allowed | handicap: any table, stake x 2^gap below
+    gate: str = "strict"       # strict: own belt or above | soft: one belt below | handicap: any table, stake x 2^gap | sensei: any table, but below your belt you win back at most your stake and earn no points
     season: int = 0            # reset the ladder every N rounds (0 = never)
 
 
@@ -132,10 +132,13 @@ def simulate(params: Params, cohort: list[Archetype], rng: random.Random) -> dic
             gap = B.rank_of(belt_state, f.identity) - rank
             return params.entry_fee * (2 ** gap if params.gate == "handicap" and gap > 0 else 1)
         def allowed(f):
-            if not params.ladder or params.gate == "handicap":
+            if not params.ladder or params.gate in ("handicap", "sensei"):
                 return True
             gap = B.rank_of(belt_state, f.identity) - rank
             return gap <= (1 if params.gate == "soft" else 0)
+
+        def is_sensei(f):
+            return params.gate == "sensei" and params.ladder and B.rank_of(belt_state, f.identity) > rank
         eligible = [f for f in fighters if allowed(f) and f.balance >= stake_for(f) and rng.random() < _enter_p(f.arch, belt)]
         if len(eligible) < params.min_players:
             void_rounds += 1
@@ -167,6 +170,22 @@ def simulate(params: Params, cohort: list[Archetype], rng: random.Random) -> dic
             obs.append(Observed(spec.reveal_start + 5, f"r{r}_{n:04d}", f.identity, HOUSE, 0, payload.INPUT_TYPE,
                                 payload.encode(payload.Reveal(r, salt, ans))))
         ev = evaluate(spec, obs, HOUSE, dojo_salt, answer, final=True, belts=belt_state)
+        senseis = {f.identity for f in eligible if is_sensei(f)}
+        if senseis:
+            excess = 0
+            for p in ev.payouts:
+                if p.kind == "win" and p.identity in senseis:
+                    stake = next((e.stake for e in ev.entries if e.identity == p.identity), 0)
+                    if p.amount > stake:
+                        excess += p.amount - stake; p.amount = stake
+            others = [p for p in ev.payouts if p.kind == "win" and p.identity not in senseis]
+            if others and excess:
+                each = excess // len(others)
+                for p in others:
+                    p.amount += each
+                ev.carry += excess - each * len(others)
+            else:
+                ev.carry += excess
         rounds_played += 1
         if not any(not f.arch.house_funded for f in eligible):
             void_reasons["dead_table"] = void_reasons.get("dead_table", 0) + 1
@@ -201,7 +220,8 @@ def simulate(params: Params, cohort: list[Archetype], rng: random.Random) -> dic
         house_cost.append(cost - ev.rake + npc_stakes)   # NPC stakes are house money passing through the pot
         pots.append(ev.pot)
         if params.ladder:
-            ch = B.apply_settlement(belt_state, rank, ev.entries)
+            movers = [e for e in ev.entries if e.identity not in senseis]
+            ch = B.apply_settlement(belt_state, rank, movers)
             promotions += sum(1 for c in ch if c.after > c.before)
             demotions += sum(1 for c in ch if c.after < c.before)
         if ev.payouts:

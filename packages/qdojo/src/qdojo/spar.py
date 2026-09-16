@@ -19,7 +19,7 @@ def log(msg):
 class Spar:
     def __init__(self, house, belts, entry_fee, commit_window, reveal_window, riddle_dir, web_out, metrics_path,
                  seed=None, payout_mode=1, poll=15, match_bps=10000, min_players=0, lobby_window=0,
-                 npcs=(), npc_rounds=3, bond_bps=0, bond_rounds=0, skip_dead=True):
+                 npcs=(), npc_rounds=3, bond_bps=0, bond_rounds=0, skip_dead=True, sensei=False):
         self.h, self.belts = house, belts
         self.entry_fee, self.wc, self.wr = entry_fee, commit_window, reveal_window
         self.riddle_dir, self.web_out, self.metrics_path = riddle_dir, web_out, metrics_path
@@ -29,6 +29,7 @@ class Spar:
         self.npcs, self.npc_rounds = list(npcs), npc_rounds
         self.bond_bps, self.bond_rounds = bond_bps, bond_rounds
         self.skip_dead = skip_dead
+        self.sensei = sensei
         os.makedirs(riddle_dir, mode=0o700, exist_ok=True)
 
     def _export(self):
@@ -78,7 +79,7 @@ class Spar:
         if self.min_players:
             meta = self.h.open_lobby(path, self.entry_fee, self.min_players, self.lobby_window, self.wc, self.wr,
                                      payout_mode=self.payout_mode, match_bps=self.match_bps, belt=belt,
-                                     bond_bps=self.bond_bps, bond_rounds=self.bond_rounds)
+                                     bond_bps=self.bond_bps, bond_rounds=self.bond_rounds, sensei=self.sensei)
             log(f"round {rid} [{belt}/{r['kind']}] LOBBY {meta['lobby_tx'][:8]}… sched {meta['lobby_scheduled_tick']}, needs {self.min_players}")
             for _ in range(120):
                 try:
@@ -115,7 +116,7 @@ class Spar:
             log(f"round {rid} PUBLISH {meta['publish_tx'][:8]}… sched {meta['scheduled_tick']}")
         else:
             meta = self.h.publish(path, self.entry_fee, self.wc, self.wr, payout_mode=self.payout_mode, match_bps=self.match_bps,
-                                  belt=belt, bond_bps=self.bond_bps, bond_rounds=self.bond_rounds)
+                                  belt=belt, bond_bps=self.bond_bps, bond_rounds=self.bond_rounds, sensei=self.sensei)
             log(f"round {rid} [{belt}/{r['kind']}] PUBLISH {meta['publish_tx'][:8]}… sched {meta['scheduled_tick']}")
         for _ in range(120):
             try:
@@ -184,8 +185,8 @@ class Spar:
         Known fighters = everyone who has bowed; ladder = the house's belt state."""
         from . import belts as B
         rank = B.RANKS.get(belt)
-        if rank is None:
-            return True
+        if rank is None or self.sensei:
+            return True   # sensei seats mean any fighter may sit at any table
         ladder = self.h.belts()
         known = set(self.h.bows()) | set(ladder)
         outsiders = [i for i in known if i not in self.npcs and B.may_enter(ladder, i, rank)]

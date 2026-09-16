@@ -338,3 +338,37 @@ def test_rake_splits_three_ways(txf, salt):
     ev = evaluate(s, obs, HOUSE, DOJO_SALT, ANSWER)
     assert ev.rake == 1000 and ev.rake_split == {"house": 600, "dev": 100, "shareholders": 300}
     assert ev.payouts[0].amount == 10000 - 1000                       # winner still gets pot minus the whole rake
+
+
+def test_sensei_may_sit_below_its_belt_but_wins_back_only_its_stake(txf, salt):
+    """A blue belt teaching at a white table: it pays, it can win, but it
+    cannot take more than it put in, and the surplus goes to the real winner."""
+    belts = {ALICE: {"rank": 4, "points": 0}}                     # Alice is blue, the table is white
+    s = spec(belt_rank=0, sensei=True, rake_bps=0, house_seed=9000, match_bps=0, payout_mode=P.MODE_SPLIT)
+    obs = [txf.commit(ALICE, 110, 1, salt, "42", amount=1000), txf.commit(BOB, 111, 1, salt, "42", amount=1000),
+           txf.reveal(ALICE, 160, 1, salt, "42"), txf.reveal(BOB, 160, 1, salt, "42")]
+    ev = evaluate(s, obs, HOUSE, DOJO_SALT, ANSWER, belts=belts)
+    a = next(e for e in ev.entries if e.identity == ALICE)
+    assert a.sensei and a.verdict == "winner" and not next(e for e in ev.entries if e.identity == BOB).sensei
+    pay = {p.identity: p.amount for p in ev.payouts}
+    assert pay[ALICE] == 1000                                      # capped at its own stake
+    assert pay[BOB] == 11_000 - 1000                               # the whole surplus went to the white belt
+    assert ev.pot == 11_000 and ev.carry == 0
+
+
+def test_sensei_surplus_carries_when_no_one_else_wins(txf, salt):
+    belts = {ALICE: {"rank": 4, "points": 0}}
+    s = spec(belt_rank=0, sensei=True, rake_bps=0, house_seed=9000, match_bps=0, payout_mode=P.MODE_SPLIT)
+    obs = [txf.commit(ALICE, 110, 1, salt, "42", amount=1000), txf.commit(BOB, 111, 1, salt, "1", amount=1000),
+           txf.reveal(ALICE, 160, 1, salt, "42"), txf.reveal(BOB, 160, 1, salt, "1")]
+    ev = evaluate(s, obs, HOUSE, DOJO_SALT, ANSWER, belts=belts)
+    assert [(p.identity, p.amount) for p in ev.payouts] == [(ALICE, 1000)]
+    assert ev.carry == 11_000 - 1000                               # the rest stays for the next white table
+
+
+def test_without_sensei_the_same_fighter_is_refused(txf, salt):
+    belts = {ALICE: {"rank": 4, "points": 0}}
+    s = spec(belt_rank=0, sensei=False, rake_bps=0, payout_mode=P.MODE_SPLIT)
+    obs = [txf.commit(ALICE, 110, 1, salt, "42", amount=1000), txf.reveal(ALICE, 160, 1, salt, "42")]
+    ev = evaluate(s, obs, HOUSE, DOJO_SALT, ANSWER, belts=belts)
+    assert ev.entries[0].verdict == "outranked" and ev.payouts[0].kind == "refund"

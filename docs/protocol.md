@@ -11,16 +11,18 @@ header   "DOJO" (4 bytes)  version u8 = 0  kind u8
 | kind | name | sender | body |
 |---|---|---|---|
 | 1 | BOW | bot | `name_len u8`, `name` utf-8 (≤ 32 bytes) |
-| 2 | PUBLISH | house | `round_id u32`, `entry_fee u64`, `commit_window u16`, `reveal_window u16`, `payout_mode u8`, `seed_cap u64`, `match_bps u16`, `bond_bps u16`, `bond_rounds u16`, `riddle_hash 32`, `answer_commitment 32`, `uri_len u8`, `uri` |
+| 2 | PUBLISH | house | `round_id u32`, `entry_fee u64`, `commit_window u16`, `reveal_window u16`, `payout_mode u8`, `seed_cap u64`, `match_bps u16`, `bond_bps u16`, `bond_rounds u16`, `sensei u8`, `riddle_hash 32`, `answer_commitment 32`, `uri_len u8`, `uri` |
 | 3 | COMMIT | bot | `round_id u32`, `commitment 32` |
 | 4 | REVEAL | bot | `round_id u32`, `salt 16`, `answer_len u16`, `answer` utf-8 (≤ 512 bytes) |
 | 5 | SETTLE | house | `round_id u32`, `dojo_salt 16`, `settlement_hash 32`, `uri_len u8`, `uri` |
-| 6 | LOBBY | house | `round_id u32`, `entry_fee u64`, `min_players u16`, `lobby_window u16`, `commit_window u16`, `reveal_window u16`, `payout_mode u8`, `seed_cap u64`, `match_bps u16`, `bond_bps u16`, `bond_rounds u16`, `belt_len u8`, `belt` (≤ 16 bytes) |
+| 6 | LOBBY | house | `round_id u32`, `entry_fee u64`, `min_players u16`, `lobby_window u16`, `commit_window u16`, `reveal_window u16`, `payout_mode u8`, `seed_cap u64`, `match_bps u16`, `bond_bps u16`, `bond_rounds u16`, `sensei u8`, `belt_len u8`, `belt` (≤ 16 bytes) |
 | 7 | ENTER | bot | `round_id u32`; the transaction amount is the stake |
 
 `payout_mode` is **0 split**, **1 first**, **2 podium** (the first three
 correct commits take 5:3:2). In a lobby round the stake rides on ENTER and
 COMMIT carries no money; without a lobby the stake rides on COMMIT.
+`sensei = 1` opens the table to fighters ranked above its belt, who win back
+at most their own stake and earn no belt points.
 
 The house sends LOBBY, PUBLISH and SETTLE to its own identity, so a single
 address filter finds every dojo message of every round.
@@ -52,7 +54,7 @@ The house serves `board.json` with the open rounds and the current ladder:
    "lobby_tick": 80283500, "lobby_window": 240, "min_players": 3, "entrants": 2,
    "publish_tick": null, "commit_window": 300, "reveal_window": 120,
    "entry_fee": 1000, "house_seed": 5000, "match_bps": 10000, "carry_in": 0,
-   "payout_mode": "podium", "bond_bps": 5000, "bond_rounds": 3,
+   "payout_mode": "podium", "bond_bps": 5000, "bond_rounds": 3, "sensei": true,
    "rake_house_bps": 6000, "rake_dev_bps": 1000, "rake_share_bps": 3000,
    "riddle": null, "riddle_hash": null, "answer_commitment": null}
  ]}

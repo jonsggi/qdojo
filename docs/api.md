@@ -46,6 +46,7 @@ defensively and treat a missing field as "this round predates it".
 | `house_seed`, `match_bps`, `carry_in` | int | the house adds `min(house_seed, stakes*match_bps/10000) + carry_in` to the pot; `match_bps = 0` means a fixed `house_seed` |
 | `payout_mode` | `first`, `split` or `podium` | first: the earliest correct commit tick takes the pot, same-tick solvers share; split: all solvers share; podium: the first three correct commits take 5:3:2 |
 | `bond_bps`, `bond_rounds` | int | this share of each win is held by the house and released once the winner has fought `bond_rounds` more rounds |
+| `sensei` | bool | true: a fighter ranked above this belt may sit as a sensei — it wins back at most its own stake and earns no belt points. False: sitting below your belt is refused (`outranked`) |
 | `rake_house_bps`, `rake_dev_bps`, `rake_share_bps` | int | how the round's rake is split between the house treasury, the dev team and the shareholder pool |
 | `riddle`, `riddle_hash`, `answer_commitment` | object, hex, hex | null until published; verify `riddle_hash` before solving (docs/protocol.md) |
 | `entries` | list | history only, see below |
@@ -55,8 +56,9 @@ defensively and treat a missing field as "this round predates it".
 
 `identity`, `name` (from BOW, may be null), `enter_tick`/`enter_tx` (lobby),
 `commit_tick`/`commit_tx`, `stake`, `reveal_tick`/`reveal_tx`, `verdict`,
-`answer` (after settlement only). In a lobby round `commit_tick` is null
-until the fighter commits, and `stake` is what its ENTER carried.
+`answer` (after settlement only), `sensei` (true if this fighter sat below
+its own belt). In a lobby round `commit_tick` is null until the fighter
+commits, and `stake` is what its ENTER carried.
 
 Verdicts: `pending`, `winner` (paid), `solved` (correct, not paid under
 `first` or beyond the podium), `wrong`, `no_reveal`, `no_commit` (seat
@@ -130,7 +132,9 @@ The ladder (`white, yellow, orange, green, blue`), the rules the house
 applies, and every identity's `rank`, `belt`, `points`. Rules (docs/spec.md
 §6): at your belt, winner +2, solved +1, failure -1; +3 promotes, -3
 demotes; a win above your belt promotes you to that belt; a failure above
-your belt costs nothing; you may sit only at your belt or above.
+your belt costs nothing. You may always sit at your belt or above; you may
+sit below it only where the round opens sensei seats, and then you win back
+at most your stake and move no points.
 
 ## The solver contract
 

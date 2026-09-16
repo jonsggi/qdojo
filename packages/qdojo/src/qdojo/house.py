@@ -142,7 +142,7 @@ class House:
     # --------------------------------------------------------------- publish
     def publish(self, riddle_path: str, entry_fee: int, commit_window: int, reveal_window: int,
                 house_seed: int | None = None, payout_mode: int = payload.MODE_FIRST, match_bps: int = 10000,
-                belt: str = "", bond_bps: int = 0, bond_rounds: int = 0) -> dict:
+                belt: str = "", bond_bps: int = 0, bond_rounds: int = 0, sensei: bool = False) -> dict:
         r, secret = R.load_authored(riddle_path)
         st = self.state()
         if r.round_id != st["next_round"]:
@@ -158,7 +158,8 @@ class House:
             raise HouseError(f"house balance below the seed it would promise")
         uri = f"{self.uri_base}/rounds/{r.round_id}.json" if self.uri_base else ""
         msg = payload.Publish(r.round_id, entry_fee, commit_window, reveal_window, r.hash(),
-                              R.commitment_for(r, secret), uri, payout_mode, house_seed, match_bps, bond_bps, bond_rounds)
+                              R.commitment_for(r, secret), uri, payout_mode, house_seed, match_bps, bond_bps, bond_rounds,
+                              1 if sensei else 0)
         os.makedirs(self.rdir(r.round_id), mode=0o700)
         _write(self._rpath(r.round_id, "riddle.json"), r.public())
         _write(self._rpath(r.round_id, "secret.json"),
@@ -167,7 +168,8 @@ class House:
                 "reveal_window": reveal_window, "house_seed": house_seed, "rake_bps": self.rake_bps,
                 "payout_mode": payload.MODE_NAMES[payout_mode], "match_bps": match_bps, "carry_in": carry_in,
                 "riddle_hash": r.hash().hex(), "answer_commitment": msg.answer_commitment.hex(), "uri": uri,
-                "belt": belt, "bond_bps": bond_bps, "bond_rounds": bond_rounds, "house_fighters": list(self.house_fighters),
+                "belt": belt, "bond_bps": bond_bps, "bond_rounds": bond_rounds, "sensei": bool(sensei),
+                "house_fighters": list(self.house_fighters),
                 "rake_house_bps": self.rake_house_bps, "rake_dev_bps": self.rake_dev_bps, "rake_share_bps": self.rake_share_bps,
                 "publish_tx": None, "scheduled_tick": None, "publish_tick": None, "status": "publishing"}
         _write(self._rpath(r.round_id, "meta.json"), meta)
@@ -182,7 +184,8 @@ class House:
     # ---------------------------------------------------------------- lobby
     def open_lobby(self, riddle_path: str, entry_fee: int, min_players: int, lobby_window: int, commit_window: int,
                    reveal_window: int, house_seed: int | None = None, payout_mode: int = payload.MODE_FIRST,
-                   match_bps: int = 10000, belt: str = "", bond_bps: int = 0, bond_rounds: int = 0) -> dict:
+                   match_bps: int = 10000, belt: str = "", bond_bps: int = 0, bond_rounds: int = 0,
+                   sensei: bool = False) -> dict:
         """Announce a round and open the table. The riddle is chosen now and
         kept secret; PUBLISH follows when the table is full."""
         r, secret = R.load_authored(riddle_path)
@@ -199,7 +202,7 @@ class House:
             raise HouseError("house balance below the seed it would promise")
         uri = f"{self.uri_base}/rounds/{r.round_id}.json" if self.uri_base else ""
         msg = payload.Lobby(r.round_id, entry_fee, min_players, lobby_window, commit_window, reveal_window,
-                            payout_mode, house_seed, match_bps, belt, bond_bps, bond_rounds)
+                            payout_mode, house_seed, match_bps, belt, bond_bps, bond_rounds, 1 if sensei else 0)
         os.makedirs(self.rdir(r.round_id), mode=0o700)
         _write(self._rpath(r.round_id, "riddle.json"), r.public())
         _write(self._rpath(r.round_id, "secret.json"),
@@ -209,7 +212,8 @@ class House:
                 "payout_mode": payload.MODE_NAMES[payout_mode], "match_bps": match_bps, "carry_in": carry_in,
                 "riddle_hash": r.hash().hex(), "answer_commitment": R.commitment_for(r, secret).hex(), "uri": uri,
                 "belt": belt, "min_players": min_players, "lobby_window": lobby_window,
-                "bond_bps": bond_bps, "bond_rounds": bond_rounds, "house_fighters": list(self.house_fighters),
+                "bond_bps": bond_bps, "bond_rounds": bond_rounds, "sensei": bool(sensei),
+                "house_fighters": list(self.house_fighters),
                 "rake_house_bps": self.rake_house_bps, "rake_dev_bps": self.rake_dev_bps, "rake_share_bps": self.rake_share_bps,
                 "lobby_tx": None, "lobby_scheduled_tick": None, "lobby_tick": None,
                 "publish_tx": None, "scheduled_tick": None, "publish_tick": None, "status": "lobby_opening"}
@@ -245,7 +249,7 @@ class House:
         mode = {v: k for k, v in payload.MODE_NAMES.items()}[meta["payout_mode"]]
         msg = payload.Publish(round_id, meta["entry_fee"], meta["commit_window"], meta["reveal_window"], r.hash(),
                               bytes.fromhex(meta["answer_commitment"]), meta["uri"], mode, meta["house_seed"], meta["match_bps"],
-                              meta.get("bond_bps", 0), meta.get("bond_rounds", 0))
+                              meta.get("bond_bps", 0), meta.get("bond_rounds", 0), 1 if meta.get("sensei") else 0)
         res = self.chain.send(self.identity, 0, payload.encode(msg), payload.INPUT_TYPE)
         meta.update(publish_tx=res.tx_id, scheduled_tick=res.scheduled_tick, status="publishing")
         _write(self._rpath(round_id, "meta.json"), meta)
@@ -321,7 +325,7 @@ class House:
                          B.RANKS.get(m.get("belt") or "", None), m.get("bond_bps", 0), m.get("bond_rounds", 0),
                          tuple(m.get("house_fighters", [])),
                          rake_house_bps=m.get("rake_house_bps", 10000), rake_dev_bps=m.get("rake_dev_bps", 0),
-                         rake_share_bps=m.get("rake_share_bps", 0))
+                         rake_share_bps=m.get("rake_share_bps", 0), sensei=bool(m.get("sensei", False)))
 
     # --------------------------------------------------------------- collect
     def collect(self, up_to_tick: int | None = None) -> int:
@@ -570,6 +574,7 @@ class House:
                                 "commit_tx": e["commit_tx"], "stake": e["stake"], "reveal_tick": e["reveal_tick"],
                                 "reveal_tx": e["reveal_tx"], "verdict": e["verdict"],
                                 "enter_tick": e.get("enter_tick"), "enter_tx": e.get("enter_tx"),
+                                "sensei": bool(e.get("sensei")),
                                 "answer": e["answer"] if settled else None})
                 if e["verdict"] in ("winner", "solved", "wrong", "no_reveal", "no_commit", "bad_reveal", "pending"):
                     f["rounds_played"] += 1
@@ -615,6 +620,7 @@ class House:
                   "house_seed": meta["house_seed"], "rake_bps": meta["rake_bps"],
                   "payout_mode": meta.get("payout_mode", "split"), "match_bps": meta.get("match_bps", 0),
                   "bond_bps": meta.get("bond_bps", 0), "bond_rounds": meta.get("bond_rounds", 0),
+                  "sensei": bool(meta.get("sensei", False)),
                   "rake_house_bps": meta.get("rake_house_bps", 10000), "rake_dev_bps": meta.get("rake_dev_bps", 0),
                   "rake_share_bps": meta.get("rake_share_bps", 0),
                   "carry_in": meta.get("carry_in", 0), "riddle_hash": meta["riddle_hash"] if published else None,

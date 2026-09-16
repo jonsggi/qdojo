@@ -55,3 +55,13 @@ def test_non_fights_do_not_move_points():
 
 def test_public_view():
     assert B.public({A: {"rank": 2, "points": -1}}) == {A: {"rank": 2, "belt": "orange", "points": -1}}
+
+
+def test_a_sensei_moves_no_points_either_way():
+    st = {A: {"rank": 4, "points": 0}, C: {"rank": 0, "points": 0}}
+    B.apply_settlement(st, 0, [{"identity": A, "verdict": "winner", "sensei": True},
+                               {"identity": C, "verdict": "wrong", "sensei": False}])
+    assert st[A] == {"rank": 4, "points": 0}      # taught, did not climb
+    assert st[C] == {"rank": 0, "points": -1}     # the white belt still moves
+    B.apply_settlement(st, 0, [{"identity": A, "verdict": "wrong", "sensei": True}])
+    assert st[A] == {"rank": 4, "points": 0}      # nor did it fall

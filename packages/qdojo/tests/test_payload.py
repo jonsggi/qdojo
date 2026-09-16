@@ -71,3 +71,9 @@ def test_lobby_and_enter_roundtrip():
     roundtrip(P.Enter(9))
     with pytest.raises(P.PayloadError):
         P.encode(P.Lobby(9, 1000, 3, 240, 300, 120, P.MODE_FIRST, 5000, 10000, "x" * 17))
+
+
+def test_sensei_flag_rides_on_publish_and_lobby():
+    roundtrip(P.Publish(7, 1000, 600, 300, b"\x11" * 32, b"\x22" * 32, "", P.MODE_PODIUM, 5000, 10000, 5000, 3, 1))
+    roundtrip(P.Lobby(9, 1000, 3, 240, 300, 120, P.MODE_PODIUM, 5000, 10000, "white", 5000, 3, 1))
+    assert P.decode(P.encode(P.Publish(7, 1, 1, 1, b"\x11" * 32, b"\x22" * 32, "", 1, 0, 0, 0, 0, 1))).sensei == 1

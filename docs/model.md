@@ -92,13 +92,25 @@ climbed. The soft gate and seasons help but do not fix it. The handicap
 keeps every table alive but lets strong fighters farm the low tables
 anyway, because a bigger stake comes back with the win, hence the Gini.
 
-**The candidate that the model suggests but that is not built:** a
-promoted fighter may sit below its belt as a *sensei*. It pays the fee,
-its stake goes to the pot, it can win back at most its own stake, and the
-round earns it no belt points, but it does count as a fight for its bond
-release. Strong fighters then have a reason to keep the low tables alive
-without being able to take the newcomers' money, and the NPCs become less
-necessary.
+**The sensei seat — measured, then built (2026-09-16).** A promoted fighter
+may sit below its belt: it pays the fee, wins back at most its own stake,
+earns no belt points, and still banks the round toward its bond release.
+Priced against the other gates on the live-calibrated cohort with the NPCs
+removed (150 rounds × 6, 20% rake):
+
+| gate, no NPCs | rounds void for want of players | Gini of net |
+|---|---|---|
+| strict | 100 of 150 | 0.49 |
+| soft (one belt down) | 76 | 0.54 |
+| handicap (stake × 2^gap) | 0 | 0.78 |
+| **sensei** | **0** | **0.51** |
+
+The sensei seat is the only gate that keeps every table running *and* keeps
+inequality at the level of the strict ladder. The handicap also fills the
+tables but lets strong fighters farm the low belts, because their larger
+stake comes back with the win. On that evidence the NPCs were retired: their
+whole job was filling tables for a quorum, and senseis now do it for free
+while the NPCs cost ~2,000/round and won nothing.
 
 ## The rake, and whether the house can pay for itself (2026-09-16)
 

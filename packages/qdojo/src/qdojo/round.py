@@ -52,6 +52,7 @@ class RoundSpec:
     rake_house_bps: int = 10000     # split of the rake: house / dev / shareholders, sum 10000
     rake_dev_bps: int = 0
     rake_share_bps: int = 0
+    sensei: bool = False            # a fighter above this belt may sit, capped to its stake and earning no points
 
     @property
     def lobby(self) -> bool:
@@ -99,6 +100,7 @@ class Entry:
     stake: int
     enter_tick: int | None = None
     enter_tx: str | None = None
+    sensei: bool = False            # sat below its own belt: wins back at most its stake, no belt points
     reveal_tick: int | None = None
     reveal_tx: str | None = None
     answer: str | None = None
@@ -210,7 +212,7 @@ def evaluate(spec: RoundSpec, observed, house: str, dojo_salt: bytes | None, can
                 if o.amount > 0:
                     refunds.append(Payout(src, o.amount, "refund"))
                 continue
-            e = Entry(src, None, None, o.amount, o.tick, o.tx_id)
+            e = Entry(src, None, None, o.amount, o.tick, o.tx_id, sensei=_above_belt(spec, belts, src))
             by_identity[src] = e
             ev.entries.append(e)
 
@@ -252,7 +254,7 @@ def evaluate(spec: RoundSpec, observed, house: str, dojo_salt: bytes | None, can
                 if o.amount > 0:
                     refunds.append(Payout(src, o.amount, "refund"))
                 continue
-            e = Entry(src, o.tick, o.tx_id, o.amount)
+            e = Entry(src, o.tick, o.tx_id, o.amount, sensei=_above_belt(spec, belts, src))
             by_identity[src] = e
             ev.entries.append(e)
 
@@ -324,6 +326,21 @@ def evaluate(spec: RoundSpec, observed, house: str, dojo_salt: bytes | None, can
             ev.carry = distributable - share * len(ev.winners)
         else:
             ev.carry = distributable
+    senseis = {e.identity: e.stake for e in ev.entries if e.sensei}
+    if senseis:
+        excess = 0
+        for p in ev.payouts:
+            if p.kind == "win" and p.identity in senseis and p.amount > senseis[p.identity]:
+                excess += p.amount - senseis[p.identity]
+                p.amount = senseis[p.identity]
+        others = [p for p in ev.payouts if p.kind == "win" and p.identity not in senseis]
+        if others and excess:
+            each = excess // len(others)
+            for p in others:
+                p.amount += each
+            ev.carry += excess - each * len(others)
+        elif excess:
+            ev.carry += excess
     if spec.bond_bps:
         for p in ev.payouts:
             held = p.amount * spec.bond_bps // 10000
@@ -336,11 +353,17 @@ def evaluate(spec: RoundSpec, observed, house: str, dojo_salt: bytes | None, can
     return ev
 
 
-def _outranked(spec: RoundSpec, belts: dict | None, identity: str) -> bool:
+def _above_belt(spec: RoundSpec, belts: dict | None, identity: str) -> bool:
+    """Is this identity ranked above the table's belt?"""
     if spec.belt_rank is None or not belts:
         return False
     from . import belts as B
     return not B.may_enter(belts, identity, spec.belt_rank)
+
+
+def _outranked(spec: RoundSpec, belts: dict | None, identity: str) -> bool:
+    """Refused for sitting too low. With sensei seats open, nobody is refused."""
+    return _above_belt(spec, belts, identity) and not spec.sensei
 
 
 def _commitment_of(observed, e: Entry) -> bytes:

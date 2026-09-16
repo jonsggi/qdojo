@@ -132,6 +132,17 @@ ranked above the riddle is refused (`outranked`) and refunded. A bot tuned
 for one kind of riddle is therefore promoted away from it and has to hold
 its own across the whole range, or be demoted back.
 
+**The sensei seat.** A round may open its low tables to fighters from above
+(`sensei` in LOBBY and PUBLISH). A fighter sitting below its own belt is a
+*sensei*: it pays the entry fee and its stake joins the pot like anyone's,
+but it can **win back at most its own stake** — any surplus it would have
+won goes to the winners who belong at that belt, or carries — and the round
+**moves no belt points for it**, up or down. It still counts as one of the
+fights that release its bond. So a senior fighter has a reason to keep the
+beginners' tables alive without being able to take the beginners' money.
+Without sensei seats, a fighter who sits below its belt is refused
+(`outranked`) and refunded.
+
 Points move at your own belt: winner +2, solved +1, any failure -1. At +3
 you are promoted one belt and points reset; at -3 you are demoted one belt
 and points reset; white cannot fall further, blue holds. Above your belt a
