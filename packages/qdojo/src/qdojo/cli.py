@@ -100,6 +100,30 @@ def cmd_house_metrics(a):
     print(json.dumps(spar.summarize(os.path.join(a.data, "metrics.jsonl")), indent=2))
 
 
+def cmd_house_model(a):
+    from . import model
+    p = model.Params(rounds=a.rounds, entry_fee=a.entry_fee, seed_cap=a.seed_cap, match_bps=a.match_bps,
+                     rake_bps=a.rake_bps, payout_mode={v: k for k, v in payload.MODE_NAMES.items()}[a.payout_mode],
+                     bond_bps=a.bond_bps, bond_rounds=a.bond_rounds, min_players=a.min_players,
+                     ladder=not a.no_ladder, start_balance=a.start_balance)
+    cohort = None
+    if a.cohort:
+        cohort = json.load(open(a.cohort))
+    elif a.calibrate:
+        cohort = model.calibrate(json.load(open(a.calibrate)))
+        if a.clones > 1:
+            for c in cohort:
+                c["count"] = a.clones
+    if a.sweep:
+        grid = {}
+        for item in a.sweep:
+            k, vs = item.split("=")
+            grid[k] = [int(v) for v in vs.split(",")]
+        print(json.dumps(model.sweep(p, grid, cohort, a.replicates, a.seed), indent=2))
+    else:
+        print(json.dumps(model.run(p, cohort, a.replicates, a.seed), indent=2))
+
+
 def cmd_house_export(a):
     h = _house(a, False)
     hist = h.export(a.out)
@@ -292,6 +316,18 @@ def main(argv=None):
     d.add_argument("--bond-rounds", type=int, default=0, help="rounds the winner must fight before release")
     d.set_defaults(fn=cmd_house_spar)
     d = s.add_parser("metrics"); d.set_defaults(fn=cmd_house_metrics)
+    d = s.add_parser("model", help="offline model of the mechanics through the real evaluator and ladder (house-side)")
+    d.add_argument("--rounds", type=int, default=200); d.add_argument("--replicates", type=int, default=10); d.add_argument("--seed", type=int, default=1)
+    d.add_argument("--entry-fee", type=int, default=1000); d.add_argument("--seed-cap", type=int, default=5000)
+    d.add_argument("--match-bps", type=int, default=10000); d.add_argument("--rake-bps", type=int, default=0)
+    d.add_argument("--payout-mode", choices=sorted(payload.MODE_NAMES.values()), default="podium")
+    d.add_argument("--bond-bps", type=int, default=5000); d.add_argument("--bond-rounds", type=int, default=3)
+    d.add_argument("--min-players", type=int, default=3); d.add_argument("--no-ladder", action="store_true")
+    d.add_argument("--start-balance", type=int, default=20000)
+    d.add_argument("--cohort", help="JSON list of archetypes"); d.add_argument("--calibrate", help="a fighters.json to derive archetypes from")
+    d.add_argument("--clones", type=int, default=1, help="with --calibrate: copies of each measured fighter")
+    d.add_argument("--sweep", nargs="+", help="param=v1,v2,... (e.g. match_bps=0,5000,10000 bond_bps=0,5000)")
+    d.set_defaults(fn=cmd_house_model)
 
     bp = sub.add_parser("bot")
     bp.add_argument("--state", default=os.path.expanduser("~/.qdojo/bot"), help="bot state dir (seed conf, profile, node cache)")

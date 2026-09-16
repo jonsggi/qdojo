@@ -195,6 +195,21 @@ a.btn { display: inline-block; color: var(--black); text-decoration: none; }
 .badge-lobby { background: var(--magenta); color: var(--white); }
 .badge-seated { background: var(--magenta); color: var(--white); }
 .badge-lobby_over { background: var(--orange); }
+.badge-bond_held { background: var(--navy-2); color: var(--yellow); border: 1px solid var(--yellow); }   /* winnings the house still holds */
+.badge-bond_release { background: var(--yellow); }                                                     /* the bond came back */
+.badge-outranked { background: var(--navy-2); color: var(--magenta); border: 1px solid var(--magenta); }
+
+/* Any fighter name or avatar is a link to the fighter card; it keeps its colour. */
+a.flink { color: inherit; }
+a.flink:hover, a.flink:focus-visible { color: var(--yellow); text-decoration: none; }
+a.flink:hover .muted { color: var(--yellow); }
+a.tname { display: inline-flex; align-items: center; gap: 8px; }
+.pos { color: var(--green); }
+.neg { color: var(--red); }
+.podium-place { font-size: 10px; color: var(--yellow); min-width: 34px; text-align: center; letter-spacing: 1px; }
+.podium-place.place-1 { color: var(--yellow); }
+.podium-place.place-2 { color: var(--white); }
+.podium-place.place-3 { color: var(--orange); }
 
 /* ---- Belts --------------------------------------------------------- */
 .belt {
@@ -211,6 +226,24 @@ a.btn { display: inline-block; color: var(--black); text-decoration: none; }
 .belt-brown { border-color: #b8743a; color: #b8743a; }
 .belt-black { border-color: var(--grey); color: var(--grey); background: var(--black); }
 .belt-other { border-color: var(--grey); color: var(--grey); }
+
+/* The belt band across a fighter card: a real strip of cloth, not a tag. */
+.beltband {
+  display: block; margin: 14px 0 12px; padding: 8px 10px; text-align: center;
+  font-size: 11px; letter-spacing: 3px; color: var(--black); background: var(--white);
+  border: 3px solid var(--black); box-shadow: 4px 4px 0 var(--black);
+  background-image: repeating-linear-gradient(90deg, transparent 0 22px, rgba(0, 0, 0, .12) 22px 24px);
+}
+.beltband-sm { margin: 6px 0; padding: 4px 6px; font-size: 8px; letter-spacing: 2px; box-shadow: 3px 3px 0 var(--black); width: 100%; }
+.beltband-white { background-color: var(--white); }
+.beltband-yellow { background-color: var(--yellow); }
+.beltband-orange { background-color: var(--orange); }
+.beltband-green { background-color: var(--green); }
+.beltband-blue { background-color: var(--cyan); }
+.beltband-purple { background-color: var(--magenta); color: var(--white); }
+.beltband-brown { background-color: #b8743a; color: var(--white); }
+.beltband-black { background-color: #111; color: var(--white); border-color: var(--grey); }
+.beltband-other { background-color: var(--grey); }
 
 /* ---- Title screen -------------------------------------------------- */
 .screen-title { text-align: center; padding-top: 10px; position: relative; }
@@ -239,6 +272,7 @@ a.btn { display: inline-block; color: var(--black); text-decoration: none; }
 .avatar svg { width: 100%; height: 100%; display: block; }
 .avatar-lg { width: 64px; height: 64px; }
 .avatar-sm { width: 24px; height: 24px; }
+.avatar-xl { width: 128px; height: 128px; filter: drop-shadow(4px 4px 0 var(--black)); }
 
 /* ---- Meters (health bars) ------------------------------------------ */
 .meter {
@@ -420,6 +454,80 @@ tr.me td { background: rgba(255, 210, 0, .08); }
 .rank-3 { color: var(--orange); }
 .strikes { color: var(--red); letter-spacing: 2px; }
 
+.fame-table td.pos, .fame-table td.neg { white-space: nowrap; }
+.board-main h3 small, .board h3 small, .clean-record h3 small { display: block; font-size: 7px; letter-spacing: 1px; margin-top: 4px; opacity: .75; }
+.boards { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
+.board { margin-bottom: 0; }
+.boards + .clean-record { margin-top: 20px; }
+.score-table { font-size: 9px; }
+.score-table td { padding: 8px 6px; }
+.score-table td.score { color: var(--yellow); white-space: nowrap; }
+.score-table td:first-child { width: 36px; }
+.clean-list { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.clean-list .chip-name { border: 2px solid var(--green); padding: 4px 8px; font-size: 9px; }
+
+/* ---- Fighter select ------------------------------------------------ */
+.grid-select { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 170px), 1fr)); }
+.scard {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; min-width: 0;
+  background: var(--black); border: 3px solid var(--grey); padding: 22px 10px 12px; color: var(--white);
+  box-shadow: 4px 4px 0 var(--black);
+}
+.scard:hover, .scard:focus-visible { border-color: var(--yellow); text-decoration: none; color: var(--white); box-shadow: 0 0 0 2px var(--black), 0 0 14px rgba(255, 210, 0, .55); transform: translate(-2px, -2px); }
+.scard .scard-no { position: absolute; top: 4px; left: 6px; font-size: 7px; color: var(--grey); }
+.scard .avatar-xl { width: 96px; height: 96px; }
+.scard-name { font-size: 10px; margin-top: 6px; overflow-wrap: anywhere; }
+.scard-net { font-size: 11px; margin-top: 2px; white-space: nowrap; }
+.scard-sub { font-size: 7px; color: var(--white); }
+.scard.belt-b-yellow { border-color: var(--yellow); }
+.scard.belt-b-orange { border-color: var(--orange); }
+.scard.belt-b-green { border-color: var(--green); }
+.scard.belt-b-blue { border-color: var(--cyan); }
+
+/* ---- Fighter card (profile) ---------------------------------------- */
+.profile-cols { grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); }
+.fcb { position: relative; }
+.fcb-top { display: flex; gap: 18px; align-items: flex-start; }
+.fcb-avatar { flex: none; padding: 8px; background: var(--black); border: 3px solid var(--blue); }
+.fcb-info { min-width: 0; flex: 1; }
+.fcb-name { font-size: clamp(14px, 3.4vw, 22px); color: var(--yellow); text-shadow: 3px 3px 0 var(--red), 6px 6px 0 var(--black); line-height: 1.3; overflow-wrap: anywhere; }
+.fcb-id { margin-top: 8px; font-size: 9px; overflow-wrap: anywhere; }
+.fcb-meta { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 8px; color: var(--cyan); }
+.fcb.belt-b-yellow { border-color: var(--yellow); } .fcb.belt-b-orange { border-color: var(--orange); }
+.fcb.belt-b-green { border-color: var(--green); } .fcb.belt-b-blue { border-color: var(--cyan); }
+.fcb.belt-b-white { border-color: var(--white); }
+.fcb.belt-b-yellow h3 { background: var(--yellow); } .fcb.belt-b-orange h3 { background: var(--orange); }
+
+.pts { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+.pts-end { font-size: 7px; line-height: 1.5; letter-spacing: 1px; text-align: center; flex: none; width: 58px; }
+.pts-demote { color: var(--red); }
+.pts-promote { color: var(--green); }
+.pts-track { flex: 1; display: flex; gap: 3px; background: var(--black); border: 3px solid var(--white); box-shadow: 3px 3px 0 var(--black); padding: 3px; }
+.pts-cell { flex: 1; min-width: 0; height: 22px; line-height: 22px; text-align: center; font-size: 7px; color: var(--grey); background: var(--navy-2); }
+.pts-cell.zero { background: var(--navy); color: var(--white); }
+.pts-cell.lit.pos { background: repeating-linear-gradient(90deg, var(--green) 0 6px, #22c542 6px 8px); color: var(--black); }
+.pts-cell.lit.neg { background: repeating-linear-gradient(90deg, var(--red) 0 6px, #b30000 6px 8px); color: var(--white); }
+.pts-cell.cur { outline: 2px solid var(--yellow); outline-offset: -2px; color: var(--black); }
+.pts-cell.cur.zero { color: var(--yellow); }
+.pts-label { font-size: 7px; color: var(--grey); margin-top: 10px; line-height: 1.8; }
+.pts-label b { font-size: 10px; }
+
+.stats-profile { grid-template-columns: repeat(auto-fit, minmax(min(100%, 105px), 1fr)); }
+
+.tl { display: flex; flex-direction: column; gap: 0; position: relative; padding-left: 4px; }
+.tl-row { display: grid; grid-template-columns: 14px auto 1fr; gap: 4px 12px; align-items: center; padding: 8px 0; color: var(--white); border-left: 3px solid var(--navy-2); margin-left: 6px; padding-left: 10px; }
+a.tl-row:hover { border-left-color: var(--yellow); text-decoration: none; color: var(--white); }
+.tl-dot { width: 12px; height: 12px; background: var(--grey); border: 2px solid var(--black); box-shadow: 0 0 0 2px var(--grey); }
+.tl-dot.up { background: var(--green); box-shadow: 0 0 0 2px var(--green); }
+.tl-dot.down { background: var(--red); box-shadow: 0 0 0 2px var(--red); }
+.tl-when { font-size: 8px; color: var(--cyan); white-space: nowrap; }
+.tl-what { font-size: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.tl-arrow { color: var(--yellow); }
+@media (max-width: 520px) {
+  .tl-row { grid-template-columns: 14px 1fr; }
+  .tl-row .tl-what { grid-column: 2; }
+}
+
 /* ---- History ------------------------------------------------------- */
 .hist-list { display: flex; flex-direction: column; gap: 10px; }
 .hist-row {
@@ -486,4 +594,8 @@ pre.code {
   .panel h3 { margin: -12px -12px 12px; }
   .kv { grid-template-columns: 1fr; gap: 2px 0; }
   .kv dt { margin-top: 8px; }
+  .fcb-top { flex-direction: column; align-items: center; text-align: center; }
+  .fcb-meta { justify-content: center; }
+  .avatar-xl { width: 96px; height: 96px; }
+  .pts-end { width: 46px; }
 }

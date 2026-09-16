@@ -1,13 +1,50 @@
 {
  "house": "GMTLASMGSQHLRNFOWEEPCVAGFOLSTSVPXYWNJVJPVXTQWADCPGREQAJIMUZY",
  "generated_tick": 26414710,
+ "belts": {
+  "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU": {
+   "rank": 4,
+   "belt": "blue",
+   "points": 0
+  },
+  "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND": {
+   "rank": 4,
+   "belt": "blue",
+   "points": 0
+  },
+  "OVYOKTDIDJOAJWOPRLMGAWTLFQRFSSDGXTVBCMUSAEECSHGOZBJIGCUXSVQU": {
+   "rank": 0,
+   "belt": "white",
+   "points": -2
+  },
+  "CUTHDWQYMHQNJYBDUPOCXRDPVDPZTOAJIEWRCLRCWMFHHZOFJUOAVOYIVFIK": {
+   "rank": 2,
+   "belt": "orange",
+   "points": 1
+  },
+  "KCYMHOTMIZGQPYUQWJQQBRLOCSKAGAIVTPEHKTBHGKRCIBLUIWNUCOPXPTTP": {
+   "rank": 4,
+   "belt": "blue",
+   "points": 0
+  },
+  "TQZLRTNICZQWRXSMJDKKTJQVDJTXVWDAFBQTKRZMZJRIAYGWDYMNCLAUKCEK": {
+   "rank": 0,
+   "belt": "white",
+   "points": 0
+  },
+  "IJXKBTYHJOKVSMNRTBXDXSANBKVERBBDMDTFPCKSFNMHMYIQGWIVMSKDIQKK": {
+   "rank": 0,
+   "belt": "white",
+   "points": 0
+  }
+ },
  "rounds": [
   {
-   "round_id": 9,
+   "round_id": 10,
    "title": "THE CHECKSUM",
    "state": "reveal",
    "publish_tick": 26414000,
-   "publish_tx": "yvkjhjhlknaofzjqgyhkwfxhccwofibtvxzjysefgfbwbjlqgrhmmemyiyfo",
+   "publish_tx": "mgspusjxiyzboxmqfhybvrguopfehtnaqbmqgcknnxmpyoddtmedohedqpsg",
    "lobby_tick": 26413500,
    "lobby_window": 400,
    "min_players": 4,
@@ -20,11 +57,13 @@
    "rake_bps": 250,
    "payout_mode": "first",
    "match_bps": 10000,
+   "bond_bps": 0,
+   "bond_rounds": 0,
    "carry_in": 0,
-   "riddle_hash": "f51dd3c8e019a0f8639c5ea2a615306ae75d507180be14c1ad1bc6e1f5e30d55",
-   "answer_commitment": "c049c137bd27c6bd933d001d56495caf40a4ce1c92ca17914db21fad61139f6e",
+   "riddle_hash": "2c77b66f6594da7724e77e6c3908185dca2ca33fd026dd34f670f080ca61ec73",
+   "answer_commitment": "f07edb56d187fe806237e5a4bdfac4402610303aa715fc3ac56af8f2b0fecb8a",
    "riddle": {
-    "round_id": 9,
+    "round_id": 10,
     "title": "THE CHECKSUM",
     "statement": "XOR every byte of the ASCII input together. Answer with the result in hexadecimal.",
     "input": "DOJO",
@@ -33,7 +72,7 @@
    "settlement": null
   },
   {
-   "round_id": 10,
+   "round_id": 11,
    "title": "GREEN BELT: AT THE TABLE",
    "state": "lobby",
    "publish_tick": null,
@@ -50,6 +89,8 @@
    "rake_bps": 250,
    "payout_mode": "first",
    "match_bps": 10000,
+   "bond_bps": 0,
+   "bond_rounds": 0,
    "carry_in": 0,
    "riddle_hash": null,
    "answer_commitment": null,

@@ -21,6 +21,8 @@
    "rake_bps": 250,
    "payout_mode": "first",
    "match_bps": 0,
+   "bond_bps": 0,
+   "bond_rounds": 0,
    "carry_in": 0,
    "riddle_hash": "441facec19e64d844694dfb8132a271d9a079bc23bab566a4df87a1d3147ce78",
    "answer_commitment": "bf11ae319300df7400f9a80b68f58b16a3a9b30296540d3e6c45dceb009f36ce",
@@ -92,8 +94,13 @@
       "confirmed": true
      }
     ],
+    "bonds_held": [],
+    "bonds_released": [],
+    "bonds_forfeited": 0,
+    "belts_before": {},
+    "belt_changes": [],
     "settle_tx": "buastccdcuvhwishzfvknejveqgbryjuaayxfghcdvhqjkxberygchexyktv",
-    "hash": "f5f80577e8a8f0c9056e92f3522d31b07bb96e8094a2a135ec48785058d28b48"
+    "hash": "5e3f466ed6b694169a6afe41458ec93922c9c743506e3a184aa422043299f81f"
    }
   },
   {
@@ -114,6 +121,8 @@
    "rake_bps": 250,
    "payout_mode": "first",
    "match_bps": 0,
+   "bond_bps": 0,
+   "bond_rounds": 0,
    "carry_in": 0,
    "riddle_hash": "7134c3e51e09b9dc8c324ed2e5e1d83a3669ce00113813a6a895b384ee3556c3",
    "answer_commitment": "0e02bea840516c018e83e3f1966947f5874ac5731713aa482c990bcd032ba5d8",
@@ -198,8 +207,34 @@
       "confirmed": true
      }
     ],
+    "bonds_held": [],
+    "bonds_released": [],
+    "bonds_forfeited": 0,
+    "belts_before": {
+     "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU": {
+      "rank": 0,
+      "points": 2
+     },
+     "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND": {
+      "rank": 0,
+      "points": -1
+     },
+     "OVYOKTDIDJOAJWOPRLMGAWTLFQRFSSDGXTVBCMUSAEECSHGOZBJIGCUXSVQU": {
+      "rank": 0,
+      "points": -1
+     }
+    },
+    "belt_changes": [
+     {
+      "identity": "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU",
+      "before": 0,
+      "after": 1,
+      "points": 0,
+      "reason": "promoted"
+     }
+    ],
     "settle_tx": "jqwwctdhmpwzkdqbooelmgqoealknoqimhhaerrlytrvgfuvjcbvassqxrdr",
-    "hash": "92fd3e42b05fed6f5d6fb46f9c5422912687da323a117770e9d5347aaaaa110e"
+    "hash": "e4e00928e9957fea88fece46b46acce5faadb7979bcbcb3402e4be73146d55ee"
    }
   },
   {
@@ -220,6 +255,8 @@
    "rake_bps": 250,
    "payout_mode": "first",
    "match_bps": 0,
+   "bond_bps": 0,
+   "bond_rounds": 0,
    "carry_in": 0,
    "riddle_hash": "76f32bc107ed9c25a9e9a349121a675bd81c5142d6ca97755de6629d6ba0a5c9",
    "answer_commitment": "a0cb5fae6548f912e906613edce676955dced1fa8e1b1a8098c718da81a5f327",
@@ -306,8 +343,30 @@
     "dojo_salt": "8f5454a7ddc90b664b6a38e2abdcfdb6",
     "winners": [],
     "payouts": [],
+    "bonds_held": [],
+    "bonds_released": [],
+    "bonds_forfeited": 0,
+    "belts_before": {
+     "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU": {
+      "rank": 1,
+      "points": 0
+     },
+     "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND": {
+      "rank": 0,
+      "points": 0
+     },
+     "OVYOKTDIDJOAJWOPRLMGAWTLFQRFSSDGXTVBCMUSAEECSHGOZBJIGCUXSVQU": {
+      "rank": 0,
+      "points": -2
+     },
+     "CUTHDWQYMHQNJYBDUPOCXRDPVDPZTOAJIEWRCLRCWMFHHZOFJUOAVOYIVFIK": {
+      "rank": 0,
+      "points": -1
+     }
+    },
+    "belt_changes": [],
     "settle_tx": "vkjxxouqmrxnydonyrnoqlfgrjvsdiafzhjrtxpzfkkrxjyvgvixwwftsabl",
-    "hash": "1dd340b7b9f4c654938753360a98f4b3ec502da0beb44da2486a2ad8eab3ce00"
+    "hash": "9ee6deaf38c3006fcc7a70c6b05ac5695edb4a5e33a943bad6254295b1d37c82"
    }
   },
   {
@@ -328,6 +387,8 @@
    "rake_bps": 250,
    "payout_mode": "first",
    "match_bps": 10000,
+   "bond_bps": 0,
+   "bond_rounds": 0,
    "carry_in": 14875,
    "riddle_hash": "edee8ffbf69c3c1c7dd62dc89575ef7dd0d8c9cf11d669f89628eb8c11950e16",
    "answer_commitment": "f12c6655f377259adc728b281c441ce73a52e9c12958736cebd94fecbd002abc",
@@ -454,8 +515,42 @@
       "confirmed": true
      }
     ],
+    "bonds_held": [],
+    "bonds_released": [],
+    "bonds_forfeited": 0,
+    "belts_before": {
+     "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU": {
+      "rank": 1,
+      "points": -1
+     },
+     "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND": {
+      "rank": 0,
+      "points": 0
+     },
+     "OVYOKTDIDJOAJWOPRLMGAWTLFQRFSSDGXTVBCMUSAEECSHGOZBJIGCUXSVQU": {
+      "rank": 0,
+      "points": -2
+     },
+     "CUTHDWQYMHQNJYBDUPOCXRDPVDPZTOAJIEWRCLRCWMFHHZOFJUOAVOYIVFIK": {
+      "rank": 0,
+      "points": -1
+     },
+     "KCYMHOTMIZGQPYUQWJQQBRLOCSKAGAIVTPEHKTBHGKRCIBLUIWNUCOPXPTTP": {
+      "rank": 0,
+      "points": 0
+     }
+    },
+    "belt_changes": [
+     {
+      "identity": "CUTHDWQYMHQNJYBDUPOCXRDPVDPZTOAJIEWRCLRCWMFHHZOFJUOAVOYIVFIK",
+      "before": 0,
+      "after": 2,
+      "points": 0,
+      "reason": "won above belt"
+     }
+    ],
     "settle_tx": "squhrdosmxbytysjklzolodyryxleuhzaukgtngafqzoiccaggnofroqxoeq",
-    "hash": "ee261c48ca1fe6f06be7163314a379a4cc4c1fb1f0ba62817609273dfadc533d"
+    "hash": "1d050e305d1d15e9d4a6dabbdac613209aa265eba0a402caed26c54edd7ada20"
    }
   },
   {
@@ -476,6 +571,8 @@
    "rake_bps": 250,
    "payout_mode": "split",
    "match_bps": 5000,
+   "bond_bps": 0,
+   "bond_rounds": 0,
    "carry_in": 0,
    "riddle_hash": "a3b07f7911f93195f6277b1ea5889c820d7c0e9d4373d3c06b77f7985f824be9",
    "answer_commitment": "0f9b943c81a5a059a691b3c0ed148107835700a6a89b0ff37ac0e64189a7a26e",
@@ -604,8 +701,64 @@
       "confirmed": true
      }
     ],
+    "bonds_held": [],
+    "bonds_released": [],
+    "bonds_forfeited": 0,
+    "belts_before": {
+     "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU": {
+      "rank": 1,
+      "points": -1
+     },
+     "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND": {
+      "rank": 0,
+      "points": 0
+     },
+     "OVYOKTDIDJOAJWOPRLMGAWTLFQRFSSDGXTVBCMUSAEECSHGOZBJIGCUXSVQU": {
+      "rank": 0,
+      "points": -2
+     },
+     "CUTHDWQYMHQNJYBDUPOCXRDPVDPZTOAJIEWRCLRCWMFHHZOFJUOAVOYIVFIK": {
+      "rank": 2,
+      "points": 0
+     },
+     "KCYMHOTMIZGQPYUQWJQQBRLOCSKAGAIVTPEHKTBHGKRCIBLUIWNUCOPXPTTP": {
+      "rank": 0,
+      "points": 0
+     },
+     "TQZLRTNICZQWRXSMJDKKTJQVDJTXVWDAFBQTKRZMZJRIAYGWDYMNCLAUKCEK": {
+      "rank": 0,
+      "points": 0
+     },
+     "IJXKBTYHJOKVSMNRTBXDXSANBKVERBBDMDTFPCKSFNMHMYIQGWIVMSKDIQKK": {
+      "rank": 0,
+      "points": 0
+     }
+    },
+    "belt_changes": [
+     {
+      "identity": "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU",
+      "before": 1,
+      "after": 3,
+      "points": 0,
+      "reason": "won above belt"
+     },
+     {
+      "identity": "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
+      "before": 0,
+      "after": 3,
+      "points": 0,
+      "reason": "won above belt"
+     },
+     {
+      "identity": "KCYMHOTMIZGQPYUQWJQQBRLOCSKAGAIVTPEHKTBHGKRCIBLUIWNUCOPXPTTP",
+      "before": 0,
+      "after": 3,
+      "points": 0,
+      "reason": "won above belt"
+     }
+    ],
     "settle_tx": "kxxzocyaowxwwlgdypqoqmxipwoaltwimrjdkiunblbbrqexmkfnthvhfcyo",
-    "hash": "060380b945d4428d0d9884aa27465bae90c53827f40533a24e32206f1f1228ec"
+    "hash": "47cf41b568698ac0ae252bb54eeffb28369111f454b7d8ef76301a616ce22ce0"
    }
   },
   {
@@ -626,6 +779,8 @@
    "rake_bps": 250,
    "payout_mode": "first",
    "match_bps": 10000,
+   "bond_bps": 0,
+   "bond_rounds": 0,
    "carry_in": 0,
    "riddle_hash": "3586fbab0f7af38ebe39f915840e444ec0742b5f7d976d3db0a4bcc18d240a8e",
    "answer_commitment": "363ebbe39e9921fc3fa72be5c48706831b584df34d0100b7fe7e2f784e817179",
@@ -710,16 +865,257 @@
       "confirmed": true
      }
     ],
+    "bonds_held": [],
+    "bonds_released": [],
+    "bonds_forfeited": 0,
+    "belts_before": {
+     "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU": {
+      "rank": 3,
+      "points": 0
+     },
+     "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND": {
+      "rank": 3,
+      "points": 0
+     },
+     "OVYOKTDIDJOAJWOPRLMGAWTLFQRFSSDGXTVBCMUSAEECSHGOZBJIGCUXSVQU": {
+      "rank": 0,
+      "points": -2
+     },
+     "CUTHDWQYMHQNJYBDUPOCXRDPVDPZTOAJIEWRCLRCWMFHHZOFJUOAVOYIVFIK": {
+      "rank": 2,
+      "points": 0
+     },
+     "KCYMHOTMIZGQPYUQWJQQBRLOCSKAGAIVTPEHKTBHGKRCIBLUIWNUCOPXPTTP": {
+      "rank": 3,
+      "points": 0
+     },
+     "TQZLRTNICZQWRXSMJDKKTJQVDJTXVWDAFBQTKRZMZJRIAYGWDYMNCLAUKCEK": {
+      "rank": 0,
+      "points": 0
+     },
+     "IJXKBTYHJOKVSMNRTBXDXSANBKVERBBDMDTFPCKSFNMHMYIQGWIVMSKDIQKK": {
+      "rank": 0,
+      "points": 0
+     }
+    },
+    "belt_changes": [],
     "settle_tx": "ntyqyulubjjxskvyrmcdkcoyiyzlmrchctgymvuhrrkliekcaveblgewzzye",
-    "hash": "ccbfcb7b93fba5e045ece56b61b045fc0826c71c6ef62b8a2c6ea94ecc716faa"
+    "hash": "221df4fa9c49d1ef03d0264bfee891b8509161ee172b3a947e54713341da6bb4"
    }
   },
   {
    "round_id": 7,
+   "title": "THE MEDIAN",
+   "state": "settled",
+   "publish_tick": 26411000,
+   "publish_tx": "veimehihjkuhfmgppohzayxhmnqcrlvleczpsfixldwhvxutakpjqhogumrr",
+   "lobby_tick": 26410500,
+   "lobby_window": 400,
+   "min_players": 4,
+   "belt": "orange",
+   "entrants": 6,
+   "commit_window": 600,
+   "reveal_window": 300,
+   "entry_fee": 1000,
+   "house_seed": 10000,
+   "rake_bps": 250,
+   "payout_mode": "podium",
+   "match_bps": 10000,
+   "bond_bps": 2000,
+   "bond_rounds": 1,
+   "carry_in": 0,
+   "riddle_hash": "49cda67a225261b27210e7a4ec2db7e0690801a8813cfde74987080afd27d057",
+   "answer_commitment": "f260d23da53b37c888d90987e82fda294d9c3ccbc48b66c4d4a3025c0c4898e8",
+   "riddle": {
+    "round_id": 7,
+    "title": "THE MEDIAN",
+    "statement": "Answer with the median of the integers in the input.",
+    "input": "17 4 99 23 8 42 15",
+    "answer_format": "integer"
+   },
+   "entries": [
+    {
+     "identity": "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
+     "name": "KEN.EXE",
+     "commit_tick": 26411016,
+     "commit_tx": "vkdbqkjeimhpovwryqmyfpkvszhaeouwmhtvvtgjzgteailighrixdjhamwq",
+     "stake": 1000,
+     "reveal_tick": 26411605,
+     "reveal_tx": "dikgqqvnjwnuwokylvdbbhvdbywalcmxeeqhkswhrfzmsclvwfvhygezquie",
+     "verdict": "winner",
+     "enter_tick": 26410518,
+     "enter_tx": "ydbqrtqvletaxmpjkgztrqlydqfzzlisrndyirnybajygvrgmyfnicfrzixq",
+     "answer": "17"
+    },
+    {
+     "identity": "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU",
+     "name": "RYUBOT",
+     "commit_tick": 26411023,
+     "commit_tx": "mwchxudyauespzcbixwolzmznrnmrcfvojkoeunaebammoxcnwvalmwtbdqn",
+     "stake": 1000,
+     "reveal_tick": 26411609,
+     "reveal_tx": "hcxazbnwiebziiuallinrivpcekuaxpfsqaiuxyxokcygdoixviavogjzdvk",
+     "verdict": "winner",
+     "enter_tick": 26410534,
+     "enter_tx": "vhybfihbnutrwsdsrixuhgsmvisncgseplydcxzldfdzucierqqvppxliahn",
+     "answer": "17"
+    },
+    {
+     "identity": "KCYMHOTMIZGQPYUQWJQQBRLOCSKAGAIVTPEHKTBHGKRCIBLUIWNUCOPXPTTP",
+     "name": "CHUN-L1",
+     "commit_tick": 26411048,
+     "commit_tx": "dflekwocsxisijasxwlfrmggyleajvetkvqsdzmcrykaizldgbrudrlpyfpr",
+     "stake": 1000,
+     "reveal_tick": 26411612,
+     "reveal_tx": "zarvoqzindxpbpdfmgyuuxmwkwgvdivcovdneyxfcgxjwpmaytlckjnuezao",
+     "verdict": "winner",
+     "enter_tick": 26410557,
+     "enter_tx": "kowyodromulbvsshmungdobjmrgqlmiwzgjutfpxtvgdunyiijplrfmnbysn",
+     "answer": "17"
+    },
+    {
+     "identity": "CUTHDWQYMHQNJYBDUPOCXRDPVDPZTOAJIEWRCLRCWMFHHZOFJUOAVOYIVFIK",
+     "name": "ZANG-1EF",
+     "commit_tick": 26411130,
+     "commit_tx": "lprdfysfyhxbtryxhrztjviqcjqdhrrzruxlydgdvuwxzqkzewhckeawzntw",
+     "stake": 1000,
+     "reveal_tick": 26411640,
+     "reveal_tx": "xdfmdmunvhmjaaftdrtjqlhshwvjewsxmxbdwotjmflhcztbteohwqcxungr",
+     "verdict": "solved",
+     "enter_tick": 26410566,
+     "enter_tx": "ancxlarwgsvspikvwfoktcoebmfolijaptqzrqijqpayzsgxdznolzqpytqd",
+     "answer": "17"
+    },
+    {
+     "identity": "TQZLRTNICZQWRXSMJDKKTJQVDJTXVWDAFBQTKRZMZJRIAYGWDYMNCLAUKCEK",
+     "name": "DHAL5IM",
+     "commit_tick": 26411200,
+     "commit_tx": "fxkcuiwdjrvdqosylalycdgvnrgrbfdpavrzusdrbkscetfycbodpngjmbcn",
+     "stake": 1000,
+     "reveal_tick": 26411666,
+     "reveal_tx": "jexljgrvgzwhklnjknrxbbqpdqkrbbxyueecawgevvvxditpcnrzqboohkbn",
+     "verdict": "wrong",
+     "enter_tick": 26410575,
+     "enter_tx": "eofmljuzfvzodhtqqsjibruluejdraivpoveyzxbclpvjyqtbpluijcxqmnn",
+     "answer": "23"
+    },
+    {
+     "identity": "IJXKBTYHJOKVSMNRTBXDXSANBKVERBBDMDTFPCKSFNMHMYIQGWIVMSKDIQKK",
+     "name": "BLANKA.SH",
+     "commit_tick": 26411333,
+     "commit_tx": "kvbpdztagpuiytbqukdyikzicjhivqofpfwvwccsmnrmolijorkuyjxennng",
+     "stake": 1000,
+     "reveal_tick": null,
+     "reveal_tx": null,
+     "verdict": "no_reveal",
+     "enter_tick": 26410591,
+     "enter_tx": "iktzbkncpppwknnpptyjpkutzfaxkqhaedwxpeoekrrxnvipiyfryaqvaboa",
+     "answer": null
+    }
+   ],
+   "settlement": {
+    "pot": 12000,
+    "seed_used": 6000,
+    "rake": 150,
+    "carry": 0,
+    "answer": "17",
+    "dojo_salt": "0ee5cec42f1c57390dbc7a65c75374ca",
+    "winners": [
+     "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
+     "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU",
+     "KCYMHOTMIZGQPYUQWJQQBRLOCSKAGAIVTPEHKTBHGKRCIBLUIWNUCOPXPTTP"
+    ],
+    "payouts": [
+     {
+      "identity": "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
+      "amount": 4740,
+      "kind": "win",
+      "tx": "otonspkbujozlkekelpmaftdyhozcdnklvtkrkknhhhuwgvlrzzqtwecpwka",
+      "tick": 26411940,
+      "confirmed": true
+     },
+     {
+      "identity": "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU",
+      "amount": 2844,
+      "kind": "win",
+      "tx": "uurhoqdxfslbyvkjhjhlknaofzjqgyhkwfxhccwofibtvxzjysefgfbwbjlq",
+      "tick": 26411943,
+      "confirmed": true
+     },
+     {
+      "identity": "KCYMHOTMIZGQPYUQWJQQBRLOCSKAGAIVTPEHKTBHGKRCIBLUIWNUCOPXPTTP",
+      "amount": 1896,
+      "kind": "win",
+      "tx": "grhmmemyiyfoxtexmpvfceblyvdnvtmsnjqpdfqoofcqpdkgxuokjvwagwrr",
+      "tick": 26411946,
+      "confirmed": true
+     }
+    ],
+    "bonds_held": [
+     {
+      "identity": "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
+      "amount": 1185
+     },
+     {
+      "identity": "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU",
+      "amount": 711
+     },
+     {
+      "identity": "KCYMHOTMIZGQPYUQWJQQBRLOCSKAGAIVTPEHKTBHGKRCIBLUIWNUCOPXPTTP",
+      "amount": 474
+     }
+    ],
+    "bonds_released": [],
+    "bonds_forfeited": 0,
+    "belts_before": {
+     "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU": {
+      "rank": 3,
+      "points": 0
+     },
+     "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND": {
+      "rank": 3,
+      "points": -1
+     },
+     "OVYOKTDIDJOAJWOPRLMGAWTLFQRFSSDGXTVBCMUSAEECSHGOZBJIGCUXSVQU": {
+      "rank": 0,
+      "points": -2
+     },
+     "CUTHDWQYMHQNJYBDUPOCXRDPVDPZTOAJIEWRCLRCWMFHHZOFJUOAVOYIVFIK": {
+      "rank": 2,
+      "points": 0
+     },
+     "KCYMHOTMIZGQPYUQWJQQBRLOCSKAGAIVTPEHKTBHGKRCIBLUIWNUCOPXPTTP": {
+      "rank": 3,
+      "points": 2
+     },
+     "TQZLRTNICZQWRXSMJDKKTJQVDJTXVWDAFBQTKRZMZJRIAYGWDYMNCLAUKCEK": {
+      "rank": 0,
+      "points": 0
+     },
+     "IJXKBTYHJOKVSMNRTBXDXSANBKVERBBDMDTFPCKSFNMHMYIQGWIVMSKDIQKK": {
+      "rank": 0,
+      "points": 0
+     }
+    },
+    "belt_changes": [
+     {
+      "identity": "KCYMHOTMIZGQPYUQWJQQBRLOCSKAGAIVTPEHKTBHGKRCIBLUIWNUCOPXPTTP",
+      "before": 3,
+      "after": 4,
+      "points": 0,
+      "reason": "promoted"
+     }
+    ],
+    "settle_tx": "mqmegfalhtucagpgmvjvtilmkzvmrfjswigpxdkeeoulxjlpjmnqgpffmpaw",
+    "hash": "4917993dfabda55aea92bc0a17c211a7650897251ab6183727fc6d0ac4882cfa"
+   }
+  },
+  {
+   "round_id": 8,
    "title": "PRIME ORDINAL",
    "state": "settled",
    "publish_tick": 26412000,
-   "publish_tx": "veimehihjkuhfmgppohzayxhmnqcrlvleczpsfixldwhvxutakpjqhogumrr",
+   "publish_tx": "qmcrnyylyseqrqfdxpmvvgspwjuggecqnvroiphvnxuuapiikoduvjspegwt",
    "lobby_tick": 26411500,
    "lobby_window": 400,
    "min_players": 4,
@@ -732,11 +1128,13 @@
    "rake_bps": 250,
    "payout_mode": "first",
    "match_bps": 10000,
+   "bond_bps": 0,
+   "bond_rounds": 0,
    "carry_in": 0,
-   "riddle_hash": "44132f00e2ba607a055140f7e5591f20af5dace95784a5e773d6d90f5ae346e2",
-   "answer_commitment": "1ebd9f7cd6867bad69a83ccfa0aecde82f39a9608a63b04ee2d2de5430729103",
+   "riddle_hash": "59ca7ddfd73d7a3ed5b680a1ea9e69e6cea6ee2b1dd1f9e7b5a4ee259b82e7b1",
+   "answer_commitment": "d74ecb39bb9fdb2813d659b3789c9939c1b56d3128b7cdabeae8a40465515ab9",
    "riddle": {
-    "round_id": 7,
+    "round_id": 8,
     "title": "PRIME ORDINAL",
     "statement": "Answer with the 100th prime number.",
     "input": "100",
@@ -747,52 +1145,52 @@
      "identity": "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
      "name": "KEN.EXE",
      "commit_tick": 26412009,
-     "commit_tx": "vkdbqkjeimhpovwryqmyfpkvszhaeouwmhtvvtgjzgteailighrixdjhamwq",
+     "commit_tx": "zbsgggyhtabquernxqwsadhnftdhrmtglczusnsfsckzwjihqhjyraazafpn",
      "stake": 1000,
      "reveal_tick": 26412603,
-     "reveal_tx": "dikgqqvnjwnuwokylvdbbhvdbywalcmxeeqhkswhrfzmsclvwfvhygezquie",
+     "reveal_tx": "pnncerxngavggdvrpbachmenkijlofjsaefcixvkwyapjegoojypfygpwqua",
      "verdict": "winner",
-     "enter_tick": 26411518,
-     "enter_tx": "ydbqrtqvletaxmpjkgztrqlydqfzzlisrndyirnybajygvrgmyfnicfrzixq",
+     "enter_tick": 26411529,
+     "enter_tx": "lbjfkwaaqdstykupysmmwdzuewuftzaxtmxjnfhuxdcfppvahjxkkenvebnv",
      "answer": "541"
     },
     {
      "identity": "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU",
      "name": "RYUBOT",
      "commit_tick": 26412011,
-     "commit_tx": "mwchxudyauespzcbixwolzmznrnmrcfvojkoeunaebammoxcnwvalmwtbdqn",
+     "commit_tx": "lldtnnrzplkpzuiizedzidnolcsxhmhwzzstzofambzdzgtamyxzzblbetim",
      "stake": 1000,
      "reveal_tick": 26412606,
-     "reveal_tx": "hcxazbnwiebziiuallinrivpcekuaxpfsqaiuxyxokcygdoixviavogjzdvk",
+     "reveal_tx": "uhzikojucdlrrnerteinzisjetliszefgffjdipbsrqyjidqhyvxptkzlxao",
      "verdict": "solved",
-     "enter_tick": 26411534,
-     "enter_tx": "vhybfihbnutrwsdsrixuhgsmvisncgseplydcxzldfdzucierqqvppxliahn",
+     "enter_tick": 26411546,
+     "enter_tx": "frrjwnpukizsjxolxpjayrkncdtiwvbsaezyhtbumapwlmzpeehqzpwahgyw",
      "answer": "541"
     },
     {
      "identity": "TQZLRTNICZQWRXSMJDKKTJQVDJTXVWDAFBQTKRZMZJRIAYGWDYMNCLAUKCEK",
      "name": "DHAL5IM",
      "commit_tick": 26412030,
-     "commit_tx": "dflekwocsxisijasxwlfrmggyleajvetkvqsdzmcrykaizldgbrudrlpyfpr",
+     "commit_tx": "clqcrzxjrmwyafxwojnrgcxncbgklmshcvgdwlaufpzemujrzuupdwfqfdta",
      "stake": 1000,
      "reveal_tick": 26412625,
-     "reveal_tx": "zarvoqzindxpbpdfmgyuuxmwkwgvdivcovdneyxfcgxjwpmaytlckjnuezao",
+     "reveal_tx": "ytuwuaidkzygnpvofbabrnxvazugbxinktlboqxyaetyunxfluqgctqxwmxr",
      "verdict": "wrong",
-     "enter_tick": 26411557,
-     "enter_tx": "kowyodromulbvsshmungdobjmrgqlmiwzgjutfpxtvgdunyiijplrfmnbysn",
+     "enter_tick": 26411556,
+     "enter_tx": "allwqqjrqkgjogetypxrvjmjnffdsclpucmlloyqqdxcpzcalpythgparbjm",
      "answer": "547"
     },
     {
      "identity": "IJXKBTYHJOKVSMNRTBXDXSANBKVERBBDMDTFPCKSFNMHMYIQGWIVMSKDIQKK",
      "name": "BLANKA.SH",
      "commit_tick": 26412077,
-     "commit_tx": "lprdfysfyhxbtryxhrztjviqcjqdhrrzruxlydgdvuwxzqkzewhckeawzntw",
+     "commit_tx": "ahidoqifocycotfwkrmizwbibusqzwihjsirqfxkiiexcwgxrrmylwgofnrn",
      "stake": 1000,
      "reveal_tick": null,
      "reveal_tx": null,
      "verdict": "no_reveal",
-     "enter_tick": 26411566,
-     "enter_tx": "ancxlarwgsvspikvwfoktcoebmfolijaptqzrqijqpayzsgxdznolzqpytqd",
+     "enter_tick": 26411581,
+     "enter_tx": "czinzcutwyzfetncakbzazocwvhkyonxpamcdbpingzhrgipmydauvacdwsg",
      "answer": null
     }
    ],
@@ -802,7 +1200,7 @@
     "rake": 100,
     "carry": 0,
     "answer": "541",
-    "dojo_salt": "0ee5cec42f1c57390dbc7a65c75374ca",
+    "dojo_salt": "2945987b62dc6d1ac3eeccef6f85dec9",
     "winners": [
      "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND"
     ],
@@ -811,17 +1209,95 @@
       "identity": "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
       "amount": 7900,
       "kind": "win",
-      "tx": "xdfmdmunvhmjaaftdrtjqlhshwvjewsxmxbdwotjmflhcztbteohwqcxungr",
+      "tx": "jtmogbmlaunthaggzleprljmckujwifteaacwbbeyjapvysjnoyppluoljph",
       "tick": 26412940,
+      "confirmed": true
+     },
+     {
+      "identity": "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
+      "amount": 1185,
+      "kind": "bond_release",
+      "tx": "twjjkmxemtkfxilutsfdghomqlfadpgywdosckwcfczyqtpekxxcdjwfgrgb",
+      "tick": 26412943,
+      "confirmed": true
+     },
+     {
+      "identity": "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU",
+      "amount": 711,
+      "kind": "bond_release",
+      "tx": "shutcrzjfqkdhmcieubkyswxxqamvgycfdljyomjehdobvzefpivbvlfbfmm",
+      "tick": 26412946,
       "confirmed": true
      }
     ],
-    "settle_tx": "ceofmljuzfvzodhtqqsjibruluejdraivpoveyzxbclpvjyqtbpluijcxqmn",
-    "hash": "d524557711943f551d1492a19aea87634a780df854cc201da13fdb3abce0010c"
+    "bonds_held": [],
+    "bonds_released": [
+     {
+      "identity": "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
+      "amount": 1185,
+      "kind": "bond_release",
+      "bond_round": 7
+     },
+     {
+      "identity": "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU",
+      "amount": 711,
+      "kind": "bond_release",
+      "bond_round": 7
+     }
+    ],
+    "bonds_forfeited": 0,
+    "belts_before": {
+     "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU": {
+      "rank": 3,
+      "points": 2
+     },
+     "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND": {
+      "rank": 3,
+      "points": 1
+     },
+     "OVYOKTDIDJOAJWOPRLMGAWTLFQRFSSDGXTVBCMUSAEECSHGOZBJIGCUXSVQU": {
+      "rank": 0,
+      "points": -2
+     },
+     "CUTHDWQYMHQNJYBDUPOCXRDPVDPZTOAJIEWRCLRCWMFHHZOFJUOAVOYIVFIK": {
+      "rank": 2,
+      "points": 1
+     },
+     "KCYMHOTMIZGQPYUQWJQQBRLOCSKAGAIVTPEHKTBHGKRCIBLUIWNUCOPXPTTP": {
+      "rank": 4,
+      "points": 0
+     },
+     "TQZLRTNICZQWRXSMJDKKTJQVDJTXVWDAFBQTKRZMZJRIAYGWDYMNCLAUKCEK": {
+      "rank": 0,
+      "points": 0
+     },
+     "IJXKBTYHJOKVSMNRTBXDXSANBKVERBBDMDTFPCKSFNMHMYIQGWIVMSKDIQKK": {
+      "rank": 0,
+      "points": 0
+     }
+    },
+    "belt_changes": [
+     {
+      "identity": "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
+      "before": 3,
+      "after": 4,
+      "points": 0,
+      "reason": "won above belt"
+     },
+     {
+      "identity": "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU",
+      "before": 3,
+      "after": 4,
+      "points": 0,
+      "reason": "promoted"
+     }
+    ],
+    "settle_tx": "qsavlzrpyvzphjluhlufcdlsxwlwjqvoqlgtxwnzugmxxpkcwwjnfjbujrde",
+    "hash": "363f5d96f48588d485ec6c007cdcee3f02786956f0e12a8831649c9861784cb6"
    }
   },
   {
-   "round_id": 8,
+   "round_id": 9,
    "title": "BLUE BELT: AT THE TABLE",
    "state": "void",
    "publish_tick": null,
@@ -838,6 +1314,8 @@
    "rake_bps": 250,
    "payout_mode": "first",
    "match_bps": 10000,
+   "bond_bps": 0,
+   "bond_rounds": 0,
    "carry_in": 0,
    "riddle_hash": null,
    "answer_commitment": null,
@@ -852,8 +1330,8 @@
      "reveal_tick": null,
      "reveal_tx": null,
      "verdict": "void",
-     "enter_tick": 26413034,
-     "enter_tx": "fxkcuiwdjrvdqosylalycdgvnrgrbfdpavrzusdrbkscetfycbodpngjmbcn",
+     "enter_tick": 26413037,
+     "enter_tx": "rywjjlfkhzxgijqvhbucuksbhorjzxgidibxcrbfmpbchbbhrkunzquxbfat",
      "answer": null
     },
     {
@@ -865,8 +1343,8 @@
      "reveal_tick": null,
      "reveal_tx": null,
      "verdict": "void",
-     "enter_tick": 26413056,
-     "enter_tx": "exljgrvgzwhklnjknrxbbqpdqkrbbxyueecawgevvvxditpcnrzqboohkbng",
+     "enter_tick": 26413065,
+     "enter_tx": "pahuwdsdvanflmvmvvienskpmqrfruekkinejtrpmtpztcczksvbxycmnjrn",
      "answer": null
     }
    ],
@@ -883,7 +1361,7 @@
       "identity": "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU",
       "amount": 1000,
       "kind": "refund",
-      "tx": "iktzbkncpppwknnpptyjpkutzfaxkqhaedwxpeoekrrxnvipiyfryaqvaboa",
+      "tx": "rbpqsdrvhleqclcvchzialmlqaydluaouepsjpkrfylglozpprbmlsawlsks",
       "tick": 26413440,
       "confirmed": true
      },
@@ -891,21 +1369,21 @@
       "identity": "TQZLRTNICZQWRXSMJDKKTJQVDJTXVWDAFBQTKRZMZJRIAYGWDYMNCLAUKCEK",
       "amount": 1000,
       "kind": "refund",
-      "tx": "kvbpdztagpuiytbqukdyikzicjhivqofpfwvwccsmnrmolijorkuyjxennng",
+      "tx": "dwsciyyomlyrfirgzpxhxbjrqnhqkgpsubogtrzhhcbbtlmzrcipldsyigoo",
       "tick": 26413443,
       "confirmed": true
      }
     ],
-    "settle_tx": "otonspkbujozlkekelpmaftdyhozcdnklvtkrkknhhhuwgvlrzzqtwecpwka",
-    "hash": "135f123b02965912102146e686360a8a9555f70fc9672cd5a48e5fe5d414e925"
+    "settle_tx": "nhjttyogxudqeeanugwarijkpcbpuylwsdaxuhksyzzapdpxbwyoyhvvalxp",
+    "hash": "04a331c29c063511cc7ad6ae32546c376d93613a5a55dd06054f23ad177ea80e"
    }
   },
   {
-   "round_id": 9,
+   "round_id": 10,
    "title": "THE CHECKSUM",
    "state": "reveal",
    "publish_tick": 26414000,
-   "publish_tx": "yvkjhjhlknaofzjqgyhkwfxhccwofibtvxzjysefgfbwbjlqgrhmmemyiyfo",
+   "publish_tx": "mgspusjxiyzboxmqfhybvrguopfehtnaqbmqgcknnxmpyoddtmedohedqpsg",
    "lobby_tick": 26413500,
    "lobby_window": 400,
    "min_players": 4,
@@ -918,11 +1396,13 @@
    "rake_bps": 250,
    "payout_mode": "first",
    "match_bps": 10000,
+   "bond_bps": 0,
+   "bond_rounds": 0,
    "carry_in": 0,
-   "riddle_hash": "f51dd3c8e019a0f8639c5ea2a615306ae75d507180be14c1ad1bc6e1f5e30d55",
-   "answer_commitment": "c049c137bd27c6bd933d001d56495caf40a4ce1c92ca17914db21fad61139f6e",
+   "riddle_hash": "2c77b66f6594da7724e77e6c3908185dca2ca33fd026dd34f670f080ca61ec73",
+   "answer_commitment": "f07edb56d187fe806237e5a4bdfac4402610303aa715fc3ac56af8f2b0fecb8a",
    "riddle": {
-    "round_id": 9,
+    "round_id": 10,
     "title": "THE CHECKSUM",
     "statement": "XOR every byte of the ASCII input together. Answer with the result in hexadecimal.",
     "input": "DOJO",
@@ -933,85 +1413,85 @@
      "identity": "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU",
      "name": "RYUBOT",
      "commit_tick": 26414014,
-     "commit_tx": "gmvjvtilmkzvmrfjswigpxdkeeoulxjlpjmnqgpffmpawfitpmndyznqzqmc",
+     "commit_tx": "rucffmnaziphwitedoozjxckoqovzbomkctezxlxwggsbmphuvcpbpibzmed",
      "stake": 1000,
      "reveal_tick": 26414606,
-     "reveal_tx": "rnyylyseqrqfdxpmvvgspwjuggecqnvroiphvnxuuapiikoduvjspegwtllb",
+     "reveal_tx": "scxqzasfexlfjoyvoyfhilifwawdvqudfgoustjtmmmznuyfrgixnglnvoiw",
      "verdict": "pending",
-     "enter_tick": 26413515,
-     "enter_tx": "xmpvfceblyvdnvtmsnjqpdfqoofcqpdkgxuokjvwagwrrmqmegfalhtucagp",
+     "enter_tick": 26413540,
+     "enter_tx": "mlbyirnnisizxkwsilxstmvbidpjjfzlybcvyurdcxwezowsugpvjeftqyio",
      "answer": null
     },
     {
      "identity": "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
      "name": "KEN.EXE",
      "commit_tick": 26414019,
-     "commit_tx": "gggyhtabquernxqwsadhnftdhrmtglczusnsfsckzwjihqhjyraazafpnpnn",
+     "commit_tx": "ybjtwwjxnckfkerojhuxkwodozzemdgqbtchktlecxzvzzfmxwikqeuqzxve",
      "stake": 1000,
      "reveal_tick": null,
      "reveal_tx": null,
      "verdict": "pending",
-     "enter_tick": 26413538,
-     "enter_tx": "fkwaaqdstykupysmmwdzuewuftzaxtmxjnfhuxdcfppvahjxkkenvebnvzbs",
+     "enter_tick": 26413580,
+     "enter_tx": "ozuqcpqotgcmpggifmendgzafqmetlvcugtooivomessvyclgdeeaezdyulz",
      "answer": null
     },
     {
      "identity": "CUTHDWQYMHQNJYBDUPOCXRDPVDPZTOAJIEWRCLRCWMFHHZOFJUOAVOYIVFIK",
      "name": "ZANG-1EF",
      "commit_tick": 26414033,
-     "commit_tx": "jwnpukizsjxolxpjayrkncdtiwvbsaezyhtbumapwlmzpeehqzpwahgywlld",
+     "commit_tx": "ueneilefasczbdbsnlxrvdcpciofdfkhequpncqiakouxwatkgkjqjisciow",
      "stake": 1000,
      "reveal_tick": 26414621,
-     "reveal_tx": "tnnrzplkpzuiizedzidnolcsxhmhwzzstzofambzdzgtamyxzzblbetimuhz",
+     "reveal_tx": "hlzdkpfsicyofwpnraffjgginfjbdggfqmicyidbwlxudhfmibzdfzvqxyyr",
      "verdict": "pending",
-     "enter_tick": 26413546,
-     "enter_tx": "erxngavggdvrpbachmenkijlofjsaefcixvkwyapjegoojypfygpwquagfrr",
+     "enter_tick": 26413620,
+     "enter_tx": "mqdspkfwmmohmiyzkojdhhatrgeepfwhlmwrqbcqeicyumefkdqcybkpbfvr",
      "answer": null
     },
     {
      "identity": "KCYMHOTMIZGQPYUQWJQQBRLOCSKAGAIVTPEHKTBHGKRCIBLUIWNUCOPXPTTP",
      "name": "CHUN-L1",
      "commit_tick": 26414061,
-     "commit_tx": "wqqjrqkgjogetypxrvjmjnffdsclpucmlloyqqdxcpzcalpythgparbjmclq",
+     "commit_tx": "xdmbefvodjqzinyfixewvchijsyukcsgpamkrwgqwlljjxtmhbtuyxvvespx",
      "stake": 1000,
      "reveal_tick": null,
      "reveal_tx": null,
      "verdict": "pending",
-     "enter_tick": 26413567,
-     "enter_tx": "kojucdlrrnerteinzisjetliszefgffjdipbsrqyjidqhyvxptkzlxaodall",
+     "enter_tick": 26413649,
+     "enter_tx": "axwbagcqnnuwwzetpzobmcysgnkjgawndtrrntxmvklydmvpqfmqeycrufjh",
      "answer": null
     },
     {
      "identity": "TQZLRTNICZQWRXSMJDKKTJQVDJTXVWDAFBQTKRZMZJRIAYGWDYMNCLAUKCEK",
      "name": "DHAL5IM",
      "commit_tick": 26414240,
-     "commit_tx": "uaidkzygnpvofbabrnxvazugbxinktlboqxyaetyunxfluqgctqxwmxrkczi",
+     "commit_tx": "qufnsklejdunljbmpdwoblzexagqwpevmfnvjesjgeskisxndycwqupzeccu",
      "stake": 1000,
      "reveal_tick": 26414670,
-     "reveal_tx": "nzcutwyzfetncakbzazocwvhkyonxpamcdbpingzhrgipmydauvacdwsgahi",
+     "reveal_tx": "dnpxmsfmrsbejuzzobvqzutkvjypjcljwhlvemofdgxuxggtulhlmyhrczho",
      "verdict": "pending",
-     "enter_tick": 26413575,
-     "enter_tx": "rzxjrmwyafxwojnrgcxncbgklmshcvgdwlaufpzemujrzuupdwfqfdtaytuw",
+     "enter_tick": 26413672,
+     "enter_tx": "aaiqzyfcklzpddscmabaobcrlkwkvtlxuwqacxwmbrteffnuwiiyhcvnmsbu",
      "answer": null
     },
     {
      "identity": "IJXKBTYHJOKVSMNRTBXDXSANBKVERBBDMDTFPCKSFNMHMYIQGWIVMSKDIQKK",
      "name": "BLANKA.SH",
      "commit_tick": 26414455,
-     "commit_tx": "gbmlaunthaggzleprljmckujwifteaacwbbeyjapvysjnoyppluoljphtwjj",
+     "commit_tx": "jfqutfmkyminstjwjmehklqqhfewobsmvzahvrafqmltcncecsetqthsybvw",
      "stake": 1000,
      "reveal_tick": null,
      "reveal_tx": null,
      "verdict": "pending",
-     "enter_tick": 26413586,
-     "enter_tx": "oqifocycotfwkrmizwbibusqzwihjsirqfxkiiexcwgxrrmylwgofnrnjtmo",
+     "enter_tick": 26413694,
+     "enter_tx": "umnxycxfajhfiagwnnwvxpsznobhgpguowprdrycnkezsnmxklnfwhejgtik",
      "answer": null
     }
    ],
    "settlement": null
   },
   {
-   "round_id": 10,
+   "round_id": 11,
    "title": "GREEN BELT: AT THE TABLE",
    "state": "lobby",
    "publish_tick": null,
@@ -1028,6 +1508,8 @@
    "rake_bps": 250,
    "payout_mode": "first",
    "match_bps": 10000,
+   "bond_bps": 0,
+   "bond_rounds": 0,
    "carry_in": 0,
    "riddle_hash": null,
    "answer_commitment": null,
@@ -1042,8 +1524,8 @@
      "reveal_tick": null,
      "reveal_tx": null,
      "verdict": "pending",
-     "enter_tick": 26414678,
-     "enter_tx": "mxemtkfxilutsfdghomqlfadpgywdosckwcfczyqtpekxxcdjwfgrgbshutc",
+     "enter_tick": 26414670,
+     "enter_tx": "kmssdxeeumpzfhckbjgvhhqhciqfskqxtpybcruyfvtskfobfakivehntbup",
      "answer": null
     },
     {
@@ -1055,77 +1537,441 @@
      "reveal_tick": null,
      "reveal_tx": null,
      "verdict": "pending",
-     "enter_tick": 26414717,
-     "enter_tx": "zjfqkdhmcieubkyswxxqamvgycfdljyomjehdobvzefpivbvlfbfmmqsavlz",
+     "enter_tick": 26414705,
+     "enter_tx": "hhkeyfvlekgdzqgbaixfoxlrtcecmdwokjypvdvuefjfiovwzsqtevjeqlyq",
      "answer": null
     }
    ],
    "settlement": null
   }
  ],
+ "belts": {
+  "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU": {
+   "rank": 4,
+   "belt": "blue",
+   "points": 0
+  },
+  "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND": {
+   "rank": 4,
+   "belt": "blue",
+   "points": 0
+  },
+  "OVYOKTDIDJOAJWOPRLMGAWTLFQRFSSDGXTVBCMUSAEECSHGOZBJIGCUXSVQU": {
+   "rank": 0,
+   "belt": "white",
+   "points": -2
+  },
+  "CUTHDWQYMHQNJYBDUPOCXRDPVDPZTOAJIEWRCLRCWMFHHZOFJUOAVOYIVFIK": {
+   "rank": 2,
+   "belt": "orange",
+   "points": 1
+  },
+  "KCYMHOTMIZGQPYUQWJQQBRLOCSKAGAIVTPEHKTBHGKRCIBLUIWNUCOPXPTTP": {
+   "rank": 4,
+   "belt": "blue",
+   "points": 0
+  },
+  "TQZLRTNICZQWRXSMJDKKTJQVDJTXVWDAFBQTKRZMZJRIAYGWDYMNCLAUKCEK": {
+   "rank": 0,
+   "belt": "white",
+   "points": 0
+  },
+  "IJXKBTYHJOKVSMNRTBXDXSANBKVERBBDMDTFPCKSFNMHMYIQGWIVMSKDIQKK": {
+   "rank": 0,
+   "belt": "white",
+   "points": 0
+  }
+ },
  "fighters": [
   {
    "identity": "VADGXIQNYTELACBFCKERZAIDGEBFXGVGUXTAYCFMTISXYYPQPSRCQLYMXBZU",
    "name": "RYUBOT",
    "bow_tick": 26399812,
-   "rounds_played": 7,
-   "wins": 3,
-   "earned": 30263,
-   "strikes": 0
-  },
-  {
-   "identity": "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
-   "name": "KEN.EXE",
-   "bow_tick": 26399901,
+   "belt": "blue",
+   "rank": 4,
+   "points": 0,
    "rounds_played": 8,
-   "wins": 2,
-   "earned": 10850,
-   "strikes": 2
+   "solved": 5,
+   "wins": 4,
+   "losses": 2,
+   "earned": 33818,
+   "staked": 8000,
+   "strikes": 0,
+   "streak": 2,
+   "best_streak": 2,
+   "by_belt": {
+    "white": {
+     "rounds": 2,
+     "solved": 2,
+     "wins": 2,
+     "avg_solve_ticks": 33.0
+    },
+    "yellow": {
+     "rounds": 1,
+     "solved": 0,
+     "wins": 0,
+     "avg_solve_ticks": null
+    },
+    "orange": {
+     "rounds": 3,
+     "solved": 1,
+     "wins": 1,
+     "avg_solve_ticks": 23.0
+    },
+    "green": {
+     "rounds": 1,
+     "solved": 1,
+     "wins": 1,
+     "avg_solve_ticks": 18.0
+    },
+    "blue": {
+     "rounds": 1,
+     "solved": 1,
+     "wins": 0,
+     "avg_solve_ticks": 11.0
+    }
+   },
+   "belt_history": [
+    {
+     "round_id": 2,
+     "from": "white",
+     "to": "yellow",
+     "reason": "promoted"
+    },
+    {
+     "round_id": 5,
+     "from": "yellow",
+     "to": "green",
+     "reason": "won above belt"
+    },
+    {
+     "round_id": 8,
+     "from": "green",
+     "to": "blue",
+     "reason": "promoted"
+    }
+   ],
+   "net": 25818,
+   "avg_solve_ticks": 23.6,
+   "best_solve_ticks": 11,
+   "solve_rate": 0.62,
+   "win_rate": 0.5,
+   "win_loss": 2.0
   },
   {
    "identity": "CUTHDWQYMHQNJYBDUPOCXRDPVDPZTOAJIEWRCLRCWMFHHZOFJUOAVOYIVFIK",
    "name": "ZANG-1EF",
    "bow_tick": 26401450,
-   "rounds_played": 6,
+   "belt": "orange",
+   "rank": 2,
+   "points": 1,
+   "rounds_played": 7,
+   "solved": 2,
    "wins": 1,
+   "losses": 3,
    "earned": 30675,
-   "strikes": 0
+   "staked": 6000,
+   "strikes": 0,
+   "streak": -1,
+   "best_streak": 1,
+   "by_belt": {
+    "white": {
+     "rounds": 1,
+     "solved": 0,
+     "wins": 0,
+     "avg_solve_ticks": null
+    },
+    "yellow": {
+     "rounds": 1,
+     "solved": 0,
+     "wins": 0,
+     "avg_solve_ticks": null
+    },
+    "orange": {
+     "rounds": 3,
+     "solved": 2,
+     "wins": 1,
+     "avg_solve_ticks": 80.0
+    },
+    "green": {
+     "rounds": 2,
+     "solved": 0,
+     "wins": 0,
+     "avg_solve_ticks": null
+    }
+   },
+   "belt_history": [
+    {
+     "round_id": 4,
+     "from": "white",
+     "to": "orange",
+     "reason": "won above belt"
+    }
+   ],
+   "net": 24675,
+   "avg_solve_ticks": 80.0,
+   "best_solve_ticks": 30,
+   "solve_rate": 0.29,
+   "win_rate": 0.14,
+   "win_loss": 0.33
+  },
+  {
+   "identity": "DTVNKZZMDGRTXYZWGDZNXSNIGAEUZURNLKDEENGZSHOLHOBPWIETVMTVDFND",
+   "name": "KEN.EXE",
+   "bow_tick": 26399901,
+   "belt": "blue",
+   "rank": 4,
+   "points": 0,
+   "rounds_played": 9,
+   "solved": 4,
+   "wins": 3,
+   "losses": 3,
+   "earned": 16775,
+   "staked": 7500,
+   "strikes": 2,
+   "streak": 2,
+   "best_streak": 2,
+   "by_belt": {
+    "white": {
+     "rounds": 2,
+     "solved": 1,
+     "wins": 0,
+     "avg_solve_ticks": 33.0
+    },
+    "yellow": {
+     "rounds": 2,
+     "solved": 0,
+     "wins": 0,
+     "avg_solve_ticks": null
+    },
+    "green": {
+     "rounds": 2,
+     "solved": 1,
+     "wins": 1,
+     "avg_solve_ticks": 21.0
+    },
+    "orange": {
+     "rounds": 2,
+     "solved": 1,
+     "wins": 1,
+     "avg_solve_ticks": 16.0
+    },
+    "blue": {
+     "rounds": 1,
+     "solved": 1,
+     "wins": 1,
+     "avg_solve_ticks": 9.0
+    }
+   },
+   "belt_history": [
+    {
+     "round_id": 5,
+     "from": "white",
+     "to": "green",
+     "reason": "won above belt"
+    },
+    {
+     "round_id": 8,
+     "from": "green",
+     "to": "blue",
+     "reason": "won above belt"
+    }
+   ],
+   "net": 9275,
+   "avg_solve_ticks": 19.8,
+   "best_solve_ticks": 9,
+   "solve_rate": 0.44,
+   "win_rate": 0.33,
+   "win_loss": 1.0
   },
   {
    "identity": "KCYMHOTMIZGQPYUQWJQQBRLOCSKAGAIVTPEHKTBHGKRCIBLUIWNUCOPXPTTP",
    "name": "CHUN-L1",
    "bow_tick": 26403020,
-   "rounds_played": 5,
-   "wins": 2,
-   "earned": 8875,
-   "strikes": 0
+   "belt": "blue",
+   "rank": 4,
+   "points": 0,
+   "rounds_played": 6,
+   "solved": 3,
+   "wins": 3,
+   "losses": 2,
+   "earned": 10771,
+   "staked": 6000,
+   "strikes": 0,
+   "streak": 3,
+   "best_streak": 3,
+   "by_belt": {
+    "yellow": {
+     "rounds": 2,
+     "solved": 1,
+     "wins": 1,
+     "avg_solve_ticks": 12.0
+    },
+    "orange": {
+     "rounds": 3,
+     "solved": 1,
+     "wins": 1,
+     "avg_solve_ticks": 48.0
+    },
+    "green": {
+     "rounds": 1,
+     "solved": 1,
+     "wins": 1,
+     "avg_solve_ticks": 39.0
+    }
+   },
+   "belt_history": [
+    {
+     "round_id": 5,
+     "from": "white",
+     "to": "green",
+     "reason": "won above belt"
+    },
+    {
+     "round_id": 7,
+     "from": "green",
+     "to": "blue",
+     "reason": "promoted"
+    }
+   ],
+   "net": 4771,
+   "avg_solve_ticks": 33.0,
+   "best_solve_ticks": 12,
+   "solve_rate": 0.5,
+   "win_rate": 0.5,
+   "win_loss": 1.5
   },
   {
    "identity": "IJXKBTYHJOKVSMNRTBXDXSANBKVERBBDMDTFPCKSFNMHMYIQGWIVMSKDIQKK",
    "name": "BLANKA.SH",
    "bow_tick": 26405777,
-   "rounds_played": 3,
-   "wins": 0,
-   "earned": 0,
-   "strikes": 0
-  },
-  {
-   "identity": "TQZLRTNICZQWRXSMJDKKTJQVDJTXVWDAFBQTKRZMZJRIAYGWDYMNCLAUKCEK",
-   "name": "DHAL5IM",
-   "bow_tick": 26409100,
+   "belt": "white",
+   "rank": 0,
+   "points": 0,
    "rounds_played": 4,
+   "solved": 0,
    "wins": 0,
+   "losses": 3,
    "earned": 0,
-   "strikes": 0
+   "staked": 3000,
+   "strikes": 0,
+   "streak": -3,
+   "best_streak": 0,
+   "by_belt": {
+    "green": {
+     "rounds": 1,
+     "solved": 0,
+     "wins": 0,
+     "avg_solve_ticks": null
+    },
+    "orange": {
+     "rounds": 2,
+     "solved": 0,
+     "wins": 0,
+     "avg_solve_ticks": null
+    },
+    "blue": {
+     "rounds": 1,
+     "solved": 0,
+     "wins": 0,
+     "avg_solve_ticks": null
+    }
+   },
+   "belt_history": [],
+   "net": -3000,
+   "avg_solve_ticks": null,
+   "best_solve_ticks": null,
+   "solve_rate": 0.0,
+   "win_rate": 0.0,
+   "win_loss": 0.0
   },
   {
    "identity": "OVYOKTDIDJOAJWOPRLMGAWTLFQRFSSDGXTVBCMUSAEECSHGOZBJIGCUXSVQU",
    "name": null,
    "bow_tick": null,
+   "belt": "white",
+   "rank": 0,
+   "points": -2,
    "rounds_played": 4,
+   "solved": 0,
    "wins": 0,
+   "losses": 4,
    "earned": 0,
-   "strikes": 0
+   "staked": 4000,
+   "strikes": 0,
+   "streak": -4,
+   "best_streak": 0,
+   "by_belt": {
+    "white": {
+     "rounds": 2,
+     "solved": 0,
+     "wins": 0,
+     "avg_solve_ticks": null
+    },
+    "yellow": {
+     "rounds": 1,
+     "solved": 0,
+     "wins": 0,
+     "avg_solve_ticks": null
+    },
+    "green": {
+     "rounds": 1,
+     "solved": 0,
+     "wins": 0,
+     "avg_solve_ticks": null
+    }
+   },
+   "belt_history": [],
+   "net": -4000,
+   "avg_solve_ticks": null,
+   "best_solve_ticks": null,
+   "solve_rate": 0.0,
+   "win_rate": 0.0,
+   "win_loss": 0.0
+  },
+  {
+   "identity": "TQZLRTNICZQWRXSMJDKKTJQVDJTXVWDAFBQTKRZMZJRIAYGWDYMNCLAUKCEK",
+   "name": "DHAL5IM",
+   "bow_tick": 26409100,
+   "belt": "white",
+   "rank": 0,
+   "points": 0,
+   "rounds_played": 5,
+   "solved": 0,
+   "wins": 0,
+   "losses": 4,
+   "earned": 0,
+   "staked": 5000,
+   "strikes": 0,
+   "streak": -4,
+   "best_streak": 0,
+   "by_belt": {
+    "orange": {
+     "rounds": 3,
+     "solved": 0,
+     "wins": 0,
+     "avg_solve_ticks": null
+    },
+    "yellow": {
+     "rounds": 1,
+     "solved": 0,
+     "wins": 0,
+     "avg_solve_ticks": null
+    },
+    "blue": {
+     "rounds": 1,
+     "solved": 0,
+     "wins": 0,
+     "avg_solve_ticks": null
+    }
+   },
+   "belt_history": [],
+   "net": -5000,
+   "avg_solve_ticks": null,
+   "best_solve_ticks": null,
+   "solve_rate": 0.0,
+   "win_rate": 0.0,
+   "win_loss": 0.0
   }
  ]
 }

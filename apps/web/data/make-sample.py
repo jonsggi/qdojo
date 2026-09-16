@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
-"""Regenerate sample-history.json and sample-board.json.
+"""Regenerate sample-history.json, sample-board.json, sample-fighters.json and
+sample-belts.json.
 
-The spectator page loads these when data/history.json and data/board.json are
-missing, so the page is watchable with no house running. Every hash is
-computed with the real qdojo.hashing module, so the page's VERIFY button
-passes on the sample data exactly as it will on a live export.
+The spectator page loads these when the live data/*.json files are missing,
+so the page is watchable with no house running. Every hash is computed with
+the real qdojo.hashing module, so the page's VERIFY button passes on the
+sample data exactly as it will on a live export; belts move by the real
+qdojo.belts rules, so every belt_history entry can be replayed.
 
 The story: three rounds in the original flow (stake on COMMIT, fixed seed),
 then lobby rounds (seats bought with ENTER before the riddle exists, the house
-matching stakes up to a cap), one lobby that never filled (void, refunded),
-one round in its reveal window and one table waiting for challengers.
+matching stakes up to a cap), a podium round (first three split 5:3:2, a share
+of every win held as a bond and released once the winner fights again), one
+lobby that never filled (void, refunded), one round in its reveal window and
+one table waiting for challengers.
 
     cd apps/web && uv run python data/make-sample.py
 """
@@ -20,7 +24,10 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "packages", "qdojo", "src"))
+from qdojo import belts as B  # noqa: E402
 from qdojo import hashing  # noqa: E402
+
+PODIUM_WEIGHTS = (5, 3, 2)  # docs/spec.md §5: first, second, third correct commit
 
 rng = random.Random(0x444F)  # "DO" -- deterministic output
 RAKE_BPS = 250
@@ -164,6 +171,28 @@ ROUNDS = [
         ],
     ),
     dict(
+        # a podium round: the first three correct commits split 5:3:2, the fourth
+        # solver is off the podium. 20% of every win is held as a bond until the
+        # winner fights one more round.
+        title="THE MEDIAN",
+        statement="Answer with the median of the integers in the input.",
+        input="17 4 99 23 8 42 15",
+        answer_format="integer",
+        answer="17",
+        publish_tick=26_411_000,
+        seed=10_000, match_bps=10_000, belt="orange", payout_mode="podium", lobby=True,
+        bond_bps=2_000, bond_rounds=1,
+        entry_fee=1_000,
+        entries=[
+            ("KEN.EXE", 1_000, 16, 5, "winner", "17"),
+            ("RYUBOT", 1_000, 23, 9, "winner", "17"),
+            ("CHUN-L1", 1_000, 48, 12, "winner", "17"),
+            ("ZANG-1EF", 1_000, 130, 40, "winner", "17"),   # fourth correct: solved, off the podium
+            ("DHAL5IM", 1_000, 200, 66, "wrong", "23"),
+            ("BLANKA.SH", 1_000, 333, None, "no_reveal", None),
+        ],
+    ),
+    dict(
         title="PRIME ORDINAL",
         statement="Answer with the 100th prime number.",
         input="100",
@@ -224,12 +253,13 @@ ROUNDS = [
     ),
 ]
 
-NOW_TICK = 26_414_000 + WC + 110  # 190 ticks left in round 9's reveal window, 340 in round 10's lobby
+NOW_TICK = 26_414_000 + WC + 110  # 190 ticks left in round 10's reveal window, 340 in round 11's lobby
 GENERATED_AT = "2026-09-15T21:04:11Z"
 
 # Verdicts whose stake stays in the pot (docs/spec.md §5). "void" is refunded.
 COUNTED = ("winner", "solved", "wrong", "no_reveal", "no_commit", "bad_reveal", "pending")
 PLAYED = COUNTED  # what the house counts as a round played
+FAILURES = ("wrong", "no_reveal", "no_commit", "bad_reveal")
 
 
 def seed_for(spec, carry_in: int, stakes: int) -> int:
@@ -238,19 +268,29 @@ def seed_for(spec, carry_in: int, stakes: int) -> int:
     return carry_in + matched
 
 
+def new_stats() -> dict:
+    return dict(rounds_played=0, solved=0, wins=0, losses=0, earned=0, staked=0, strikes=0,
+                streak=0, best_streak=0, solve_ticks=[], by_belt={}, belt_history=[])
+
+
 def build():
     rounds = []
     carry = 0
-    stats = {name: dict(rounds_played=0, wins=0, earned=0, strikes=0) for name in FIGHTERS}
+    belts: dict = {}          # identity -> {rank, points}, mutated by qdojo.belts
+    bonds: list = []          # open bonds: {identity, amount, round_id, need, fought, released}
+    stats = {name: new_stats() for name in FIGHTERS}
     for i, spec in enumerate(ROUNDS, start=1):
         is_open = spec.get("open", False)
         is_void = spec.get("void", False)
         lobby = spec.get("lobby", False)
         published = not is_void and "publish_tick" in spec
+        settled = published and not is_open
         P = spec.get("publish_tick")
         L = spec.get("lobby_tick", (P - WL - 100) if (lobby and P is not None) else None)
         carry_in = carry
         carry = 0
+        belt = spec.get("belt", "")
+        belt_rank = B.RANKS.get(belt) if belt else None
 
         public = canon = dojo_salt = None
         if published:
@@ -272,11 +312,13 @@ def build():
             round_id=i, title=spec["title"], state=state,
             publish_tick=P if published else None, publish_tx=txid() if published else None,
             lobby_tick=L, lobby_window=WL if lobby else 0,
-            min_players=MIN_PLAYERS if lobby else 0, belt=spec.get("belt", ""),
+            min_players=MIN_PLAYERS if lobby else 0, belt=belt,
             entrants=0,
             commit_window=WC, reveal_window=WR,
             entry_fee=spec["entry_fee"], house_seed=spec["seed"], rake_bps=RAKE_BPS,
-            payout_mode=spec.get("payout_mode", "first"), match_bps=spec["match_bps"], carry_in=carry_in,
+            payout_mode=spec.get("payout_mode", "first"), match_bps=spec["match_bps"],
+            bond_bps=spec.get("bond_bps", 0), bond_rounds=spec.get("bond_rounds", 0),
+            carry_in=carry_in,
             riddle_hash=hashing.riddle_hash(public).hex() if published else None,
             answer_commitment=hashing.answer_commitment(i, dojo_salt, canon).hex() if published else None,
             riddle=public, entries=[], settlement=None,
@@ -303,11 +345,49 @@ def build():
                 answer=answer if not is_open else None,
             )
             r["entries"].append(e)
-            if verdict in ("duplicate", "bad_reveal"):
-                stats[name]["strikes"] += 1
-            if verdict in PLAYED:
-                stats[name]["rounds_played"] += 1
         r["entrants"] = len([e for e in r["entries"] if e["verdict"] not in ("late", "underpaid")])
+
+        # who gets paid: first-wins demotes later correct reveals to "solved",
+        # podium keeps the first three and demotes the rest
+        solved_in_order = sorted((e for e in r["entries"] if e["verdict"] == "winner"),
+                                 key=lambda e: (e["commit_tick"], e["commit_tx"]))
+        podium = []
+        if settled and r["payout_mode"] == "first" and solved_in_order:
+            for e in solved_in_order[1:]:
+                if e["commit_tick"] != solved_in_order[0]["commit_tick"]:
+                    e["verdict"] = "solved"
+        elif settled and r["payout_mode"] == "podium" and solved_in_order:
+            podium = solved_in_order[:len(PODIUM_WEIGHTS)]
+            for e in solved_in_order[len(podium):]:
+                e["verdict"] = "solved"
+
+        # per-fighter stats, exactly as qdojo.house.export counts them
+        for e in r["entries"]:
+            st = stats[e["name"]]
+            if e["verdict"] in ("duplicate", "bad_reveal"):
+                st["strikes"] += 1
+            if e["verdict"] not in PLAYED:
+                continue
+            st["rounds_played"] += 1
+            st["staked"] += e["stake"] if settled else 0
+            bb = st["by_belt"].setdefault(belt or "open", dict(rounds=0, solved=0, wins=0, solve_ticks=[]))
+            bb["rounds"] += 1
+            if e["verdict"] in ("winner", "solved"):
+                st["solved"] += 1
+                bb["solved"] += 1
+                if e["commit_tick"] and P:
+                    lat = e["commit_tick"] - P
+                    st["solve_ticks"].append(lat)
+                    bb["solve_ticks"].append(lat)
+            if e["verdict"] == "winner":
+                st["wins"] += 1
+                bb["wins"] += 1
+                if settled:
+                    st["streak"] = st["streak"] + 1 if st["streak"] >= 0 else 1
+                    st["best_streak"] = max(st["best_streak"], st["streak"])
+            elif settled and e["verdict"] in FAILURES:
+                st["losses"] += 1
+                st["streak"] = st["streak"] - 1 if st["streak"] <= 0 else -1
 
         if is_void:
             # the lobby never filled: nothing but refunds moved; the carry rolls on
@@ -320,38 +400,67 @@ def build():
             settlement["hash"] = hashing.settlement_hash(settlement).hex()
             r["settlement"] = settlement
             carry = carry_in
-        elif not is_open and published:
-            # first-wins: later correct reveals are "solved", correct but unpaid
-            if r["payout_mode"] == "first":
-                winners = sorted((e for e in r["entries"] if e["verdict"] == "winner"),
-                                 key=lambda e: (e["commit_tick"], e["commit_tx"]))
-                for e in winners[1:]:
-                    if e["commit_tick"] != winners[0]["commit_tick"]:
-                        e["verdict"] = "solved"
+        elif settled:
             counted = [e for e in r["entries"] if e["verdict"] in COUNTED]
             stakes = sum(e["stake"] for e in counted)
             seed_used = seed_for(spec, carry_in, stakes)
             pot = seed_used + stakes
             rake = stakes * RAKE_BPS // 10000
+            distributable = pot - rake
             winners = [e for e in r["entries"] if e["verdict"] == "winner"]
-            payouts = []
-            if winners:
-                each = (pot - rake) // len(winners)
-                carry = (pot - rake) - each * len(winners)
-                for e in winners:
-                    payouts.append(dict(identity=e["identity"], amount=each, kind="win",
-                                        tx=txid(), tick=P + WC + WR + 40 + len(payouts) * 3, confirmed=True))
-                    stats[e["name"]]["wins"] += 1
-                    stats[e["name"]]["earned"] += each
+            wins = []
+            if podium:
+                weights = PODIUM_WEIGHTS[:len(podium)]
+                total_w = sum(weights)
+                wins = [dict(identity=e["identity"], amount=distributable * w // total_w, kind="win")
+                        for e, w in zip(podium, weights)]
+                winners = podium
+                carry = distributable - sum(p["amount"] for p in wins)
+            elif winners:
+                each = distributable // len(winners)
+                wins = [dict(identity=e["identity"], amount=each, kind="win") for e in winners]
+                carry = distributable - each * len(winners)
             else:
-                carry = pot - rake
-            for e in r["entries"]:
-                if e["verdict"] in ("underpaid", "late"):
-                    payouts.append(dict(identity=e["identity"], amount=e["stake"], kind="refund",
-                                        tx=txid(), tick=P + WC + WR + 40 + len(payouts) * 3, confirmed=True))
+                carry = distributable
+            # the bond: a share of every win stays with the house until the winner fights again
+            bonds_held = []
+            if r["bond_bps"]:
+                for p in wins:
+                    held = p["amount"] * r["bond_bps"] // 10000
+                    if held:
+                        bonds_held.append(dict(identity=p["identity"], amount=held))
+                        p["amount"] -= held
+            fought = {e["identity"] for e in counted}
+            releases = []
+            for b in bonds:
+                if b["released"]:
+                    continue
+                if b["identity"] in fought and b["round_id"] < i:
+                    b["fought"] += 1
+                if b["fought"] >= b["need"]:
+                    b["released"] = i
+                    releases.append(dict(identity=b["identity"], amount=b["amount"], kind="bond_release",
+                                         bond_round=b["round_id"]))
+            bonds += [dict(identity=b["identity"], amount=b["amount"], round_id=i, need=r["bond_rounds"],
+                           fought=0, released=None) for b in bonds_held]
+            refunds = [dict(identity=e["identity"], amount=e["stake"], kind="refund")
+                       for e in r["entries"] if e["verdict"] in ("underpaid", "late")]
+            payouts = []
+            for p in [p for p in wins if p["amount"] > 0] + refunds + [dict(identity=x["identity"], amount=x["amount"], kind=x["kind"]) for x in releases]:
+                payouts.append(dict(p, tx=txid(), tick=P + WC + WR + 40 + len(payouts) * 3, confirmed=True))
+                if p["kind"] in ("win", "bond_release"):
+                    stats[NAME[p["identity"]]]["earned"] += p["amount"]
+            # the ladder moves with the verdicts, by the real rules
+            belts_before = {k: dict(v) for k, v in belts.items()}
+            changes = B.apply_settlement(belts, belt_rank, r["entries"]) if belt_rank is not None else []
+            for c in changes:
+                stats[NAME[c.identity]]["belt_history"].append(dict(
+                    round_id=i, **{"from": B.belt_name(c.before)}, to=B.belt_name(c.after), reason=c.reason))
             settlement = dict(
                 pot=pot, seed_used=seed_used, rake=rake, carry=carry, answer=canon, dojo_salt=dojo_salt.hex(),
                 winners=[e["identity"] for e in winners], payouts=payouts,
+                bonds_held=bonds_held, bonds_released=releases, bonds_forfeited=0,
+                belts_before=belts_before, belt_changes=[vars(c) for c in changes],
                 settle_tx=txid(),
             )
             settlement["hash"] = hashing.settlement_hash(settlement).hex()
@@ -360,26 +469,60 @@ def build():
             carry = carry_in  # still open: the carry is riding in this round
         rounds.append(r)
 
+    def avg(xs):
+        return round(sum(xs) / len(xs), 1) if xs else None
+
+    public_belts = B.public(belts)
     fighters = []
     for name, (identity, bow) in FIGHTERS.items():
-        fighters.append(dict(identity=identity, name=name, bow_tick=bow, **stats[name]))
+        st = stats[name]
+        f = dict(identity=identity, name=name, bow_tick=bow,
+                 belt=public_belts.get(identity, {}).get("belt", "white"),
+                 rank=public_belts.get(identity, {}).get("rank", 0),
+                 points=public_belts.get(identity, {}).get("points", 0))
+        f.update({k: v for k, v in st.items() if k != "solve_ticks"})
+        f["net"] = f["earned"] - f["staked"]
+        f["avg_solve_ticks"] = avg(st["solve_ticks"])
+        f["best_solve_ticks"] = min(st["solve_ticks"]) if st["solve_ticks"] else None
+        f["solve_rate"] = round(f["solved"] / f["rounds_played"], 2) if f["rounds_played"] else None
+        f["win_rate"] = round(f["wins"] / f["rounds_played"], 2) if f["rounds_played"] else None
+        f["win_loss"] = round(f["wins"] / f["losses"], 2) if f["losses"] else (float(f["wins"]) if f["wins"] else None)
+        f["by_belt"] = {k: dict(rounds=v["rounds"], solved=v["solved"], wins=v["wins"], avg_solve_ticks=avg(v["solve_ticks"]))
+                        for k, v in st["by_belt"].items()}
+        f["belt_history"] = sorted(st["belt_history"], key=lambda c: c["round_id"])
+        fighters.append(f)
 
     history = dict(house=HOUSE, generated_at=GENERATED_AT, generated_tick=NOW_TICK,
-                   rounds=rounds, fighters=fighters)
-    board = dict(house=HOUSE, generated_tick=NOW_TICK,
+                   rounds=rounds, belts=public_belts,
+                   fighters=sorted(fighters, key=lambda f: (-f["earned"], -f["wins"], f["identity"])))
+    board = dict(house=HOUSE, generated_tick=NOW_TICK, belts=public_belts,
                  rounds=[{k: v for k, v in r.items() if k != "entries"}
                          for r in rounds if r["state"] in ("lobby", "commit", "reveal")])
-    return history, board
+    fighters_doc = dict(generated_tick=NOW_TICK,
+                        fighters=sorted(fighters, key=lambda f: (-f["net"], -f["wins"], f["identity"])))
+    belts_doc = dict(generated_tick=NOW_TICK, ladder=list(B.BELTS), rules={
+        "promote_at": B.PROMOTE_AT, "demote_at": B.DEMOTE_AT, "winner": 2, "solved": 1, "failure": -1,
+        "win_above_belt": "promoted to that belt", "failure_above_belt": 0, "enter": "own belt or above"},
+        belts=public_belts)
+    return history, board, fighters_doc, belts_doc
+
+
+NAME = {v[0]: name for name, v in FIGHTERS.items()}
+
+
+def _dump(name, doc):
+    with open(os.path.join(HERE, name), "w", encoding="utf-8") as f:
+        json.dump(doc, f, indent=1, ensure_ascii=False)
+        f.write("\n")
 
 
 if __name__ == "__main__":
-    history, board = build()
-    with open(os.path.join(HERE, "sample-history.json"), "w", encoding="utf-8") as f:
-        json.dump(history, f, indent=1, ensure_ascii=False)
-        f.write("\n")
-    with open(os.path.join(HERE, "sample-board.json"), "w", encoding="utf-8") as f:
-        json.dump(board, f, indent=1, ensure_ascii=False)
-        f.write("\n")
+    history, board, fighters_doc, belts_doc = build()
+    _dump("sample-history.json", history)
+    _dump("sample-board.json", board)
+    _dump("sample-fighters.json", fighters_doc)
+    _dump("sample-belts.json", belts_doc)
     print(f"wrote {len(history['rounds'])} rounds, {len(history['fighters'])} fighters, "
           f"open: {[(r['round_id'], r['state']) for r in board['rounds']]}, "
-          f"void: {[r['round_id'] for r in history['rounds'] if r['state'] == 'void']}")
+          f"void: {[r['round_id'] for r in history['rounds'] if r['state'] == 'void']}, "
+          f"belts: {[(f['name'], f['belt'], f['points']) for f in fighters_doc['fighters']]}")

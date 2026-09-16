@@ -1,10 +1,11 @@
 /* QDOJO spectator page.
  *
- * Reads ./data/history.json (every round) and ./data/board.json (open rounds),
- * polls them every 10 s, and re-renders only the parts whose data changed.
- * If the live files are missing it loads ./data/sample-*.json; if even those
- * cannot be fetched (file://) it uses the tiny EMBEDDED set so the cabinet
- * still lights up. No build step, no framework.
+ * Reads ./data/history.json (every round), ./data/board.json (open rounds),
+ * ./data/fighters.json (performance per fighter) and ./data/belts.json (the
+ * ladder), polls them every 10 s, and re-renders only the parts whose data
+ * changed. If the live files are missing it loads ./data/sample-*.json; if
+ * even those cannot be fetched (file://) it uses the tiny EMBEDDED set so the
+ * cabinet still lights up. No build step, no framework.
  */
 'use strict';
 
@@ -35,6 +36,7 @@ const S = {
   fetchedAt: 0,        // ms timestamp when generated_tick was observed
   screen: 'title',
   round: null,         // selected round on the results screen
+  fighter: null,       // selected identity on the fighter card screen
   attract: true,
   sound: false,
   audio: null,
@@ -71,6 +73,23 @@ function ticksToHuman(t) {
   return r ? `${m}m${String(r).padStart(2, '0')}s` : `${m}m`;
 }
 function ordinal(n) { return n === 1 ? '1ST' : n === 2 ? '2ND' : n === 3 ? '3RD' : `${n}TH`; }
+function signed(n) {
+  if (n === null || n === undefined || Number.isNaN(Number(n))) return '—';
+  return (Number(n) > 0 ? '+' : Number(n) < 0 ? '−' : '') + fmt(Math.abs(Number(n)));
+}
+function pct(x) { return x === null || x === undefined ? '—' : `${Math.round(Number(x) * 100)}%`; }
+// "41.2 T · 20.6 s": ticks and seconds at 0.5 s per tick
+function ticksSecs(t) {
+  if (t === null || t === undefined) return '—';
+  const n = Number(t);
+  const s = n * TICK_MS / 1000;
+  return `${Number.isInteger(n) ? fmt(n) : n.toFixed(1)} T · ${s.toFixed(1)} s`;
+}
+function fighterHref(id) { return `#fighter/${encodeURIComponent(id || '')}`; }
+function fighterLink(id, inner, cls = '') {
+  if (!id) return inner;
+  return `<a class="flink ${cls}" href="${fighterHref(id)}" title="FIGHTER CARD">${inner}</a>`;
+}
 function setHTML(id, html) {
   if (S.cache[id] === html) return false;
   const el = document.getElementById(id);
@@ -145,29 +164,34 @@ async function fetchJSON(url) {
   return res.json();
 }
 
+// The three side files are optional: the page works from history.json alone.
+async function optionalJSON(url) { try { return await fetchJSON(url); } catch (e) { return null; } }
+async function loadSet(prefix) {
+  const history = await fetchJSON(`./data/${prefix}history.json`);
+  if (!history || !Array.isArray(history.rounds)) throw new Error(`${prefix}history.json has no rounds`);
+  const [board, fighters, belts] = await Promise.all([
+    optionalJSON(`./data/${prefix}board.json`), optionalJSON(`./data/${prefix}fighters.json`), optionalJSON(`./data/${prefix}belts.json`)]);
+  return { history, board, fighters, belts };
+}
 async function loadData() {
   // 1. the live export
   try {
-    const history = await fetchJSON('./data/history.json');
-    if (!history || !Array.isArray(history.rounds)) throw new Error('history.json has no rounds');
-    let board = null;
-    try { board = await fetchJSON('./data/board.json'); } catch (e) { board = null; }
-    return { history, board, source: 'live' };
+    return Object.assign(await loadSet(''), { source: 'live' });
   } catch (e) {
     if (S.liveSeen) throw e; // keep the last good live data, do not flip to the sample
   }
   // 2. the sample files
   try {
-    const history = await fetchJSON('./data/sample-history.json');
-    let board = null;
-    try { board = await fetchJSON('./data/sample-board.json'); } catch (e) { board = null; }
-    return { history, board, source: 'sample' };
+    return Object.assign(await loadSet('sample-'), { source: 'sample' });
   } catch (e) { /* fall through */ }
   // 3. embedded last resort
-  return { history: EMBEDDED.history, board: EMBEDDED.board, source: 'embedded' };
+  return { history: EMBEDDED.history, board: EMBEDDED.board, fighters: null, belts: null, source: 'embedded' };
 }
 
-function normalise(history, board) {
+const DEFAULT_LADDER = ['white', 'yellow', 'orange', 'green', 'blue'];
+const DEFAULT_RULES = { promote_at: 3, demote_at: -3, winner: 2, solved: 1, failure: -1 };
+
+function normalise(history, board, fighters, belts) {
   const rounds = (history.rounds || []).map(r => Object.assign({ entries: [], settlement: null }, r));
   const byId = new Map(rounds.map(r => [r.round_id, r]));
   let open;
@@ -184,15 +208,94 @@ function normalise(history, board) {
   }
   rounds.sort((a, b) => a.round_id - b.round_id);
   open.sort((a, b) => a.round_id - b.round_id);
-  const fighters = (history.fighters || []).slice();
-  const names = new Map(fighters.filter(f => f.name).map(f => [f.identity, f.name]));
+  // fighters.json is the rich row; history.fighters is the older, thinner one
+  const rows = (fighters && Array.isArray(fighters.fighters)) ? fighters.fighters : (history.fighters || []);
+  const ladder = (belts && Array.isArray(belts.ladder) && belts.ladder.length) ? belts.ladder.map(String) : DEFAULT_LADDER;
+  const rules = Object.assign({}, DEFAULT_RULES, (belts && belts.rules) || {});
+  const beltState = (belts && belts.belts) || history.belts || (board && board.belts) || {};
+  const profiles = new Map();
+  for (const f of rows) if (f && f.identity) profiles.set(f.identity, Object.assign({}, f));
+  const stub = id => { if (!profiles.has(id)) profiles.set(id, { identity: id, name: null, bow_tick: null }); return profiles.get(id); };
+  for (const id of Object.keys(beltState)) stub(id);
+  for (const r of rounds) for (const e of r.entries || []) { const p = stub(e.identity); if (!p.name && e.name) p.name = e.name; }
+  for (const [id, p] of profiles) {
+    const b = beltState[id];
+    if (b) { if (p.belt == null) p.belt = b.belt; if (p.rank == null) p.rank = b.rank; if (p.points == null) p.points = b.points; }
+    if (p.belt == null) p.belt = ladder[0];
+    if (p.rank == null) p.rank = Math.max(0, ladder.indexOf(String(p.belt)));
+    if (p.points == null) p.points = 0;
+  }
+  const names = new Map(Array.from(profiles.values()).filter(f => f.name).map(f => [f.identity, f.name]));
   return {
     house: history.house || (board && board.house) || '',
     generated_at: history.generated_at || null,
     generated_tick: Math.max(Number(history.generated_tick) || 0, Number(board && board.generated_tick) || 0),
-    rounds, open, fighters, names,
+    rounds, open, fighters: rows, names, profiles, ladder, rules,
+    fightersFile: !!(fighters && Array.isArray(fighters.fighters)),
   };
 }
+
+// Everything the fighter card needs, computed from history.json when the
+// fighters.json row is missing or thin (an older export). A field the export
+// gave is never overwritten: the house's numbers win over ours.
+const FAILURES = new Set(['wrong', 'no_reveal', 'no_commit', 'bad_reveal']);
+function deriveStats(identity) {
+  const d = { rounds_played: 0, solved: 0, wins: 0, losses: 0, staked: 0, earned: 0, strikes: 0, streak: 0, best_streak: 0, by_belt: {}, belt_history: [] };
+  const ticks = [];
+  for (const r of S.data.rounds) {
+    const s = r.settlement, settled = !!s && !s.void;
+    for (const e of r.entries || []) {
+      if (e.identity !== identity) continue;
+      if (e.verdict === 'duplicate' || e.verdict === 'bad_reveal') d.strikes++;
+      if (!COUNTED.has(e.verdict)) continue;
+      d.rounds_played++;
+      if (settled) d.staked += e.stake || 0;
+      const bb = d.by_belt[r.belt || 'open'] || (d.by_belt[r.belt || 'open'] = { rounds: 0, solved: 0, wins: 0, ticks: [] });
+      bb.rounds++;
+      if (e.verdict === 'winner' || e.verdict === 'solved') {
+        d.solved++; bb.solved++;
+        if (e.commit_tick && r.publish_tick) { ticks.push(e.commit_tick - r.publish_tick); bb.ticks.push(e.commit_tick - r.publish_tick); }
+      }
+      if (e.verdict === 'winner') {
+        d.wins++; bb.wins++;
+        if (settled) { d.streak = d.streak >= 0 ? d.streak + 1 : 1; d.best_streak = Math.max(d.best_streak, d.streak); }
+      } else if (settled && FAILURES.has(e.verdict)) {
+        d.losses++; d.streak = d.streak <= 0 ? d.streak - 1 : -1;
+      }
+    }
+    if (settled) {
+      for (const p of s.payouts || []) if (p.identity === identity && (p.kind === 'win' || p.kind === 'bond_release') && p.confirmed) d.earned += p.amount || 0;
+      for (const c of s.belt_changes || []) if (c.identity === identity) {
+        const name = x => typeof x === 'number' ? (S.data.ladder[x] || String(x)) : String(x);
+        d.belt_history.push({ round_id: r.round_id, from: name(c.before ?? c.from), to: name(c.after ?? c.to), reason: c.reason || '' });
+      }
+    }
+  }
+  const avg = xs => xs.length ? Math.round(10 * xs.reduce((a, b) => a + b, 0) / xs.length) / 10 : null;
+  d.net = d.earned - d.staked;
+  d.avg_solve_ticks = avg(ticks);
+  d.best_solve_ticks = ticks.length ? Math.min(...ticks) : null;
+  d.solve_rate = d.rounds_played ? Math.round(100 * d.solved / d.rounds_played) / 100 : null;
+  d.win_rate = d.rounds_played ? Math.round(100 * d.wins / d.rounds_played) / 100 : null;
+  d.win_loss = d.losses ? Math.round(100 * d.wins / d.losses) / 100 : (d.wins ? d.wins : null);
+  for (const bb of Object.values(d.by_belt)) { bb.avg_solve_ticks = avg(bb.ticks); delete bb.ticks; }
+  return d;
+}
+function profileOf(identity) {
+  const p = S.data.profiles.get(identity);
+  if (!p) return null;
+  if (!p._complete) {
+    const d = deriveStats(identity);
+    for (const k of Object.keys(d)) if (p[k] === undefined || p[k] === null && k !== 'solve_rate' && k !== 'win_rate' && k !== 'win_loss' && k !== 'avg_solve_ticks' && k !== 'best_solve_ticks') p[k] = d[k];
+    if (!p.by_belt || !Object.keys(p.by_belt).length) p.by_belt = d.by_belt;
+    if (!Array.isArray(p.belt_history) || !p.belt_history.length) p.belt_history = d.belt_history;
+    p._complete = true;
+  }
+  return p;
+}
+function allProfiles() { return Array.from(S.data.profiles.keys()).map(profileOf); }
+// leaderboard: by net, then wins, then identity (the fighters.json order)
+function byNet(a, b) { return ((b.net || 0) - (a.net || 0)) || ((b.wins || 0) - (a.wins || 0)) || String(a.identity).localeCompare(String(b.identity)); }
 
 // ---------------------------------------------------------------- round helpers
 // Verdicts whose stake stays in the pot. "no_commit" bought a seat and never
@@ -259,7 +362,13 @@ function matchLabel(bps) {
 function payoutModeLabel(r) {
   if (r.payout_mode === 'first') return 'FIRST WINS';
   if (r.payout_mode === 'split') return 'SPLIT';
+  if (r.payout_mode === 'podium') return 'PODIUM 5:3:2';
   return r.payout_mode ? String(r.payout_mode).toUpperCase() : '—';
+}
+const PODIUM_WEIGHTS = [5, 3, 2];
+function bondLabel(r) {
+  if (!r.bond_bps) return '';
+  return `BOND ${(r.bond_bps / 100).toFixed(r.bond_bps % 100 ? 1 : 0)}% · ${fmt(r.bond_rounds)} MORE FIGHT${r.bond_rounds === 1 ? '' : 'S'}`;
 }
 function beltTag(r, cls = '') {
   const b = String(r.belt || '').toLowerCase();
@@ -267,10 +376,16 @@ function beltTag(r, cls = '') {
   const known = BELTS.includes(b) ? b : 'other';
   return `<span class="belt belt-${known} ${cls}" title="${esc(b)} belt">${esc(b.toUpperCase())} BELT</span>`;
 }
+// The coloured belt band on a fighter card.
+function beltBand(belt, cls = '') {
+  const b = String(belt || 'white').toLowerCase();
+  const known = BELTS.includes(b) ? b : 'other';
+  return `<div class="beltband beltband-${known} ${cls}" title="${esc(b)} belt">${esc(b.toUpperCase())} BELT</div>`;
+}
 function seatsText(seats) {
   // "6 / 3" reads like a fraction; say what it means.
   if (!seats.min) return `${seats.bought} SEATED`;
-  return seats.bought >= seats.min ? `${seats.bought} SEATED · ${seats.min} NEEDED` : `${seatsText(seats)}`;
+  return seats.bought >= seats.min ? `${seats.bought} SEATED · ${seats.min} NEEDED` : `${seats.bought} SEATED · ${seats.min - seats.bought} MORE NEEDED`;
 }
 function seatsShort(seats) {
   return seats.min ? `${seats.bought} (${seats.min} needed)` : `${seats.bought}`;
@@ -310,11 +425,11 @@ function callout(r) {
   const counted = (r.entries || []).filter(e => COUNTED.has(e.verdict)).length;
   const solved = (r.entries || []).filter(e => e.verdict === 'solved').length;
   const later = solved ? ` · ${solved} SOLVED LATER, NO PAY` : '';
-  const first = r.payout_mode === 'first';
+  const first = r.payout_mode === 'first', podium = r.payout_mode === 'podium';
   if (n === 0) return { text: 'TIME OVER', cls: 'timeover', sub: 'NO WINNER · POT CARRIES' };
-  if (n === 1) return { text: 'K.O.', cls: 'ko', perfect: counted >= 3, sub: (first ? 'FIRST TO SOLVE TAKES THE POT' : 'ONE WINNER TAKES THE POT') + later };
-  if (n === 2) return { text: 'DOUBLE K.O.', cls: 'ko', sub: 'TWO WINNERS SPLIT THE POT' + later };
-  if (n === 3) return { text: 'TRIPLE K.O.', cls: 'ko', sub: 'THREE WINNERS SPLIT THE POT' + later };
+  if (n === 1) return { text: 'K.O.', cls: 'ko', perfect: counted >= 3, sub: (first ? 'FIRST TO SOLVE TAKES THE POT' : podium ? 'ALONE ON THE PODIUM · TAKES THE POT' : 'ONE WINNER TAKES THE POT') + later };
+  if (n === 2) return { text: 'DOUBLE K.O.', cls: 'ko', sub: (podium ? 'PODIUM · TWO SOLVERS SPLIT 5:3' : 'TWO WINNERS SPLIT THE POT') + later };
+  if (n === 3) return { text: 'TRIPLE K.O.', cls: 'ko', sub: (podium ? 'PODIUM · FIRST THREE SPLIT 5:3:2' : 'THREE WINNERS SPLIT THE POT') + later };
   return { text: `${n}x K.O.`, cls: 'ko', sub: `${n} WINNERS SPLIT THE POT${later}` };
 }
 function winnerNames(r) {
@@ -422,7 +537,7 @@ function renderTitle() {
   }
   if (!d.rounds.length) lines.push('<div class="muted">NO ROUNDS YET. THE BELL HAS NOT RUNG.</div>');
   setHTML('title-ticker', lines.join(''));
-  const roster = d.fighters.filter(f => f.name).slice(0, 8).map(f => `<span class="roster-walk" title="${esc(f.name)}">${avatarSVG(f.identity)}</span>`).join('');
+  const roster = d.fighters.filter(f => f.name).slice(0, 8).map(f => `<a class="roster-walk" href="${fighterHref(f.identity)}" title="${esc(f.name)}">${avatarSVG(f.identity)}</a>`).join('');
   setHTML('title-roster', roster);
   setHTML('title-house', d.house ? `HOUSE ${idLink(d.house)}` : '');
 }
@@ -477,8 +592,8 @@ function fighterCard(e, r, slot) {
   const cls = e.verdict && e.verdict !== 'pending' ? e.verdict : (e.reveal_tick ? 'revealed' : (e.commit_tx ? 'sealed' : 'seated'));
   return `<div class="fcard ${cls}">
     <span class="fslot">${String(slot).padStart(2, '0')}</span>
-    ${avatarSVG(e.identity, 'avatar-lg')}
-    <div class="fname">${displayName(e)}</div>
+    ${fighterLink(e.identity, avatarSVG(e.identity, 'avatar-lg'))}
+    <div class="fname">${fighterLink(e.identity, displayName(e))}</div>
     <div class="fid">${idLink(e.identity)}</div>
     <div class="fstake">STAKE ${qu(e.stake)}</div>
     <div class="fstatus">${entryStatus(e, r)}</div>
@@ -518,8 +633,8 @@ function seatCard(e, r, slot) {
   }
   return `<div class="seat seat-taken">
     <span class="seat-no">SEAT ${String(slot).padStart(2, '0')}</span>
-    <div class="seat-chair taken">${chairSVG()}<span class="seat-sit">${avatarSVG(e.identity, 'avatar-lg')}</span></div>
-    <div class="fname">${displayName(e)}</div>
+    <div class="seat-chair taken">${chairSVG()}<span class="seat-sit">${fighterLink(e.identity, avatarSVG(e.identity, 'avatar-lg'))}</span></div>
+    <div class="fname">${fighterLink(e.identity, displayName(e))}</div>
     <div class="fid">${idLink(e.identity)}</div>
     <div class="fstake">SEAT ${qu(e.stake)}</div>
     <div class="fstatus">${entryStatus(e, r)}</div>
@@ -635,7 +750,7 @@ function renderFight() {
       <div class="fight-head">
         <div class="fight-round">ROUND ${r.round_id}</div>
         <div class="fight-phase"><span class="badge badge-${esc(r.state)}" data-phase-badge="${r.round_id}">${esc(r.state.toUpperCase())}</span> ${esc(r.title)} ${beltTag(r)}</div>
-        <div class="tiny muted">PUBLISHED @ ${fmt(r.publish_tick)} · ${txLink(r.publish_tx, 'TX')}${hasLobby(r) ? ` · SEATS ${seatsShort(seats)}` : ''} · ${esc(payoutModeLabel(r))}</div>
+        <div class="tiny muted">PUBLISHED @ ${fmt(r.publish_tick)} · ${txLink(r.publish_tx, 'TX')}${hasLobby(r) ? ` · SEATS ${seatsShort(seats)}` : ''} · ${esc(payoutModeLabel(r))}${r.bond_bps ? ` · ${esc(bondLabel(r))}` : ''}</div>
       </div>
 
       <div class="cols">
@@ -697,7 +812,7 @@ function entriesTable(r) {
   return `<div class="tscroll"><table>
     <thead><tr><th>FIGHTER</th><th>IDENTITY</th><th class="num">STAKE</th>${lobby ? '<th>SEAT</th>' : ''}<th>COMMIT</th><th>REVEAL</th><th>ANSWER</th><th>VERDICT</th></tr></thead>
     <tbody>${entries.map(e => `<tr class="${e.verdict === 'winner' ? 'winner' : ''}">
-      <td><span class="tname">${avatarSVG(e.identity, 'avatar-sm')} ${displayName(e)}</span></td>
+      <td>${fighterLink(e.identity, `${avatarSVG(e.identity, 'avatar-sm')} ${displayName(e)}`, 'tname')}</td>
       <td>${idLink(e.identity)}</td>
       <td class="num">${fmt(e.stake)}</td>
       ${lobby ? `<td>${e.enter_tx ? txLink(e.enter_tx, '@' + fmt(e.enter_tick)) : '<span class="muted">—</span>'}</td>` : ''}
@@ -708,18 +823,43 @@ function entriesTable(r) {
     </tr>`).join('')}</tbody></table></div>`;
 }
 
-function payoutsTable(s) {
-  if (!s.payouts || !s.payouts.length) return '<p class="muted">No payouts. The house kept the rake; the rest carries.</p>';
-  return `<div class="tscroll"><table>
+const PAYOUT_LABEL = { win: 'WIN', refund: 'REFUND', bond_release: 'BOND RELEASED' };
+function payoutBadge(kind) {
+  const k = String(kind || '');
+  return `<span class="badge badge-${esc(k)}">${esc(PAYOUT_LABEL[k] || k.replace(/_/g, ' ').toUpperCase())}</span>`;
+}
+function bondsHeldTable(s, r) {
+  const held = s.bonds_held || [];
+  if (!held.length) return '';
+  const total = held.reduce((a, b) => a + (b.amount || 0), 0);
+  return `<h3 style="margin-top:20px">BONDS HELD · ${held.length}</h3>
+    <div class="tscroll"><table>
+    <thead><tr><th>WINNER</th><th>KIND</th><th class="num">HELD</th><th>RELEASED WHEN</th></tr></thead>
+    <tbody>${held.map(b => `<tr>
+      <td>${fighterLink(b.identity, `${avatarSVG(b.identity, 'avatar-sm')} ${displayName({ identity: b.identity })}`, 'tname')} ${idLink(b.identity)}</td>
+      <td><span class="badge badge-bond_held">BOND HELD</span></td>
+      <td class="num">${fmt(b.amount)}</td>
+      <td class="tiny">${r && r.bond_rounds ? `AFTER ${fmt(r.bond_rounds)} MORE FIGHT${r.bond_rounds === 1 ? '' : 'S'}` : 'AFTER THE NEXT FIGHTS'}</td>
+    </tr>`).join('')}</tbody></table></div>
+    <p class="tiny muted" style="margin:10px 0 0">${fmt(total)} QU of the winnings stays with the house as the winners' bond${r && r.bond_bps ? ` (${(r.bond_bps / 100).toFixed(r.bond_bps % 100 ? 1 : 0)}% of every win)` : ''}. It is paid out with the settlement of the round in which the winner completes the fights; a holder who never comes back forfeits it to the pot.</p>`;
+}
+function payoutsTable(s, r) {
+  const rows = s.payouts || [];
+  const released = s.bonds_released || [];
+  const forfeited = Number(s.bonds_forfeited) || 0;
+  const table = !rows.length ? '<p class="muted">No payouts. The house kept the rake; the rest carries.</p>' : `<div class="tscroll"><table>
     <thead><tr><th>TO</th><th>KIND</th><th class="num">AMOUNT</th><th>TX</th><th>TICK</th><th>CONFIRMED</th></tr></thead>
-    <tbody>${s.payouts.map(p => `<tr>
-      <td><span class="tname">${avatarSVG(p.identity, 'avatar-sm')} ${displayName({ identity: p.identity })} ${idLink(p.identity)}</span></td>
-      <td><span class="badge badge-${esc(p.kind)}">${esc(String(p.kind).toUpperCase())}</span></td>
+    <tbody>${rows.map(p => {
+      const rel = p.kind === 'bond_release' ? released.find(b => b.identity === p.identity && b.amount === p.amount) : null;
+      return `<tr>
+      <td>${fighterLink(p.identity, `${avatarSVG(p.identity, 'avatar-sm')} ${displayName({ identity: p.identity })}`, 'tname')} ${idLink(p.identity)}</td>
+      <td>${payoutBadge(p.kind)}${rel && rel.bond_round ? ` <a class="tiny" href="#results/${rel.bond_round}">FROM R${rel.bond_round}</a>` : ''}</td>
       <td class="num">${fmt(p.amount)}</td>
       <td>${txLink(p.tx)}</td>
       <td>${p.tick ? fmt(p.tick) : '<span class="muted">—</span>'}</td>
       <td>${p.confirmed ? '<span style="color:var(--green)">YES</span>' : '<span class="blink" style="color:var(--orange)">PENDING</span>'}</td>
-    </tr>`).join('')}</tbody></table></div>`;
+    </tr>`; }).join('')}</tbody></table></div>`;
+  return table + bondsHeldTable(s, r) + (forfeited ? `<p class="tiny" style="margin:10px 0 0;color:var(--orange)">BONDS FORFEITED: ${fmt(forfeited)} QU went to the pot — a holder did not come back to fight.</p>` : '');
 }
 
 function renderResults() {
@@ -765,6 +905,7 @@ function renderResults() {
       <div class="stat"><div class="k">CARRY IN</div><div class="v">${fmt(r.carry_in)}</div></div>
       <div class="stat"><div class="k">ENTRY FEE</div><div class="v">${fmt(r.entry_fee)}</div></div>
       <div class="stat"><div class="k">PAYOUT</div><div class="v small">${esc(payoutModeLabel(r))}</div></div>
+      ${r.bond_bps ? `<div class="stat cyan"><div class="k">BOND</div><div class="v small">${esc(bondLabel(r))}</div></div>` : ''}
       ${seatTile}`;
 
   if (s && s.void) {
@@ -821,18 +962,23 @@ function renderResults() {
     </div>
     <div class="meter" style="margin-bottom:20px"><div class="meter-fill pot" style="width:${potPct.toFixed(1)}%"></div></div>`);
 
-    const winners = (r.entries || []).filter(e => (s.winners || []).includes(e.identity));
+    // winners in the settlement's order: on a podium that is 1st, 2nd, 3rd
+    const podium = r.payout_mode === 'podium';
+    const winners = (s.winners || []).map(id => (r.entries || []).find(e => e.identity === id) || { identity: id }).filter(Boolean);
     const payoutFor = id => (s.payouts || []).find(p => p.identity === id && p.kind === 'win');
+    const bondFor = id => (s.bonds_held || []).find(b => b.identity === id);
+    const wsum = PODIUM_WEIGHTS.slice(0, winners.length).reduce((a, b) => a + b, 0);
     parts.push(`<div class="cols">
       <div class="panel panel-green">
-        <h3>WINNERS</h3>
-        ${winners.length ? `<div class="winners">${winners.map(e => { const p = payoutFor(e.identity); return `<div class="winner-row">
-            ${avatarSVG(e.identity, 'avatar-lg')}
-            <div class="wname">${displayName(e)}<br>${idLink(e.identity)}</div>
-            <div class="wamt">+${fmt(p ? p.amount : 0)} QU${p && p.tx ? `<span class="wtx">${txLink(p.tx, 'PAYOUT TX')}</span>` : ''}</div>
+        <h3>WINNERS${podium ? ' · PODIUM 5:3:2' : ''}</h3>
+        ${winners.length ? `<div class="winners">${winners.map((e, i) => { const p = payoutFor(e.identity), b = bondFor(e.identity); return `<div class="winner-row">
+            ${podium ? `<span class="podium-place place-${i + 1}">${ordinal(i + 1)}</span>` : ''}
+            ${fighterLink(e.identity, avatarSVG(e.identity, 'avatar-lg'))}
+            <div class="wname">${fighterLink(e.identity, displayName(e))}${podium && PODIUM_WEIGHTS[i] ? ` <span class="tiny muted">${PODIUM_WEIGHTS[i]}/${wsum} OF THE POT</span>` : ''}<br>${idLink(e.identity)}</div>
+            <div class="wamt">+${fmt(p ? p.amount : 0)} QU${b ? `<span class="wtx"><span class="badge badge-bond_held">BOND HELD</span> ${fmt(b.amount)} QU</span>` : ''}${p && p.tx ? `<span class="wtx">${txLink(p.tx, 'PAYOUT TX')}</span>` : ''}</div>
           </div>`; }).join('')}</div>`
         : `<p class="muted">Nobody solved it. ${fmt(s.carry)} QU carries into the next round's seed.</p>`}
-        ${(r.entries || []).some(e => e.verdict === 'solved') ? `<p class="tiny muted" style="margin:10px 0 0">SOLVED, NO PAY: ${(r.entries || []).filter(e => e.verdict === 'solved').map(e => nameOf(e) || shortId(e.identity)).map(esc).join(', ')} — correct, but not first. FIRST WINS.</p>` : ''}
+        ${(r.entries || []).some(e => e.verdict === 'solved') ? `<p class="tiny muted" style="margin:10px 0 0">SOLVED, NO PAY: ${(r.entries || []).filter(e => e.verdict === 'solved').map(e => nameOf(e) || shortId(e.identity)).map(esc).join(', ')} — ${podium ? 'correct, but off the podium. THE FIRST THREE SPLIT 5:3:2.' : 'correct, but not first. FIRST WINS.'}</p>` : ''}
       </div>
       <div class="panel panel-yellow">
         <h3>THE ANSWER · VERIFY IT YOURSELF</h3>
@@ -861,30 +1007,260 @@ function renderResults() {
   }
   parts.push(`<div class="panel panel-cyan"><h3>THE RIDDLE</h3>${riddleHTML(r)}</div>`);
   parts.push(`<div class="panel"><h3>${isLobby(r) ? 'SEATS' : 'ENTRIES'} · ${(r.entries || []).length}</h3>${entriesTable(r)}</div>`);
-  if (s) parts.push(`<div class="panel panel-green"><h3>PAYOUTS · ${(s.payouts || []).length}</h3>${payoutsTable(s)}</div>`);
+  if (s) parts.push(`<div class="panel panel-green"><h3>PAYOUTS · ${(s.payouts || []).length}</h3>${payoutsTable(s, r)}</div>`);
   if (setHTML('results-body', parts.join('')) && s) runVerify(r.round_id);
 }
 
+// ---------------------------------------------------------------- fighters
+function fighterNameHTML(f) {
+  return f.name ? esc(f.name) : '<span class="muted">???</span>';
+}
+function strikesHTML(n) {
+  n = Number(n) || 0;
+  if (!n) return '<span class="muted">—</span>';
+  return `<span class="strikes">${'✕'.repeat(Math.min(8, n))}</span>${n > 8 ? ` +${n - 8}` : ''}`;
+}
+function streakHTML(n) {
+  n = Number(n) || 0;
+  if (!n) return '<span class="muted">—</span>';
+  return n > 0 ? `<span style="color:var(--green)">W${n}</span>` : `<span style="color:var(--red)">L${-n}</span>`;
+}
+function beltRank(f) { const i = S.data.ladder.indexOf(String(f.belt || '').toLowerCase()); return i >= 0 ? i : (Number(f.rank) || 0); }
+
+// The hall of fame boards. `metric` is what the board sorts by (higher is
+// better, null keeps the fighter off the board); `score` is what it shows.
+const MIN_ROUNDS = 3;
+const BOARDS = [
+  { key: 'fastest', title: 'FASTEST', sub: 'BEST SOLVE · COMMIT AFTER PUBLISH', cls: 'panel-cyan',
+    metric: f => f.best_solve_ticks == null ? null : -f.best_solve_ticks, score: f => ticksSecs(f.best_solve_ticks) },
+  { key: 'sharpest', title: 'SHARPEST', sub: `SOLVE RATE · MIN ${MIN_ROUNDS} ROUNDS`, cls: 'panel-green',
+    metric: f => (f.rounds_played >= MIN_ROUNDS && f.solve_rate != null) ? f.solve_rate : null, score: f => `${pct(f.solve_rate)} <span class="tiny muted">${fmt(f.solved)}/${fmt(f.rounds_played)}</span>` },
+  { key: 'winrate', title: 'WIN RATE', sub: `WINS PER ROUND · MIN ${MIN_ROUNDS} ROUNDS`, cls: 'panel-yellow',
+    metric: f => (f.rounds_played >= MIN_ROUNDS && f.win_rate != null) ? f.win_rate : null, score: f => `${pct(f.win_rate)} <span class="tiny muted">${fmt(f.wins)}/${fmt(f.rounds_played)}</span>` },
+  { key: 'winloss', title: 'WIN/LOSS', sub: `WINS PER LOSS · MIN ${MIN_ROUNDS} ROUNDS`, cls: 'panel-red',
+    metric: f => (f.rounds_played >= MIN_ROUNDS && f.win_loss != null) ? f.win_loss : null, score: f => `${Number(f.win_loss).toFixed(2)} <span class="tiny muted">${fmt(f.wins)}W ${fmt(f.losses)}L</span>` },
+  { key: 'streak', title: 'IRON STREAK', sub: 'MOST WINS IN A ROW', cls: 'panel-red',
+    metric: f => f.best_streak > 0 ? f.best_streak : null, score: f => `W${fmt(f.best_streak)} <span class="tiny muted">NOW ${streakHTML(f.streak)}</span>` },
+  { key: 'belt', title: 'HIGHEST BELT', sub: 'BELT, THEN POINTS', cls: 'panel-cyan',
+    metric: f => beltRank(f) * 100 + (Number(f.points) || 0), score: f => `${beltTag({ belt: f.belt }, 'belt-sm')} <span class="tiny muted">${signed(f.points)}</span>` },
+  { key: 'fights', title: 'MOST FIGHTS', sub: 'ROUNDS PLAYED', cls: 'panel-yellow',
+    metric: f => f.rounds_played > 0 ? f.rounds_played : null, score: f => `${fmt(f.rounds_played)} <span class="tiny muted">${fmt(f.wins)} WON</span>` },
+];
+function boardHTML(b, all) {
+  const rows = all.map(f => ({ f, m: b.metric(f) })).filter(x => x.m !== null && x.m !== undefined && !Number.isNaN(x.m))
+    .sort((x, y) => (y.m - x.m) || byNet(x.f, y.f)).slice(0, 8);
+  return `<div class="panel board ${b.cls}">
+    <h3>${b.title}<small>${b.sub}</small></h3>
+    ${rows.length ? `<table class="score-table"><tbody>${rows.map((x, i) => `<tr>
+      <td class="rank rank-${i + 1}">${ordinal(i + 1)}</td>
+      <td>${fighterLink(x.f.identity, `${avatarSVG(x.f.identity, 'avatar-sm')} ${fighterNameHTML(x.f)}`, 'tname')}</td>
+      <td class="num score">${b.score(x.f)}</td>
+    </tr>`).join('')}</tbody></table>` : '<p class="muted tiny" style="margin:0">NOBODY QUALIFIES YET</p>'}
+  </div>`;
+}
+
 function renderFame() {
-  const d = S.data;
-  const rows = d.fighters.slice().sort((a, b) => (b.earned - a.earned) || (b.wins - a.wins) || (b.rounds_played - a.rounds_played) || String(a.name || '').localeCompare(String(b.name || '')));
-  const parts = [`<h2 class="screen-title">HALL OF FAME<small>HIGH SCORES · EARNED QU SINCE ROUND 1 · BELTS COME LATER</small></h2>`];
-  if (!rows.length) parts.push('<div class="panel"><p class="muted">No fighter has bowed yet.</p></div>');
-  else parts.push(`<div class="panel panel-yellow"><div class="tscroll"><table class="fame-table">
-    <thead><tr><th>RANK</th><th>FIGHTER</th><th>IDENTITY</th><th class="num">WINS</th><th class="num">PLAYED</th><th class="num">EARNED QU</th><th>STRIKES</th><th>BOWED</th></tr></thead>
+  const all = allProfiles();
+  const rows = all.slice().sort(byNet);
+  const parts = [`<h2 class="screen-title">HALL OF FAME<small>HIGH SCORES SINCE ROUND 1 · ${all.length} FIGHTERS · <a href="#fighters">FIGHTER SELECT</a></small></h2>`];
+  if (!rows.length) { parts.push('<div class="panel"><p class="muted">No fighter has bowed yet.</p></div>'); setHTML('fame-body', parts.join('')); return; }
+  parts.push(`<div class="panel panel-yellow board-main"><h3>RICHEST<small>NET QU · EARNED − STAKED</small></h3><div class="tscroll"><table class="fame-table">
+    <thead><tr><th>RANK</th><th>FIGHTER</th><th>IDENTITY</th><th>BELT</th><th class="num">WINS</th><th class="num">PLAYED</th><th class="num">EARNED QU</th><th class="num">NET QU</th><th>STRIKES</th><th>BOWED</th></tr></thead>
     <tbody>${rows.map((f, i) => `<tr>
       <td class="rank rank-${i + 1}">${ordinal(i + 1)}</td>
-      <td><span class="tname">${avatarSVG(f.identity)} ${f.name ? esc(f.name) : '<span class="muted">???</span>'}${f.name ? '' : ' <span class="badge">STRANGER</span>'}</span></td>
+      <td>${fighterLink(f.identity, `${avatarSVG(f.identity)} ${fighterNameHTML(f)}`, 'tname')}${f.name ? '' : ' <span class="badge">STRANGER</span>'}</td>
       <td>${idLink(f.identity)}</td>
+      <td>${beltTag({ belt: f.belt }, 'belt-sm')} <span class="tiny muted">${signed(f.points)}</span></td>
       <td class="num">${fmt(f.wins)}</td>
       <td class="num">${fmt(f.rounds_played)}</td>
       <td class="num qu">${fmt(f.earned)}</td>
-      <td><span class="strikes">${'✕'.repeat(Math.min(8, f.strikes || 0))}</span>${f.strikes > 8 ? ` +${f.strikes - 8}` : ''}${!f.strikes ? '<span class="muted">—</span>' : ''}</td>
+      <td class="num ${Number(f.net) < 0 ? 'neg' : 'pos'}">${signed(f.net)}</td>
+      <td>${strikesHTML(f.strikes)}</td>
       <td>${f.bow_tick ? '@' + fmt(f.bow_tick) : '<span class="muted">never</span>'}</td>
     </tr>`).join('')}</tbody></table></div>
-    <p class="tiny muted" style="margin:12px 0 0">A stranger has not bowed. Strikes: duplicate commits, malformed payloads, reveals without a commit, spam. Phase one evicts on them.</p>
+    <p class="tiny muted" style="margin:12px 0 0">A stranger has not bowed. Strikes: duplicate commits, malformed payloads, reveals without a commit, spam. Phase one evicts on them. Belts: winner +${S.data.rules.winner}, solved +${S.data.rules.solved}, failure ${S.data.rules.failure}; ${signed(S.data.rules.promote_at)} promotes, ${signed(S.data.rules.demote_at)} demotes; a win above your belt promotes you straight there.</p>
     </div>`);
+  parts.push(`<div class="boards">${BOARDS.map(b => boardHTML(b, all)).join('')}</div>`);
+  const clean = all.filter(f => f.rounds_played > 0 && !(Number(f.strikes) || 0)).sort(byNet);
+  parts.push(`<div class="panel panel-green clean-record"><h3>CLEAN RECORD<small>FOUGHT, NEVER STRUCK</small></h3>
+    ${clean.length ? `<div class="clean-list">${clean.map(f => fighterLink(f.identity, `${avatarSVG(f.identity, 'avatar-sm')} ${fighterNameHTML(f)}`, 'tname chip-name')).join('')}</div>` : '<p class="muted tiny" style="margin:0">NOBODY YET · EVERY FIGHTER HAS A STRIKE</p>'}
+    <p class="tiny muted" style="margin:10px 0 0">No duplicate commit, no bad reveal, no spam — ${clean.length} of ${all.filter(f => f.rounds_played > 0).length} who fought.</p>
+  </div>`);
   setHTML('fame-body', parts.join(''));
+}
+
+// FIGHTER SELECT: every fighter as a card, best net first.
+function selectCard(f, i) {
+  return `<a class="scard belt-b-${esc(String(f.belt || 'white').toLowerCase())}" href="${fighterHref(f.identity)}">
+    <span class="scard-no">${String(i + 1).padStart(2, '0')}</span>
+    ${avatarSVG(f.identity, 'avatar-xl')}
+    <div class="scard-name">${f.name ? esc(f.name) : '<span class="muted">STRANGER</span>'}</div>
+    ${beltBand(f.belt, 'beltband-sm')}
+    <div class="scard-net ${Number(f.net) < 0 ? 'neg' : 'pos'}">${signed(f.net)} QU</div>
+    <div class="scard-sub">${fmt(f.wins)} W · ${fmt(f.losses)} L · ${fmt(f.rounds_played)} FIGHTS</div>
+    <div class="scard-sub muted">${f.solve_rate == null ? 'NO SOLVES YET' : `SOLVES ${pct(f.solve_rate)}`}${f.best_solve_ticks != null ? `  · BEST ${fmt(f.best_solve_ticks)}T` : ''}</div>
+  </a>`;
+}
+function renderFighters() {
+  const all = allProfiles().sort(byNet);
+  const parts = [`<h2 class="screen-title">FIGHTER SELECT<small>${all.length} FIGHTERS · SORTED BY NET QU · PICK ONE FOR THE CARD</small></h2>`];
+  if (!all.length) parts.push('<div class="panel"><p class="muted">No fighter has bowed yet.</p></div>');
+  else parts.push(`<div class="grid-select">${all.map(selectCard).join('')}</div>`);
+  setHTML('fighters-body', parts.join(''));
+}
+
+// The points meter: cells from demote_at to promote_at, lit from zero toward
+// the fighter's points.
+function pointsMeter(points, rules) {
+  const lo = Number(rules.demote_at) || -3, hi = Number(rules.promote_at) || 3;
+  const p = Math.max(lo, Math.min(hi, Number(points) || 0));
+  const cells = [];
+  for (let v = lo; v <= hi; v++) {
+    const lit = v === 0 ? 'zero' : (v < 0 && v >= p) ? 'lit neg' : (v > 0 && v <= p) ? 'lit pos' : '';
+    cells.push(`<span class="pts-cell ${lit} ${v === p ? 'cur' : ''}" title="${signed(v)}">${v === 0 ? '0' : signed(v)}</span>`);
+  }
+  return `<div class="pts">
+    <span class="pts-end pts-demote">DEMOTE<br>${signed(lo)}</span>
+    <div class="pts-track">${cells.join('')}</div>
+    <span class="pts-end pts-promote">PROMOTE<br>${signed(hi)}</span>
+  </div>`;
+}
+
+function fightsOf(identity) {
+  const out = [];
+  for (const r of S.data.rounds) {
+    for (const e of r.entries || []) {
+      if (e.identity !== identity) continue;
+      const s = r.settlement;
+      const pays = ((s && s.payouts) || []).filter(p => p.identity === identity);
+      const win = pays.filter(p => p.kind === 'win').reduce((a, p) => a + (p.amount || 0), 0);
+      const refund = pays.filter(p => p.kind === 'refund').reduce((a, p) => a + (p.amount || 0), 0);
+      const release = pays.filter(p => p.kind === 'bond_release').reduce((a, p) => a + (p.amount || 0), 0);
+      const held = ((s && s.bonds_held) || []).filter(b => b.identity === identity).reduce((a, b) => a + (b.amount || 0), 0);
+      const latency = (e.commit_tick && r.publish_tick) ? e.commit_tick - r.publish_tick : null;
+      // what this round did to the fighter's balance: every stake went out, refunds bring it back
+      out.push({ r, e, win, refund, release, held, latency, net: s ? win + refund + release - (e.stake || 0) : null });
+    }
+  }
+  return out.sort((a, b) => (b.r.round_id - a.r.round_id) || (entryTick(b.e) - entryTick(a.e)));
+}
+
+function renderFighter() {
+  const d = S.data;
+  const id = S.fighter;
+  const p = id ? profileOf(id) : null;
+  if (!p) {
+    setHTML('fighter-body', `<h2 class="screen-title">FIGHTER CARD<small>${id ? 'UNKNOWN FIGHTER' : 'PICK A FIGHTER'}</small></h2>
+      <div class="panel"><p class="muted">${id ? `${esc(shortId(id))} has not fought here. ${idLink(id)}` : 'Nobody selected.'}</p>
+      <a class="btn btn-sm btn-cyan" href="#fighters">FIGHTER SELECT</a></div>`);
+    return;
+  }
+  const all = allProfiles().sort(byNet);
+  const place = all.findIndex(f => f.identity === id) + 1;
+  const ladderIdx = beltRank(p);
+  const parts = [];
+  parts.push(`<div class="res-head">
+    <h2 class="screen-title" style="margin:0">FIGHTER CARD<small>${p.name ? esc(p.name) : 'STRANGER'} · ${ordinal(place)} OF ${all.length} BY NET</small></h2>
+    <div class="spacer"></div>
+    <div class="res-nav">
+      <a class="btn btn-sm btn-cyan" href="#fighters">ALL FIGHTERS</a>
+      <a class="btn btn-sm" href="#fame">HALL OF FAME</a>
+    </div>
+  </div>`);
+
+  parts.push(`<div class="cols profile-cols">
+    <div class="panel panel-yellow fcb belt-b-${esc(String(p.belt || 'white').toLowerCase())}">
+      <div class="fcb-top">
+        <div class="fcb-avatar">${avatarSVG(p.identity, 'avatar-xl')}</div>
+        <div class="fcb-info">
+          <div class="fcb-name">${p.name ? esc(p.name) : 'STRANGER'}</div>
+          ${p.name ? '' : '<div class="tiny muted">HAS NOT BOWED · NO NAME ON RECORD</div>'}
+          <div class="fcb-id">${idLink(p.identity)} <span class="tiny muted">EXPLORER</span></div>
+          <div class="fcb-meta">
+            <span>BOWED ${p.bow_tick ? '@' + fmt(p.bow_tick) : '<span class="muted">NEVER</span>'}</span>
+            <span>RANK ${ladderIdx + 1} / ${d.ladder.length}</span>
+            <span>${ordinal(place)} BY NET</span>
+          </div>
+        </div>
+      </div>
+      ${beltBand(p.belt)}
+      ${pointsMeter(p.points, d.rules)}
+      <div class="pts-label">POINTS <b>${signed(p.points)}</b> · WINNER +${d.rules.winner} · SOLVED +${d.rules.solved} · FAILURE ${d.rules.failure} · ${signed(d.rules.promote_at)} PROMOTES · ${signed(d.rules.demote_at)} DEMOTES</div>
+    </div>
+
+    <div class="panel panel-cyan">
+      <h3>STATS</h3>
+      <div class="stats stats-profile" style="margin-bottom:0">
+        <div class="stat"><div class="k">ROUNDS</div><div class="v">${fmt(p.rounds_played)}</div></div>
+        <div class="stat cyan"><div class="k">SOLVED</div><div class="v">${fmt(p.solved)}</div></div>
+        <div class="stat green"><div class="k">WINS</div><div class="v">${fmt(p.wins)}</div></div>
+        <div class="stat red"><div class="k">LOSSES</div><div class="v">${fmt(p.losses)}</div></div>
+        <div class="stat"><div class="k">SOLVE RATE</div><div class="v">${pct(p.solve_rate)}</div></div>
+        <div class="stat"><div class="k">WIN RATE</div><div class="v">${pct(p.win_rate)}</div></div>
+        <div class="stat"><div class="k">WIN / LOSS</div><div class="v">${p.win_loss == null ? '—' : Number(p.win_loss).toFixed(2)}</div></div>
+        <div class="stat cyan"><div class="k">AVG SOLVE</div><div class="v small">${ticksSecs(p.avg_solve_ticks)}</div></div>
+        <div class="stat cyan"><div class="k">BEST SOLVE</div><div class="v small">${ticksSecs(p.best_solve_ticks)}</div></div>
+        <div class="stat"><div class="k">STAKED</div><div class="v">${fmt(p.staked)}</div></div>
+        <div class="stat green"><div class="k">EARNED</div><div class="v">${fmt(p.earned)}</div></div>
+        <div class="stat ${Number(p.net) < 0 ? 'red' : 'green'}"><div class="k">NET</div><div class="v ${Number(p.net) < 0 ? 'neg' : 'pos'}">${signed(p.net)}</div></div>
+        <div class="stat"><div class="k">STREAK</div><div class="v">${streakHTML(p.streak)}</div></div>
+        <div class="stat"><div class="k">BEST STREAK</div><div class="v">${p.best_streak ? 'W' + fmt(p.best_streak) : '—'}</div></div>
+        <div class="stat red"><div class="k">STRIKES</div><div class="v">${strikesHTML(p.strikes)}</div></div>
+      </div>
+      <p class="tiny muted" style="margin:10px 0 0">Solve time is the commit tick minus the publish tick; 1 tick ≈ ${(TICK_MS / 1000).toFixed(1)} s. Net is earned minus staked; a bond still held is not earned yet.</p>
+    </div>
+  </div>`);
+
+  // per-belt table, in ladder order, open tables last
+  const belts = Object.keys(p.by_belt || {}).sort((a, b) => {
+    const ia = d.ladder.indexOf(a), ib = d.ladder.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
+  });
+  const hist = (p.belt_history || []).slice().sort((a, b) => a.round_id - b.round_id);
+  const reasonLabel = s => String(s || '').replace(/_/g, ' ').toUpperCase();
+  parts.push(`<div class="cols">
+    <div class="panel">
+      <h3>BY BELT</h3>
+      ${belts.length ? `<div class="tscroll"><table>
+        <thead><tr><th>TABLE</th><th class="num">ROUNDS</th><th class="num">SOLVED</th><th class="num">WINS</th><th class="num">AVG SOLVE</th></tr></thead>
+        <tbody>${belts.map(k => { const b = p.by_belt[k]; return `<tr>
+          <td>${d.ladder.includes(k) || BELTS.includes(k) ? beltTag({ belt: k }, 'belt-sm') : `<span class="belt belt-other belt-sm">${esc(k.toUpperCase())} TABLE</span>`}</td>
+          <td class="num">${fmt(b.rounds)}</td><td class="num">${fmt(b.solved)}</td><td class="num">${fmt(b.wins)}</td>
+          <td class="num">${ticksSecs(b.avg_solve_ticks)}</td>
+        </tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">No rounds fought yet.</p>'}
+    </div>
+    <div class="panel panel-green">
+      <h3>BELT HISTORY</h3>
+      <div class="tl">
+        <div class="tl-row tl-start"><span class="tl-dot"></span><span class="tl-when">${p.bow_tick ? 'BOW @' + fmt(p.bow_tick) : 'FIRST SEEN'}</span><span class="tl-what">${beltTag({ belt: d.ladder[0] }, 'belt-sm')} <span class="muted">EVERYONE STARTS HERE</span></span></div>
+        ${hist.map(h => `<a class="tl-row" href="#results/${h.round_id}"><span class="tl-dot ${h.reason === 'demoted' ? 'down' : 'up'}"></span><span class="tl-when">ROUND ${h.round_id}</span><span class="tl-what">${beltTag({ belt: h.from }, 'belt-sm')} <span class="tl-arrow">${h.reason === 'demoted' ? '▼' : '▶'}</span> ${beltTag({ belt: h.to }, 'belt-sm')} <span class="badge ${h.reason === 'demoted' ? 'badge-wrong' : 'badge-winner'}">${esc(reasonLabel(h.reason))}</span></span></a>`).join('')}
+        ${hist.length ? '' : '<div class="tl-row"><span class="tl-dot"></span><span class="tl-when">—</span><span class="tl-what muted">NO BELT CHANGE YET</span></div>'}
+      </div>
+    </div>
+  </div>`);
+
+  const fights = fightsOf(id);
+  parts.push(`<div class="panel panel-red"><h3>RECENT FIGHTS · ${fights.length}</h3>
+    ${fights.length ? `<div class="hist-list">${fights.map(x => {
+      const { r, e } = x;
+      const bits = [];
+      bits.push(x.latency !== null ? `SOLVE ${ticksSecs(x.latency)}` : (e.commit_tick ? '' : 'NO COMMIT'));
+      bits.push(`STAKE ${fmt(e.stake)}`);
+      if (x.win) bits.push(`PAID +${fmt(x.win)}`);
+      if (x.held) bits.push(`BOND HELD ${fmt(x.held)}`);
+      if (x.release) bits.push(`BOND RELEASED +${fmt(x.release)}`);
+      if (x.refund) bits.push(`REFUNDED ${fmt(x.refund)}`);
+      if (!r.settlement) bits.push(`${esc(r.state.toUpperCase())} · STILL OPEN`);
+      const amt = x.net === null ? '<span class="muted">…</span>' : `${signed(x.net)}<small>QU</small>`;
+      return `<a class="hist-row ${x.net === null ? 'open' : ''}" href="#results/${r.round_id}">
+        <div class="hr-num">R${String(r.round_id).padStart(2, '0')}</div>
+        <div><div class="hr-title">${esc(r.title)} ${beltTag(r, 'belt-sm')} ${entryStatus(e, r)}</div>
+          <div class="hr-sub">${bits.filter(Boolean).join(' · ')} · ${esc(payoutModeLabel(r))}</div></div>
+        <div class="hr-call ${x.net === null ? 'progress' : x.net > 0 ? 'progress' : x.net < 0 ? '' : 'timeover'}">${amt}</div>
+      </a>`;
+    }).join('')}</div>` : '<p class="muted">No fights on record.</p>'}
+  </div>`);
+  setHTML('fighter-body', parts.join(''));
 }
 
 function renderHistory() {
@@ -941,7 +1317,8 @@ function renderJoin() {
           <dt>COMMIT</dt><dd>${open ? `${fmt(open.commit_window)} ticks (~${ticksToHuman(open.commit_window)})` : '—'}</dd>
           <dt>REVEAL</dt><dd>${open ? `${fmt(open.reveal_window)} ticks (~${ticksToHuman(open.reveal_window)})` : '—'}</dd>
           <dt>SEED</dt><dd>${open ? `${open.match_bps ? `house matches stakes ${esc(matchLabel(open.match_bps))} up to ${fmt(open.house_seed)}` : `fixed ${fmt(open.house_seed)}`} + carry in` : 'carry in + matched stakes up to the cap'}</dd>
-          <dt>PAYOUT</dt><dd>${open ? `${esc(payoutModeLabel(open))} · ` : ''}(pot − rake) ÷ winners, remainder carries${open && open.payout_mode === 'first' ? '; first commit tick wins, later solvers get nothing' : ''}</dd>
+          <dt>PAYOUT</dt><dd>${open ? `${esc(payoutModeLabel(open))} · ` : ''}${open && open.payout_mode === 'podium' ? 'the first three correct commits split (pot − rake) 5:3:2, later solvers get nothing' : `(pot − rake) ÷ winners, remainder carries${open && open.payout_mode === 'first' ? '; first commit tick wins, later solvers get nothing' : ''}`}</dd>
+          ${open && open.bond_bps ? `<dt>BOND</dt><dd>${esc(bondLabel(open))}: that share of every win stays with the house until the winner has fought again</dd>` : ''}
           <dt>NO WINNER</dt><dd>pot − rake carries to the next round</dd>
           <dt>NO TABLE</dt><dd>a lobby that does not fill is void: every seat refunded</dd>
           <dt>REFUNDS</dt><dd>underpaid or late commits, in full; a seat with no commit is forfeited</dd>
@@ -984,7 +1361,7 @@ function renderStatus() {
 
 function renderAll() {
   if (!S.data) return;
-  renderTitle(); renderFight(); renderResults(); renderFame(); renderHistory(); renderJoin(); renderFooter(); renderStatus();
+  renderTitle(); renderFight(); renderResults(); renderFame(); renderFighters(); renderFighter(); renderHistory(); renderJoin(); renderFooter(); renderStatus();
   updateTicks();
 }
 
@@ -1085,9 +1462,9 @@ function diffCallouts(data) {
 // ---------------------------------------------------------------- polling
 async function poll() {
   try {
-    const { history, board, source } = await loadData();
-    const data = normalise(history, board);
-    const key = JSON.stringify([history, board]);
+    const { history, board, fighters, belts, source } = await loadData();
+    const data = normalise(history, board, fighters, belts);
+    const key = JSON.stringify([history, board, fighters, belts]);
     const changed = !S.data || key !== S.rawKey;
     S.rawKey = key;
     if (source === 'live') { S.liveSeen = true; S.lastLiveOk = Date.now(); }
@@ -1104,18 +1481,26 @@ async function poll() {
 }
 
 // ---------------------------------------------------------------- navigation
-const SCREENS = ['title', 'fight', 'results', 'fame', 'history', 'join'];
+const SCREENS = ['title', 'fight', 'results', 'fame', 'fighters', 'history', 'join', 'fighter'];
 function parseHash() {
   const h = (location.hash || '#title').slice(1);
-  const [name, arg] = h.split('/');
-  return { name: SCREENS.includes(name) ? name : 'title', arg };
+  const i = h.indexOf('/');
+  let name = i < 0 ? h : h.slice(0, i), arg = i < 0 ? undefined : h.slice(i + 1);
+  if (!SCREENS.includes(name)) name = 'title';
+  if (name === 'fighter' && !arg) name = 'fighters';   // #fighter alone is the select grid
+  return { name, arg };
 }
 function applyHash() {
   const { name, arg } = parseHash();
   if (name === 'results' && arg && /^\d+$/.test(arg)) { S.round = Number(arg); if (S.data) renderResults(); }
+  if (name === 'fighter') {
+    let id = arg; try { id = decodeURIComponent(arg); } catch (e) { /* keep raw */ }
+    S.fighter = id.toUpperCase();
+    if (S.data) renderFighter();
+  }
   S.screen = name;
   $$('.screen').forEach(s => s.classList.toggle('active', s.dataset.screen === name));
-  $$('.hud-nav a').forEach(a => a.classList.toggle('on', a.dataset.screen === name));
+  $$('.hud-nav a').forEach(a => a.classList.toggle('on', a.dataset.screen === name || (name === 'fighter' && a.dataset.screen === 'fighters')));
   window.scrollTo({ top: 0 });
 }
 function go(name, arg) {
@@ -1125,7 +1510,7 @@ function go(name, arg) {
 
 // attract mode: cycle the screens until somebody touches the cabinet
 let attractTimer = null;
-const ATTRACT = [['title', 9000], ['fight', 22000], ['results', 16000], ['fame', 12000], ['history', 10000]];
+const ATTRACT = [['title', 9000], ['fight', 22000], ['results', 16000], ['fame', 12000], ['fighters', 9000], ['fighter', 12000], ['history', 10000]];
 let attractIdx = 0;
 function attractStep() {
   if (!S.attract) return;
@@ -1135,6 +1520,11 @@ function attractStep() {
     const settled = S.data.rounds.filter(r => r.settlement);
     if (settled.length) { const r = settled[Math.floor(Math.random() * settled.length)]; go('results', r.round_id); }
     else go('results');
+  } else if (name === 'fighter') {
+    // a random fighter card, someone who actually fought
+    const fought = S.data ? allProfiles().filter(f => f.rounds_played > 0) : [];
+    if (fought.length) go('fighter', fought[Math.floor(Math.random() * fought.length)].identity);
+    else go('fighters');
   } else go(name);
   attractTimer = setTimeout(attractStep, ms);
 }
@@ -1205,7 +1595,7 @@ function wire() {
       if (e.key === 'ArrowRight' && i < ids.length - 1) go('results', ids[i + 1]);
     }
     const n = parseInt(e.key, 10);
-    if (n >= 1 && n <= SCREENS.length && !e.metaKey && !e.ctrlKey && !e.altKey) go(SCREENS[n - 1]);
+    if (n >= 1 && n <= 7 && !e.metaKey && !e.ctrlKey && !e.altKey) go(SCREENS[n - 1]);
   });
 
   try { if (localStorage.getItem('qdojo.crt') === '0') $('#btn-crt').click(); } catch (e) { /* ignore */ }
