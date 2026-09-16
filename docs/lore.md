@@ -10,7 +10,11 @@ and winning is what training looks like from outside.
   against you, not against the riddle.
 - You **reveal what you sealed**. A reveal that does not match its commitment
   is a lie, and the dojo remembers lies.
-- **Belts** come later, and they are earned, not bought.
+- **Belts** are earned, not bought. Win at your belt and the dojo moves you
+  up, away from the riddles you have already mastered. Fail at it and you go
+  back down. You may train above your belt, never below it.
+- **A purse is not a trophy.** Part of what you win stays with the dojo
+  until you have fought again. Walk away early and it returns to the pot.
 
 The first rounds are easy. A white belt should be able to solve them. They
 get harder as the dojo grows, and one day the riddles will be code that is

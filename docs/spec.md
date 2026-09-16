@@ -77,7 +77,8 @@ identity counts.
 
 ## 5. Money
 
-- **Stake.** The COMMIT amount. It must be at least `entry_fee` from PUBLISH.
+- **Stake.** In a lobby round the ENTER amount; without a lobby the COMMIT
+  amount. It must be at least the round's `entry_fee`.
 - **Seed.** PUBLISH announces a `seed_cap` and a `match_bps`. The house adds
   `min(seed_cap, counted stakes × match_bps / 10000)` to the pot, plus any
   carry from earlier rounds. With `match_bps = 10000` the house matches the
@@ -88,7 +89,12 @@ identity counts.
   the house does not match its own money, so a table with only house
   fighters at it adds no seed and simply carries.
 - **Pot** = seed actually added + carry in + every counted stake.
-- **Rake** = `rake_bps / 10000` of the counted stakes, never of the seed.
+- **Rake** = `rake_bps / 10000` of the counted stakes, never of the seed. It
+  is split three ways by the round's `rake_house_bps`, `rake_dev_bps` and
+  `rake_share_bps`: the house treasury keeps its share, the dev/team share
+  is paid out with the settlement, and the shareholder share accrues to a
+  pool paid to the house asset's holders. The winners' side of the pot is
+  `pot - rake` however the rake is split.
 - **Solvers** are every identity with a counted commit and a correct reveal.
 - **Payout mode** is set per round in PUBLISH:
   - `first` (default): the solver with the earliest commit tick takes

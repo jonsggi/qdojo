@@ -9,9 +9,13 @@
   parses stdout for the marker that proves success and treats its absence as
   failure, with an explicit timeout on every call.
 - **No seed anywhere but a 0600 conf.** Never argv, never stdout, never a
-  log, never git. `bin/audit-secrets` style scanning is on the roadmap.
+  log, never git. `.githooks/pre-commit` refuses any commit that stages a
+  `seed=` line or a bare 55-character lowercase token, and runs the tests;
+  wire it once with `make hooks`.
 - **Money moves only from a plan you can read.** `settle` prints the plan
   and sends nothing unless `--apply` is given. Applied sends are confirmed by
   tick inclusion and by balance re-read.
 - **Docs are specs.** A change in behaviour changes `docs/spec.md` in the
-  same commit.
+  same commit, and anything a bot developer can see changes `docs/api.md`.
+  The wire format is `docs/protocol.md`; what we have measured about the
+  mechanics is `docs/model.md`.
