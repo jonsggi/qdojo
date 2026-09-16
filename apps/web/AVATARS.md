@@ -11,6 +11,12 @@ an identity appears.
 - Four kits: **Dojo striker**, **Street brawler**, **Circuit sentinel**, and
   **Neon shinobi**. Hair, headgear, skin, outfit and accent variations distinguish
   the roster. Legacy skin/outfit/hair colour picks are retained where visible.
+- Female and male character variants are available across all kits, guards and
+  outfit palettes. Female fighters have authored bob/ponytail/braid/sidecut
+  silhouettes, tailored fighting gear, reinforced boots, and sports tops under
+  brawler vests. Armoured and hooded variants retain their protection and wear a
+  visible braid. This is a fictional **character** trait, not the wallet owner's
+  gender, and it carries no gameplay or rarity advantage.
 - Large fighter cards use a 64×64 composition with a kit-specific pixel backdrop;
   leaderboard thumbnails use a tight portrait crop. Arena fighters remain
   transparent sprites, including the existing lobby seats.
@@ -29,13 +35,15 @@ QDojoAvatars.svg(identity);                // standalone collectible composition
 QDojoAvatars.svg(identity, 'sprite');      // transparent 32×32 sprite
 QDojoAvatars.svg(identity, 'portrait');    // compact portrait
 QDojoAvatars.traits(identity);             // frozen descriptive traits
-QDojoAvatars.version;                     // qdojo-fighters-v1-preview
+QDojoAvatars.version;                     // qdojo-fighters-v2-preview
 ```
 
 The SVG export is artwork only. It contains no wallet secrets or user-provided
 markup. Rasterize at a suitable integer scale with nearest-neighbour/crisp-edge
 rendering; inspect the exported image at its actual display sizes. No names or
-live stats are baked into the master.
+live stats are baked into the master. Version 2 adds identity-derived female
+variants; it changes some version-1 preview artwork. No tokens have been minted
+by this implementation. Freeze the actual assets before a collection release.
 
 Run the dependency-free regression suite:
 

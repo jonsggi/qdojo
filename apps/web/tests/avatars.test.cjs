@@ -67,7 +67,42 @@ test('each sprite uses compact colour paths with bounded integer pixel runs', ()
   }
 });
 
-test('versioned preview fixture detects unintended artwork changes', () => {
-  const digest = createHash('sha256').update(avatars.svg(identity)).digest('hex');
-  assert.equal(digest, 'b15d49944db06f966eb8f991bb10c9c1129ed92a7895b904e77e00a39587c094');
+test('both character variants appear across all kits, guards, and palettes', () => {
+  const groups = new Map(), styles = new Set();
+  for (let i = 0; i < 1000; i++) {
+    const t = avatars.traits(`coverage-${i}`);
+    assert.ok(['Female', 'Male'].includes(t.character));
+    for (const key of [`kit:${t.archetype}`, `guard:${t.stance}`, `outfit:${t.outfit}`]) {
+      if (!groups.has(key)) groups.set(key, new Set());
+      groups.get(key).add(t.character);
+    }
+    if (t.character === 'Female') {
+      styles.add(t.hairstyle);
+      assert.match(t.hair, /^#[0-9a-f]{6}$/);
+      if (['Circuit sentinel', 'Neon shinobi'].includes(t.archetype)) {
+        assert.equal(t.hairstyle, 'Armoured braid');
+        assert.match(t.headgear, /helmet|hood/i);
+      }
+    }
+  }
+  assert.equal(groups.size, 4 + 3 + 10);
+  for (const [key, characters] of groups) assert.equal(characters.size, 2, key);
+  assert.deepEqual([...styles].sort(), ['Armoured braid', 'Combat bob', 'High ponytail', 'Long braid', 'Sidecut']);
+});
+
+test('the public roster includes female and male fighters', () => {
+  const { fighters } = JSON.parse(readFileSync(require('node:path').join(__dirname, '../data/fighters.json'), 'utf8'));
+  const characters = new Set(fighters.map(f => avatars.traits(f.identity).character));
+  assert.deepEqual([...characters].sort(), ['Female', 'Male']);
+});
+
+test('versioned preview fixtures cover both character variants', () => {
+  assert.equal(avatars.version, 'qdojo-fighters-v2-preview');
+  for (const [id, character, expected] of [
+    [identity, 'Female', '340d0d6c26cb28afec5df527e937cb43b6f3e4589443af2a1e754fc2fb201dea'],
+    ['fixture-0', 'Male', '90da6b9bc6ac1e136f459ed980e0fd34ca0021cdf668a3d4b9a2f8bc571b74cf'],
+  ]) {
+    assert.equal(avatars.traits(id).character, character);
+    assert.equal(createHash('sha256').update(avatars.svg(id)).digest('hex'), expected);
+  }
 });
