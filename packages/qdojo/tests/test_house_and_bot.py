@@ -562,3 +562,5 @@ def test_spar_skips_tables_no_outsider_may_sit_at(world, tmp_path):
     assert sp.live_belt("white") and sp.live_belt("orange")          # Alice is white: may sit anywhere
     b = h.belts(); b[ALICE] = {"rank": 2, "points": 0}; h._save_belts(b)
     assert not sp.live_belt("white") and sp.live_belt("orange")      # only the NPC could sit at white now
+    world.core.balances[ALICE] = 500
+    assert not sp.live_belt("orange")                                # eligible but broke: the table is dead

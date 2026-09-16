@@ -188,8 +188,14 @@ class Spar:
             return True
         ladder = self.h.belts()
         known = set(self.h.bows()) | set(ladder)
-        outsiders = [i for i in known if i not in self.npcs]
-        return any(B.may_enter(ladder, i, rank) for i in outsiders)
+        outsiders = [i for i in known if i not in self.npcs and B.may_enter(ladder, i, rank)]
+        for i in outsiders:
+            try:
+                if self.h.chain.balance(i) >= self.entry_fee:
+                    return True
+            except Unknown:
+                return True   # cannot tell: assume the table is live rather than skip it
+        return False
 
     def run(self, rounds: int, stop_below: int = 0):
         skipped = 0
