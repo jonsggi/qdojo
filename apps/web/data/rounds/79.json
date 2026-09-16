@@ -1,0 +1,7 @@
+{
+  "answer_format": "integer",
+  "input": "x = 2367\nn = 0\nwhile x > 1 and n < 100:\n    x = x // 4 if x % 4 == 0 else abs(x - 7)\n    n += 1\nprint(x * 1000 + n)\n",
+  "round_id": 79,
+  "statement": "The input is a short Python 3 program with no imports. It is deterministic and prints exactly one integer. Determine what it prints. Answer with the integer.",
+  "title": "Orange belt: what does this program print"
+}

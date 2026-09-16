@@ -18,6 +18,8 @@ class BotError(Exception):
 
 MAX_SOLVER_ATTEMPTS = 2   # a solver that fails twice on a riddle is not asked again this round
 MAX_COMMIT_SENDS = 3      # a commit that did not land is resent while the window is open
+KEEP_ALIVE = 1            # never spend down to exactly zero: an identity at zero has no spectrum
+                          # slot and cannot send at all, so it could not even commit or reveal
 
 
 def fetch_board(source: str) -> dict:
@@ -83,8 +85,11 @@ class Bot:
             bal = self.chain.balance(self.chain.identity)
         except Unknown as e:
             actions.append(f"round {rid}: balance unknown ({e}), not sending"); return False
-        if bal < stake or bal == 0:
-            actions.append(f"round {rid}: broke: balance {bal} < stake {stake}, sitting out"); return False
+        if bal == 0:
+            actions.append(f"round {rid}: broke: balance is zero, this identity cannot send at all"); return False
+        if bal < stake + KEEP_ALIVE:
+            actions.append(f"round {rid}: cannot stake {stake} and stay able to commit (balance {bal}), sitting out")
+            return False
         return True
 
     def chain_offset(self) -> int:

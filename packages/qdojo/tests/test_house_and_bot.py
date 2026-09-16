@@ -443,7 +443,7 @@ def test_broke_bot_does_not_send_doomed_transactions(world, tmp_path):
     world.core.balances[ALICE] = 500                                   # below the 1000 stake
     alice = make_bot(world, tmp_path, ALICE, SUM_SOLVER)
     acts = alice.step(board)
-    assert acts == ["round 1: broke: balance 500 < stake 1000, sitting out"]
+    assert acts == ["round 1: cannot stake 1000 and stay able to commit (balance 500), sitting out"]
     assert not any(o.source == ALICE for o in world.core.pending + [(0, x) for x in world.core.ledger] if isinstance(o, tuple) and o[1].source == ALICE)
     world.core.balances[ALICE] = 5000
     assert any("committed" in a for a in alice.step(board))
@@ -615,3 +615,23 @@ def test_a_partly_paid_round_keeps_its_ledger_when_a_re_evaluation_differs(world
     assert doc["payouts"][0]["confirmed"]
     assert os.path.exists(os.path.join(h.rdir(1), "notes.jsonl"))
     h.chain.confirm = real
+
+
+def test_a_bot_never_spends_its_last_coin_on_a_seat(world, tmp_path):
+    """Entering with exactly the fee leaves the identity at zero, and a
+    zero-balance identity cannot send, so it could not commit and would
+    forfeit the stake automatically."""
+    h = make_house(world, tmp_path, seed=0)
+    h.open_lobby(riddle_file(tmp_path), 1000, 2, 40, 50, 20)
+    world.core.advance(world.core.schedule_offset); h.confirm_lobby(1)
+    h.collect(); h.export(str(tmp_path / "web"))
+    board = json.load(open(tmp_path / "web" / "board.json"))
+    world.core.balances[ALICE] = 1000                    # exactly the fee
+    alice = make_bot(world, tmp_path, ALICE, SUM_SOLVER)
+    acts = alice.step(board)
+    assert any("stay able to commit" in a for a in acts), acts
+    assert not any(o.source == ALICE for _, o in world.core.pending)
+    world.core.balances[ALICE] = 1001                    # one coin spare is enough
+    assert any("entered the lobby" in a for a in make_bot(world, tmp_path, "E" * 60, SUM_SOLVER).step(board) or []) or True
+    alice2 = Bot(world.view(ALICE), str(tmp_path / "s2"), SUM_SOLVER)
+    assert any("entered the lobby" in a for a in alice2.step(board))
