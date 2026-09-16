@@ -430,7 +430,12 @@ class House:
                     # money already sent fixes the plan: finish THIS ledger.
                     _log_note(self, round_id, "ledger kept: a fresh evaluation differs but payouts are already confirmed")
                 else:
-                    raise HouseError("existing payout ledger disagrees with a fresh evaluation and nothing is paid yet; refusing to touch money")
+                    # Nothing has been paid, so there is no plan to protect:
+                    # adopt the fresh evaluation instead of refusing for ever.
+                    _log_note(self, round_id, "ledger replaced by a fresh evaluation (nothing was paid yet)")
+                    ledger = [{"identity": i, "amount": a, "kind": k, "tx": None, "tick": None, "confirmed": False}
+                              for i, a, k in planned_payouts]
+                    _write(self._ledger_path(round_id), ledger)
         if not apply:
             d = self._settlement_doc(round_id, ev, ledger, meta)
             d["bonds_released"], d["bonds_forfeited"] = releases, forfeited

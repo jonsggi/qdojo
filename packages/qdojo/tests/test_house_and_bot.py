@@ -290,6 +290,12 @@ def test_settle_refuses_when_a_node_cannot_confirm_an_entry(world, tmp_path):
     alice.step(board); world.core.advance(1005 + 51 - world.core.tick); alice.step(board)
     world.core.advance(1005 + 71 - world.core.tick + 25); h.collect()
     real = h.chain.confirm
+    # An unpaid ledger that no longer matches is replaced, not refused for ever.
+    import qdojo.house as H
+    led = [{"identity": "Z" * 60, "amount": 1, "kind": "win", "tx": None, "tick": None, "confirmed": False}]
+    H._write(h._ledger_path(1), led)
+    doc = h.settle(1, apply=False)
+    assert [p["identity"] for p in doc["payouts"]] != ["Z" * 60]
     # A node that CANNOT decide blocks settlement: we never pay on an unconfirmed message.
     h.chain.confirm = lambda tx, tick: (_ for _ in ()).throw(Unknown("node down"))
     with pytest.raises(HouseError):

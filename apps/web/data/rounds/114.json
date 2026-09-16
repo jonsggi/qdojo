@@ -1,0 +1,7 @@
+{
+  "answer_format": "integer",
+  "input": "xs = [(i * i + 12) % 49 for i in range(158)]\nevens = [x for x in xs if x % 2 == 0]\nprint(sum(evens) + len(evens))\n",
+  "round_id": 114,
+  "statement": "The input is a short Python 3 program with no imports. It is deterministic and prints exactly one integer. Determine what it prints. Answer with the integer.",
+  "title": "Orange belt: what does this program print"
+}

@@ -1,0 +1,7 @@
+{
+  "answer_format": "integer",
+  "input": "def count_evens(xs):\n    count = 0\n    for x in xs:\n        if x % 2 != 0:\n            count += 1\n    return count\n",
+  "round_id": 86,
+  "statement": "The input is a Python 3 function that is meant to return how many of the integers in the list xs are even. It contains exactly one bug: an off-by-one, a wrong operator, or a wrong initial value. Fix the bug, then evaluate the corrected function for the call `count_evens([14, -38, 10, -12, 44, 18, 22, 28, 30, 35, -42, 24, 0, -28, 27])`. Answer with the integer it returns.",
+  "title": "Blue belt: fix count_evens"
+}
