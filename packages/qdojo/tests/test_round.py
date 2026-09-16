@@ -295,3 +295,27 @@ def test_void_refunds_every_seat(txf):
     assert sorted((p.identity, p.amount, p.kind) for p in ev.payouts) == [(ALICE, 1000, "refund"), (BOB, 1000, "refund")]
     assert all(e.verdict == "void" for e in ev.entries)
     assert s.state_at(60) == "lobby" and s.state_at(91) == "lobby_closed"
+
+
+def test_podium_splits_5_3_2_by_commit_order(txf, salt):
+    s = spec(payout_mode=P.MODE_PODIUM, rake_bps=0, house_seed=7000)
+    obs = []
+    for who, tick in ((ALICE, 110), (BOB, 111), (CARL, 112), ("D" * 60, 113)):
+        obs.append(txf.commit(who, tick, 1, salt, "42", amount=1000))
+        obs.append(txf.reveal(who, 160, 1, salt, "42"))
+    ev = evaluate(s, obs, HOUSE, DOJO_SALT, ANSWER)
+    assert ev.winners == [ALICE, BOB, CARL] and ev.pot == 11_000
+    assert [(p.identity[0], p.amount) for p in ev.payouts] == [("A", 5500), ("B", 3300), ("C", 2200)]
+    assert {e.identity[0]: e.verdict for e in ev.entries}["D"] == "solved" and ev.carry == 0
+    two = evaluate(s, obs[:4], HOUSE, DOJO_SALT, ANSWER)          # only two solvers: 5:3
+    assert [p.amount for p in two.payouts] == [9000 * 5 // 8, 9000 * 3 // 8] and two.carry == 9000 - 5625 - 3375
+
+
+def test_bond_is_held_from_every_win_and_money_still_balances(txf, salt):
+    s = spec(payout_mode=P.MODE_FIRST, rake_bps=0, house_seed=9000, bond_bps=5000, bond_rounds=3)
+    obs = [txf.commit(ALICE, 110, 1, salt, "42", amount=1000), txf.reveal(ALICE, 160, 1, salt, "42"),
+           txf.commit(BOB, 120, 1, salt, "41", amount=7), txf.reveal(BOB, 160, 1, salt, "41")]
+    ev = evaluate(s, obs, HOUSE, DOJO_SALT, ANSWER)
+    assert ev.pot == 10_000 and ev.payouts[0].amount == 5000 and ev.bonds[0].amount == 5000   # Bob's 7 is underpaid: refunded, not in the pot
+    assert [p for p in ev.payouts if p.kind == "refund"][0].amount == 7
+    assert ev.payouts[0].amount + ev.bonds[0].amount + ev.carry == ev.pot

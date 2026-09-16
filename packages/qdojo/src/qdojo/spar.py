@@ -19,7 +19,7 @@ def log(msg):
 class Spar:
     def __init__(self, house, belts, entry_fee, commit_window, reveal_window, riddle_dir, web_out, metrics_path,
                  seed=None, payout_mode=1, poll=15, match_bps=10000, min_players=0, lobby_window=0,
-                 npcs=(), npc_rounds=3):
+                 npcs=(), npc_rounds=3, bond_bps=0, bond_rounds=0):
         self.h, self.belts = house, belts
         self.entry_fee, self.wc, self.wr = entry_fee, commit_window, reveal_window
         self.riddle_dir, self.web_out, self.metrics_path = riddle_dir, web_out, metrics_path
@@ -27,6 +27,7 @@ class Spar:
         self.payout_mode, self.poll, self.match_bps = payout_mode, poll, match_bps
         self.min_players, self.lobby_window = min_players, lobby_window
         self.npcs, self.npc_rounds = list(npcs), npc_rounds
+        self.bond_bps, self.bond_rounds = bond_bps, bond_rounds
         os.makedirs(riddle_dir, mode=0o700, exist_ok=True)
 
     def _export(self):
@@ -75,7 +76,8 @@ class Spar:
         before = self.h.chain.balance(self.h.identity)
         if self.min_players:
             meta = self.h.open_lobby(path, self.entry_fee, self.min_players, self.lobby_window, self.wc, self.wr,
-                                     payout_mode=self.payout_mode, match_bps=self.match_bps, belt=belt)
+                                     payout_mode=self.payout_mode, match_bps=self.match_bps, belt=belt,
+                                     bond_bps=self.bond_bps, bond_rounds=self.bond_rounds)
             log(f"round {rid} [{belt}/{r['kind']}] LOBBY {meta['lobby_tx'][:8]}… sched {meta['lobby_scheduled_tick']}, needs {self.min_players}")
             for _ in range(120):
                 try:
@@ -111,7 +113,8 @@ class Spar:
             meta = self.h.publish_from_lobby(rid)
             log(f"round {rid} PUBLISH {meta['publish_tx'][:8]}… sched {meta['scheduled_tick']}")
         else:
-            meta = self.h.publish(path, self.entry_fee, self.wc, self.wr, payout_mode=self.payout_mode, match_bps=self.match_bps)
+            meta = self.h.publish(path, self.entry_fee, self.wc, self.wr, payout_mode=self.payout_mode, match_bps=self.match_bps,
+                                  belt=belt, bond_bps=self.bond_bps, bond_rounds=self.bond_rounds)
             log(f"round {rid} [{belt}/{r['kind']}] PUBLISH {meta['publish_tx'][:8]}… sched {meta['scheduled_tick']}")
         for _ in range(120):
             try:
@@ -168,6 +171,9 @@ class Spar:
                 "lobby": spec.lobby, "min_players": spec.min_players, "void": False,
                 "stakes_in": sum(e["stake"] for e in entries),
                 "payouts_out": sum(p["amount"] for p in payouts if p["confirmed"]),
+                "bonds_held": sum(b["amount"] for b in (doc or {}).get("bonds_held", [])),
+                "bonds_released": sum(r["amount"] for r in (doc or {}).get("bonds_released", [])),
+                "bonds_forfeited": (doc or {}).get("bonds_forfeited", 0),
                 "house_before": before, "house_after": after, "house_delta": after - before,
                 "entries": entries, "payouts": [{"identity": p["identity"], "amount": p["amount"], "kind": p["kind"]} for p in payouts],
                 "strikes": (doc or {}).get("strikes", {})}

@@ -506,3 +506,46 @@ def test_strategy_program_can_decline_a_round(world, tmp_path):
     alice = Bot(world.view(ALICE), str(tmp_path / "s"), SUM_SOLVER, strategy_cmd=cautious)
     assert alice.step(board) == ["round 1: strategy says skip (too hard)"]
     assert not any(o.source == ALICE for _, o in world.core.pending)
+
+
+def play_round(h, world, bot, rid, tmp_path, answer_ok=True, **pub):
+    h.publish(riddle_file(tmp_path, rid=rid), 1000, 50, 20, match_bps=0, **pub)
+    world.core.advance(world.core.schedule_offset); h.confirm_publish(rid)
+    h.collect(); h.export(str(tmp_path / "web"))
+    board = json.load(open(tmp_path / "web" / "board.json"))
+    bot.step(board)
+    spec = h.spec(rid)
+    world.core.advance(spec.commit_end + 1 - world.core.tick); bot.step(board)
+    world.core.advance(spec.reveal_end + 3 - world.core.tick); h.collect()
+    return h.settle(rid, apply=True)
+
+
+def test_bond_is_released_after_the_required_fights(world, tmp_path):
+    h = make_house(world, tmp_path, seed=5000, rake_bps=0)
+    alice = make_bot(world, tmp_path, ALICE, SUM_SOLVER)
+    drive_settle(h, world)
+    d1 = play_round(h, world, alice, 1, tmp_path, bond_bps=5000, bond_rounds=2)
+    assert d1["bonds_held"] == [{"identity": ALICE, "amount": 3000}] and d1["payouts"][0]["amount"] == 3000
+    assert h.bonds()[0]["fought"] == 0 and world.core.balances[ALICE] == 5000 - 1000 + 3000
+    d2 = play_round(h, world, alice, 2, tmp_path)                        # fight 1 of 2
+    assert h.bonds()[0]["fought"] == 1 and d2["bonds_released"] == []
+    d3 = play_round(h, world, alice, 3, tmp_path)                        # fight 2 of 2: released, paid with this round
+    assert d3["bonds_released"][0]["amount"] == 3000 and h.bonds()[0]["released"] == 3
+    rel = [p for p in d3["payouts"] if p["kind"] == "bond_release"]
+    assert rel and rel[0]["confirmed"] and rel[0]["amount"] == 3000
+    assert hashing.settlement_hash(d3).hex() == d3["hash"]
+    fj = json.load(open(tmp_path / "web" / "fighters.json")) if False else None
+
+
+def test_bond_is_forfeited_to_the_pot_when_the_holder_stops_fighting(world, tmp_path, monkeypatch):
+    from qdojo import house as H
+    monkeypatch.setattr(H, "BOND_EXPIRY_ROUNDS", 2)
+    h = make_house(world, tmp_path, seed=5000, rake_bps=0)
+    alice = make_bot(world, tmp_path, ALICE, SUM_SOLVER)
+    bob = make_bot(world, tmp_path, BOB, WRONG_SOLVER)
+    drive_settle(h, world)
+    play_round(h, world, alice, 1, tmp_path, bond_bps=5000, bond_rounds=5)
+    play_round(h, world, bob, 2, tmp_path)                               # alice sits out
+    d3 = play_round(h, world, bob, 3, tmp_path)                          # round 3: bond aged 2 rounds, forfeited
+    assert d3["bonds_forfeited"] == 3000 and h.bonds()[0]["forfeited"] == 3
+    assert h.state()["carry"] == d3["carry"] + 3000

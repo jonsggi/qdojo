@@ -20,6 +20,7 @@ class HouseError(Exception):
 
 
 INDEX_MARGIN = 2     # never scan the last ticks the indexer claims, it may still be filling them
+BOND_EXPIRY_ROUNDS = 20   # a bond whose holder has not fought enough rounds by then is forfeited to the pot
 RESCAN = 300         # re-read this many ticks behind the scan pointer every time; tx_id dedup makes it free
 
 
@@ -79,6 +80,37 @@ class House:
     def _save_belts(self, st):
         _write(self._belts_path(), st)
 
+    def _bonds_path(self):
+        return os.path.join(self.data_dir, "bonds.json")
+
+    def bonds(self) -> list:
+        """Open bonds: [{identity, amount, round_id, need, fought, released, forfeited}]."""
+        return _read(self._bonds_path(), [])
+
+    def _save_bonds(self, bonds):
+        _write(self._bonds_path(), bonds)
+
+    def _bond_events(self, round_id: int, ev, spec) -> tuple[list, list, int]:
+        """What this settlement does to the bond ledger, without touching it:
+        (new bonds held, release payouts due, amount forfeited)."""
+        fought = {e.identity for e in ev.entries if e.verdict in ("winner", "solved", "wrong", "no_reveal", "no_commit", "bad_reveal")}
+        bonds = [dict(b) for b in self.bonds()]
+        releases, forfeited = [], 0
+        for b in bonds:
+            if b.get("released") or b.get("forfeited"):
+                continue
+            if b["identity"] in fought and b["round_id"] < round_id:
+                b["fought"] += 1
+            if b["fought"] >= b["need"]:
+                b["released"] = round_id
+                releases.append({"identity": b["identity"], "amount": b["amount"], "kind": "bond_release", "bond_round": b["round_id"]})
+            elif round_id - b["round_id"] >= BOND_EXPIRY_ROUNDS:
+                b["forfeited"] = round_id
+                forfeited += b["amount"]
+        held = [{"identity": bd.identity, "amount": bd.amount, "round_id": round_id, "need": spec.bond_rounds,
+                 "fought": 0, "released": None, "forfeited": None} for bd in ev.bonds]
+        return bonds + held, releases, forfeited
+
     def rdir(self, round_id: int) -> str:
         return os.path.join(self.data_dir, "rounds", f"{round_id:06d}")
 
@@ -106,7 +138,7 @@ class House:
     # --------------------------------------------------------------- publish
     def publish(self, riddle_path: str, entry_fee: int, commit_window: int, reveal_window: int,
                 house_seed: int | None = None, payout_mode: int = payload.MODE_FIRST, match_bps: int = 10000,
-                belt: str = "") -> dict:
+                belt: str = "", bond_bps: int = 0, bond_rounds: int = 0) -> dict:
         r, secret = R.load_authored(riddle_path)
         st = self.state()
         if r.round_id != st["next_round"]:
@@ -122,7 +154,7 @@ class House:
             raise HouseError(f"house balance below the seed it would promise")
         uri = f"{self.uri_base}/rounds/{r.round_id}.json" if self.uri_base else ""
         msg = payload.Publish(r.round_id, entry_fee, commit_window, reveal_window, r.hash(),
-                              R.commitment_for(r, secret), uri, payout_mode, house_seed, match_bps)
+                              R.commitment_for(r, secret), uri, payout_mode, house_seed, match_bps, bond_bps, bond_rounds)
         os.makedirs(self.rdir(r.round_id), mode=0o700)
         _write(self._rpath(r.round_id, "riddle.json"), r.public())
         _write(self._rpath(r.round_id, "secret.json"),
@@ -131,7 +163,7 @@ class House:
                 "reveal_window": reveal_window, "house_seed": house_seed, "rake_bps": self.rake_bps,
                 "payout_mode": payload.MODE_NAMES[payout_mode], "match_bps": match_bps, "carry_in": carry_in,
                 "riddle_hash": r.hash().hex(), "answer_commitment": msg.answer_commitment.hex(), "uri": uri,
-                "belt": belt,
+                "belt": belt, "bond_bps": bond_bps, "bond_rounds": bond_rounds,
                 "publish_tx": None, "scheduled_tick": None, "publish_tick": None, "status": "publishing"}
         _write(self._rpath(r.round_id, "meta.json"), meta)
         res = self.chain.send(self.identity, 0, payload.encode(msg), payload.INPUT_TYPE)
@@ -145,7 +177,7 @@ class House:
     # ---------------------------------------------------------------- lobby
     def open_lobby(self, riddle_path: str, entry_fee: int, min_players: int, lobby_window: int, commit_window: int,
                    reveal_window: int, house_seed: int | None = None, payout_mode: int = payload.MODE_FIRST,
-                   match_bps: int = 10000, belt: str = "") -> dict:
+                   match_bps: int = 10000, belt: str = "", bond_bps: int = 0, bond_rounds: int = 0) -> dict:
         """Announce a round and open the table. The riddle is chosen now and
         kept secret; PUBLISH follows when the table is full."""
         r, secret = R.load_authored(riddle_path)
@@ -162,7 +194,7 @@ class House:
             raise HouseError("house balance below the seed it would promise")
         uri = f"{self.uri_base}/rounds/{r.round_id}.json" if self.uri_base else ""
         msg = payload.Lobby(r.round_id, entry_fee, min_players, lobby_window, commit_window, reveal_window,
-                            payout_mode, house_seed, match_bps, belt)
+                            payout_mode, house_seed, match_bps, belt, bond_bps, bond_rounds)
         os.makedirs(self.rdir(r.round_id), mode=0o700)
         _write(self._rpath(r.round_id, "riddle.json"), r.public())
         _write(self._rpath(r.round_id, "secret.json"),
@@ -172,6 +204,7 @@ class House:
                 "payout_mode": payload.MODE_NAMES[payout_mode], "match_bps": match_bps, "carry_in": carry_in,
                 "riddle_hash": r.hash().hex(), "answer_commitment": R.commitment_for(r, secret).hex(), "uri": uri,
                 "belt": belt, "min_players": min_players, "lobby_window": lobby_window,
+                "bond_bps": bond_bps, "bond_rounds": bond_rounds,
                 "lobby_tx": None, "lobby_scheduled_tick": None, "lobby_tick": None,
                 "publish_tx": None, "scheduled_tick": None, "publish_tick": None, "status": "lobby_opening"}
         _write(self._rpath(r.round_id, "meta.json"), meta)
@@ -205,7 +238,8 @@ class House:
         r = R.from_public(_read(self._rpath(round_id, "riddle.json")))
         mode = {v: k for k, v in payload.MODE_NAMES.items()}[meta["payout_mode"]]
         msg = payload.Publish(round_id, meta["entry_fee"], meta["commit_window"], meta["reveal_window"], r.hash(),
-                              bytes.fromhex(meta["answer_commitment"]), meta["uri"], mode, meta["house_seed"], meta["match_bps"])
+                              bytes.fromhex(meta["answer_commitment"]), meta["uri"], mode, meta["house_seed"], meta["match_bps"],
+                              meta.get("bond_bps", 0), meta.get("bond_rounds", 0))
         res = self.chain.send(self.identity, 0, payload.encode(msg), payload.INPUT_TYPE)
         meta.update(publish_tx=res.tx_id, scheduled_tick=res.scheduled_tick, status="publishing")
         _write(self._rpath(round_id, "meta.json"), meta)
@@ -278,7 +312,7 @@ class House:
                          {v: k for k, v in payload.MODE_NAMES.items()}[m.get("payout_mode", "split")],
                          m.get("match_bps", 0), m.get("carry_in", 0),
                          m.get("lobby_tick"), m.get("lobby_window", 0), m.get("min_players", 0),
-                         B.RANKS.get(m.get("belt") or "", None))
+                         B.RANKS.get(m.get("belt") or "", None), m.get("bond_bps", 0), m.get("bond_rounds", 0))
 
     # --------------------------------------------------------------- collect
     def collect(self, up_to_tick: int | None = None) -> int:
@@ -351,23 +385,29 @@ class House:
             raise HouseError(f"round {round_id} is {meta['status']}, not open")
         ev = self.plan(round_id, final=True)
         self._confirm_entries(ev)
+        spec = self.spec(round_id)
+        bonds_after, releases, forfeited = self._bond_events(round_id, ev, spec)
+        planned_payouts = [(p.identity, p.amount, p.kind) for p in ev.payouts] + [(r["identity"], r["amount"], r["kind"]) for r in releases]
         ledger = _read(self._ledger_path(round_id), [])
         if not ledger:
-            ledger = [{"identity": p.identity, "amount": p.amount, "kind": p.kind, "tx": None, "tick": None,
-                       "confirmed": False} for p in ev.payouts]
+            ledger = [{"identity": i, "amount": a, "kind": k, "tx": None, "tick": None, "confirmed": False}
+                      for i, a, k in planned_payouts]
             _write(self._ledger_path(round_id), ledger)
         else:
-            planned = [(p.identity, p.amount, p.kind) for p in ev.payouts]
+            planned = planned_payouts
             if [(l["identity"], l["amount"], l["kind"]) for l in ledger] != planned:
                 raise HouseError("existing payout ledger disagrees with a fresh evaluation; refusing to touch money")
         if not apply:
-            return self._settlement_doc(round_id, ev, ledger, meta)
+            d = self._settlement_doc(round_id, ev, ledger, meta)
+            d["bonds_released"], d["bonds_forfeited"] = releases, forfeited
+            return d
 
         self._pay_ledger(round_id, ledger)
 
         if all(e["confirmed"] for e in ledger):
             doc = self._settlement_doc(round_id, ev, ledger, meta)
-            spec = self.spec(round_id)
+            doc["bonds_released"] = releases
+            doc["bonds_forfeited"] = forfeited
             before = self.belts()
             doc["belts_before"] = {k: dict(v) for k, v in before.items()}
             if spec.belt_rank is not None:
@@ -384,8 +424,9 @@ class House:
             _write(self._rpath(round_id, "meta.json"), meta)
             if spec.belt_rank is not None:
                 self._save_belts(before)   # `before` was mutated into the after-state above
+            self._save_bonds(bonds_after)
             st = self.state()
-            st["carry"] += ev.carry
+            st["carry"] += ev.carry + forfeited
             self._save_state(st)
             return doc
         return self._settlement_doc(round_id, ev, ledger, meta)
@@ -484,7 +525,7 @@ class House:
                                              "points": belts.get(idn, {}).get("points", 0),
                                              "rounds_played": 0, "solved": 0, "wins": 0, "earned": 0, "staked": 0,
                                              "net": 0, "strikes": 0, "solve_ticks": [], "by_belt": {},
-                                             "belt_history": []})
+                                             "belt_history": [], "streak": 0, "best_streak": 0, "losses": 0})
 
         rounds, open_rounds = [], []
         for rid in self.round_ids():
@@ -523,6 +564,12 @@ class House:
                             f["solve_ticks"].append(lat); bb["solve_ticks"].append(lat)
                     if e["verdict"] == "winner":
                         f["wins"] += 1; bb["wins"] += 1
+                        if settled:
+                            f["streak"] = f["streak"] + 1 if f["streak"] >= 0 else 1
+                            f["best_streak"] = max(f["best_streak"], f["streak"])
+                    elif settled and e["verdict"] in ("wrong", "no_reveal", "no_commit", "bad_reveal"):
+                        f["losses"] += 1
+                        f["streak"] = f["streak"] - 1 if f["streak"] <= 0 else -1
                 if doc:
                     for c in doc.get("belt_changes", []):
                         if c["identity"] == e["identity"]:
@@ -536,7 +583,7 @@ class House:
                 settlement = dict(doc)  # exactly the hashed document, like a settled round
             elif doc:
                 for p in doc["payouts"]:
-                    if p["kind"] == "win" and p["confirmed"]:
+                    if p["kind"] in ("win", "bond_release") and p["confirmed"]:
                         fighter(p["identity"])["earned"] += p["amount"]
                 settlement = dict(doc)  # exactly the hashed document, so the page can re-verify it
             rd = {"round_id": rid, "title": rpub["title"] if rpub else f"{meta.get('belt') or 'open'} belt: at the table",
@@ -548,6 +595,7 @@ class House:
                   "reveal_window": meta["reveal_window"], "entry_fee": meta["entry_fee"],
                   "house_seed": meta["house_seed"], "rake_bps": meta["rake_bps"],
                   "payout_mode": meta.get("payout_mode", "split"), "match_bps": meta.get("match_bps", 0),
+                  "bond_bps": meta.get("bond_bps", 0), "bond_rounds": meta.get("bond_rounds", 0),
                   "carry_in": meta.get("carry_in", 0), "riddle_hash": meta["riddle_hash"] if published else None,
                   "answer_commitment": meta["answer_commitment"] if published else None, "riddle": rpub,
                   "entries": entries, "settlement": settlement}
@@ -563,12 +611,16 @@ class House:
             f["net"] = f["earned"] - f["staked"]
             f["avg_solve_ticks"], f["best_solve_ticks"] = avg(f["solve_ticks"]), (min(f["solve_ticks"]) if f["solve_ticks"] else None)
             f["solve_rate"] = round(f["solved"] / f["rounds_played"], 2) if f["rounds_played"] else None
+            f["win_rate"] = round(f["wins"] / f["rounds_played"], 2) if f["rounds_played"] else None
+            f["win_loss"] = round(f["wins"] / f["losses"], 2) if f["losses"] else (float(f["wins"]) if f["wins"] else None)
             del f["solve_ticks"]
             for bb in f["by_belt"].values():
                 bb["avg_solve_ticks"] = avg(bb["solve_ticks"]); del bb["solve_ticks"]
             f["belt_history"] = sorted(f["belt_history"], key=lambda c: c["round_id"])
         _write(os.path.join(out_dir, "fighters.json"), {"generated_tick": now, "fighters": sorted(
             fighters.values(), key=lambda f: (-f["net"], -f["wins"], f["identity"]))})
+        _write(os.path.join(out_dir, "bonds.json"), {"generated_tick": now, "expiry_rounds": BOND_EXPIRY_ROUNDS,
+                                                       "bonds": self.bonds()})
         _write(os.path.join(out_dir, "belts.json"), {"generated_tick": now, "ladder": list(B.BELTS), "rules": {
             "promote_at": B.PROMOTE_AT, "demote_at": B.DEMOTE_AT, "winner": 2, "solved": 1, "failure": -1,
             "win_above_belt": "promoted to that belt", "failure_above_belt": 0, "enter": "own belt or above"},

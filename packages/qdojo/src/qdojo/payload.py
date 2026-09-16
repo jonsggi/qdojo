@@ -13,8 +13,9 @@ MAX_URI = 255
 MAX_ANSWER = 512
 
 KIND_BOW, KIND_PUBLISH, KIND_COMMIT, KIND_REVEAL, KIND_SETTLE, KIND_LOBBY, KIND_ENTER = 1, 2, 3, 4, 5, 6, 7
-MODE_SPLIT, MODE_FIRST = 0, 1          # payout modes (docs/spec.md §5)
-MODE_NAMES = {0: "split", 1: "first"}
+MODE_SPLIT, MODE_FIRST, MODE_PODIUM = 0, 1, 2   # payout modes (docs/spec.md §5)
+MODE_NAMES = {0: "split", 1: "first", 2: "podium"}
+PODIUM_WEIGHTS = (5, 3, 2)                       # first, second, third correct commit
 KIND_NAMES = {1: "BOW", 2: "PUBLISH", 3: "COMMIT", 4: "REVEAL", 5: "SETTLE", 6: "LOBBY", 7: "ENTER"}
 MAX_BELT = 16
 
@@ -41,6 +42,8 @@ class Publish:
     payout_mode: int = MODE_FIRST
     seed_cap: int = 0        # the most the house adds to this round's pot
     match_bps: int = 10000   # house seed = min(seed_cap, stakes * match_bps / 10000); 0 = fixed seed_cap
+    bond_bps: int = 0        # share of every win held as the winner's bond
+    bond_rounds: int = 0     # rounds the winner must fight before the bond is released
     kind = KIND_PUBLISH
 
 
@@ -81,6 +84,8 @@ class Lobby:
     seed_cap: int
     match_bps: int
     belt: str
+    bond_bps: int = 0
+    bond_rounds: int = 0
     kind = KIND_LOBBY
 
 
@@ -127,9 +132,10 @@ def encode(m: Message) -> bytes:
         out = _hdr(KIND_BOW) + _text(m.name, MAX_NAME, "name")
     elif isinstance(m, Publish):
         out = (_hdr(KIND_PUBLISH)
-               + struct.pack("<IQHHBQH", _u(m.round_id, 32, "round_id"), _u(m.entry_fee, 64, "entry_fee"),
+               + struct.pack("<IQHHBQHHH", _u(m.round_id, 32, "round_id"), _u(m.entry_fee, 64, "entry_fee"),
                              _u(m.commit_window, 16, "commit_window"), _u(m.reveal_window, 16, "reveal_window"),
-                             _mode(m.payout_mode), _u(m.seed_cap, 64, "seed_cap"), _u(m.match_bps, 16, "match_bps"))
+                             _mode(m.payout_mode), _u(m.seed_cap, 64, "seed_cap"), _u(m.match_bps, 16, "match_bps"),
+                             _u(m.bond_bps, 16, "bond_bps"), _u(m.bond_rounds, 16, "bond_rounds"))
                + _bytes(m.riddle_hash, HASH_LEN, "riddle_hash")
                + _bytes(m.answer_commitment, HASH_LEN, "answer_commitment")
                + _text(m.uri, MAX_URI, "uri"))
@@ -144,10 +150,11 @@ def encode(m: Message) -> bytes:
                + _text(m.uri, MAX_URI, "uri"))
     elif isinstance(m, Lobby):
         out = (_hdr(KIND_LOBBY)
-               + struct.pack("<IQHHHHBQH", _u(m.round_id, 32, "round_id"), _u(m.entry_fee, 64, "entry_fee"),
+               + struct.pack("<IQHHHHBQHHH", _u(m.round_id, 32, "round_id"), _u(m.entry_fee, 64, "entry_fee"),
                              _u(m.min_players, 16, "min_players"), _u(m.lobby_window, 16, "lobby_window"),
                              _u(m.commit_window, 16, "commit_window"), _u(m.reveal_window, 16, "reveal_window"),
-                             _mode(m.payout_mode), _u(m.seed_cap, 64, "seed_cap"), _u(m.match_bps, 16, "match_bps"))
+                             _mode(m.payout_mode), _u(m.seed_cap, 64, "seed_cap"), _u(m.match_bps, 16, "match_bps"),
+                             _u(m.bond_bps, 16, "bond_bps"), _u(m.bond_rounds, 16, "bond_rounds"))
                + _text(m.belt, MAX_BELT, "belt"))
     elif isinstance(m, Enter):
         out = _hdr(KIND_ENTER) + struct.pack("<I", _u(m.round_id, 32, "round_id"))
@@ -199,9 +206,9 @@ def decode(b: bytes) -> Message:
     if kind == KIND_BOW:
         m = Bow(name=r.text(MAX_NAME, "name"))
     elif kind == KIND_PUBLISH:
-        rid, fee, wc, wr, mode, cap, bps = r.unpack("<IQHHBQH", "publish header")
+        rid, fee, wc, wr, mode, cap, bps, bb, br = r.unpack("<IQHHBQHHH", "publish header")
         m = Publish(rid, fee, wc, wr, r.take(HASH_LEN, "riddle_hash"), r.take(HASH_LEN, "answer_commitment"),
-                    r.text(MAX_URI, "uri"), _mode(mode), cap, bps)
+                    r.text(MAX_URI, "uri"), _mode(mode), cap, bps, bb, br)
     elif kind == KIND_COMMIT:
         (rid,) = r.unpack("<I", "round_id")
         m = Commit(rid, r.take(HASH_LEN, "commitment"))
@@ -212,8 +219,8 @@ def decode(b: bytes) -> Message:
         (rid,) = r.unpack("<I", "round_id")
         m = Settle(rid, r.take(SALT_LEN, "dojo_salt"), r.take(HASH_LEN, "settlement_hash"), r.text(MAX_URI, "uri"))
     elif kind == KIND_LOBBY:
-        rid, fee, mp, lw, wc, wr, mode, cap, bps = r.unpack("<IQHHHHBQH", "lobby header")
-        m = Lobby(rid, fee, mp, lw, wc, wr, _mode(mode), cap, bps, r.text(MAX_BELT, "belt"))
+        rid, fee, mp, lw, wc, wr, mode, cap, bps, bb, br = r.unpack("<IQHHHHBQHHH", "lobby header")
+        m = Lobby(rid, fee, mp, lw, wc, wr, _mode(mode), cap, bps, r.text(MAX_BELT, "belt"), bb, br)
     elif kind == KIND_ENTER:
         (rid,) = r.unpack("<I", "round_id")
         m = Enter(rid)

@@ -46,6 +46,8 @@ class RoundSpec:
     lobby_window: int = 0
     min_players: int = 0
     belt_rank: int | None = None    # the riddle's belt; None = no belt gate on this round
+    bond_bps: int = 0               # held back from every win, released after bond_rounds fights
+    bond_rounds: int = 0
 
     @property
     def lobby(self) -> bool:
@@ -103,7 +105,13 @@ class Entry:
 class Payout:
     identity: str
     amount: int
-    kind: str  # win | refund
+    kind: str  # win | refund | bond_release
+
+
+@dataclass
+class Bond:
+    identity: str
+    amount: int
 
 
 @dataclass
@@ -117,6 +125,7 @@ class Evaluation:
     carry: int = 0
     winners: list[str] = field(default_factory=list)
     payouts: list[Payout] = field(default_factory=list)
+    bonds: list[Bond] = field(default_factory=list)      # held this round, from the winners' shares
 
     def strike(self, identity: str, reason: str):
         self.strikes.setdefault(identity, []).append(reason)
@@ -288,15 +297,33 @@ def evaluate(spec: RoundSpec, observed, house: str, dojo_salt: bytes | None, can
         for e in solved:
             if e.commit_tick != first_tick:
                 e.verdict = "solved"
-    ev.winners = [e.identity for e in solved if e.verdict == "winner"]
-    if ev.winners:
-        share = distributable // len(ev.winners)
-        ev.payouts = [Payout(w, share, "win") for w in ev.winners if share > 0]
-        ev.carry = distributable - share * len(ev.winners)
+    if spec.payout_mode == payload.MODE_PODIUM and solved:
+        podium = solved[:len(payload.PODIUM_WEIGHTS)]
+        for e in solved[len(podium):]:
+            e.verdict = "solved"
+        weights = payload.PODIUM_WEIGHTS[:len(podium)]
+        total_w = sum(weights)
+        wins = [Payout(e.identity, distributable * w // total_w, "win") for e, w in zip(podium, weights)]
+        ev.winners = [e.identity for e in podium]
+        ev.payouts = [p for p in wins if p.amount > 0]
+        ev.carry = distributable - sum(p.amount for p in wins)
     else:
-        ev.carry = distributable
+        ev.winners = [e.identity for e in solved if e.verdict == "winner"]
+        if ev.winners:
+            share = distributable // len(ev.winners)
+            ev.payouts = [Payout(w, share, "win") for w in ev.winners if share > 0]
+            ev.carry = distributable - share * len(ev.winners)
+        else:
+            ev.carry = distributable
+    if spec.bond_bps:
+        for p in ev.payouts:
+            held = p.amount * spec.bond_bps // 10000
+            if held:
+                ev.bonds.append(Bond(p.identity, held))
+                p.amount -= held
     ev.payouts += refunds
-    assert ev.total_out + ev.rake + ev.carry == ev.pot + sum(r.amount for r in refunds), "money must balance"
+    held_total = sum(b.amount for b in ev.bonds)
+    assert ev.total_out + ev.rake + ev.carry + held_total == ev.pot + sum(r.amount for r in refunds), "money must balance"
     return ev
 
 
@@ -334,6 +361,7 @@ def to_dict(ev: Evaluation, dojo_salt: bytes | None = None, answer: str | None =
         "pot": ev.pot, "seed_used": ev.seed_used, "rake": ev.rake, "carry": ev.carry,
         "winners": list(ev.winners),
         "payouts": [vars(p) for p in ev.payouts],
+        "bonds_held": [vars(b) for b in ev.bonds],
     }
     if dojo_salt is not None:
         d["dojo_salt"] = dojo_salt.hex()
