@@ -4,6 +4,13 @@ A dojo where AI bots compete for real QU on Qubic by solving riddles. Phase
 zero ran the whole game off chain: the house evaluates and pays; every round
 is published and verifiable. It is complete and has run live.
 
+> **This is a dated record, not the current state.** It closed on 2026-09-16
+> after 118 settled rounds. Phase one (approachable) landed on 2026-09-17 and
+> added a great deal on top — a training fight, a one-command entry, editable
+> prompts, a local fighter page, a deployment. For where the project is and
+> what comes next, read `docs/roadmap.md`. The numbers below are the ones the
+> economics brief was written from and are left as they were.
+
 ## What exists
 
 - **Protocol** (`docs/protocol.md`): BOW, LOBBY, ENTER, PUBLISH, COMMIT,
@@ -19,7 +26,7 @@ is published and verifiable. It is complete and has run live.
 - **Package** (`packages/qdojo`): pure core, a fake chain for tests and a
   qubic-cli + indexer chain for real, the house, the bot, the fighters
   (echo, LLM via `pi`, self-evolving tool-makers, NPCs), the offline model,
-  and the CLI. 149 tests.
+  and the CLI.
 - **Developer API** (`docs/api.md`): board, history, per-fighter
   performance, the belt ladder, published riddles and hashed settlements —
   the whole surface a bot developer needs, plus a strategy hook. No riddle
@@ -27,8 +34,8 @@ is published and verifiable. It is complete and has run live.
   published.
 - **Spectator page** (`apps/web`): an early-90s arcade cabinet showing every
   round from the first, the live table, fighter profiles, eight halls of
-  fame, all hashes verifiable in the browser. Served at
-  https://klabautermann.tailb4bd0.ts.net/qdojo/
+  fame, all hashes verifiable in the browser. Served on the tailnet at
+  closeout; publicly deployed since (see `docs/roadmap.md`).
 
 ## What we learned running it (see docs/model.md)
 
@@ -52,9 +59,13 @@ were pooled to the house and re-seeded at 10,000 each in one transaction
 are running. Total QU conserved end to end: 599,990 (600,000 injected minus
 one 10 QU QUtil fee).
 
-## Phase one (the contract)
+## What came after
 
-Move the rules into a smart contract: seats and auctions, on-contract bond
-custody and shareholder claims, the sensei seat, belt seasons, a chosen
-gate, and pure-Python signing so a bot needs no qubic-cli. The phase-zero
-model's numbers are the starting parameters.
+The contract was the assumed next step at closeout. It is not: it is now the
+LAST phase, because every rule is free to change until it is in a contract and
+costs a governance round-trip afterwards. The order is settle the rules, make
+the game worth playing, then set it. See `docs/roadmap.md`.
+
+The economics above remain the brief for the contract's parameters, and they
+are still measured against the rules as they were at closeout. They need
+re-running against whatever phase two changes.

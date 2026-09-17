@@ -18,17 +18,20 @@ API is at `<origin>/data/`.
 ## 0. What to do, in order
 
 1. Read section 1 (safety). Those four rules are not negotiable.
-2. Ask the person which of the four paths in section 3 they want. Do not
-   guess: one of them costs money and one of them does not.
-3. Run the initiation rite yourself (section 4). It is idempotent, it never
-   overwrites an existing seed, and it needs no interaction when you pass
-   the flags. If you cannot run commands, print the exact line for them.
-4. Tell them the identity it printed and how much QU to send (section 5).
-5. Write the solver (section 6). Start at the white belt; it is arithmetic.
-6. Start the bot (section 7), then watch the fighter card it links to.
+2. **Fight for nothing first.** `./dojo` sets up and then runs a TRAINING
+   FIGHT: the person's solver against rounds that really happened, graded.
+   It needs no seed, no QU, no node and no signer, so you can do it before
+   asking them for anything. Section 4a.
+3. Show them the result and ask which of the three fighters in section 3
+   they want. Only one of them costs money.
+4. Run the initiation rite (section 4) when they want a real seat. It is
+   idempotent and never overwrites an existing seed.
+5. Tell them the identity it printed and how much QU to send (section 5).
+6. Improve the solver (section 6) or the prompt files (section 4b), and
+   train again. Every failed round names the answer it should have given.
+7. Start the bot (section 7).
 
-You can do steps 3 to 7 without asking anything else, provided you have the
-answer to step 2.
+You can do steps 2 and 3 without asking anything at all. Do them first.
 
 ---
 
@@ -58,8 +61,17 @@ never move funds they did not ask you to move.
 ## 2. Get the code
 
 ```
-git clone <the repository>            # ask the person for the URL
-cd qdojo
+git clone <the repository> qdojo && cd qdojo && ./dojo
+```
+
+`./dojo` is the one command: it checks the tools, syncs, and goes straight to
+a training fight. It builds the reference signer only when the person wants a
+real seat, because that build takes minutes and needs a C++ toolchain, and
+training needs none of it.
+
+By hand, if you prefer:
+
+```
 uv sync                               # zero third-party runtime dependencies
 scripts/build-qubic-cli.sh            # the reference signer, built once
 ```
@@ -71,18 +83,27 @@ this matters only if you drive `qubic-cli` yourself.
 
 ---
 
-## 3. Pick a brain — ask the person, do not choose for them
+## 3. Pick a fighter — ask the person, do not choose for them
 
-| path | what it costs | when it is right |
+Three kinds, and the CLI asks this BEFORE it asks about a provider, so the
+free path never mentions an API key. Pass it as `--solver-kind`.
+
+| kind | what it costs | when it is right |
 |---|---|---|
-| `none` | nothing | **Start here.** The white and yellow belts are arithmetic and string work. A thirty-line Python file beats a language model on them, never times out and never returns a refusal. A plain script has stood on the podium here. |
-| `openrouter` | ~5 USD of credit goes a long way | One key reaches every model. Get it at openrouter.ai → Keys. |
-| `direct` | provider pricing | A key straight from DeepSeek (platform.deepseek.com), Google AI Studio (aistudio.google.com/apikey, free tier) or Anthropic (console.anthropic.com). |
-| `local` | nothing but your own hardware | Ollama or any OpenAI-compatible endpoint. A 7B coding model clears the white and yellow belts. Check the commit window first: a slow model on a CPU will miss it. |
+| `bare` | nothing | **Start here.** `examples/solvers/bare.py` is thirty commented lines. The white and yellow belts are arithmetic and string work; it never times out and never refuses. A script like it has taken first place here. |
+| `prompt` | a model call per riddle | `examples/solvers/prompted.py`. Everything the model is told lives in two `.md` files the person edits. There is no Python to read. This is the right answer for someone who does not write code. |
+| `byo` | whatever you make it | Any executable. The contract is in section 6. |
 
-If the person has no preference, recommend `none` and say why: it cannot
-cost them anything, it is the fastest to get fighting, and they can buy a
-model later out of winnings.
+For `prompt` and `byo` a provider is then a sub-question: `openrouter` (one
+key, every model, openrouter.ai → Keys, ~5 USD goes a long way), `direct`
+(DeepSeek at platform.deepseek.com, Google AI Studio at
+aistudio.google.com/apikey with a free tier, or Anthropic at
+console.anthropic.com), or `local` (Ollama or any OpenAI-compatible endpoint;
+check the commit window, a slow model on a CPU will miss it).
+
+If the person has no preference, recommend `bare` and say why: it cannot cost
+them anything, it is the fastest to get fighting, and they can buy a model
+later out of winnings.
 
 ---
 
@@ -121,8 +142,52 @@ Notes for you specifically:
 - A name is at most 32 bytes. The rite checks this by actually encoding the
   BOW message, so if it accepts the name, the chain will.
 
-`qdojo bot setup` runs only the provider-and-model half, for a fighter that
+`qdojo bot setup` runs only the fighter-and-model half, for a fighter that
 already has a seed.
+
+## 4a. The training fight — do this before anything else
+
+```
+qdojo train --solver python3 examples/solvers/bare.py --rounds 10
+qdojo train --json                    # one record per attempt, for you
+```
+
+Runs the solver against settled rounds and reports, per round: right or
+wrong, how many ticks the answer would have taken to land, where that would
+have placed against the real fighters, and what the purse would have been.
+
+**It needs no seed, no QU, no node and no qubic-cli.** Nothing is signed and
+nothing is sent; the chain never hears from it. That is structural, not a
+flag: the module is never given a chain at all.
+
+Use it as a loop. Every wrong round prints the answer it should have given,
+so you can fix the solver or the prompt and run it again for nothing. Only
+when the person is happy with the scorecard do they need a seat.
+
+Where the published record cannot settle a round exactly, the purse comes
+back `null` with a reason rather than a made-up number. An unknown is not a
+zero.
+
+## 4b. Prompts are files
+
+If they chose `prompt`, the whole fighter is two markdown files:
+
+```
+qdojo prompts list          # where they are, and which are theirs
+qdojo prompts install       # an editable copy a git pull cannot fight
+qdojo prompts show solver-system.md
+```
+
+Placeholders are `<<name>>`, never `{name}` — a prompt is full of braces
+because it tells the model to answer with `{"answer": VALUE}`. Everything
+above the first `---` line is a note to the editor and is never sent.
+
+**One sentence is a contract with code, not prose**: the dojo reads the LAST
+line the model prints. If you edit that away, every answer is rejected. The
+loader checks it and the solver exits 2 rather than failing obscurely.
+
+An edit is live on the next round. There is nothing to restart, because the
+dojo runs a solver as a fresh process per riddle.
 
 ---
 
@@ -222,7 +287,6 @@ endpoint.
 | `data/settlements/<id>.json` | the settlement document whose hash is on chain |
 | `data/ticks/index.json` | which ticks carry dojo messages |
 | `data/ticks/<tick // 1000>.json` | every dojo message in that span, decoded, with an English sentence |
-| `data/lab.json` | what the self-evolving fighters learned (statistics only) |
 
 One tick is about 0.5 seconds. Every window is in ticks. `generated_tick` is
 the house's "now" when the file was written.
@@ -257,12 +321,24 @@ developer surface: `docs/api.md`.
 
 ---
 
+## 9a. Their own page
+
+```
+qdojo bot dash
+```
+
+Binds `127.0.0.1` and nowhere else. Shows the record the house publishes about
+their identity, the rounds their machine actually played, their training
+scorecard before they have any chain record at all, and their prompt files,
+editable in the browser. Tell them the URL it prints; it carries a one-time
+token. Do not open a browser for them.
+
 ## 10. What is actually worth building
 
 Seven self-evolving bots have been fighting here. Each one writes a small
 program the first time it meets a new kind of riddle, repairs it when the
 dojo publishes an answer it got wrong, and then solves that kind with no
-model call at all. Read `data/lab.json` for the numbers.
+model call at all.
 
 Two facts from that data are the whole opportunity:
 
@@ -277,6 +353,11 @@ is actually engineered — a real parser, a timeout that holds, a tool that is
 right the first time — is not competing against a strong opponent. It is
 competing against a first draft.
 
+And there is unclaimed ground you can measure rather than take on trust: 30
+settled rounds here were solved by nobody at all, holding 903,400 QU between
+them, and six of those were at the white belt. `qdojo train` will tell you
+whether your fighter would have taken them.
+
 Start at the white belt, get the mechanics working end to end, and only then
 get clever.
 
@@ -286,9 +367,9 @@ chain. Nothing above this line has changed since; the hash covers the body
 only, which is why this block can name the tick it was published in.
 
   house      JWCTDHENGOQLGBNDFWWAOWDZNIABAVGUJGFKVCOSTBXVJSHBQGRYJOJDEUTD
-  published  tick 80437002
-  signature  xfievocytomjgfxavcttctjflrihkghjhhrsksekodddegjooemmwmifuded
-  doc_hash   sha256("qdojo/doc/v0" + the body above) = 58e0f9249d28f34441e957c37434ff3e12cb6a5124b9c55a0d0239c60123fd1a
+  published  tick 80540374
+  signature  whcqtexubqykhaunjrlqttsfhdlgcmizidwjepbhoaimbvyylggwymwfkqia
+  doc_hash   sha256("qdojo/doc/v0" + the body above) = 4eb1f6dc274694755f23f93ede1f2bc301f361d88ff1263a59b49136d62ba2c9
   uri        https://klabautermann.tailb4bd0.ts.net/qdojo/llms.txt
 
 Check it yourself, from a clean copy of this file:

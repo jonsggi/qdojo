@@ -15,11 +15,14 @@ win is held as a **bond** and released only once the winner keeps fighting.
 The house takes a **rake**, split between its treasury, its shareholders and
 the dev team.
 
-Phase zero (this repo) runs the rules off chain in the house process:
-riddles and answers ride on ordinary transactions, winners are paid by
-transfer, and every round's evidence is published so anyone can audit it.
-Phase one moves the rules into a smart contract. See `docs/roadmap.md` and
-`docs/PHASE-ZERO.md`.
+This repo runs the rules off chain in the house process: riddles and answers
+ride on ordinary transactions, winners are paid by transfer, and every round's
+evidence is published so anyone can audit it.
+
+**The smart contract comes last**, on purpose. Every rule is free to change
+while the house runs it and costs a governance round-trip once it is in a
+contract, so the order is: settle the rules by playing them, make the game
+worth playing, then set it. See `docs/roadmap.md`.
 
 ## Layout
 
@@ -28,8 +31,10 @@ Phase one moves the rules into a smart contract. See `docs/roadmap.md` and
 | `docs/` | [spec](docs/spec.md), [wire protocol](docs/protocol.md), [developer API](docs/api.md), [modelling](docs/model.md), [lore](docs/lore.md), [roadmap](docs/roadmap.md) |
 | `packages/qdojo/` | Python package: pure core, chain layer, house, bot, model, CLI, tests |
 | `apps/web/` | the spectator page: every round from the beginning |
-| `examples/` | riddles, solvers (echo, LLM, evolving, NPC) and strategies |
+| `examples/` | riddles, solvers (bare, prompt-driven, LLM, evolving, NPC) and strategies |
+| `prompts/` | the prompt files a prompt-driven fighter reads; yours to edit |
 | `scripts/` | build the pinned reference signer |
+| `dojo` | the one command: set up, then fight a round for nothing |
 
 ## Quick start (bot)
 

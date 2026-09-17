@@ -18,7 +18,6 @@ Base URL for the sparring house: `https://klabautermann.tailb4bd0.ts.net/qdojo/d
 | `settlements/<id>.json` | the settlement document whose hash is on chain | at settlement |
 | `ticks/index.json` | which tick shards exist, which ticks carry events, counts per kind | at export |
 | `ticks/<tick // 1000>.json` | every dojo message in that span of 1000 ticks, decoded, each with an English sentence | at export |
-| `lab.json` | what the self-evolving fighters learned: statistics only, never tool source | `qdojo house lab` |
 | `docs.json` | documents the house has signed on chain: identity, tick, transaction, hash | `qdojo house sign-doc` |
 
 `ticks/*` and `lab.json` are **fetched lazily by the page, never polled**. They
@@ -207,11 +206,14 @@ The raw `payload` hex is published either way. `ticks/index.json` carries an
 `qdojo house events --tick N | --round N [--text]` prints the same thing from
 the command line.
 
-## lab.json
+## lab.json — not published
 
-Summaries and statistics for the self-evolving fighters (`examples/solvers/evo.py`),
-built by `qdojo house lab --evo-dir ~/.qdojo/evo`. **No tool source, prompt,
-stderr or filesystem path is ever published** — a test enforces it. Per bot:
+`qdojo house lab` still exists and is still the way to see what the
+self-evolving fighters learned, but **nothing serves the file**: the page that
+read it was removed on 2026-09-17. Run it with `--print` to look at the numbers.
+
+**No tool source, prompt, stderr or filesystem path is ever in it** — a test
+enforces that. Per bot:
 kinds learned, tools, snapshots (one per model call), solves, failures,
 repairs, and a 16-hex fingerprint of each tool so the aggregate can answer
 whether two bots wrote the same program. Across bots: the shared taxonomy,
@@ -248,8 +250,18 @@ through `solver.run_solver`, the exact path `bot run` uses, so a bad key or a
 wrong model id fails here rather than mid-round; and the balance is read, where
 an unknown is reported as unknown and never as zero.
 
-Provider paths: `none` (no LLM — a plain script wins the arithmetic belts and
-has stood on the podium), `openrouter`, `direct` and `local`.
+It asks **what thinks for your fighter before it asks about a provider**, so
+the free path never mentions an API key. Three choices (`--solver-kind`):
+
+| kind | file | needs |
+|---|---|---|
+| `bare` | `examples/solvers/bare.py` | nothing at all |
+| `prompt` | `examples/solvers/prompted.py` | a model, and a key in your own env |
+| `byo` | whatever you name | whatever you say |
+
+A provider is then a sub-question, and it maps to the prompt-driven solver
+rather than `pi.py`: `pi` is almost never installed on a stranger's machine.
+Provider paths: `openrouter`, `direct` and `local`.
 
 **qdojo never stores an API key.** There is no flag anywhere that accepts a key
 value, because a key on a command line lands in the shell history and in `ps`.
@@ -266,6 +278,67 @@ The profile (`<state>/bot.json`, mode 0600) gains `provider`, `model`, `solver`,
 `solver_env`, `key_source` and `setup_at`. `bot run` picks up `solver` and
 merges `solver_env` with `setdefault`, so a variable you exported yourself still
 wins. Profiles written before these keys existed still load.
+
+## Training: fight without fighting
+
+```
+qdojo train [--board URL|PATH] [--solver CMD...] [--rounds N] [--belt B]
+            [--round ID ...] [--solver-timeout S] [--json]
+```
+
+Runs your solver against settled rounds and reports what would have happened:
+right or wrong, how many ticks your answer would have taken to land, where that
+would have placed against the real fighters, and what the purse would have
+been. **It needs no seed, no QU, no node and no qubic-cli** — everything it
+uses is already published. Nothing is signed and nothing is sent.
+
+That is a structural guarantee, not a flag: `training.py` is never given a
+chain, a conf or an identity, so there is nothing in it to send with, and a
+test asserts that shape. There is deliberately no `--dry-run` on `bot run`.
+
+`--json` emits one record per attempt plus a closing scorecard, which is the
+handle a coding agent or a CI harness wants. The scorecard is also written to
+`<state>/training.json` so `qdojo bot dash` can show it.
+
+**Where the record is not enough, it says so.** `house_fighters` is not
+exported, so an NPC round cannot be re-settled exactly. Every round is first
+re-settled *without* your hypothetical entry and checked against what the house
+actually paid; when it does not reproduce, the purse is `null` and the reason
+is printed. An unknown is not a zero.
+
+## Prompts
+
+```
+qdojo prompts [list | install [--force] | show NAME]
+```
+
+A prompt-driven fighter IS its prompt files. They resolve first-hit-wins per
+file name: `$QDOJO_PROMPTS`, then `<state>/prompts/`, then the shipped
+`prompts/`. `install` puts an editable copy where a `git pull` cannot fight it.
+
+Placeholders are `<<name>>`, not `str.format`: a prompt is full of braces
+because it tells the model to answer with `{"answer": VALUE}`. Everything above
+the first `---` line is a note to the editor and is never sent.
+
+**One sentence in `solver-system.md` is a contract with code, not prose.** The
+dojo reads the last line your model prints. `prompts.check()` asserts that
+instruction survives an edit, the solver exits 2 if it did not, and the rite's
+one-real-riddle probe is therefore the regression net.
+
+## Your own page
+
+```
+qdojo bot dash [--port 7777] [--board URL] [--read-only]
+```
+
+Binds `127.0.0.1` and nowhere else — there is deliberately no flag to change
+that. Shows the record the house publishes about your identity, the rounds your
+machine actually played, your training scorecard before you have any chain
+record at all, and your prompt files, editable in the browser. A save is live on
+the next round, because the dojo runs a solver as a fresh process per riddle.
+
+It serves four literal URLs and nothing else; the only writable directory is
+your prompts, and it refuses to start if that directory holds a seed conf.
 
 ### For a coding agent
 

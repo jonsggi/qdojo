@@ -1,36 +1,108 @@
 # Roadmap
 
+**The contract comes last.** Not because it is hard, and not because the
+GQMPROP is a problem — it is not. Because every rule we change before the
+contract is free, and every rule we change after it costs a governance
+round-trip. The off-chain house is the cheapest place in this project to be
+wrong, so the order of work is: settle the rules by playing them, make the game
+worth playing, and only then set it in a contract whose parameters are numbers
+we measured rather than guessed.
+
+Everything below phase zero is therefore about nailing the game down. The
+contract is the last phase, and its brief is whatever the earlier phases prove.
+
+---
+
 ## Phase zero, off chain — COMPLETE (2026-09-16)
 
-Built and run: 30 live rounds across an 18-fighter cohort, 149 tests.
+The whole game run by a house process: it evaluates and pays, and every round
+is published and verifiable. 118 settled rounds on chain across an 18-fighter
+cohort.
 
 - [x] spec, wire protocol, lore, developer API (docs/api.md), modelling notes (docs/model.md)
 - [x] pure core: hashing, payloads, round evaluation, settlement
 - [x] chain layer: fake for tests, qubic-cli + indexer for real, indexer-lag safe
 - [x] house CLI: lobby / publish / collect / settle / void / export / metrics / model / distribute-shareholders
-- [x] bot CLI: init (seed + node discovery), bow, run with any solver, stats, shares, dividend, strategy hook
-- [x] spectator page: lobby table, rounds, results, void, fighter profiles, eight halls of fame, hash verify
-- [x] first live round (2026-09-15) and a full sparring run (68 rounds)
+- [x] bot CLI: init, bow, run with any solver, stats, shares, dividend, strategy hook
+- [x] spectator page: lobby table, rounds, results, void, fighter profiles, halls of fame, hash verify
+- [x] first live round (2026-09-15) and two full sparring runs (118 rounds)
 - [x] economics: stake-matched adaptive seed, lobby quorum, belts, bonds, podium, three-way rake
 - [x] mathematical model calibrated against the live cohort; gate + rake + NPC findings (docs/model.md)
 - [x] self-evolving tool-making fighters, LLM fighters on cheap models, house-funded NPCs
 
-Deferred to phase one (the contract): pure-Python signing to drop the
-qubic-cli dependency for bots; the sensei seat and the gate choice; belt
-seasons; on-contract bond custody and shareholder claims. The economic
-findings above are the brief for the contract's parameters.
+## Phase one, approachable — COMPLETE (2026-09-17)
 
-## Phase one, the contract
+Phase zero proved the game works. It did not make it possible for anybody else
+to play. This phase was the difference between a thing that runs and a thing a
+stranger can join.
+
+- [x] decoded tick pages: every tick on the site links to our own page, which
+      says in English who did what, for how much, with the raw payload behind a
+      toggle. 131 legacy frames that no longer decode are resolved from the
+      house's own records rather than guessed at.
+- [x] in-game help on every metric, and a rules screen that teaches the whole
+      game with the lore beside the mechanic it explains
+- [x] `llms.txt`, written for a coding agent, and signed on chain
+- [x] **a training fight**: `qdojo train` runs your solver against settled
+      rounds and reports where you would have placed and what the purse would
+      have been. No seed, no QU, no node, no signer. This is the front door.
+- [x] one command: `git clone … && cd qdojo && ./dojo`
+- [x] a solver chooser — bare bones, prompt-driven, bring your own — asked
+      before any provider question, so the free path never mentions an API key
+- [x] prompts as editable `.md` files; a save is live on the next round
+- [x] `qdojo bot dash`: a private page on 127.0.0.1 with your stats, your
+      training scorecard and your prompt files, editable in the browser
+- [x] the spectator page deployed off the tailnet, served from a container
+- [x] a private repository, and a test that every command we publish parses
+
+Left open, small: a real hostname and TLS for the deployment (needs a DNS
+record on `jonsggi.com`); the site's data is a committed snapshot, so a live
+house needs a push story; `riddles.py` is house-internal and must move out of
+the public package before the repo opens.
+
+## Phase two, the game deepens — NEXT
+
+The rules are cheap to change right now. This is where we spend that, and the
+Sketches below are the candidates. Nothing here is committed.
+
+- belts beyond blue: at present blue holds, progression stops, and own-belt
+  points are pure downside for a fighter who cannot be promoted
+- riddle classes that are not arithmetic — the lore's promise is code that is
+  broken and must be fixed
+- the face-off (duels), title belts as earned 1-of-1 assets, gauntlet seasons
+- make the sensei seat worth taking; on today's numbers it is strictly negative
+  and only a bonded, cash-rich senior has a reason
+- community riddles with an author stake and cut
+- whether a second cohort, run by someone who is not us, behaves the same way
+
+The economics to settle here, because they are the contract's parameters: the
+seed taper, the rake split, the bond, and whether the house is net positive
+without subsidy. `house model` and `house metrics` already answer these; they
+need running against rules we have changed, not against the ones we shipped.
+
+## Phase three, the contract — LAST
+
+Move the settled rules into a smart contract. Everything in this list is
+blocked on phase two being *decided*, not merely attempted.
+
 - seats, auctions, inactivity eviction, NPC seats acting at tick boundaries
 - commit and reveal inside the contract, pot and rake in state
+- on-contract bond custody and shareholder claims
+- the sensei seat and the chosen gate, belt seasons
+- **assets, not only QU** — see the title-belt sketch; better written down now
+  than discovered later
 - IPO of 676 shares, fees to shareholders
+- pure-Python signing, so a bot needs no qubic-cli
 - proposal through GQMPROP
 
-## Phase two
-- belts as on-chain rank, avatars as Qbay NFTs (but see Sketches: title belts, earned)
-- community riddles with an author stake and cut
+## Later, unscheduled
+
+- avatars as Qbay NFTs (but see Sketches: title belts, earned, is the better
+  version)
 - parimutuel spectator pools (Quottery's model), after legal review
 - oracle-fed riddles once a second oracle interface exists
+
+---
 
 ## Sketches — recorded, not scheduled (2026-09-17)
 

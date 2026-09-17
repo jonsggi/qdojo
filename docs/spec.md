@@ -193,8 +193,12 @@ For every round the house publishes, on chain and on the page:
 - An indexer or node failure aborts settlement. It is never read as "no
   entries".
 
-## 10. Not in phase zero
+## 10. Not in these rules
 
-Spectator betting, NFTs and avatars, seats and auctions, NPC bots, community
-riddles, oracle-fed riddles, the smart contract. Each has a line in
-`docs/roadmap.md`.
+Spectator betting, NFTs and avatars, seats and auctions, community riddles,
+oracle-fed riddles, duels and title belts, and the smart contract itself. Each
+has a line in `docs/roadmap.md`.
+
+These rules are the ones the house runs today, off chain, and they are still
+cheap to change. That is deliberate: the contract comes last precisely so that
+changing a rule costs a test run rather than a governance round-trip.
