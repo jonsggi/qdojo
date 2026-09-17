@@ -667,18 +667,6 @@ body.help-on .stat:hover .k[data-help] { color: var(--cyan); }
 .flow-step span:last-child { font-family: var(--font-text); font-size: 11px; line-height: 1.5; color: var(--grey); }
 
 /* ================================================================ JOIN */
-.path-picker { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
-/* Only the chosen path is lit. Every button yellow made the picker unreadable:
-   the 8px subtitle had to be grey, and grey on yellow is not text. */
-.path-picker .btn {
-  text-align: left; line-height: 1.6;
-  background: var(--panel); color: var(--white);
-  border-color: var(--navy-2); box-shadow: 4px 4px 0 var(--navy-2);
-}
-.path-picker .btn:hover, .path-picker .btn:focus-visible { background: var(--navy-2); color: var(--white); border-color: var(--cyan); }
-.path-picker .btn small { display: block; font-size: 8px; color: var(--grey); margin-top: 6px; }
-.path-picker .btn.btn-cyan { background: var(--cyan); color: var(--black); border-color: var(--black); box-shadow: 4px 4px 0 var(--red); }
-.path-picker .btn.btn-cyan small { color: var(--navy); }
 
 @media (max-width: 700px) {
   .flow { grid-auto-flow: row; }
@@ -697,3 +685,9 @@ body.help-on .stat:hover .k[data-help] { color: var(--cyan); }
 /* A panel heading's subtitle gets its own line, like the screen titles do.
    Without this "TRAINING" and its subtitle run together into one word. */
 .panel h3 small { display: block; font-size: 8px; letter-spacing: 0; margin-top: 6px; opacity: .8; }
+
+/* The one command is the loudest thing on the JOIN screen. */
+pre.code.hero { font-size: 15px; line-height: 1.9; border-width: 3px; padding: 18px; }
+.solver-card h3 small { display: block; font-size: 8px; margin-top: 6px; letter-spacing: 0; }
+.solver-card pre.code { font-size: 11px; }
+@media (max-width: 700px) { pre.code.hero { font-size: 12px; padding: 12px; } }

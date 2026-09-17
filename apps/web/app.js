@@ -108,7 +108,6 @@ const S = {
   tickIndex: null,     // tick -> [event] derived from history.json
   tickIndexKey: null,  // the rawKey tickIndex was built from
   help: true,          // in-game tooltips
-  setup: { path: 'none', provider: 'deepseek', model: null },
 };
 
 // ---------------------------------------------------------------- utils
@@ -1353,57 +1352,27 @@ function renderHistory() {
   setHTML('history-body', parts.join(''));
 }
 
-// ---------------------------------------------------------------- setup paths
-// Four ways to bring a fighter, listed cheapest-first on purpose: a plain
-// script needs no key, no bill and no network, and half the white belt is
-// arithmetic. Every command string here must match what `qdojo bot setup`
-// prints; apps/web/tests/setup.test.cjs is the drift guard.
-const SETUP_PATHS = {
-  none: {
-    label: 'NO LLM AT ALL', tag: 'A PLAIN SCRIPT CAN WIN',
-    how: 'Your fighter is a program, not a model. It costs nothing to run, it never times out and it never '
-       + 'returns a refusal. The white and yellow belts are arithmetic and string work: thirty lines of Python '
-       + 'beats a language model on them.',
-    provider: null,
-  },
-  openrouter: {
-    label: 'OPENROUTER', tag: 'ONE KEY, EVERY MODEL',
-    how: 'Sign in at openrouter.ai, open Keys, create one, and add about five dollars of credit — that is '
-       + 'hundreds of white-belt rounds. One key reaches DeepSeek, Gemini, Claude, Qwen and the rest, so you '
-       + 'can change your mind about the model without changing anything else.',
-    env: 'OPENROUTER_API_KEY',
-    models: ['deepseek/deepseek-chat', 'google/gemini-2.0-flash', 'anthropic/claude-haiku-4.5', 'qwen/qwen-2.5-coder-32b'],
-  },
-  direct: {
-    label: 'A DIRECT KEY', tag: 'ONE PROVIDER, LOWEST PRICE',
-    how: 'Cheaper per token than a router, and one fewer party between you and the model.',
-    providers: [
-      { id: 'deepseek', name: 'DEEPSEEK', where: 'platform.deepseek.com — sign up, API keys, two dollars of credit is plenty.', env: 'DEEPSEEK_API_KEY', model: 'deepseek-chat' },
-      { id: 'google', name: 'GOOGLE', where: 'aistudio.google.com/apikey — the free tier is enough to start.', env: 'GOOGLE_API_KEY', model: 'gemini-2.0-flash' },
-      { id: 'anthropic', name: 'ANTHROPIC', where: 'console.anthropic.com — create a key and add credit.', env: 'ANTHROPIC_API_KEY', model: 'claude-haiku-4.5' },
-    ],
-  },
-  local: {
-    label: 'A LOCAL MODEL', tag: 'NO KEY, NO BILL, NO NETWORK',
-    how: 'Install Ollama from ollama.com, then pull a small coding model. A 7B model clears the white and '
-       + 'yellow belts. qdojo talks to it over the ordinary OpenAI-compatible endpoint on localhost.',
-    env: null,
-    models: ['qwen2.5-coder:7b', 'llama3.1:8b', 'deepseek-coder-v2:16b'],
-  },
+// ---------------------------------------------------------------- joining
+// Every shell command this page prints lives here, because a command the CLI
+// does not accept is a promise the dojo breaks in the reader's terminal. That
+// happened: this page shipped `qdojo bot init --full` when no --full existed.
+// apps/web/tests/setup.test.cjs is the guard, and it is real this time.
+const REPO_URL = 'https://github.com/joelgsponer/qdojo';
+const CMD = {
+  start: `git clone ${REPO_URL} qdojo && cd qdojo && ./dojo`,
+  train: './dojo train',
+  rite:  './dojo rite',
+  fight: './dojo fight',
+  dash:  './dojo dash',
 };
-const ECHO_SOLVER =
+const BARE_SOLVER =
 `#!/usr/bin/env python3
-# The entire contract: riddle JSON on stdin, {"answer": ...} on stdout.
+# The whole contract: riddle JSON on stdin, {"answer": ...} on stdout.
 import json, re, sys
 r = json.load(sys.stdin)
-nums = [int(x) for x in re.findall(r"-?\\d+", r["input"])]
+nums = [int(n) for n in re.findall(r"-?\\d+", r["input"])]
 print(json.dumps({"answer": sum(nums)}))`;
 
-// The fastest path for anyone who already has a coding agent: hand it one
-// line. llms.txt is written for the agent, not the human -- it carries the
-// safety rules, the solver contract and the exact non-interactive command.
-// The page may be served from a sub-path (/qdojo/), so llms.txt is resolved
-// against the document, never against the origin.
 // A published document is signed the way a round is: the house puts its hash on
 // chain, so the transaction is the signature and the tick is the date.
 function docSignature(name) {
@@ -1417,6 +1386,8 @@ function docSignature(name) {
     or read <a href="${tickHref(d.tick)}">what happened in that tick</a>.</span></p>`;
 }
 
+// The page may be served from a sub-path, so llms.txt is resolved against the
+// document, never against the origin.
 function llmsBase() { return new URL('.', location.href).href.replace(/\/$/, ''); }
 function llmsURL() { return new URL('llms.txt', location.href).href; }
 
@@ -1430,82 +1401,103 @@ the identity and how much QU to send, and write me a white-belt solver.
 Do not put any API key on a command line, and never print my seed.`;
 }
 
-function saveSetup() { try { localStorage.setItem('qdojo.setup', JSON.stringify(S.setup)); } catch (e) { /* ignore */ } }
-
-function setupCommand(boardURL) {
-  const p = S.setup.path, spec = SETUP_PATHS[p] || SETUP_PATHS.none;
-  const lines = ['uv sync', 'scripts/build-qubic-cli.sh                 # the reference signer, once', ''];
-  if (p === 'none') {
-    lines.push('uv run qdojo bot init --full --provider none --name RYUBOT');
-    lines.push('');
-    lines.push('uv run qdojo bot run \\');
-  } else {
-    let env = spec.env, model = S.setup.model;
-    if (p === 'direct') {
-      const pr = (spec.providers.find(x => x.id === S.setup.provider) || spec.providers[0]);
-      env = pr.env; model = model || pr.model;
-    }
-    model = model || (spec.models && spec.models[0]) || '';
-    if (env) lines.push(`export ${env}=…                          # qdojo never reads or stores this`);
-    lines.push(`uv run qdojo bot init --full --name RYUBOT \\`);
-    lines.push(`    --provider ${p} --model ${model}${p === 'local' ? ' \\\n    --base-url http://localhost:11434/v1' : ''}`);
-    lines.push('');
-    lines.push('uv run qdojo bot run \\');
-  }
-  lines.push(`    --board ${boardURL} \\`);
-  lines.push(p === 'none' ? '    --solver examples/solvers/echo.py \\' : '    --solver examples/solvers/evo.py \\');
-  lines.push('    --strategy examples/strategies/cautious.py --name RYUBOT');
-  return lines.join('\n');
+// Rounds nobody solved. The most convincing sentence available, and it is
+// computed from the published record rather than asserted.
+function unclaimed() {
+  const s = S.data.rounds.filter(r => r.settlement && !isVoid(r) && r.riddle
+    && !(r.entries || []).some(e => e.verdict === 'winner' || e.verdict === 'solved'));
+  const white = s.filter(r => (r.belt || '') === 'white');
+  return { n: s.length, qu: s.reduce((a, r) => a + (r.settlement.pot || 0), 0), white,
+           show: white[white.length - 1] || s[s.length - 1] };
 }
 
 function renderJoin() {
   const d = S.data;
-  const boardURL = new URL('data/board.json', location.href).href;
   const open = d.open[0];
-  const p = S.setup.path, spec = SETUP_PATHS[p] || SETUP_PATHS.none;
   const seat = open ? open.entry_fee : null;
-
-  const pathBtns = Object.entries(SETUP_PATHS).map(([k, v]) =>
-    `<button class="btn ${k === p ? 'btn-cyan' : ''}" data-setup-path="${k}">${esc(v.label)}<small>${esc(v.tag)}</small></button>`).join('');
-
-  let step2 = '';
-  if (p === 'none') {
-    step2 = `<div class="panel panel-cyan"><h3>STEP 2 · WRITE THE BOT</h3>
-      <p>${esc(spec.how)}</p>
-      <pre class="code" id="echo-solver">${esc(ECHO_SOLVER)}</pre>
-      <button class="btn btn-sm" data-copy="echo-solver">COPY</button>
-      <p class="tiny muted" style="margin-top:12px">That is <span class="mono">examples/solvers/echo.py</span>.
-      Any executable works: read the riddle as JSON on stdin, print <span class="mono">{"answer": …}</span> on stdout.
-      Exit non-zero and the dojo simply records that you did not answer.</p></div>`;
-  } else {
-    const providers = p === 'direct' ? `<p class="clean-list">${spec.providers.map(pr =>
-      `<button class="btn btn-sm ${pr.id === S.setup.provider ? 'btn-cyan' : ''}" data-setup-provider="${pr.id}">${esc(pr.name)}</button>`).join(' ')}</p>
-      <p class="tiny">${esc((spec.providers.find(x => x.id === S.setup.provider) || spec.providers[0]).where)}</p>` : '';
-    const models = (p === 'direct' ? [(spec.providers.find(x => x.id === S.setup.provider) || spec.providers[0]).model] : spec.models) || [];
-    step2 = `<div class="panel panel-cyan"><h3>STEP 2 · ${p === 'local' ? 'PULL A MODEL' : 'GET A KEY'}</h3>
-      <p>${esc(spec.how)}</p>
-      ${providers}
-      ${models.length > 1 ? `<p class="tiny muted" style="margin-bottom:4px">PICK A MODEL</p><p class="clean-list">${models.map(m =>
-        `<button class="btn btn-sm ${m === (S.setup.model || models[0]) ? 'btn-cyan' : ''}" data-setup-model="${esc(m)}">${esc(m)}</button>`).join(' ')}</p>` : ''}
-      ${p === 'local' ? `<pre class="code" id="ollama-pull">ollama pull ${esc(S.setup.model || models[0])}</pre>
-        <button class="btn btn-sm" data-copy="ollama-pull">COPY</button>` : ''}
-      <p class="tiny muted" style="margin-top:12px"><b>qdojo never stores your key.</b> There is no flag that takes one —
-      a key on a command line lands in your shell history and in <span class="mono">ps</span>. It stays in your
-      environment, or with your own agent tool, and qdojo only records which variable to read.</p></div>`;
-  }
-
-  const warn = p === 'local' && open && open.commit_window
-    ? `<p class="tiny" style="margin-top:12px">This table's commit window is ${fmt(open.commit_window)} ticks,
-       about ${ticksToHuman(open.commit_window)}. A 7B model on a CPU will often miss that. Watch AVG SOLVE on
-       your fighter card, and remember the evolving solver only calls the model the first time it meets a kind.</p>` : '';
+  const u = unclaimed();
 
   setHTML('join-body', `
-    <h2 class="screen-title">BRING A FIGHTER<small>PICK A BRAIN · GET SET UP · STEP INTO THE RING</small></h2>
+    <h2 class="screen-title">BRING A FIGHTER<small>ONE COMMAND &middot; NO KEY &middot; NOTHING TO PAY UNTIL YOU SAY SO</small></h2>
+
+    <div class="panel panel-green">
+      <h3>STEP 1 &middot; PASTE THIS INTO A TERMINAL</h3>
+      <pre class="code hero" id="start-cmd">${esc(CMD.start)}</pre>
+      <button class="btn btn-cyan" data-copy="start-cmd">COPY THE COMMAND</button>
+      <p style="margin-top:14px">That is the whole setup. It checks your tools, then goes straight to a fight
+      that costs nothing. It writes nothing outside that folder and <span class="mono">~/.qdojo</span>, it never
+      asks for an API key on a command line, and it never overwrites a seed that already exists.</p>
+      <p class="tiny muted">Linux or macOS. It needs <span class="mono">git</span> and
+      <span class="mono">uv</span>; if uv is missing it prints the one line that installs it and stops.
+      The repository is private for now, so you need access to clone it.</p>
+    </div>
+
+    <div class="panel panel-cyan">
+      <h3>STEP 2 &middot; FIGHT FOR NOTHING, FIRST</h3>
+      <p class="ko-text win">YOU NEED NO MONEY, NO SEED AND NO ACCOUNT TO TRY THIS</p>
+      <p>A TRAINING FIGHT runs your solver against rounds that really happened: the same riddles, the same
+      answers, the same clock. Nothing is signed and nothing is sent — the chain never hears from you. Then it
+      tells you what you got right, how many ticks your answer would have taken to land, where that would have
+      placed against the real fighters, and what the purse would have been.</p>
+      ${u.n ? `<p>It is worth knowing what is lying around: <b>${fmt(u.n)} settled rounds here were solved by
+      nobody at all</b>, holding ${qu(u.qu)} between them${u.white.length ? `, and ${fmt(u.white.length)} of
+      those were at the ${beltTag({ belt: 'white' }, 'belt-sm')}` : ''}.
+      ${u.show ? `One was <a href="#results/${u.show.round_id}">&ldquo;${esc(u.show.title)}&rdquo;</a>, with
+      ${qu(u.show.settlement.pot)} in the pot.` : ''}</p>` : ''}
+      <pre class="code" id="train-cmd">${esc(CMD.train)}</pre>
+      <button class="btn btn-sm" data-copy="train-cmd">COPY</button>
+      <p class="tiny muted" style="margin-top:12px">The one command above already does this first, so you may
+      never need to type it. Break your solver on purpose once, then decide whether you want a seat.</p>
+    </div>
+
+    <div class="panel panel-yellow">
+      <h3>STEP 3 &middot; WHO THINKS FOR YOUR FIGHTER</h3>
+      <p>The terminal asks this once, and you can change your mind any time with
+      <span class="mono">qdojo bot setup</span>. There is no wrong answer, and the first one costs nothing.</p>
+    </div>
+    <div class="cols">
+      <div class="panel panel-green solver-card" data-solver="bare">
+        <h3>BARE BONES<small>NO MODEL, NO KEY, NO BILL</small></h3>
+        <p>Your fighter is a program, not a model. It never times out and it never refuses. Half the white belt
+        is arithmetic and string work, and a script like this has taken first place here.</p>
+        <pre class="code" id="bare-solver">${esc(BARE_SOLVER)}</pre>
+        <button class="btn btn-sm" data-copy="bare-solver">COPY</button>
+        <p class="tiny muted" style="margin-top:10px">Exit non-zero and the dojo simply records that you did
+        not answer. There is no penalty beyond the seat.</p>
+      </div>
+      <div class="panel panel-cyan solver-card" data-solver="prompt">
+        <h3>PROMPT-DRIVEN<small>ONE MODEL CALL &middot; THE FIGHTER IS A TEXT FILE</small></h3>
+        <p>One call to a language model per riddle, and everything it is told lives in two markdown files you
+        open in any editor. There is no Python to read. Change a sentence, save, and the next round uses it.</p>
+        <p>You bring the key. The terminal says where to get one and what it costs, and then puts it nowhere:
+        not in a file, not on a command line, not in your shell history. It records the <b>name</b> of the
+        variable you keep it in, and nothing else.</p>
+      </div>
+      <div class="panel solver-card" data-solver="byo">
+        <h3>BRING YOUR OWN<small>ANY EXECUTABLE, ANY LANGUAGE</small></h3>
+        <p>Point the dojo at any program. It gets the riddle on stdin and prints the answer on stdout; what
+        happens in between is entirely yours — an agent, a solver you wrote, a model you trained, a lookup
+        table, a person typing.</p>
+        <p>Every riddle ever published and the answer the house revealed is in
+        <span class="mono">history.json</span>: a free, public, growing training set.</p>
+      </div>
+    </div>
+
+    <div class="panel panel-red">
+      <h3>A PAGE OF YOUR OWN</h3>
+      <p>${esc(CMD.dash)} starts a small page on <span class="mono">127.0.0.1</span> and nowhere else. It shows
+      your fighter the way this site does, beside the rounds your machine actually played — including the
+      training fights that never touched the chain and will never appear here. And it opens your prompt files
+      for editing, in the browser. Save, and the next round uses the new words. Nothing to restart.</p>
+      <pre class="code" id="dash-cmd">${esc(CMD.dash)}</pre>
+      <button class="btn btn-sm" data-copy="dash-cmd">COPY</button>
+      <p class="tiny muted" style="margin-top:12px">It binds loopback, serves nothing out of your state
+      directory, and can write to exactly one place: your prompts.</p>
+    </div>
 
     <div class="panel panel-cyan agent-panel">
       <h3>HAVE A CODING AGENT? GIVE IT THIS</h3>
-      <p>Claude Code, Cursor, Codex, an agent of your own — paste this and it will do the whole thing:
-      pick up the rules, run the setup, hand you the identity to fund, and write you a solver.</p>
+      <p>Claude Code, Cursor, Codex, an agent of your own — paste this and it will do the whole thing.</p>
       <pre class="code" id="agent-prompt">${esc(agentPrompt(llmsBase()))}</pre>
       <p class="clean-list">
         <button class="btn" data-copy="agent-prompt">COPY THE PROMPT</button>
@@ -1514,36 +1506,14 @@ function renderJoin() {
       ${docSignature('llms.txt')}
       <p class="tiny muted" style="margin-top:12px">Read it yourself first if you like — it is plain text and
       it is short: <a class="mono wrap" href="${esc(llmsURL())}" target="_blank" rel="noopener">${esc(llmsURL())}</a><br>
-      It is written for machines: the four safety rules, the one-line non-interactive setup command, the
-      solver contract, every data endpoint, and where the open ground is. Prefer to do the whole thing by hand? Carry on below.</p>
-    </div>
-
-    <div class="panel panel-green">
-      <h3>STEP 1 · PICK A BRAIN</h3>
-      <div class="path-picker">${pathBtns}</div>
-      <p class="tiny muted" style="margin-top:12px">Start on the left. A plain script has stood on the podium here,
-      and it is the only option that cannot cost you anything.</p>
-    </div>
-
-    ${step2}
-
-    <div class="panel panel-yellow">
-      <h3>STEP 3 · COPY THIS</h3>
-      <pre class="code" id="setup-cmd">${esc(setupCommand(boardURL))}</pre>
-      <button class="btn btn-sm" data-copy="setup-cmd">COPY</button>
-      <p class="tiny muted" style="margin-top:12px">
-        <b>bot init --full</b> creates a seed in a 0600 file that exists nowhere else, derives your identity,
-        finds live nodes, and makes one cheap test call to prove the whole chain works before you spend anything.
-        It never overwrites a seed that already exists.<br>
-        <b>bot run</b> watches the board, buys seats it likes, seals an answer and reveals it.
-      </p>
-      ${warn}
-      <p class="tiny muted">This dojo's board: <a class="mono wrap" href="${esc(boardURL)}">${esc(boardURL)}</a></p>
+      Everything it needs is in that one file, including the safety rules it must not break.</p>
     </div>
 
     <div class="cols">
       <div class="panel panel-red">
-        <h3>THE HOUSE</h3>
+        <h3>WHEN YOU WANT TO FIGHT FOR REAL</h3>
+        <p>A seat costs real QU and every send on this chain is final. There is nobody to appeal to. Here is
+        what one costs at this house right now.</p>
         <dl class="kv">
           <dt>HOUSE</dt><dd>${idLink(d.house)}</dd>
           <dt${h('entry_fee')}>ENTRY FEE</dt><dd>${open ? qu(open.entry_fee) : '<span class="muted">see the next LOBBY or PUBLISH</span>'}</dd>
@@ -1554,15 +1524,20 @@ function renderJoin() {
           <dt${h('mode')}>PAYOUT</dt><dd>${open ? `${esc(payoutModeLabel(open))} · ` : ''}${open && open.payout_mode === 'podium' ? 'the first three correct commits split (pot − rake) 5:3:2, later solvers get nothing' : `(pot − rake) ÷ winners, remainder carries${open && open.payout_mode === 'first' ? '; first commit tick wins, later solvers get nothing' : ''}`}</dd>
           ${open && open.bond_bps ? `<dt${h('bond')}>BOND</dt><dd>${esc(bondLabel(open))}: that share of every win stays with the house until the winner has fought again</dd>` : ''}
         </dl>
-        ${seat ? `<p class="tiny muted">Fund your identity with at least ${fmt(seat * 3)} QU — three seats and change — before the bell.</p>` : ''}
+        ${seat ? `<p class="tiny muted">Fund the identity the rite printed with at least ${qu(seat * 3)} — three
+        seats and change. That is the first moment any of this costs you anything, and nothing before it does.</p>` : ''}
       </div>
       <div class="panel">
         <h3>WHAT HAPPENS NEXT</h3>
         <ol class="rules">
-          <li>Send QU to the identity <span class="mono">bot init</span> printed. A zero balance cannot even send a message.</li>
-          <li>Start <span class="mono">bot run</span>. It waits for a table at your belt.</li>
-          <li>Bow once, and your name appears in <a href="#fighters">FIGHTER SELECT</a> and on the boards.</li>
-          <li>Everyone starts at the ${beltTag({ belt: (d.ladder || ['white'])[0] }, 'belt-sm')}. Win twice at your belt and the dojo moves you up.</li>
+          <li>Train as often as you like. It costs nothing and the chain never hears about it.</li>
+          <li>When you are ready, <span class="mono">${esc(CMD.rite)}</span> makes you a seed and an identity.</li>
+          <li>Send QU to it. A purse with nothing in it cannot even send a message.</li>
+          <li>Leave <span class="mono">${esc(CMD.fight)}</span> running. It waits for a table at your belt,
+          buys the seat, seals an answer and opens it.</li>
+          <li>Bow once and your name is in <a href="#fighters">FIGHTER SELECT</a> for ever. Everyone starts at
+          the ${beltTag({ belt: (d.ladder || ['white'])[0] }, 'belt-sm')}; win twice at your belt and the dojo
+          moves you up, away from the riddles you have mastered.</li>
         </ol>
         <p><a class="btn btn-sm btn-cyan" href="#rules">THE RULES &amp; THE WAY</a></p>
       </div>
@@ -2157,7 +2132,7 @@ function wire() {
 
   // delegated buttons inside rendered screens
   document.addEventListener('click', async e => {
-    const t = e.target.closest('[data-replay],[data-verify],[data-copy],[data-setup-path],[data-setup-provider],[data-setup-model],[data-raw]');
+    const t = e.target.closest('[data-replay],[data-verify],[data-copy],[data-raw]');
     if (!t) {
       // touch: there is no hover, so a tap on a marked term opens its tooltip
       if (S.help) {
@@ -2170,9 +2145,6 @@ function wire() {
     if (t.dataset.replay) { const r = S.data.rounds.find(x => x.round_id === Number(t.dataset.replay)); if (r) replayRound(r); }
     if (t.dataset.copy) copyText(t.dataset.copy);
     if (t.dataset.verify) runVerify(Number(t.dataset.verify), true);
-    if (t.dataset.setupPath) { S.setup.path = t.dataset.setupPath; saveSetup(); renderJoin(); }
-    if (t.dataset.setupProvider) { S.setup.provider = t.dataset.setupProvider; saveSetup(); renderJoin(); }
-    if (t.dataset.setupModel) { S.setup.model = t.dataset.setupModel; saveSetup(); renderJoin(); }
   });
 
   // any touch of the cabinet ends attract mode
@@ -2199,9 +2171,8 @@ function wire() {
   try { if (localStorage.getItem('qdojo.crt') === '0') $('#btn-crt').click(); } catch (e) { /* ignore */ }
   // Help defaults ON: the whole point is the newcomer, and a tooltip only
   // appears on hover or focus of a marked term, so it costs a regular nothing.
-  let helpOn = true, setup = null;
-  try { helpOn = localStorage.getItem('qdojo.help') !== '0'; setup = JSON.parse(localStorage.getItem('qdojo.setup') || 'null'); } catch (e) { /* ignore */ }
-  if (setup && typeof setup === 'object') Object.assign(S.setup, setup);
+  let helpOn = true;
+  try { helpOn = localStorage.getItem('qdojo.help') !== '0'; } catch (e) { /* ignore */ }
   setHelp(helpOn);
 }
 

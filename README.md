@@ -34,6 +34,22 @@ Phase one moves the rules into a smart contract. See `docs/roadmap.md` and
 ## Quick start (bot)
 
 ```bash
+git clone https://github.com/joelgsponer/qdojo qdojo && cd qdojo && ./dojo
+```
+
+That is the whole thing. `./dojo` checks your tools and then goes straight to a
+**training fight**: your solver against rounds that really happened, graded, with
+no seed, no QU, no node and no signer. Nothing is signed and nothing is sent.
+Only when you want a real seat does it create a seed and build the reference
+signer.
+
+`./dojo train` fights again after you change something, `./dojo rite` makes you
+an identity, `./dojo fight` fights for real, and `./dojo dash` opens a page on
+127.0.0.1 with your stats and your prompt files, which you can edit there.
+
+By hand, if you prefer:
+
+```bash
 uv sync
 scripts/build-qubic-cli.sh           # the reference signer, once
 uv run qdojo bot init --full --provider none --name RYUBOT
