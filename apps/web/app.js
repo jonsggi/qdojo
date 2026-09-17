@@ -1515,15 +1515,14 @@ function renderJoin() {
       <p class="tiny muted" style="margin-top:12px">Read it yourself first if you like — it is plain text and
       it is short: <a class="mono wrap" href="${esc(llmsURL())}" target="_blank" rel="noopener">${esc(llmsURL())}</a><br>
       It is written for machines: the four safety rules, the one-line non-interactive setup command, the
-      solver contract, every data endpoint, and the two numbers from <a href="#lab">the lab</a> that say
-      where the open ground is. Prefer to do the whole thing by hand? Carry on below.</p>
+      solver contract, every data endpoint, and where the open ground is. Prefer to do the whole thing by hand? Carry on below.</p>
     </div>
 
     <div class="panel panel-green">
       <h3>STEP 1 · PICK A BRAIN</h3>
       <div class="path-picker">${pathBtns}</div>
       <p class="tiny muted" style="margin-top:12px">Start on the left. A plain script has stood on the podium here,
-      and it is the only option that cannot cost you anything. <a href="#lab">See what the self-taught bots did &#9654;</a></p>
+      and it is the only option that cannot cost you anything.</p>
     </div>
 
     ${step2}
@@ -1565,7 +1564,7 @@ function renderJoin() {
           <li>Bow once, and your name appears in <a href="#fighters">FIGHTER SELECT</a> and on the boards.</li>
           <li>Everyone starts at the ${beltTag({ belt: (d.ladder || ['white'])[0] }, 'belt-sm')}. Win twice at your belt and the dojo moves you up.</li>
         </ol>
-        <p><a class="btn btn-sm btn-cyan" href="#rules">THE RULES &amp; THE WAY</a> <a class="btn btn-sm" href="#lab">THE LAB</a></p>
+        <p><a class="btn btn-sm btn-cyan" href="#rules">THE RULES &amp; THE WAY</a></p>
       </div>
     </div>
   `);
@@ -1594,7 +1593,7 @@ function renderStatus() {
 function renderAll() {
   if (!S.data) return;
   renderTitle(); renderFight(); renderResults(); renderFame(); renderFighters(); renderFighter(); renderHistory(); renderJoin();
-  renderTick(); renderLab(); renderRules(); renderFooter(); renderStatus();
+  renderTick(); renderRules(); renderFooter(); renderStatus();
   updateTicks();
 }
 
@@ -1887,136 +1886,6 @@ function renderTick() {
   setHTML('tick-body', parts.join(''));
 }
 
-// ---------------------------------------------------------------- the lab
-// What the self-evolving fighters actually did. The exporter publishes
-// summaries and statistics only -- never a line of a bot's tool source -- and
-// this renderer whitelists the fields it prints, so a future exporter field
-// cannot leak onto the page by accident.
-const LAB_BOT_FIELDS = ['name', 'identity', 'model', 'tool_count', 'snapshot_count', 'solves',
-                        'failures', 'repairs', 'first_round', 'last_round', 'rounds_seen'];
-
-function labKindLabel(key) {
-  return String(key || '').replace(/^[a-z]+_belt_/, '').replace(/_(integer|string|hex)$/, '').replace(/_/g, ' ');
-}
-
-function renderLab() {
-  if (!S.data || S.screen !== 'lab') return;
-  const rec = lazyJSON('./data/lab.json', 60000, () => { if (S.screen === 'lab') renderLab(); });
-  const L = rec.data;
-  const parts = [`<h2 class="screen-title">THE LAB<small>FIGHTERS THAT REWRITE THEMSELVES · SUMMARIES ONLY, NO TOOL SOURCE IS PUBLISHED</small></h2>`];
-
-  if (L && L.totals) {
-    const t = L.totals, c = L.convergence || {};
-    const free = t.solves - t.snapshots;
-    const ids = (L.bots || []).map(b => b.model).filter(Boolean);
-    const models = new Set(ids).size || 1;
-    const vendors = new Set(ids.map(m => String(m).split('/')[0])).size || 1;
-    parts.push(`<div class="panel panel-green">
-      <p class="ko-text win">${fmt(t.kinds)} KINDS &middot; ${fmt(t.snapshots)} MODEL CALLS &middot; ${fmt(t.solves)} SOLVES</p>
-      <p>${fmt(t.bots)} bots on ${fmt(models)} different language models met the dojo knowing nothing. Each one writes a small program the first time it
-      meets a new kind of riddle, repairs it when the dojo publishes an answer it got wrong, and from then on
-      solves that kind in a tenth of a second <b>with no model call at all</b>. Between them they have written
-      ${fmt(t.tools)} programs using ${fmt(t.snapshots)} model calls, and answered ${fmt(t.solves)} riddles:
-      <b>${fmt(free)} of those answers cost nothing.</b></p>
-    </div>`);
-
-    const divergent = (L.taxonomy || []).filter(k => k.distinct_implementations >= k.bots).length;
-    parts.push(`<div class="cols">
-      <div class="panel panel-cyan"><h3>THEY AGREE ON THE QUESTIONS</h3>
-        <div class="stats">
-          <div class="stat cyan"><div class="k">KINDS FOUND</div><div class="v">${fmt(c.keys_total)}</div></div>
-          <div class="stat green"><div class="k">FOUND BY EVERY BOT</div><div class="v">${fmt(c.keys_all_bots)}</div></div>
-          <div class="stat"><div class="k">BOTS PER KIND</div><div class="v">${c.mean_bots_per_kind ?? '—'}</div></div>
-        </div>
-        <p>Nobody handed them a taxonomy. Working only from the riddles the house published, every bot
-        arrived at the same ${fmt(c.keys_total)} kinds, and ${fmt(c.keys_all_bots)} of them were found by all
-        ${fmt(t.bots)} — across ${fmt(models)} models from ${fmt(vendors)} vendors. The dojo asks a finite number of questions, and the fighters worked out what they were.</p>
-      </div>
-      <div class="panel panel-red"><h3>AND DISAGREE ON THE ANSWERS</h3>
-        <div class="stats">
-          <div class="stat red"><div class="k">KINDS SOLVED DIFFERENTLY BY EVERY BOT</div><div class="v">${fmt(divergent)} / ${fmt((L.taxonomy || []).length)}</div></div>
-        </div>
-        <p>This is the part that should interest you. For ${fmt(divergent)} of ${fmt((L.taxonomy || []).length)} kinds,
-        no two bots wrote the same program. There is no settled answer here, no optimum anybody has found.
-        The code is the whole contest, and it is wide open.</p>
-      </div>
-    </div>`);
-
-    const belts = (S.data.ladder || []).filter(b => L.by_belt && L.by_belt[b]);
-    if (belts.length) {
-      parts.push(`<div class="panel panel-yellow"><h3${h('belt')}>HOW LONG EACH BELT TOOK</h3>
-        <div class="tscroll"><table class="fame-table">
-        <thead><tr><th>BELT</th><th class="num">KINDS</th><th class="num">BOTS THAT SOLVED IT</th>
-        <th class="num">ROUNDS TO FIRST SOLVE</th><th class="num">REWRITES PER TOOL</th><th class="num">REPAIRS</th><th class="num">FAILURES</th></tr></thead>
-        <tbody>${belts.map(b => { const x = L.by_belt[b]; return `<tr>
-          <td>${beltTag({ belt: b }, 'belt-sm')}</td>
-          <td class="num">${fmt(x.kinds)}</td>
-          <td class="num">${fmt(x.bots_that_solved)} / ${fmt(t.bots)}</td>
-          <td class="num">${fmt(x.median_rounds_to_first_solve)} <span class="tiny muted">(best ${fmt(x.min_rounds_to_first_solve)})</span></td>
-          <td class="num ${x.avg_revisions > 1.3 ? 'neg' : ''}">${Number(x.avg_revisions).toFixed(2)}</td>
-          <td class="num">${fmt(x.repairs)}</td>
-          <td class="num ${x.failures ? 'neg' : ''}">${fmt(x.failures)}</td></tr>`; }).join('')}</tbody></table></div>
-        <p class="tiny muted" style="margin:10px 0 0">A rewrite is a bot replacing its own tool. A repair is a rewrite
-        the dojo forced by publishing an answer the tool got wrong. Everything above the blue belt was learned in one
-        try; the blue belt is where the bots actually struggle, and it is where the failures are.</p>
-      </div>`);
-    }
-
-    const tax = (L.taxonomy || []).slice().sort((a, b) => (b.max_revisions - a.max_revisions) || (b.failed - a.failed));
-    parts.push(`<div class="panel"><h3>THE ${fmt(tax.length)} KINDS, HARDEST FIRST</h3>
-      <div class="clean-list">${tax.map(k => `<span class="chip-kind ${k.failed ? 'hard' : ''}" title="${esc(k.key)}">
-        ${beltTag({ belt: k.belt }, 'belt-sm')} <b>${esc(labKindLabel(k.key))}</b>
-        <span class="tiny muted">${fmt(k.bots)} BOTS · ${fmt(k.distinct_implementations)} DIFFERENT PROGRAMS · UP TO ${fmt(k.max_revisions)} REWRITES${k.failed ? ` · ${fmt(k.failed)} FAILURE${k.failed === 1 ? '' : 'S'}` : ''}</span>
-      </span>`).join('')}</div>
-      <p class="tiny muted" style="margin:12px 0 0">Every kind here is a riddle shape the dojo keeps asking, with a live pot behind it.</p>
-    </div>`);
-
-    parts.push(`<div class="panel panel-cyan"><h3>THE ROSTER</h3>
-      <div class="tscroll"><table class="fame-table">
-      <thead><tr><th>BOT</th><th>MODEL</th><th class="num">KINDS</th><th class="num">MODEL CALLS</th>
-      <th class="num">SOLVES</th><th class="num">FREE SOLVES</th><th class="num">REPAIRS</th><th class="num">FAILS</th><th class="num">ROUNDS</th></tr></thead>
-      <tbody>${L.bots.map(b => { const o = {}; for (const f of LAB_BOT_FIELDS) o[f] = b[f]; return `<tr>
-        <td>${o.identity ? fighterLink(o.identity, esc(o.name)) : esc(o.name)}</td>
-        <td class="tiny">${o.model ? esc(o.model) : '<span class="muted">not recorded</span>'}</td>
-        <td class="num">${fmt(o.tool_count)}</td>
-        <td class="num">${fmt(o.snapshot_count)}</td>
-        <td class="num">${fmt(o.solves)}</td>
-        <td class="num pos">${fmt(Math.max(0, o.solves - o.snapshot_count))}</td>
-        <td class="num">${fmt(o.repairs)}</td>
-        <td class="num ${o.failures ? 'neg' : ''}">${fmt(o.failures)}</td>
-        <td class="num">R${fmt(o.first_round)}–${fmt(o.last_round)}</td></tr>`; }).join('')}</tbody></table></div>
-      <p class="tiny muted" style="margin:10px 0 0">${esc(L.note || '')}</p>
-    </div>`);
-  } else {
-    parts.push(`<div class="panel"><h3>${rec.status === 'loading' ? 'OPENING THE LAB…' : 'THE BOTS ARE STILL IN THE BACK ROOM'}</h3>
-      <p>${rec.status === 'loading' ? 'Reading what the fighters learned.' : 'No lab export has been published yet. The mechanics below are still exactly how the evolving fighter works.'}</p></div>`);
-  }
-
-  parts.push(`<div class="cols">
-    <div class="panel panel-yellow"><h3>HOW A FIGHTER TEACHES ITSELF</h3>
-      <ol class="rules">
-        <li>It meets a riddle whose <b>shape</b> it has never seen, and asks a language model, once, for a small program that solves that shape.</li>
-        <li>It runs the program. The program answers, not the model.</li>
-        <li>The dojo settles the round and <b>publishes the correct answer</b>.</li>
-        <li>If the program was wrong, the bot asks once more for a repair, and remembers.</li>
-        <li>It never asks again. Every later riddle of that shape is answered in milliseconds, for nothing.</li>
-      </ol>
-      <p>The dojo publishes every answer, every salt and every settlement. That is a public, free, growing
-      training set, and it is the reason a small bot can get good here.</p>
-    </div>
-    <div class="panel panel-green"><h3>YOUR MOVE</h3>
-      <p>These are seven bots improvising. None of them is trying hard. A human who actually engineers a
-      fighter — a real parser, a timeout that holds, a tool that is right the first time — is not competing
-      against a strong opponent. They are competing against a first draft.</p>
-      <p>And you do not need a model at all. Half the white belt is arithmetic, and a thirty-line Python
-      file beats a model on it: no key, no bill, no timeout.</p>
-      <p><a class="btn" href="#join">BUILD YOUR OWN FIGHTER</a>
-         <a class="btn btn-sm btn-cyan" href="#rules">HOW THE GAME WORKS</a></p>
-    </div>
-  </div>`);
-  setHTML('lab-body', parts.join(''));
-}
-
 // ---------------------------------------------------------------- the rules
 // A reading screen, deliberately separate from JOIN, which is now a doing
 // screen. Every term below is defined ONCE, by the same HELP dictionary the
@@ -2145,7 +2014,7 @@ function renderRules() {
       decoration — it is the rules. INSERT COIN blinks until a table opens. The riddle is the bell. The commit
       window is a health bar draining in ticks. The reveal window is a CONTINUE? countdown. Settlement is the
       K.O. screen, with the winners' names in the high-score table.</p>
-      <p><a class="btn btn-sm" href="#fight">WATCH A ROUND</a> <a class="btn btn-sm btn-cyan" href="#lab">THE LAB</a></p>
+      <p><a class="btn btn-sm" href="#fight">WATCH A ROUND</a> </p>
     </div>
     <div class="panel panel-yellow"><h3>DOJO ETIQUETTE</h3>
       <ol class="rules">
@@ -2165,8 +2034,8 @@ function renderRules() {
 // ---------------------------------------------------------------- navigation
 // SCREENS is the route whitelist. NAV_KEYS is the digit map, kept separate so
 // adding a screen can never silently renumber somebody's muscle memory.
-const SCREENS = ['title', 'fight', 'results', 'fame', 'fighters', 'history', 'join', 'fighter', 'tick', 'lab', 'rules'];
-const NAV_KEYS = ['title', 'fight', 'results', 'fame', 'fighters', 'history', 'join', 'lab', 'rules'];
+const SCREENS = ['title', 'fight', 'results', 'fame', 'fighters', 'history', 'join', 'fighter', 'tick', 'rules'];
+const NAV_KEYS = ['title', 'fight', 'results', 'fame', 'fighters', 'history', 'join', 'rules'];
 function parseHash() {
   const h = (location.hash || '#title').slice(1);
   const i = h.indexOf('/');
@@ -2178,7 +2047,7 @@ function parseHash() {
 function applyHash() {
   const { name, arg } = parseHash();
   hideTip();   // an attract flip under a parked cursor must not strand a tooltip
-  // S.screen FIRST: renderTick/renderLab/renderRules all early-return unless it
+  // S.screen FIRST: renderTick/renderRules all early-return unless it
   // already names their screen, so setting it afterwards left a hash change
   // showing an empty section until the next 10 s poll.
   S.screen = name;
@@ -2192,7 +2061,6 @@ function applyHash() {
     if (name === 'results') renderResults();
     if (name === 'tick') renderTick();
     if (name === 'fighter') renderFighter();
-    if (name === 'lab') renderLab();
     if (name === 'rules') renderRules();
   }
   $$('.screen').forEach(s => s.classList.toggle('active', s.dataset.screen === name));
@@ -2206,7 +2074,7 @@ function go(name, arg) {
 
 // attract mode: cycle the screens until somebody touches the cabinet
 let attractTimer = null;
-const ATTRACT = [['title', 9000], ['fight', 22000], ['results', 16000], ['fame', 12000], ['fighters', 9000], ['fighter', 12000], ['history', 10000], ['lab', 12000]];
+const ATTRACT = [['title', 9000], ['fight', 22000], ['results', 16000], ['fame', 12000], ['fighters', 9000], ['fighter', 12000], ['history', 10000]];
 let attractIdx = 0;
 function attractStep() {
   if (!S.attract) return;

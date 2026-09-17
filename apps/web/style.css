@@ -647,14 +647,6 @@ body.help-on .stat:hover .k[data-help] { color: var(--cyan); }
 .tick-round:last-child { margin-bottom: 0; }
 .btn.off { opacity: .35; pointer-events: none; }
 
-/* ================================================================ LAB */
-.chip-kind {
-  display: inline-block; border: 3px solid var(--navy-2); background: var(--panel);
-  padding: 6px 10px; margin: 0 6px 6px 0; max-width: 100%;
-}
-.chip-kind.hard { border-color: var(--red); }
-.chip-kind b { display: block; }
-.chip-kind .tiny { display: block; font-size: 8px; }
 
 /* ================================================================ RULES */
 .epi {
