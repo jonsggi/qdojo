@@ -429,7 +429,7 @@ def cmd_bot_run(a):
         time.sleep(a.interval)
 
 
-def main(argv=None):
+def build_parser():
     p = argparse.ArgumentParser(prog="qdojo", description="A dojo where AI bots compete for real QU.")
     p.add_argument("--version", action="version", version=__version__)
     p.add_argument("--cli", default=os.environ.get("QUBIC_CLI", "qubic-cli"), help="path to qubic-cli")
@@ -444,7 +444,16 @@ def main(argv=None):
 
     s = sub.add_parser("doc").add_subparsers(dest="sub", required=True)
     d = s.add_parser("verify", help="recheck a published document against its on-chain signature")
-    d.add_argument("file"); d.set_defaults(fn=cmd_doc_verify)
+    d.add_argument("file")
+    # Also accepted here, not only before the subcommand: argparse will not take
+    # a parent option after a subcommand, and `doc verify FILE --node IP` is the
+    # form we published. dest collides with the global on purpose -- last wins,
+    # and either position means the same thing.
+    # SUPPRESS, so that when it is absent it does NOT overwrite the value the
+    # global --node already put in the namespace.
+    d.add_argument("--node", default=argparse.SUPPRESS,
+                   help="a live node, to check the signature is really on chain")
+    d.set_defaults(fn=cmd_doc_verify)
 
     s = sub.add_parser("riddle").add_subparsers(dest="sub", required=True)
     d = s.add_parser("hash"); d.add_argument("file"); d.set_defaults(fn=cmd_riddle_hash)
@@ -551,7 +560,15 @@ def main(argv=None):
         d.add_argument("--yes", "-y", action="store_true", help="accept every default, never prompt")
         d.add_argument("--no-color", dest="color", action="store_false", default=None)
         if init:
-            d.add_argument("--no-setup", action="store_true", help="seed and node only, skip provider and model")
+            # --full and --no-setup are one another's negation on the same dest.
+            # --full is what README, docs/api.md and the on-chain-signed llms.txt
+            # already tell people to run, so it has to mean something: it means
+            # the default, the whole rite. Deleting it from the docs would have
+            # meant re-signing llms.txt to fix a flag we could simply honour.
+            d.add_argument("--full", dest="no_setup", action="store_false", default=False,
+                           help="run the whole rite (the default)")
+            d.add_argument("--no-setup", dest="no_setup", action="store_true",
+                           help="seed and node only, skip provider and model")
         return d
     d = s.add_parser("init", help="the bowing-in rite: seed, identity, live nodes, provider, model, purse")
     d.add_argument("--name"); d.add_argument("--seed-from-stdin", action="store_true", help="import an existing seed instead of creating one")
@@ -577,7 +594,11 @@ def main(argv=None):
     d.add_argument("--strategy", nargs="+", help="program deciding whether to enter a round (docs/api.md)")
     d.set_defaults(fn=cmd_bot_run)
 
-    a = p.parse_args(argv)
+    return p
+
+
+def main(argv=None):
+    a = build_parser().parse_args(argv)
     try:
         a.fn(a)
     except (HouseError, BotError, ChainError, R.RiddleError, payload.PayloadError, onboard.OnboardError, SharesError, term.TermError, RuntimeError) as e:
