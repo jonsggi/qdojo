@@ -27,7 +27,7 @@ import sys
 import textwrap
 import time
 
-from . import nodes, onboard, payload, term
+from . import nodes, onboard, payload, prompts, term
 from .chain.base import ChainError, Unknown
 from .chain.cli import QubicCli
 from .payload import PayloadError
@@ -118,6 +118,32 @@ PROVIDERS = (
     },
 )
 PROVIDER_KEYS = tuple(p["key"] for p in PROVIDERS)
+
+# What kind of fighter, asked first. A provider and a model are a SUB-question
+# that only appears once a choice needs one -- so someone taking the free path
+# is never asked for an API key at all.
+SOLVERS = (
+    {"key": "bare", "label": "bare bones — a plain script, no model, no key, no bill",
+     "hint": "thirty lines of Python you can read; it has taken first place here",
+     "file": "bare.py", "needs_model": False,
+     "how_to": "Your fighter is a program, not a model. It costs nothing to run, it never times out and it "
+               "never refuses. Half the white belt is arithmetic and string work. Open examples/solvers/bare.py, "
+               "read all of it, and change one thing -- `qdojo train` will name every answer you should have given."},
+    {"key": "prompt", "label": "prompt-driven — one model call, and the fighter is a text file",
+     "hint": "everything the model is told lives in two .md files you edit",
+     "file": "prompted.py", "needs_model": True,
+     "how_to": "One call to a language model per riddle, and everything it is told lives in solver-system.md and "
+               "solver-user.md. There is no Python to read. Change a sentence, save, and the next round uses it. "
+               "You bring the key; qdojo records the NAME of the variable you keep it in and nothing else."},
+    {"key": "byo", "label": "bring your own — any program, any language",
+     "hint": "riddle JSON on stdin, {\"answer\": …} on the last line of stdout",
+     "file": "", "needs_model": False,
+     "how_to": "Point the dojo at anything: an agent, a solver you wrote, a model you trained, a lookup table. "
+               "It gets the riddle on stdin and prints the answer on stdout; what happens in between is yours."},
+)
+SOLVER_KEYS = tuple(x["key"] for x in SOLVERS)
+# An old --provider still picks a sensible kind, so nothing we published breaks.
+PROVIDER_TO_SOLVER = {"none": "bare", "openrouter": "prompt", "direct": "prompt", "local": "prompt"}
 
 
 # --------------------------------------------------------------------- options
@@ -448,7 +474,7 @@ def _step_nodes(opts, ctx, n, total):
 
 # ---- step 5: the mind
 
-def _pick_provider(opts):
+def _pick_provider(opts, skip_none=False):
     if opts.provider:
         key = str(opts.provider).strip().lower()
         for p in PROVIDERS:
@@ -474,24 +500,38 @@ def _pick_model(opts, prov):
     return mid, opts.base_url or prov["base_url"]
 
 
-def _pick_solver(opts, prov):
-    """-> (argv, kind). `kind` is echo | pi | openai_compat, and it decides
-    which env the solver reads and where its key comes from."""
+def _pick_solver_kind(opts) -> dict:
+    """What thinks for this fighter. Asked before any provider question."""
+    want = getattr(opts, "solver_kind", None)
+    if not want and opts.solver:
+        want = "byo"
+    if not want and opts.provider:
+        want = PROVIDER_TO_SOLVER.get(opts.provider, "prompt")
+    if want:
+        for sv in SOLVERS:
+            if sv["key"] == want:
+                return sv
+        raise WizardError(f"unknown solver kind {want!r}; one of {', '.join(SOLVER_KEYS)}")
+    i = term.menu("what thinks for your fighter?", [(sv["label"], sv["hint"]) for sv in SOLVERS],
+                  default=0, no_input=opts.yes)
+    return SOLVERS[i]
+
+
+def _pick_solver(opts, sv) -> list[str]:
+    """The argv. For `byo` we ask, and then the probe proves their program
+    satisfies the contract before a single seat is ever bought."""
     if opts.solver:
-        argv = list(opts.solver)
-        kind = "pi" if any("pi.py" in a for a in argv) else (
-            "openai_compat" if any("openai_compat" in a for a in argv) else (
-                "echo" if any("echo.py" in a for a in argv) else "openai_compat"))
-        return argv, kind
-    if prov["solver"] == "echo":
-        return solver_argv("echo.py"), "echo"
-    if prov["solver"] == "openai_compat":
-        return solver_argv("openai_compat.py"), "openai_compat"
-    try:
-        find_pi(opts.pi)
-        return solver_argv("pi.py"), "pi"
-    except WizardError as e:
-        return _pi_is_missing(opts, prov, e)
+        return list(opts.solver)
+    if sv["key"] != "byo":
+        return solver_argv(sv["file"])
+    _say("the whole contract: the riddle arrives on stdin as JSON, and the LAST line you print "
+         "must be {\"answer\": ...}. Exit non-zero and the dojo records that you did not answer.")
+    cmd = term.ask("the command that runs your fighter", default="python3 ./my_solver.py",
+                   no_input=opts.yes)
+    argv = shlex.split(cmd)
+    if not argv:
+        raise WizardError("no solver command given")
+    return argv
 
 
 def _pi_is_missing(opts, prov, why):
@@ -513,12 +553,22 @@ def _pi_is_missing(opts, prov, why):
 
 def _step_model(opts, ctx, n, total):
     term.step(n, total, "YOUR MIND — who thinks for this fighter, and does it work")
-    prov = _pick_provider(opts)
-    term.ok(prov["label"])
-    _say(prov["how_to"])
-    model, base = _pick_model(opts, prov)
-    solver, kind = _pick_solver(opts, prov)
-    if kind == "echo" and prov["key"] != "none":     # the pi-is-missing off-ramp
+    sv = _pick_solver_kind(opts)
+    term.ok(sv["label"].split(" — ")[0])
+    _say(sv["how_to"])
+    solver = _pick_solver(opts, sv)
+    kind = {"bare": "echo", "byo": "byo"}.get(sv["key"], "openai_compat")
+    if sv["key"] == "byo":
+        kind = ("pi" if any("pi.py" in a for a in solver) else
+                "echo" if any(x in a for a in solver for x in ("echo.py", "bare.py")) else
+                "openai_compat" if any("openai_compat" in a or "prompted" in a for a in solver) else "byo")
+
+    if sv["needs_model"] or (kind in ("pi", "openai_compat")):
+        prov = _pick_provider(opts, skip_none=True)
+        term.ok(prov["label"])
+        _say(prov["how_to"])
+        model, base = _pick_model(opts, prov)
+    else:
         prov, model, base = PROVIDERS[0], "", ""
 
     env, key_env = {}, (opts.key_env or prov["key_env"])
@@ -529,6 +579,17 @@ def _step_model(opts, ctx, n, total):
         env["OPENAI_MODEL"] = model
         env["OPENAI_BASE_URL"] = base
         key_source = f"env:{key_env}" if key_env else "none"
+        if sv["key"] == "prompt":
+            # Not a secret, so it rides in solver_env: check_no_secrets is happy
+            # with the name, _bot_defaults merges it, and run_command_text then
+            # prints the prompts path right there in the ready-to-run line.
+            installed = prompts.install(opts.state)
+            env["QDOJO_PROMPTS"] = os.path.join(os.path.abspath(os.path.expanduser(opts.state)), "prompts")
+            if installed:
+                term.ok("your prompts", f"{len(installed)} file(s) copied to {env['QDOJO_PROMPTS']} — edit them, "
+                                        f"the next round uses them")
+            else:
+                term.ok("your prompts", env["QDOJO_PROMPTS"])
     else:
         key_source, key_env = "none", ""
     env.update(parse_env(opts.env))

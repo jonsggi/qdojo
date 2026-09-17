@@ -701,3 +701,7 @@ body.help-on .stat:hover .k[data-help] { color: var(--cyan); }
   border-left: 4px solid var(--green); background: var(--panel); color: var(--green);
 }
 .doc-sig .tiny { line-height: 1.6; }
+
+/* A panel heading's subtitle gets its own line, like the screen titles do.
+   Without this "TRAINING" and its subtitle run together into one word. */
+.panel h3 small { display: block; font-size: 8px; letter-spacing: 0; margin-top: 6px; opacity: .8; }

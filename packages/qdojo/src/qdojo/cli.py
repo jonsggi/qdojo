@@ -12,7 +12,7 @@ from .chain.rpc import Indexer
 from .chain.base import Unknown, ChainError
 from .house import House, HouseError
 from .bot import Bot, BotError, fetch_board
-from . import nodes, onboard, spar, events, lab, wizard, term, training
+from . import nodes, onboard, spar, events, lab, wizard, term, training, prompts as P, dash
 from .shares import Shares, SharesError
 
 
@@ -441,6 +441,52 @@ def _save_training(state_dir, card, attempts):
         pass          # a scorecard we could not file is not worth failing over
 
 
+def cmd_bot_dash(a):
+    """Your fighter's page, on 127.0.0.1 and nowhere else."""
+    try:
+        httpd, url = dash.serve(a.state, board=a.board or wizard.DEFAULT_BOARD,
+                                port=a.port, read_only=a.read_only)
+    except dash.DashError as e:
+        sys.exit(f"qdojo: {e}")
+    print(f"\n  your fighter page is up:\n\n    {url}\n")
+    print("  it binds 127.0.0.1 only and serves nothing from your state directory.")
+    print("  edit a prompt there and the next round uses it. ctrl-c to stop.\n")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("  stopped.")
+
+
+def cmd_prompts(a):
+    """Where your fighter's prompts are, and how to get an editable copy.
+
+    A prompt-driven fighter IS these files. The dojo runs a solver as a fresh
+    process every riddle, so a save is live on the very next round.
+    """
+    if a.sub == "install":
+        done = P.install(a.state, force=a.force)
+        if done:
+            for path in done:
+                print(f"copied {path}")
+            print("\nedit any of those; the next round uses them.")
+        else:
+            print(f"already there: {os.path.join(a.state, 'prompts')}  (--force to overwrite)")
+        return
+    if a.sub == "show":
+        text, path = P.load(a.name, state_dir=a.state)
+        print(f"# {path}\n")
+        print(text)
+        return
+    rows = P.listing(a.state)
+    if not rows:
+        sys.exit("qdojo: no prompts found; run `qdojo prompts install`")
+    for r in rows:
+        where = "yours" if os.path.abspath(a.state) in r["path"] else "shipped"
+        print(f"{r['name']:22} {where:8} {r['path']}")
+    print("\nedit one and the next round uses it. `qdojo prompts install` puts an editable copy")
+    print("under your state dir, so a git pull never fights your edits.")
+
+
 def cmd_nodes(a):
     cli = onboard.find_cli(a.cli if a.cli != "qubic-cli" else None)
     found = nodes.discover(nodes.cli_probe(cli))
@@ -641,6 +687,15 @@ def build_parser():
     d.add_argument("--sweep", nargs="+", help="param=v1,v2,... (e.g. match_bps=0,5000,10000 bond_bps=0,5000)")
     d.set_defaults(fn=cmd_house_model)
 
+    pp = sub.add_parser("prompts", help="your fighter's prompt files: what they are and where")
+    pp.add_argument("--state", default=os.path.expanduser("~/.qdojo/bot"))
+    ps = pp.add_subparsers(dest="sub")
+    ps.add_parser("list")
+    d = ps.add_parser("install", help="copy the shipped prompts somewhere you can edit them")
+    d.add_argument("--force", action="store_true", help="overwrite your edits with the originals")
+    d = ps.add_parser("show"); d.add_argument("name")
+    pp.set_defaults(fn=cmd_prompts, sub="list", force=False, name="")
+
     tp = sub.add_parser("train", help="fight past rounds for nothing: no seed, no QU, no node")
     tp.add_argument("--board", help="the house to train against (default: the published one)")
     tp.add_argument("--state", default=os.path.expanduser("~/.qdojo/bot"))
@@ -661,6 +716,8 @@ def build_parser():
         """Every prompt in the rite has a flag, so the whole thing is one line.
         There is deliberately NO flag that takes an API key: a key on argv lands
         in the shell history and in `ps`. --key-env names the variable instead."""
+        d.add_argument("--solver-kind", choices=wizard.SOLVER_KEYS,
+                       help="what thinks for your fighter: a plain script, a prompt, or your own program")
         d.add_argument("--provider", choices=wizard.PROVIDER_KEYS)
         d.add_argument("--model", help="a model id -- never a key")
         d.add_argument("--base-url", help="an OpenAI-compatible endpoint, e.g. a local Ollama")
@@ -690,6 +747,11 @@ def build_parser():
     d = s.add_parser("setup", help="choose a provider and a model for a fighter that already has a seed")
     d.add_argument("--name")
     _setup_flags(d).set_defaults(fn=cmd_bot_setup)
+    d = s.add_parser("dash", help="your fighter's stats and prompts, on 127.0.0.1 only")
+    d.add_argument("--port", type=int, default=7777)
+    d.add_argument("--board", help="the house to read your published record from")
+    d.add_argument("--read-only", action="store_true", help="show everything, save nothing")
+    d.set_defaults(fn=cmd_bot_dash)
     d = s.add_parser("nodes", help="discover live nodes and refresh the cache"); d.set_defaults(fn=cmd_nodes)
     d = s.add_parser("stats", help="this bot's performance as the house publishes it"); d.add_argument("--board", required=True)
     d.set_defaults(fn=cmd_bot_stats)

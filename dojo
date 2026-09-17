@@ -1,0 +1,89 @@
+#!/bin/sh
+# The one command. Read it before you run it -- that is why it is a file in the
+# repo and not something piped into your shell from the internet.
+#
+#   ./dojo          get set up, then fight a round for nothing
+#   ./dojo train    fight past rounds again (no seed, no QU, no signer)
+#   ./dojo rite     create a seed and an identity, for when you want a real seat
+#   ./dojo fight    fight for real (needs a funded identity)
+#   ./dojo dash     your own page, on your own machine
+#
+# It writes nothing outside this folder and ~/.qdojo.
+set -eu
+
+cd "$(dirname "$0")"
+[ -f packages/qdojo/pyproject.toml ] || {
+    echo "run ./dojo from inside the qdojo checkout" >&2; exit 1; }
+
+say()  { printf '  %s\n' "$*"; }
+die()  { printf '\n%s\n' "$*" >&2; exit 1; }
+
+# A leading flag is not a subcommand: `./dojo --rounds 5` must still start.
+CMD=start
+case "${1:-}" in
+  ""|-*) : ;;
+  *) CMD="$1"; shift ;;
+esac
+case "$CMD" in
+  -h|--help|help) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+esac
+
+# ---------------------------------------------------------------- uv
+UV="$(command -v uv || true)"
+[ -n "$UV" ] || [ ! -x "$HOME/.local/bin/uv" ] || UV="$HOME/.local/bin/uv"
+[ -n "$UV" ] || [ ! -x "$HOME/.cargo/bin/uv" ] || UV="$HOME/.cargo/bin/uv"
+if [ -z "$UV" ]; then
+    # We do not install it for you, and we do not pipe a URL into a shell on
+    # your behalf. Three ways, pick one, then run ./dojo again.
+    die "qdojo needs uv (it manages the Python it runs on). Install it with one of:
+
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    pipx install uv
+    your package manager: brew install uv / apt install uv / pacman -S uv
+
+then run ./dojo again."
+fi
+
+printf '\n  qdojo — getting ready\n'
+say "uv $("$UV" --version 2>/dev/null | awk '{print $2}')"
+if ! "$UV" sync --quiet 2>/tmp/qdojo-sync.$$; then
+    if [ -x .venv/bin/qdojo ]; then
+        say "could not sync (offline?) — using the environment already here"
+    else
+        sed 's/^/  /' /tmp/qdojo-sync.$$ >&2 || true
+        rm -f /tmp/qdojo-sync.$$
+        die "uv sync failed. Fix the error above, then run ./dojo again."
+    fi
+fi
+rm -f /tmp/qdojo-sync.$$
+say "ready"
+
+run() { exec "$UV" run qdojo "$@"; }
+
+case "$CMD" in
+  train) run train "$@" ;;
+  rite)  run bot init "$@" ;;
+  fight) run bot run "$@" ;;
+  dash)  run bot dash "$@" ;;
+  prompts) run prompts "$@" ;;
+  start) ;;
+  *) die "./dojo: no such thing as '$CMD'. Try: ./dojo --help" ;;
+esac
+
+# ------------------------------------------------- the first-run experience
+# Training needs no seed, no QU, no node and no signer, so it comes FIRST.
+# Building the signer takes minutes and needs a C++ toolchain; making a
+# newcomer wait through that before they have seen a single riddle is how you
+# lose them. The build happens in the rite, which is where money starts.
+if [ ! -f "$HOME/.qdojo/bot/bot.json" ]; then
+    printf '\n  nothing is set up yet, so we start with a fight that costs nothing.\n'
+    printf '  no seed, no account, no QU: your solver against rounds that really happened.\n\n'
+    "$UV" run qdojo train --solver python3 examples/solvers/bare.py "$@" || true
+    printf '\n  that was examples/solvers/bare.py. open it -- it is thirty lines and every\n'
+    printf '  round it lost just told you the answer it should have given.\n\n'
+    printf '  when you want a real seat:   ./dojo rite\n'
+    printf '  train again after an edit:   ./dojo train\n'
+    printf '  your own page and prompts:   ./dojo dash\n\n'
+    exit 0
+fi
+run train "$@"

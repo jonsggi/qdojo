@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QDOJO — your fighter</title>
+<!-- No web font: this page must work with no network at all, and a font
+     request would carry the token in a Referer. style.css falls back to
+     Courier, which is fine; the colours and boxes carry the look. -->
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="crt-on">
+<div class="crt" aria-hidden="true"></div>
+
+<header class="hud">
+  <a class="hud-logo" href="/">Q<span>DOJO</span></a>
+  <div class="hud-status"><span class="pill pill-live">YOUR MACHINE</span></div>
+  <nav class="hud-nav"><a class="on" href="#">THIS FIGHTER</a></nav>
+</header>
+
+<main id="main" style="padding:var(--gutter)">
+  <div id="body"><div class="panel"><h3>OPENING THE DOJO…</h3></div></div>
+</main>
+
+<footer class="foot">
+  <div class="foot-left">127.0.0.1 ONLY &middot; NOTHING HERE LEAVES THIS MACHINE</div>
+</footer>
+
+<script src="avatars.js"></script>
+<script src="dash.js"></script>
+</body>
+</html>

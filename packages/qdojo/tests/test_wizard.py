@@ -130,7 +130,7 @@ def test_provider_none_succeeds_even_when_pi_is_missing(dojo, monkeypatch, capsy
     out = capsys.readouterr().out
     assert prof["provider"] == "none" and prof["key_source"] == "none"
     assert prof["solver_env"] == {} and prof["model"] == ""
-    assert "echo.py" in " ".join(prof["solver"])
+    assert any(x in " ".join(prof["solver"]) for x in ("bare.py", "echo.py"))
     assert "the test riddle is solved" in out                  # it really solved 142
     assert prof["identity"] in out and len(prof["identity"]) == 60
 
@@ -150,14 +150,23 @@ def test_a_second_init_reports_the_existing_seed_and_leaves_it_byte_identical(do
     assert again["identity"] == prof["identity"]
 
 
-def test_openrouter_path_writes_pi_model_and_never_a_key(dojo, monkeypatch):
-    monkeypatch.setattr(wizard, "find_pi", lambda explicit=None: "/usr/bin/pi")
+def test_openrouter_path_writes_the_model_and_never_a_key(dojo, monkeypatch):
+    """A provider now picks the PROMPT-DRIVEN solver, not pi.py.
+
+    pi is almost never installed on a stranger's machine -- _pi_is_missing
+    existed only to apologise for that -- and the prompt-driven solver is
+    stdlib urllib, so the default path works on a bare checkout.
+    """
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-live-should-never-be-written")
     prof = wizard.init(cli=dojo["cli"], state=dojo["state"], name="RYUBOT", provider="openrouter",
                        model="deepseek/deepseek-v4-flash", yes=True, skip_probe=True)
-    assert prof["solver_env"]["PI_MODEL"] == "deepseek/deepseek-v4-flash"
-    assert prof["key_source"] == "pi"
-    assert "pi.py" in " ".join(prof["solver"])
+    assert prof["solver_env"]["OPENAI_MODEL"] == "deepseek/deepseek-v4-flash"
+    assert "prompted.py" in " ".join(prof["solver"])
+    assert prof["solver_env"]["QDOJO_PROMPTS"].endswith("prompts")
+    # The key stays in the user's shell; the profile records the NAME of the
+    # place and nothing else -- which is more honest than "pi", because it names
+    # the exact variable.
+    assert prof["key_source"] == "env:OPENROUTER_API_KEY"
     for path in files_under(dojo["state"]):
         assert "sk-live" not in open(path, "rb").read().decode("utf-8", "replace"), path
 
@@ -165,8 +174,11 @@ def test_openrouter_path_writes_pi_model_and_never_a_key(dojo, monkeypatch):
 def test_local_path_writes_base_url_and_model(dojo, monkeypatch):
     prof = wizard.init(cli=dojo["cli"], state=dojo["state"], provider="local", model="llama3.2:3b",
                        yes=True, skip_probe=True)
-    assert prof["solver_env"] == {"OPENAI_MODEL": "llama3.2:3b", "OPENAI_BASE_URL": "http://localhost:11434/v1"}
-    assert prof["key_source"] == "none" and "openai_compat.py" in " ".join(prof["solver"])
+    env = prof["solver_env"]
+    assert env["OPENAI_MODEL"] == "llama3.2:3b"
+    assert env["OPENAI_BASE_URL"] == "http://localhost:11434/v1"
+    assert env["QDOJO_PROMPTS"].endswith("prompts")     # a local model is prompt-driven too
+    assert prof["key_source"] == "none" and "prompted.py" in " ".join(prof["solver"])
 
 
 def test_unknown_provider_is_refused(dojo):
