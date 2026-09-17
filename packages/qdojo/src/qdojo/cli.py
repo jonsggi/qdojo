@@ -1,5 +1,6 @@
 """qdojo command line. Money moves only with --apply."""
 import argparse
+import dataclasses
 import json
 import os
 import sys
@@ -11,7 +12,7 @@ from .chain.rpc import Indexer
 from .chain.base import Unknown, ChainError
 from .house import House, HouseError
 from .bot import Bot, BotError, fetch_board
-from . import nodes, onboard, spar, events, lab, wizard, term
+from . import nodes, onboard, spar, events, lab, wizard, term, training
 from .shares import Shares, SharesError
 
 
@@ -339,6 +340,107 @@ def cmd_bot_setup(a):
     wizard.setup(a)
 
 
+def _history_url(board: str) -> str:
+    """history.json sits beside board.json. The same derivation evo.py makes."""
+    if board.endswith("history.json"):
+        return board
+    return board.rsplit("/", 1)[0] + "/history.json" if "/" in board else "history.json"
+
+
+def cmd_train(a):
+    """Fight past rounds without fighting: no seed, no QU, no node, no signer.
+
+    This is the first thing a newcomer should run. Everything it needs is
+    already published, so it costs nothing and risks nothing.
+    """
+    src = _history_url(a.board or wizard.DEFAULT_BOARD)
+    try:
+        history = fetch_board(src)
+    except (OSError, ValueError) as e:
+        sys.exit(f"qdojo: could not read {src}: {e}")
+    solver = a.solver or (onboard.load_profile(a.state) or {}).get("solver")
+    if not solver:
+        sys.exit("qdojo: no solver: pass --solver, or run `qdojo bot init` to choose one")
+    for k, v in ((onboard.load_profile(a.state) or {}).get("solver_env") or {}).items():
+        os.environ.setdefault(k, str(v))
+
+    pool = training.settled_rounds(history)
+    if not pool:
+        sys.exit(f"qdojo: {src} has no settled rounds to train against yet")
+    term.set_enabled(a.color)
+    if not a.json:
+        print(term.banner())
+        print(term.rule("TRAINING FIGHT"))
+        term.info("nothing is sent", "no seat is bought, no answer is committed, the chain never hears from you")
+        term.info("the solver", " ".join(os.path.basename(x) for x in solver))
+
+    out = []
+
+    def show(at):
+        out.append(at)
+        if a.json:
+            print(json.dumps(dataclasses.asdict(at)), flush=True)
+            return
+        mark = term.ok if at.correct else term.fail
+        speed = f"+{at.solve_ticks}T" if at.solve_ticks is not None else "--"
+        if at.error:
+            term.fail(f"R{at.round_id} {at.belt}", at.error)
+        elif at.correct and at.would_pay:
+            place = f"{at.rank} of {at.rivals + 1}" if at.rivals else "uncontested"
+            mark(f"R{at.round_id} {at.belt}", f"{speed}  {place}  would have taken {term.qu(at.would_pay)}"
+                 + ("  — NOBODY SOLVED THIS ONE" if at.unsolved else ""))
+        elif at.correct:
+            why = at.why_unpriced or (f"{at.rank} of {at.rivals + 1}, off the money" if at.rank else "")
+            mark(f"R{at.round_id} {at.belt}", f"{speed}  right  {why}")
+        else:
+            mark(f"R{at.round_id} {at.belt}", f"{speed}  wrong: said {at.answer!r}, the answer was {at.truth!r}")
+
+    training.replay(history, list(solver), rounds=a.rounds, belt=a.belt or "",
+                    round_ids=a.round or (), timeout=a.solver_timeout, on_attempt=show)
+
+    card = training.scorecard(out)
+    _save_training(a.state, card, out)
+    if a.json:
+        print(json.dumps({"scorecard": card}), flush=True)
+        return
+    rows = [term.kv("fought", str(card["fought"])),
+            term.kv("solved", f"{card['solved']} of {card['fought']}")]
+    if card["median_solve_ticks"] is not None:
+        rows.append(term.kv("solve time", f"median {card['median_solve_ticks']} ticks, best {card['best_solve_ticks']}"))
+    if card["missed_window"]:
+        rows.append(term.kv("too slow", f"{card['missed_window']} right but after the window closed"))
+    rows.append(term.kv("placed", f"{card['would_have_placed']} of {card['fought']} rounds"))
+    rows.append(term.kv("purse", term.qu(card["would_have_earned"]) + "  (hypothetical)"))
+    if card["unpriced"]:
+        rows.append(term.kv("unpriced", f"{card['unpriced']} right, but the house's seed rules for those"))
+        rows.append(term.kv("", "rounds are not fully published, so no purse is claimed"))
+    print()
+    print(term.box(rows, title="HOW YOU WOULD HAVE DONE"))
+    if card["unsolved_taken"]:
+        print()
+        term.ok("unclaimed", f"you answered {len(card['unsolved_taken'])} round(s) NOBODY solved: "
+                             + ", ".join(f"R{r}" for r in card["unsolved_taken"]))
+    print()
+    term.info("none of that was real", "no QU moved. when you want a seat: qdojo bot init")
+
+
+def _save_training(state_dir, card, attempts):
+    """So the local page can show a newcomer something before they have a
+    single round on chain."""
+    try:
+        os.makedirs(state_dir, mode=0o700, exist_ok=True)
+        path = os.path.join(state_dir, "training.json")
+        doc = {"at": int(time.time()), "scorecard": card,
+               "attempts": [dataclasses.asdict(x) for x in attempts]}
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(doc, f, indent=2, sort_keys=True)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except OSError:
+        pass          # a scorecard we could not file is not worth failing over
+
+
 def cmd_nodes(a):
     cli = onboard.find_cli(a.cli if a.cli != "qubic-cli" else None)
     found = nodes.discover(nodes.cli_probe(cli))
@@ -538,6 +640,18 @@ def build_parser():
     d.add_argument("--npcs", help="with --calibrate: comma-separated house-funded identities (names are untrusted)")
     d.add_argument("--sweep", nargs="+", help="param=v1,v2,... (e.g. match_bps=0,5000,10000 bond_bps=0,5000)")
     d.set_defaults(fn=cmd_house_model)
+
+    tp = sub.add_parser("train", help="fight past rounds for nothing: no seed, no QU, no node")
+    tp.add_argument("--board", help="the house to train against (default: the published one)")
+    tp.add_argument("--state", default=os.path.expanduser("~/.qdojo/bot"))
+    tp.add_argument("--solver", nargs="+", help="your solver; defaults to the one in your profile")
+    tp.add_argument("--rounds", type=int, default=10, help="how many recent rounds to fight")
+    tp.add_argument("--belt", help="only rounds at this belt")
+    tp.add_argument("--round", action="append", type=int, help="a specific round, repeatable")
+    tp.add_argument("--solver-timeout", type=float, default=60.0)
+    tp.add_argument("--json", action="store_true", help="one JSON record per attempt")
+    tp.add_argument("--no-color", dest="color", action="store_false", default=None)
+    tp.set_defaults(fn=cmd_train)
 
     bp = sub.add_parser("bot")
     bp.add_argument("--state", default=os.path.expanduser("~/.qdojo/bot"), help="bot state dir (seed conf, profile, node cache)")

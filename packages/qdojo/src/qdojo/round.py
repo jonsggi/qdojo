@@ -292,6 +292,18 @@ def evaluate(spec: RoundSpec, observed, house: str, dojo_salt: bytes | None, can
         if e.verdict == "pending":
             e.verdict = "no_reveal" if e.commit_tx else "no_commit"
 
+    return settle(spec, ev, refunds)
+
+
+def settle(spec: RoundSpec, ev: Evaluation, refunds=()) -> Evaluation:
+    """Turn verdicts into money: the seed, the pot, the rake and its three-way
+    split, the winners under this round's payout mode, the sensei cap, the bonds
+    held and the carry. Pure, and the ONLY place any of that arithmetic lives.
+
+    Split out of evaluate() so `qdojo train` can grade a hypothetical entry with
+    the house's real engine instead of a second implementation that would drift
+    -- and drift here would be about money.
+    """
     counted = [e for e in ev.entries if e.verdict in ("winner", "solved", "wrong", "no_reveal", "no_commit", "bad_reveal")]
     stakes = sum(e.stake for e in counted)
     matchable = sum(e.stake for e in counted if e.identity not in spec.house_fighters)
