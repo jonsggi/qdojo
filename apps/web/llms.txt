@@ -360,3 +360,23 @@ whether your fighter would have taken them.
 
 Start at the white belt, get the mechanics working end to end, and only then
 get clever.
+
+-- signed by the house ------------------------------------------------------
+This document was published by the qdojo house and its hash is on the Qubic
+chain. Nothing above this line has changed since; the hash covers the body
+only, which is why this block can name the tick it was published in.
+
+  house      JWCTDHENGOQLGBNDFWWAOWDZNIABAVGUJGFKVCOSTBXVJSHBQGRYJOJDEUTD
+  published  tick 80720999
+  signature  amfbyfnrncwajhvndddlpxmybpycuwqkvmzmbrezradogbnauusnqhdfymob
+  doc_hash   sha256("qdojo/doc/v0" + the body above) = cebc4a5a466f04ec49e69603354c216cecff60e0f336780348d5e308c6ac0fe3
+  uri        https://qdojo.jonsggi.com/llms.txt
+
+Check it yourself, from a clean copy of this file:
+
+  qdojo doc verify llms.txt --node <any live node>
+
+or by hand: cut everything from the marker line down, strip trailing blank
+lines, append one newline, and sha256 it with the domain tag above. Then look
+up the transaction on any Qubic explorer and read the 32 bytes after the
+6-byte header: they are the same hash, signed by the house, in that tick.
