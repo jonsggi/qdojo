@@ -3,6 +3,10 @@
 Status: draft 0, 2026-09-14. Governs the off-chain phase. The contract phase
 gets its own spec once this one has run real rounds.
 
+Sections 1–10 describe the current rules. Section 11 records the planned
+fighter-registration rules (2026-09-18); NFT ownership is not enforced by
+the current implementation.
+
 ## 1. Actors
 
 - **House.** One Qubic identity, held by us, that publishes riddles, receives
@@ -197,8 +201,101 @@ For every round the house publishes, on chain and on the page:
 
 Spectator betting, NFTs and avatars, seats and auctions, community riddles,
 oracle-fed riddles, duels and title belts, and the smart contract itself. Each
-has a line in `docs/roadmap.md`.
+has a line in `docs/roadmap.md`. Planned fighter NFTs are specified below;
+championship titles remain a separate proposal.
 
 These rules are the ones the house runs today, off chain, and they are still
 cheap to change. That is deliberate: the contract comes last precisely so that
 changing a rule costs a test run rather than a governance round-trip.
+
+## 11. Planned: a fighter NFT is the competitive identity
+
+**Direction agreed; not implemented.** Paid competition will require an
+eligible fighter avatar NFT. Buying a fighter is paid registration for a
+persistent competitive identity, separate from the entry stake for each
+round. Watching and training on published rounds remain free of dojo charges
+and require no NFT, wallet, seed or signing; a chosen solver provider may
+still charge for computation.
+
+### Identity and participation
+
+- Each fighter has a stable asset identifier in the dojo's recognized
+  collection or registry. An arbitrary NFT is not an entry credential.
+- Belt, points, match record, strikes, teaching record and outstanding bonds
+  belong to that identifier. Changing owner, wallet, name or solver does not
+  reset the career.
+- The confirmed owner authorizes the operator signing for the fighter. The
+  ownership check and any delegation must be explicit and verifiable. Only
+  one operator authorization may be active for a fighter at a time.
+- One fighter may buy one seat per round and make one counted commitment.
+  Registration and messages must bind its identifier to the authorized
+  signer. The future wire format must bind commitments to the fighter as
+  well as the round and authorization. Switching wallets adds no seat.
+- Owning several fighters is possible. They need not have independent owners
+  or solvers: the same operator can coordinate multiple purchased fighters.
+
+### Transfers and outstanding obligations
+
+Selling or transferring a fighter preserves its complete career. The buyer
+acquires its current rank and remaining bond claims, including their fight
+requirements and expiry. Transfer neither releases a bond nor restarts its
+clock. New fights count toward that fighter's bonds regardless of owner.
+Transfers and operator changes must appear in its public history.
+
+An accepted seat fixes the fighter, authorized signer and payout recipient
+for that round through settlement or refund. A transfer cannot create a
+second entry, redirect an accepted payout or erase a strike. Before enabling
+transfers, define an enforceable lock or deferred ownership-activation rule
+for open rounds and pending payouts. Handover must reconcile existing round
+payouts with the bond claims the buyer receives, without paying either claim
+twice. Off-chain operation and the later contract must use the same boundary.
+
+### Farming and pricing
+
+The purchase raises the cost of starting over at white belt. It does not
+prove one human per fighter, prevent a shared solver from occupying the
+podium, or guarantee that farming is unprofitable. A new fighter still
+starts white; buying one is the paid route to a fresh career.
+
+Evaluate farming over the whole acquire–play–resell cycle:
+
+`net = round payouts + bond releases + resale proceeds − acquisition cost − stakes − operating costs`
+
+Round payouts exclude bonds held and bond releases, and include refunds
+and any subsidy captured; do not count these again. Unsold assets and
+unreleased bonds are reported separately from realized returns. Model
+resale-price and liquidity scenarios: the full purchase price is capital
+required, but only the unrecovered portion is necessarily a lasting cost.
+Include repeated fresh purchases, coordinated fighters, deliberate demotion,
+promotion trades through duels, and subsidy or teaching-reward capture.
+Assess price and supply together with rake, bonds, beginner rewards and the
+seed taper.
+
+Registration proceeds are separate from recurring round revenue. A house
+that needs continuing fighter sales to fund play has not demonstrated
+self-sustaining round economics. Measure the purchase barrier for legitimate
+newcomers alongside the cost imposed on farmers. Progression might increase
+a fighter's resale appeal, but no resale value or liquidity is promised.
+
+### Fighters and championship titles
+
+A fighter NFT is the owned competitor and its persistent career. A
+championship title is an earned, revocable status awarded through competition;
+buying an unused fighter does not confer one. Any title trophy asset and any
+associated revenue right need separate rules. Transferring a trophy alone
+must not silently transfer competitive champion status.
+
+### Decisions required before release
+
+Set issuance and supply policy, acquisition pricing, recognized asset IDs,
+artwork and usage rights, owner/operator authorization, transfer handling,
+and public ownership evidence. Define how existing identity-based fighters
+and their records and liabilities migrate without duplicate claims or free
+repeat registrations. Specify treatment of house-funded or gifted fighters
+so exemptions do not reopen free resets. Resolve the NFT release findings
+[AUD-009](../audits/issues/AUD-009-freeze-nft-art-and-allocation.md) and
+[AUD-010](../audits/issues/AUD-010-nft-ownership-and-rights.md) before sale or
+activation.
+
+The purchase requirement and persistent career are the intended direction;
+price, supply, sale timing and migration policy remain to be decided.

@@ -63,8 +63,14 @@ the public package before the repo opens.
 ## Phase two, the game deepens — NEXT
 
 The rules are cheap to change right now. This is where we spend that, and the
-Sketches below are the candidates. Nothing here is committed.
+Sketches below are the candidates. Fighter NFT registration is the agreed
+direction, with pricing and implementation still open; the other mechanics
+remain proposals.
 
+- **fighter avatar NFTs as paid registration**: a persistent competitive
+  identity whose belt, record and outstanding bonds survive a sale or wallet
+  change; one seat per fighter per round. Training stays free. See
+  `docs/spec.md` §11 and the implementation sequence below.
 - belts beyond blue: at present blue holds, progression stops, and own-belt
   points are pure downside for a fighter who cannot be promoted
 - riddle classes that are not arithmetic — the lore's promise is code that is
@@ -75,10 +81,40 @@ Sketches below are the candidates. Nothing here is committed.
 - community riddles with an author stake and cut
 - whether a second cohort, run by someone who is not us, behaves the same way
 
+### Fighter registration: implementation sequence
+
+1. **Validate purchase and farming economics.** Model repeated fresh fighters
+   and coordinated operators: shared solvers, podium capture, deliberate
+   demotion, subsidies and resale. Acquisition price is not all sunk cost if
+   the fighter can be resold. Compare prices and issuance policies against
+   farming returns and newcomer willingness to buy after training. Record
+   registration revenue separately from recurring rake revenue.
+2. **Specify the persistent career.** Key rank, history, strikes, teaching
+   credit and bonds by fighter asset ID. Define owner/operator authorization,
+   ownership handover for open rounds, fixed round payout recipients, bond
+   handover and migration of existing fighters. Include house-funded and
+   gifted fighters. Transfer cannot reset progression, duplicate a seat or
+   renew a bond's expiry.
+3. **Build and validate off-chain registration.** Verify confirmed ownership,
+   update messages and commitments to identify the fighter, enforce one seat
+   per fighter per round, and publish ownership and career history. Resolve
+   the existing financial/public-operation audit gates and NFT release
+   findings (AUD-009–010) before activation or sale. Validate transfer,
+   delegation, duplicate-entry and recovery behavior.
+4. **Run an external cohort through train → buy → compete.** Keep training
+   available without a wallet or purchase. Measure conversion, repeat
+   training, improvement, return after losses, table fill and acquisition/
+   resale behavior. Choose launch price, supply policy and subsidy limits
+   from these results before freezing the contract rules.
+
 The economics to settle here, because they are the contract's parameters: the
-seed taper, the rake split, the bond, and whether the house is net positive
-without subsidy. `house model` and `house metrics` already answer these; they
-need running against rules we have changed, not against the ones we shipped.
+seed taper, rake split, bond, fighter acquisition cost and supply, and whether
+rounds sustain the house without subsidy or continuing NFT sales. `house model` and `house metrics`
+are the starting tools; acquisition, resale and
+coordinated-fighter strategies need to be added. Correct the model's sensei
+cap to run before bonds, matching settlement, and model entry decisions from
+expected returns and costs before treating full simulated tables as evidence
+of voluntary participation.
 
 ## Phase three, the contract — LAST
 
@@ -89,25 +125,88 @@ blocked on phase two being *decided*, not merely attempted.
 - commit and reveal inside the contract, pot and rake in state
 - on-contract bond custody and shareholder claims
 - the sensei seat and the chosen gate, belt seasons
-- **assets, not only QU** — see the title-belt sketch; better written down now
-  than discovered later
+- fighter NFT ownership and operator authorization, persistent career and
+  bond state keyed by asset ID, one seat per fighter per round, and safe
+  ownership handover across pending rounds and payouts
+- **assets, not only QU** — ownership checks for registered fighters and
+  whatever custody or transfer mechanism the tested rules require; title
+  assets remain conditional on the title experiment
 - IPO of 676 shares, fees to shareholders
 - pure-Python signing, so a bot needs no qubic-cli
 - proposal through GQMPROP
 
 ## Later, unscheduled
 
-- avatars as Qbay NFTs (but see Sketches: title belts, earned, is the better
-  version)
+- any marketplace integration for fighter resale; basic ownership and
+  transfer rules belong in phase two, independent of a marketplace
 - parimutuel spectator pools (Quottery's model), after legal review
 - oracle-fed riddles once a second oracle interface exists
 
 ---
 
+## Sketch: the riddle seed from the chain (2026-09-18, Joel)
+
+**The idea.** `riddles.py` is a deterministic generator: `generate(belt, rng,
+round_id)`. Today the house seeds it with OS entropy (`random.Random(None)`),
+so the seed exists only in the house's memory and is never published. Joel's
+proposal is to take the seed **from the Qubic chain instead** — a future tick's
+data — which removes the house's ability to grind for a riddle it likes, and
+makes the choice publicly recomputable after the fact.
+
+It is the right instinct and it fixes a real asymmetry. **It also has a catch
+that decides how it must be built.**
+
+**The catch: a public seed plus a public generator is a public answer.** Every
+generator in `riddles.py` computes its own canonical answer. If both the seed
+and the generator are public, then the instant the seed tick lands, anyone
+running the generator has the answer. The race stops being "who can solve it"
+and becomes "who can run a script fastest", which is worse than what we have.
+
+So exactly one of these has to hold:
+
+1. **Hard riddles.** The seed is public, the generator is public, and the
+   riddle's answer is not computable by re-running the generator — the
+   "code that is broken and must be fixed" class the lore promises. This is
+   the trustless endgame and the reason to build that riddle class first.
+2. **Private generator, public seed.** The house cannot choose the riddle but
+   still knows the answer early. Strictly better than today; the existing
+   answer commitment already covers the house changing its mind.
+3. **Pre-committed set.** The house publishes hashes of N riddles in advance
+   and the chain seed selects which one. The house cannot grind, and it knows
+   the answers — same trust level as (2) with less machinery to keep secret.
+
+**Design note for whichever path.** The seed tick must be in the FUTURE at the
+moment the house commits to using it, and the commitment must name the tick.
+Otherwise the house reads the tick first and only then decides to use it, which
+is grinding by another name. `SETTLE` already publishes an evidence document;
+naming the seed tick in `LOBBY` or `PUBLISH` is the natural place.
+
+Not decided, not costed. It belongs with phase two, because it is cheap to
+change now and a governance round-trip later.
+
 ## Sketches — recorded, not scheduled (2026-09-17)
 
-Three ideas from one brainstorm. They turned out to be one idea, so they are
-written together. Nothing here is decided and nothing is costed.
+Updated 2026-09-18 with fighter registration as the agreed direction.
+Duels, sensei incentives
+and titles are related proposals; none of their prices or rewards is settled.
+
+**Buy a fighter, keep its career.** A fighter avatar NFT is the credential
+for paid competition, with a stable identity that carries its belt, record,
+strikes, teaching credit and outstanding bonds through every ownership change.
+The solver can change; the career persists. One fighter gets one seat per
+round. Training and spectating require no NFT.
+
+This puts a price on restarting at white belt. It raises the cost of farming
+but does not establish one owner per fighter: an operator can buy several,
+share a solver and coordinate entries. Model that operator's total returns,
+including resale, rather than assuming the whole purchase price disappears.
+Also test whether progression makes a fighter more desirable to buyers;
+that could reward developing fighters, but resale value is not promised.
+Issuance, pricing, transfer mechanics and treatment of existing fighters are
+open decisions listed in `docs/spec.md` §11.
+
+The fighter is distinct from a championship title. Owning a competitor is
+the entry requirement; becoming champion requires a competitive result.
 
 **The face-off.** A fighter proposes a duel to another and names the buy-in;
 the other enters or declines. Mechanically a duel is a table with
@@ -123,20 +222,22 @@ belt or above, never below**, and a challenge downward is refused
 (`outranked`) and refunded. A higher belt may still *offer* a duel downward
 on sensei terms — wins back at most its stake, no points move either way.
 
-From that gate the rest follows without a single new rule. The duel carries
-the **defender's** belt, so the challenger is sitting above its own belt and
-§6 applies verbatim: a win promotes it straight to that belt, a solve is +1,
-a failure costs nothing; the defender is at its own belt and so risks −1.
-The underdog risks only money, the favourite risks rank.
+The duel carries the **defender's** belt. When that is above the challenger's
+belt, §6 gives the challenger immediate promotion on a win, +1 on a solve,
+and no point loss on failure. At equal belts both use the ordinary rules.
+The defender earns +2 for winning or +1 for a correct slower answer, and
+loses a point on failure. Below blue it can still be promoted; at blue it
+can rebuild points against demotion even though it cannot climb further.
 
-Which decides the economics. The favourite has no rank upside and real rank
-downside, so its only reason to enter is the money: the buy-in is a **purse
-the challenger pays for the shot**. A fighter's posted `max_duel_buyin` is
-therefore a *floor*, not a ceiling — a price. A challenge at or above
-someone's posted price that is declined is on the record; below it, a
-decline is silent and free. Grief challenges cannot exist, because the only
-weapon a challenger has is a large number and a large number is the thing
-the defender wants.
+The buy-in gives the defender a money incentive, but both sides escrow, so
+a larger offer also requires more capital and puts more at risk. A posted
+minimum acceptable buy-in should be named as a minimum, with a separate
+maximum stake the defender is willing to risk. Optional duels may be declined
+without penalty. A large offer does not prevent griefing through timing,
+volume or unaffordable stakes; qualified title challenges need bounded stakes,
+a queue or cooldown, and scheduled defense windows before forfeiture can be
+fair. Paid fighter registration raises the cost of rotating challengers but
+does not eliminate that strategy.
 
 Open: whether to cap the reach (white → blue in one jump is a lottery
 ticket, so either +1/+2 tiers or let prices scale with the gap); who picks
@@ -174,22 +275,22 @@ others need. The sensei *duel* is weaker still — no quorum to solve, so it
 is a gift of a capped purse. Treat it as a consequence of the rule rather
 than a mechanic anyone will use.
 
-**Title belts as NFTs.** Phase two already lists avatars as Qbay NFTs. The
-version worth building instead is an **earned** one: a single asset per
-tier, held by the current champion, changing hands only by face-off, with a
-slice of the rake paid to whoever holds it. Qubic has no ERC-721 — an asset
-issued with one share is the 1-of-1 — and a share transfer is another
-feeless transaction confirmed by tick inclusion like every payout. The
-settlement documents are already hashed and published, so the asset can
-commit to the round that won it.
+**Title belts, separate from fighter NFTs.** First test an earned champion
+record in a gauntlet season. A later trophy could be a single asset per tier
+associated with the winning fighter and the round that won it. Its ownership,
+competitive champion status and any share of the rake are separate rights
+that need explicit rules. A trophy sale alone does not award a championship.
+Decide what happens when the champion fighter is sold, promoted or inactive,
+and how custody permits a title to be forfeited or reassigned, before issuing
+title assets or promising revenue to their holders.
 
-It answers the three open questions above at once, which is why it is
-recorded here and not in phase two. Why enter a duel: a champion who
-declines a mandatory challenge **forfeits the belt**, so the title is its
-own collateral and the decline problem needs no points and no shame counter.
-Why teach: gate title eligibility behind N sensei fights. What happens after
-blue: nothing, at present — blue holds, progression stops, and the points
-only threaten. Titles are the endgame.
+Titles could connect three incentives: qualified defenses give champions a
+reason to accept duels, a teaching requirement could make sensei fights worth
+taking, and championships give blue fighters an endgame. These are hypotheses
+to test. Define challenger qualification, bounded defense obligations and
+inactivity handling before making a declined challenge cost a title. If
+teaching gates eligibility, define a qualifying contribution and test whether
+coordinated fighters can manufacture it.
 
 A tournament is then the cheap part. A **gauntlet season** is `spar` with a
 leaderboard and one asset transfer at the end; a bracket is a sequence of
@@ -197,10 +298,12 @@ duels and costs nothing extra once duels exist. Do the gauntlet first. The
 economics invert, because a non-fungible prize has no pot to rake: entry
 fees fund the house, the house hands over the asset, and the question is
 whether the season's take covers it — which `house metrics` already
-answers. Collusion is weaker here than with money, since a syndicate that
-sweeps a 1-of-1 wins once rather than repeatedly.
+answers once season costs and rewards are recorded. A scarce prize does not
+remove collusion incentives, especially if it also pays continuing revenue;
+model coordinated entrants here too.
 
 One requirement falls out for the contract, and it is better written down
-now than discovered later: **phase one must hold and transfer assets, not
-only QU.** In phase zero the house holds the asset and transfers it on
-settle, under the usual rule that nothing counts until a node confirms it.
+now than discovered later: **phase three must understand fighter assets and
+ownership, not only QU.** Title custody and transfer requirements follow from
+the rules tested off chain. Any transfer counts only after confirmed chain
+inclusion.
