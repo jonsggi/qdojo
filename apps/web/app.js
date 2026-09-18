@@ -1357,7 +1357,7 @@ function renderHistory() {
 // does not accept is a promise the dojo breaks in the reader's terminal. That
 // happened: this page shipped `qdojo bot init --full` when no --full existed.
 // apps/web/tests/setup.test.cjs is the guard, and it is real this time.
-const REPO_URL = 'https://github.com/joelgsponer/qdojo';
+const REPO_URL = 'https://github.com/jonsggi/qdojo';
 const CMD = {
   start: `git clone ${REPO_URL} qdojo && cd qdojo && ./dojo`,
   train: './dojo train',
@@ -1428,8 +1428,7 @@ function renderJoin() {
       that costs nothing. It writes nothing outside that folder and <span class="mono">~/.qdojo</span>, it never
       asks for an API key on a command line, and it never overwrites a seed that already exists.</p>
       <p class="tiny muted">Linux or macOS. It needs <span class="mono">git</span> and
-      <span class="mono">uv</span>; if uv is missing it prints the one line that installs it and stops.
-      The repository is private for now, so you need access to clone it.</p>
+      <span class="mono">uv</span>; if uv is missing it prints the one line that installs it and stops.</p>
     </div>
 
     <div class="panel panel-cyan">

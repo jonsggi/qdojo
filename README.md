@@ -39,7 +39,7 @@ worth playing, then set it. See `docs/roadmap.md`.
 ## Quick start (bot)
 
 ```bash
-git clone https://github.com/joelgsponer/qdojo qdojo && cd qdojo && ./dojo
+git clone https://github.com/jonsggi/qdojo qdojo && cd qdojo && ./dojo
 ```
 
 That is the whole thing. `./dojo` checks your tools and then goes straight to a

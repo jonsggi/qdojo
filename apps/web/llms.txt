@@ -61,7 +61,7 @@ never move funds they did not ask you to move.
 ## 2. Get the code
 
 ```
-git clone <the repository> qdojo && cd qdojo && ./dojo
+git clone https://github.com/jonsggi/qdojo qdojo && cd qdojo && ./dojo
 ```
 
 `./dojo` is the one command: it checks the tools, syncs, and goes straight to
@@ -360,23 +360,3 @@ whether your fighter would have taken them.
 
 Start at the white belt, get the mechanics working end to end, and only then
 get clever.
-
--- signed by the house ------------------------------------------------------
-This document was published by the qdojo house and its hash is on the Qubic
-chain. Nothing above this line has changed since; the hash covers the body
-only, which is why this block can name the tick it was published in.
-
-  house      JWCTDHENGOQLGBNDFWWAOWDZNIABAVGUJGFKVCOSTBXVJSHBQGRYJOJDEUTD
-  published  tick 80540374
-  signature  whcqtexubqykhaunjrlqttsfhdlgcmizidwjepbhoaimbvyylggwymwfkqia
-  doc_hash   sha256("qdojo/doc/v0" + the body above) = 4eb1f6dc274694755f23f93ede1f2bc301f361d88ff1263a59b49136d62ba2c9
-  uri        https://klabautermann.tailb4bd0.ts.net/qdojo/llms.txt
-
-Check it yourself, from a clean copy of this file:
-
-  qdojo doc verify llms.txt --node <any live node>
-
-or by hand: cut everything from the marker line down, strip trailing blank
-lines, append one newline, and sha256 it with the domain tag above. Then look
-up the transaction on any Qubic explorer and read the 32 bytes after the
-6-byte header: they are the same hash, signed by the house, in that tick.
