@@ -127,3 +127,24 @@ merged**. `scripts/crosscheck-signer.py` is its gate — run it after touching
 anything under `packages/qdojo/src/qdojo/qubic/`, and note that a "reference
 printed no hex" result is qubic-cli failing to reach the node, not a signature
 difference.
+
+## Measured: the Qubic riddle pack on fresh instances (#17)
+
+Two traps from that run, both easy to fall into when reading spar data:
+
+- **A fighter that prints 0 solves every zero-answer round.** `echo.py` answers
+  0 to any Qubic riddle (the input is one JSON token, so it sums nothing), and
+  0 was the right answer in 36 of 200 fresh green instances and 19 of 200 blue
+  ones; under `payout_mode: first` it also commits before any real solver.
+  The green generator now re-draws most of the manager filters that made a
+  zero (17 of 200 after); blue sits near 9 %. A solve rate read off a spar
+  with such a bot in it measures the zero share, not the content.
+- **There is no `--chain fake`.** `qdojo house spar` signs, so it needs
+  `--node`. To fight a pack round without the live chain, drive
+  `Spar.one_round` on `FakeChain` from Python the way
+  `test_qubic_spar_round_commits_reveals_settles_and_exports` does;
+  `scripts/riddle-pack-measure.py spar` is that harness with staggered and
+  lockstep bots, and it reproduced the round-119 tie on every family: two
+  identical bots on one poll interval both commit 6 ticks after publish and
+  split the pot 1925/1925, while a bot polling 3 ticks later is `solved`
+  and unpaid.

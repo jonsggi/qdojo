@@ -254,6 +254,13 @@ def asset_ledger(rng):
     # Usually a holding that exists; sometimes an identity or manager that may hold nothing.
     identity = chosen[fields.index(role)] if rng.random() < 0.75 else rng.choice(users)
     manager_filter = rng.choice([None, None, chosen[4], rng.randint(1, 3)])
+    # A manager the identity holds nothing under makes the answer zero, and a fighter that always
+    # answers 0 must not win a fifth of the rounds (36 of 200 fresh instances before this re-draw,
+    # 31 of them from the manager filter). Keep some zeros: the statement says they count.
+    held_under = sorted({k[4] for k, v in balances.items() if v > 0 and k[:2] == chosen[:2]
+                         and k[fields.index(role)] == identity})
+    if manager_filter is not None and manager_filter not in held_under and held_under and rng.random() < 0.7:
+        manager_filter = rng.choice(held_under)
     answer = sum(n for k, n in balances.items() if k[:2] == chosen[:2]
                  and k[fields.index(role)] == identity and (manager_filter is None or k[4] == manager_filter))
     return _body("qubic_asset_ledger", "Qubic asset ledger",
