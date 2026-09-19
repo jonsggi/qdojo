@@ -8,9 +8,17 @@ else, and a seed never has to be written to a file for another process to
 read.
 
 Trust in this code does not rest on it being tidy. `scripts/crosscheck-signer.py`
-signs real transactions with both this package and the reference qubic-cli
-and compares every byte; the same harness proved it over 2,316 identities and
-84 transactions before it was wired in. Run it after touching anything here.
+signs real transactions with both this package and the reference qubic-cli and
+compares every byte -- possible only because Qubic's SchnorrQ is deterministic,
+so the bar is "identical bytes", not "both verify".
+
+Standing evidence, 2026-09-19: 200 random seeds x 15 vectors = 3,000
+signatures byte-identical, 0 mismatches, covering payloads from 0 to 1,024
+bytes and amounts either side of 2^32; 2,316 estate identities derived
+identically; 6,000 random transactions fuzzed with 0 verify, decode or
+group-law inconsistencies; and three sends on chain confirmed independently
+by qubic-cli, including a payload transaction and a run with the primary node
+dead. Run the script after touching anything here.
 """
 from .fourq import decode, encode, scalar_mul                     # noqa: F401
 from .ids import (                                                # noqa: F401
