@@ -97,10 +97,11 @@ test('the public roster includes female and male fighters', () => {
 });
 
 test('versioned preview fixtures cover both character variants', () => {
-  assert.equal(avatars.version, 'qdojo-fighters-v2-preview');
+  assert.equal(avatars.version, 'qdojo-fighters-v3-preview');
   for (const [id, character, expected] of [
     [identity, 'Female', '340d0d6c26cb28afec5df527e937cb43b6f3e4589443af2a1e754fc2fb201dea'],
-    ['fixture-0', 'Male', '90da6b9bc6ac1e136f459ed980e0fd34ca0021cdf668a3d4b9a2f8bc571b74cf'],
+    // fixture-0 is a shinobi; v3 closed the face wrap over the cheeks and chin.
+    ['fixture-0', 'Male', 'e5544a12c6dd4b4f86170c1a584a8c7a30d4d18b880981275c0d8ca43072dd48'],
   ]) {
     assert.equal(avatars.traits(id).character, character);
     assert.equal(createHash('sha256').update(avatars.svg(id)).digest('hex'), expected);

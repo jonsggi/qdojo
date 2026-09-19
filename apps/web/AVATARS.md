@@ -36,19 +36,34 @@ QDojoAvatars.svg(identity, 'sprite');      // transparent 32×32 sprite
 QDojoAvatars.svg(identity, 'portrait');    // compact portrait
 QDojoAvatars.traits(identity);             // frozen descriptive traits
 QDojoAvatars.version;                     // qdojo-fighters-v2-preview
-QDojoAvatars.frames(identity, 'jab');      // experiment: sprite bodies, one per frame
-QDojoAvatars.strip(identity, 'idle');      // experiment: one SVG, frames as hidden <g>
-QDojoAvatars.clips;                        // { idle: {fps, frames}, jab: {...} }
+QDojoAvatars.frames(identity, 'jab');      // sprite bodies, one per frame
+QDojoAvatars.strip(identity, 'idle');      // one SVG, frames as hidden <g>
+QDojoAvatars.strip(identity, 'win', 'artwork'); // same, on the 64×64 card
+QDojoAvatars.signature(identity);          // the move a card shows off: jab, kick, bow or win
+QDojoAvatars.clips;                        // { idle, jab, kick, hit, bow, win, lose }
 ```
 
-### Animation experiment
+### Animation
 
-`frames` and `strip` draw the same sprite in poses: whole-body integer pixel
-offsets above the belt (legs stay planted), a lead-arm state (`guard`, `wind`,
-`jab`) and a blink. Frame zero of `idle` is byte-identical to the static
-sprite, and the static exports are untouched. Nothing in `avatars.js` plays a
-clip; `anim.html` is a sparring demo that shows one frame group at a time from
-the elapsed clock. This is an experiment, not part of the collectible contract.
+`frames` and `strip` draw the same sprite in poses: integer pixel offsets for
+the body and the head, a jump, lead and rear arm states, a leg state (planted,
+chamber, kick, kneel) and a blink. Seven clips: idle at 4 fps, jab, kick and
+hit at 12, bow at 6, win and lose at 8; lose holds its last frame. Frame zero of
+`idle` is byte-identical to the static sprite, and the static exports do not
+change. The signature move is a character trait derived from the identity,
+never from rank or results.
+
+Nothing in `avatars.js` plays a clip. `anim.js` does: one animation loop for
+the page, frames chosen from the elapsed clock, strips built lazily. An avatar
+opts in with `data-anim` (see the list at the top of `anim.js`); `app.js` uses
+`idle` on lobby seats, `profile` on the fighter card, `win` on the results
+podium, and `fight` on the cards of an open round, where the fighters bow when
+the riddle drops and spar until the reveal, faster as the commit window closes.
+With `prefers-reduced-motion` the static art stays. `anim.html` is the sparring
+ring used to check every clip.
+
+Version 3 closed the shinobi face wrap over the cheeks and the chin; the
+shinobi quarter of the roster changed by those pixels and nothing else.
 
 The SVG export is artwork only. It contains no wallet secrets or user-provided
 markup. Rasterize at a suitable integer scale with nearest-neighbour/crisp-edge
