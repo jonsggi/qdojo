@@ -641,3 +641,48 @@ def test_a_bot_never_spends_its_last_coin_on_a_seat(world, tmp_path):
     assert any("entered the lobby" in a for a in make_bot(world, tmp_path, "E" * 60, SUM_SOLVER).step(board) or []) or True
     alice2 = Bot(world.view(ALICE), str(tmp_path / "s2"), SUM_SOLVER)
     assert any("entered the lobby" in a for a in alice2.step(board))
+
+
+def test_spar_auto_fee_is_derived_from_the_houses_own_history(world, tmp_path, monkeypatch):
+    """Two lobby rounds on the fake chain with --entry-fee auto: the second
+    round's fee is retargeted from the first round's entrants, announced in
+    LOBBY, published in history.json with its derivation, written to the
+    metrics row, and reproducible from the export alone."""
+    from qdojo import spar as S, fees
+    h = make_house(world, tmp_path, seed=5000, rake_bps=2000)
+    drive_settle(h, world)
+    web, metrics = str(tmp_path / "web"), str(tmp_path / "m.jsonl")
+    policy = fees.FeePolicy(alpha=0.5, window=8, headroom=1, clamp=1.5, floor=100, start=1000)
+    sp = S.Spar(h, ["white"], 1000, 50, 20, str(tmp_path / "r"), web, metrics, min_players=2, lobby_window=40,
+                poll=1, fee_policy=policy, skip_dead=False)
+    bots = [make_bot(world, tmp_path, ALICE, WRONG_SOLVER), make_bot(world, tmp_path, BOB, WRONG_SOLVER)]
+
+    def sleep(_):
+        """The supervisor's poll: ticks pass and the bots act on the board it exported."""
+        world.core.advance(6)
+        try:
+            board = json.load(open(os.path.join(web, "board.json")))
+        except FileNotFoundError:
+            return
+        for b in bots:
+            b.step(board)
+    monkeypatch.setattr(S.time, "sleep", sleep)
+
+    row1 = sp.one_round("white")
+    assert row1["settled"] and row1["entry_fee"] == 1000 and row1["n_entries"] == 2
+    assert row1["fee_policy"]["fee"] == 1000 and row1["fee_policy"]["rounds"] == []     # no history: the start fee
+    row2 = sp.one_round("white")
+    # two sat down against a target of three: 1000 * sqrt(2 / 3) = 816
+    assert row2["entry_fee"] == 816 and row2["fee_policy"]["from_fee"] == 1000 and row2["fee_policy"]["occ"] == 2.0
+    assert h.meta(2)["entry_fee"] == 816 and h.meta(2)["fee_policy"]["rounds"] == [1]     # what LOBBY announced
+    hist = h.export(web)
+    r1, r2 = hist["rounds"]
+    assert r1["fee_policy"]["fee"] == 1000 and r2["entry_fee"] == 816 and r2["fee_policy"]["f_star"] == 8333.3
+    assert [e["stake"] for e in r2["entries"]] == [816, 816]
+    # a bot replaying the export computes the same fee from public data alone
+    replay = fees.next_fee(hist["rounds"][:1], "white", policy, r1["min_players"], r1["house_seed"], r1["rake_bps"])
+    assert replay["fee"] == 816 and replay == r2["fee_policy"]
+    keep = ("round_id", "belt", "state", "entrants", "entry_fee")
+    assert h.fee_rows() == [{k: r[k] for k in keep} for r in hist["rounds"]]
+    # a fixed fee is what it always was
+    assert S.Spar(h, ["white"], 700, 50, 20, str(tmp_path / "r2"), web, metrics).fee_for("blue") == (700, None)

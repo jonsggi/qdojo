@@ -155,6 +155,23 @@ itself and never sees the process end.
 
 Kill by PID, or match on something that cannot appear in the invoking command.
 
+## `--entry-fee auto` prices each belt from the house's own history
+
+`qdojo house spar --entry-fee auto` retargets the fee per belt before every
+table from the rounds this house has settled or voided (docs/spec.md §5): a
+belt that fills above target gets dearer, one that voids gets cheaper, and
+never above the fee at which the seed refunds the rake. `--entry-fee 1000`
+is unchanged and remains the override. The knobs are `--fee-alpha`,
+`--fee-window`, `--fee-headroom`, `--fee-clamp`, `--fee-floor`, `--fee-cap`
+and `--fee-start`; the defaults are the ones docs/model.md chose.
+
+Two things to know before turning it on. This house runs no rake, so there
+is no fair-game ceiling: set `--fee-cap`, or the only bound is the fighters'
+purses. And it refuses `--npcs`: a house fighter sits at any price, so the
+fee could only rise. The fee it chose and why are in each round's
+`fee_policy` in history.json and in the metrics row; the log line at each
+table says the same in English.
+
 ## Round 119: the first round fought without qubic-cli
 
 Recorded because it is the evidence behind the native signer, and because

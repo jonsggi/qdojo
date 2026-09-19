@@ -7,7 +7,7 @@ import random
 import sys
 import time
 
-from . import riddles
+from . import riddles, fees
 from .house import HouseError
 from .chain.base import Unknown, ChainError
 
@@ -20,7 +20,7 @@ class Spar:
     def __init__(self, house, belts, entry_fee, commit_window, reveal_window, riddle_dir, web_out, metrics_path,
                  seed=None, payout_mode=1, poll=15, match_bps=10000, min_players=0, lobby_window=0,
                  npcs=(), npc_rounds=3, bond_bps=0, bond_rounds=0, skip_dead=True, sensei=False,
-                 riddle_pack="classic"):
+                 riddle_pack="classic", fee_policy=None):
         for belt in belts:
             if not riddles.kinds(belt, pack=riddle_pack):
                 raise riddles.RiddleGenError(f"no riddles for belt {belt!r} in pack {riddle_pack!r}")
@@ -35,6 +35,7 @@ class Spar:
         self.bond_bps, self.bond_rounds = bond_bps, bond_rounds
         self.skip_dead = skip_dead
         self.sensei = sensei
+        self.fee_policy = fee_policy     # a fees.FeePolicy: price each belt from the house's own history
         os.makedirs(riddle_dir, mode=0o700, exist_ok=True)
 
     def _export(self):
@@ -47,10 +48,20 @@ class Spar:
         except (Unknown, HouseError) as e:
             log(f"export: {e}")
 
-    def fund_npcs(self) -> int:
+    def fee_for(self, belt: str) -> tuple[int, dict | None]:
+        """The fee the next table at `belt` charges: the operator's number,
+        or the controller's, retargeted from the rounds this house has
+        settled or voided (docs/spec.md §5). The derivation comes back with
+        it so the round can publish it."""
+        if self.fee_policy is None:
+            return self.entry_fee, None
+        d = fees.next_fee(self.h.fee_rows(), belt, self.fee_policy, self.min_players, self.h.seed_per_round, self.h.rake_bps)
+        return d["fee"], d
+
+    def fund_npcs(self, fee: int | None = None) -> int:
         """House fighters play with house money: top each up to npc_rounds stakes,
         amount = target - fresh balance, confirmed by inclusion. Returns QU sent."""
-        target, sent = self.entry_fee * self.npc_rounds, 0
+        target, sent = (self.entry_fee if fee is None else fee) * self.npc_rounds, 0
         for idn in self.npcs:
             try:
                 bal = self.h.chain.balance(idn)
@@ -126,7 +137,11 @@ class Spar:
 
     def one_round(self, belt: str) -> dict | None:
         rid = self.h.state()["next_round"]
-        npc_funding = self.fund_npcs() if self.npcs else 0
+        fee, derived = self.fee_for(belt)
+        if derived:
+            log(f"round {rid} [{belt}] fee {fee} (from {derived['from_fee']}, occupancy {derived['occ']} of {derived['tgt']} "
+                f"over rounds {derived['rounds']}, f* {derived['f_star']}, floor {derived['floor_b']})")
+        npc_funding = self.fund_npcs(fee) if self.npcs else 0
         r = riddles.generate(belt, self.rng, rid, pack=self.riddle_pack)
         path = os.path.join(self.riddle_dir, f"{rid:04d}.json")
         with open(path, "w", encoding="utf-8") as f:
@@ -134,10 +149,11 @@ class Spar:
         os.chmod(path, 0o600)
         before = self.h.chain.balance(self.h.identity)
         if self.min_players:
-            meta = self.h.open_lobby(path, self.entry_fee, self.min_players, self.lobby_window, self.wc, self.wr,
+            meta = self.h.open_lobby(path, fee, self.min_players, self.lobby_window, self.wc, self.wr,
                                      payout_mode=self.payout_mode, match_bps=self.match_bps, belt=belt,
-                                     bond_bps=self.bond_bps, bond_rounds=self.bond_rounds, sensei=self.sensei)
-            log(f"round {rid} [{belt}/{r['kind']}] LOBBY {meta['lobby_tx'][:8]}… sched {meta['lobby_scheduled_tick']}, needs {self.min_players}")
+                                     bond_bps=self.bond_bps, bond_rounds=self.bond_rounds, sensei=self.sensei,
+                                     fee_policy=derived)
+            log(f"round {rid} [{belt}/{r['kind']}] LOBBY {meta['lobby_tx'][:8]}… sched {meta['lobby_scheduled_tick']}, fee {fee}, needs {self.min_players}")
             for _ in range(120):
                 try:
                     meta = self.h.confirm_lobby(rid); break
@@ -172,8 +188,9 @@ class Spar:
             meta = self.h.publish_from_lobby(rid)
             log(f"round {rid} PUBLISH {meta['publish_tx'][:8]}… sched {meta['scheduled_tick']}")
         else:
-            meta = self.h.publish(path, self.entry_fee, self.wc, self.wr, payout_mode=self.payout_mode, match_bps=self.match_bps,
-                                  belt=belt, bond_bps=self.bond_bps, bond_rounds=self.bond_rounds, sensei=self.sensei)
+            meta = self.h.publish(path, fee, self.wc, self.wr, payout_mode=self.payout_mode, match_bps=self.match_bps,
+                                  belt=belt, bond_bps=self.bond_bps, bond_rounds=self.bond_rounds, sensei=self.sensei,
+                                  fee_policy=derived)
             log(f"round {rid} [{belt}/{r['kind']}] PUBLISH {meta['publish_tx'][:8]}… sched {meta['scheduled_tick']}")
         for _ in range(120):
             try:
@@ -223,6 +240,7 @@ class Spar:
         return {"round_id": rid, "belt": belt, "kind": r["kind"], "title": r["title"], "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "riddle_pack": self.riddle_pack,
                 "publish_tick": spec.publish_tick, "entry_fee": spec.entry_fee, "house_seed": spec.house_seed,
+                "fee_policy": self.h.meta(rid).get("fee_policy"),
                 "payout_mode": spec.payout_mode, "settled": bool(doc) and self.h.meta(rid)["status"] == "settled",
                 "pot": (doc or {}).get("pot"), "seed_used": (doc or {}).get("seed_used"), "match_bps": spec.match_bps,
                 "carry_in": spec.carry_in, "rake": (doc or {}).get("rake"), "carry": (doc or {}).get("carry"),
@@ -248,9 +266,10 @@ class Spar:
         ladder = self.h.belts()
         known = set(self.h.bows()) | set(ladder)
         outsiders = [i for i in known if i not in self.npcs and B.may_enter(ladder, i, rank)]
+        fee = self.fee_for(belt)[0]
         for i in outsiders:
             try:
-                if self.h.chain.balance(i) >= self.entry_fee:
+                if self.h.chain.balance(i) >= fee:
                     return True
             except Unknown:
                 return True   # cannot tell: assume the table is live rather than skip it

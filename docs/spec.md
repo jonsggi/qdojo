@@ -84,6 +84,22 @@ identity counts.
 
 - **Stake.** In a lobby round the ENTER amount; without a lobby the COMMIT
   amount. It must be at least the round's `entry_fee`.
+- **Fee.** `entry_fee` is announced in LOBBY (or PUBLISH, without a lobby)
+  and is either the operator's number, the same at every table, or
+  retargeted per belt from the house's own published history. Per belt,
+  over the last `K` settled or void rounds at that belt (`K = 8`): `occ` is
+  the mean `entrants`, `tgt = min_players + headroom` (headroom 2),
+  `fee' = fee · (occ / tgt)^α` (α = 0.5) held within `fee / 1.5 .. fee · 1.5`,
+  then `fee = max(floor, min(fee', f*, cap))` rounded to three significant
+  figures. `f* = seed_cap / (tgt · rake_bps / 10000)` is the fee at which
+  the seed exactly refunds the rake, so while the house seeds, the average
+  fighter is never worse than break-even; without a rake there is no `f*`
+  and the operator's `cap` is the only ceiling. A belt with no history
+  charges the start fee. Void rounds count, with the seats that were
+  bought. A round priced this way publishes the derivation as `fee_policy`
+  so anyone can replay it; docs/api.md has the exact inputs and
+  docs/model.md the measurements behind the numbers. The house must not
+  fund fighters at a table priced this way: they sit at any price.
 - **Seed.** PUBLISH announces a `seed_cap` and a `match_bps`. The house adds
   `min(seed_cap, counted stakes × match_bps / 10000)` to the pot, plus any
   carry from earlier rounds. With `match_bps = 10000` the house matches the
