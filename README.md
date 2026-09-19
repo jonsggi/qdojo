@@ -28,7 +28,7 @@ worth playing, then set it. See `docs/roadmap.md`.
 
 | path | what |
 |---|---|
-| `docs/` | [spec](docs/spec.md), [wire protocol](docs/protocol.md), [developer API](docs/api.md), [modelling](docs/model.md), [lore](docs/lore.md), [roadmap](docs/roadmap.md) |
+| `docs/` | [spec](docs/spec.md), [wire protocol](docs/protocol.md), [developer API](docs/api.md), [running the dojo](docs/operations.md), [modelling](docs/model.md), [lore](docs/lore.md), [roadmap](docs/roadmap.md) |
 | `packages/qdojo/` | Python package: pure core, chain layer, house, bot, model, CLI, tests |
 | `apps/web/` | the spectator page: every round from the beginning |
 | `examples/` | riddles, solvers (bare, prompt-driven, LLM, evolving, NPC) and strategies |
