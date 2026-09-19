@@ -151,6 +151,27 @@ function ticksToHuman(t) {
   const m = Math.floor(s / 60), r = s % 60;
   return r ? `${m}m${String(r).padStart(2, '0')}s` : `${m}m`;
 }
+// "45 s", "12 min", "5 h", "467 d": one unit, no decimals. Seconds under 90 s,
+// minutes under 90 min, hours under 48 h, days from there. The tick screen
+// ("467 d AGO") and the STALE pill ("STALE 12 min") both use it, so they agree.
+function ageText(secs) {
+  secs = Math.max(0, Number(secs) || 0);
+  if (secs < 90) return `${Math.round(secs)} s`;
+  if (secs < 90 * 60) return `${Math.round(secs / 60)} min`;
+  if (secs < 48 * 3600) return `${Math.round(secs / 3600)} h`;
+  return `${Math.round(secs / 86400)} d`;
+}
+// What the tick screen says under TICK N. Every input is a tick number, so
+// apps/web/tests/when.test.cjs runs it in a bare VM: `t` is the tick shown,
+// `now` the tick the page believes it is, `first` the earliest tick of any
+// round (null when there is none). Before the first round a day count is a
+// sum, not information -- and the export carries no wall-clock anchor that
+// could turn a tick that old into an honest date, so it says what it knows.
+function tickWhen(t, now, first) {
+  if (first !== null && first !== undefined && t < first) return 'BEFORE ROUND 1';
+  if (t > now) return `IN ${Math.round((t - now) * TICK_MS / 1000)} s`;
+  return `${ageText((now - t) * TICK_MS / 1000)} AGO`;
+}
 function ordinal(n) { return n === 1 ? '1ST' : n === 2 ? '2ND' : n === 3 ? '3RD' : `${n}TH`; }
 function signed(n) {
   if (n === null || n === undefined || Number.isNaN(Number(n))) return '—';
@@ -1731,6 +1752,15 @@ function nearestTick(t) {
   if (!ts.length) return null;
   return ts.reduce((best, x) => (Math.abs(x - t) < Math.abs(best - t) ? x : best), ts[0]);
 }
+// The earliest tick any round touched: the lobby of round 1, or its PUBLISH
+// when it had no lobby. Null until a round exists.
+function firstRoundTick() {
+  let first = null;
+  for (const r of S.data.rounds) for (const t of [r.lobby_tick, r.publish_tick]) {
+    if (t !== null && t !== undefined && (first === null || t < first)) first = t;
+  }
+  return first;
+}
 
 function tickShard(tick) {
   return lazyJSON(`./data/ticks/${Math.floor(tick / TICK_BUCKET)}.json`, 0, () => { if (S.screen === 'tick') renderTick(); });
@@ -1787,9 +1817,7 @@ function renderTick() {
   const byTx = new Map((sh.events || []).map(e => [e.tx, e]));
   const parts = [];
 
-  const ago = (now - t) * TICK_MS / 1000;
-  const when = t > now ? `IN ${Math.round((t - now) * TICK_MS / 1000)} s` :
-    (ago < 90 ? `${Math.round(ago)} s AGO` : ago < 5400 ? `${Math.round(ago / 60)} min AGO` : `${(ago / 3600).toFixed(1)} h AGO`);
+  const when = tickWhen(t, now, firstRoundTick());
   const prev = neighbourTick(t, -1), next = neighbourTick(t, 1);
   parts.push(`<h2 class="screen-title">TICK ${fmt(t)}<small${h('tick')}>${when} · ONE TICK IS ABOUT HALF A SECOND</small></h2>`);
   parts.push(`<div class="res-nav">
