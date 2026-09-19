@@ -43,11 +43,15 @@ cohort.
 
 - [x] spec, wire protocol, lore, developer API (docs/api.md), modelling notes (docs/model.md)
 - [x] pure core: hashing, payloads, round evaluation, settlement
-- [x] chain layer: fake for tests, qubic-cli + indexer for real, indexer-lag safe
+- [x] chain layer: fake for tests, native Python + indexer for real, indexer-lag
+      safe; qubic-cli kept behind `--chain cli` as the reference only
 - [x] pure-Python signing, so a bot needs no qubic-cli: K12, FourQ, SchnorrQ,
       identities, transactions and the node protocol in `qdojo.qubic`, the
       default chain since 2026-09-19, checked byte-for-byte against the
       reference by `scripts/crosscheck-signer.py`
+- [x] the bot tool is binary-free end to end: the rite, node discovery, share
+      issuance (Qx) and dividends (QUtil) all run natively, and no bot command
+      looks for qubic-cli unless `--chain cli` is asked for
 - [x] house CLI: lobby / publish / collect / settle / void / export / metrics / model / distribute-shareholders
 - [x] bot CLI: init, bow, run with any solver, stats, shares, dividend, strategy hook
 - [x] spectator page: lobby table, rounds, results, void, fighter profiles, halls of fame, hash verify

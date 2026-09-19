@@ -347,14 +347,22 @@ def cmd_house_events(a):
         print(json.dumps(recs, indent=2))
 
 
+def _cli_chain(a) -> bool:
+    """True under `--chain cli`: the only case in which a bot command may go
+    looking for qubic-cli. The default chain signs and probes in Python."""
+    return getattr(a, "chain", "native") == "cli"
+
+
 def _bot_defaults(a):
-    """Fill --cli/--conf/--identity/--node from the bot profile and node cache
-    when they were not given, so `qdojo bot run` works after `qdojo bot init`."""
+    """Fill --conf/--identity/--node (and --cli, under --chain cli) from the
+    bot profile and node cache when they were not given, so `qdojo bot run`
+    works after `qdojo bot init`."""
     prof = onboard.load_profile(a.state)
-    try:
-        a.cli = onboard.find_cli(a.cli if a.cli != "qubic-cli" else None)
-    except onboard.OnboardError as e:
-        sys.exit(f"qdojo: {e}")
+    if _cli_chain(a):
+        try:
+            a.cli = onboard.find_cli(a.cli if a.cli != "qubic-cli" else (prof.get("cli") or None))
+        except onboard.OnboardError as e:
+            sys.exit(f"qdojo: {e}")
     a.conf = a.conf or prof.get("conf") or os.path.join(a.state, "bot.conf")
     if not os.path.exists(os.path.expanduser(a.conf)):
         sys.exit(f"qdojo: no seed conf at {a.conf}; run `qdojo bot init` first")
@@ -363,7 +371,8 @@ def _bot_defaults(a):
         sys.exit(f"qdojo: --identity {a.identity[:8]}… does not match the conf, which signs as {derived[:8]}…")
     a.identity = derived
     if not a.node:
-        a.node = nodes.best_node(a.state, nodes.cli_probe(a.cli))
+        probe = nodes.cli_probe(a.cli) if _cli_chain(a) else nodes.native_probe()
+        a.node = nodes.best_node(a.state, probe)
         print(f"node: {a.node} (auto-detected)", file=sys.stderr)
     if getattr(a, "solver", None) is None:
         a.solver = prof.get("solver")
@@ -535,8 +544,11 @@ def cmd_prompts(a):
 
 
 def cmd_nodes(a):
-    cli = onboard.find_cli(a.cli if a.cli != "qubic-cli" else None)
-    found = nodes.discover(nodes.cli_probe(cli))
+    if _cli_chain(a):
+        probe = nodes.cli_probe(onboard.find_cli(a.cli if a.cli != "qubic-cli" else None))
+    else:
+        probe = nodes.native_probe()
+    found = nodes.discover(probe)
     if not found:
         sys.exit("qdojo: no live node found")
     nodes.save(a.state, found)
@@ -560,7 +572,7 @@ def cmd_bot_issue_shares(a):
     print(f"issue {res.tx_id} scheduled for tick {res.scheduled_tick}; confirming…")
     for _ in range(90):
         try:
-            ok = sh.cli.confirm(res.tx_id, res.scheduled_tick); break
+            ok = sh.chain.confirm(res.tx_id, res.scheduled_tick); break
         except Unknown:
             time.sleep(1)
     else:
@@ -634,7 +646,7 @@ def build_parser():
                    default=os.environ.get("QDOJO_CHAIN", "native"),
                    help="native (default: pure Python, no binary) or cli (via qubic-cli)")
     p.add_argument("--cli", default=os.environ.get("QUBIC_CLI", "qubic-cli"),
-                   help="path to qubic-cli, used only by --chain cli")
+                   help="path to qubic-cli, read only under --chain cli; a bot never needs the binary")
     p.add_argument("--node", default=os.environ.get("QDOJO_NODE"), help="node IP[:PORT] for reads and signing")
     p.add_argument("--conf", default=os.environ.get("QDOJO_CONF"), help="0600 conf with one seed= line")
     p.add_argument("--identity", default=os.environ.get("QDOJO_IDENTITY"), help="identity the conf signs as")

@@ -146,6 +146,23 @@ class QubicCli:
                 return False
         raise Unknown(f"tick {tick} not answerable yet for {tx_id[:8]}…")
 
+    # The reads shares.py makes, with the same names NativeChain gives them.
+    # Each parser returns None without its marker, and None is Unknown here:
+    # an empty asset list from a binary that printed garbage is not "nothing
+    # owned".
+    def qx_fees(self) -> dict:
+        return self._read(["-qxgetfee"], parse.qx_fees, "Qx fees")
+
+    def qutil_fees(self) -> dict:
+        return self._read(["-qutilgetfee"], parse.qutil_fees, "QUtil fees")
+
+    def owned_assets(self, identity: str) -> list[dict]:
+        return self._read(["-getasset", identity], parse.owned_assets, f"assets of {identity[:8]}…")
+
+    def asset_holders(self, issuer: str, name: str) -> list[dict]:
+        return self._read(["-queryassets", "ownerships", f"issuer={issuer},name={name}"],
+                          parse.ownerships, f"holders of {name}")
+
     def indexed_tick(self) -> int:
         if self.indexer is None:
             raise ChainError("no indexer configured")

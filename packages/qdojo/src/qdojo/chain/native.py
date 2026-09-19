@@ -24,7 +24,7 @@ Three differences from the qubic-cli path, each deliberate:
   its data is available, "not in the tick" means "never landed and never
   can" -- a definite False rather than an endless maybe.
 """
-from ..qubic import ids
+from ..qubic import contracts, ids
 from ..qubic.node import Node, NodeError
 from ..qubic.tx import Transaction
 from ..round import Observed
@@ -132,6 +132,41 @@ class NativeChain:
         if self.indexer is None:
             raise ChainError("no indexer configured for transaction discovery")
         return self.indexer.transactions_to(identity, start_tick, end_tick)
+
+    # ------------------------------------------------- contracts and assets
+    # What `qubic-cli -qxgetfee`, `-qutilgetfee`, `-getasset` and
+    # `-queryassets ownerships` read, asked of the node directly. The same
+    # names exist on QubicCli, so shares.py never knows which chain it has.
+
+    def contract_function(self, contract_index: int, function: int, data: bytes = b"") -> bytes:
+        return self._read(lambda n: n.contract_function(contract_index, function, data),
+                          f"answer from contract {contract_index} function {function}")
+
+    def qx_fees(self) -> dict:
+        """{issue, transfer, trade_per_1e9}, live from Qx."""
+        return self._read(lambda n: contracts.parse_qx_fees(
+            n.contract_function(contracts.QX_CONTRACT_INDEX, contracts.QX_GET_FEE)), "Qx fees")
+
+    def qutil_fees(self) -> dict:
+        """QUtil's fees, live; `distribute_per_shareholder` is the one a dividend pays."""
+        return self._read(lambda n: contracts.parse_qutil_fees(
+            n.contract_function(contracts.QUTIL_CONTRACT_INDEX, contracts.QUTIL_GET_FEES)), "QUtil fees")
+
+    def owned_assets(self, identity: str) -> list[dict]:
+        """[{issuer, name, shares, managing_contract}] -- every asset `identity` owns."""
+        if not ids.check_identity(identity):
+            raise ChainError(f"{identity[:12]}… is not a valid identity (checksum)")
+        pub = ids.public_key_from_identity(identity)
+        return self._read(lambda n: n.owned_assets(pub), f"assets of {identity[:8]}…")
+
+    def asset_holders(self, issuer: str, name: str) -> list[dict]:
+        """[{owner, shares, managing_contract}] -- every ownership record of one asset."""
+        if not ids.check_identity(issuer):
+            raise ChainError(f"issuer {issuer[:12]}… is not a valid identity (checksum)")
+        req = contracts.ownerships_request(issuer, name)
+        recs = self._read(lambda n: n.asset_records(req), f"holders of {name}")
+        return [{"owner": r["owner"], "shares": r["shares"], "managing_contract": r["managing_contract"]}
+                for r in recs if r.get("type") == contracts.ASSET_OWNERSHIP]
 
     # ---------------------------------------------------------------- sends
     def send(self, dest: str, amount: int, payload: bytes = b"", input_type: int = 0) -> SendResult:
