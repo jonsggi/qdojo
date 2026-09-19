@@ -229,7 +229,7 @@ so the lab can be cross-linked to the fighter card; `--map NAME=IDENTITY` and
 qdojo bot init [--full] [--name NAME] [--seed-from-stdin]  the bowing-in rite (below)
 qdojo bot setup [flags]                             choose a provider and model for an existing seed
 qdojo bot nodes                                     refresh the live-node cache
-qdojo bot run --board URL --solver CMD... [--name NAME] [--strategy CMD...] [--max-stake N] [--solver-timeout S]
+qdojo bot run --board URL --solver CMD... [--name NAME] [--strategy CMD...] [--max-stake N] [--solver-timeout S] [--ephemeral-conf PATH]
 qdojo bot stats --board URL                         your published performance
 qdojo bot shares [--name ASSET --issuer ID]         assets you own, or holders of an asset
 qdojo bot issue-shares ASSET COUNT [--apply]        issue your shares on Qx (you pay the Qx fee)
@@ -238,6 +238,15 @@ qdojo bot dividend ASSET AMOUNT [--apply]           distribute QU to your shareh
 
 Every command that moves money prints a plan and does nothing without
 `--apply`. The seed lives in a 0600 conf and is never on argv.
+
+`--ephemeral-conf PATH`, on `bot run` and `house spar`, is for a throwaway
+identity: the run signs with that conf and shreds it when it exits, on every
+exit path including ctrl-c and SIGTERM. Only the conf named by the flag is
+ever shredded; one given through `--conf`, `QDOJO_CONF` or the profile never
+is. Both commands, and `bot init`, first list any `*.conf` left in the
+runtime directory (`$XDG_RUNTIME_DIR/qdojo`) on stderr, with ages. That
+check reports and deletes nothing; docs/operations.md says what those files
+are.
 
 ### The initiation rite
 

@@ -37,6 +37,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 from qdojo.qubic import ids                      # noqa: E402
 from qdojo.qubic.tx import Transaction           # noqa: E402
+from qdojo import seedconf                       # noqa: E402
 
 RED, GRN, YEL, DIM, RST = "\033[31m", "\033[32m", "\033[33m", "\033[2m", "\033[0m"
 HEX_RE = re.compile(r"-+ hex -+\s*\n([0-9a-f]+)", re.I)
@@ -108,7 +109,17 @@ def main():
     fd, conf = tempfile.mkstemp(suffix=".conf")
     os.close(fd)
     os.chmod(conf, 0o600)
+    # Shredded on every exit path, ctrl-c included. The seeds that pass
+    # through it are random and hold nothing, but a conf that outlives its run
+    # is the habit that left twenty keys on tmpfs (docs/operations.md), and
+    # this is the same helper `--ephemeral-conf` uses, so every gate run
+    # exercises it too.
+    with seedconf.ephemeral(conf):
+        return crosscheck(a, ip, conf, seeds, dest)
 
+
+def crosscheck(a, ip, conf, seeds, dest):
+    """The run itself, against a conf that is shredded when it returns."""
     def write_conf(seed):
         with open(os.open(conf, os.O_WRONLY | os.O_TRUNC, 0o600), "w") as f:
             f.write(f"seed={seed}\n")
@@ -212,8 +223,6 @@ def main():
                 ok_s += 1
         print(f"   {got_id[:12]}…  {GRN if not (derive_bad or sign_bad) else YEL}"
               f"{ok_d} derived, {ok_s} signed{RST}")
-
-    os.unlink(conf)
 
     print(f"\n   {GRN if not derive_bad else RED}derivations: {ok_d}/{len(seeds)}{RST}")
     print(f"   {GRN if not sign_bad else RED}signatures:  {ok_s} byte-identical{RST}")

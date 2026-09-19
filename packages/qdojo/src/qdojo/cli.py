@@ -14,6 +14,7 @@ from .chain.base import Unknown, ChainError
 from .house import House, HouseError
 from .bot import Bot, BotError, fetch_board
 from . import nodes, onboard, spar, events, lab, wizard, term, training, prompts as P, dash
+from . import seedconf
 from .shares import Shares, SharesError
 
 
@@ -125,17 +126,36 @@ def cmd_house_settle(a):
         print("\nPLAN ONLY. Nothing was sent. Re-run with --apply to pay.", file=sys.stderr)
 
 
+def _take_ephemeral(a):
+    """`--ephemeral-conf PATH` names the conf AND marks it throwaway, in one
+    flag, so the only conf a run can ever shred is the one this flag named.
+    A conf that arrived through --conf, QDOJO_CONF or the profile is never
+    touched, and naming two different files is refused rather than guessed.
+    Returns the path to shred on exit, or None."""
+    path = getattr(a, "ephemeral_conf", None)
+    if not path:
+        return None
+    path = os.path.expanduser(path)
+    if a.conf and os.path.realpath(os.path.expanduser(a.conf)) != os.path.realpath(path):
+        sys.exit(f"qdojo: --conf {a.conf} and --ephemeral-conf {path} name different files; pass one of them")
+    a.conf = path
+    return path
+
+
 def cmd_house_spar(a):
-    h = _house(a, True)
-    sp = spar.Spar(h, a.belts.split(","), a.entry_fee, a.commit_window, a.reveal_window,
-                   riddle_dir=os.path.join(a.data, "riddles"), web_out=a.out,
-                   metrics_path=os.path.join(a.data, "metrics.jsonl"), seed=a.rng_seed, poll=a.poll,
-                   match_bps=a.match_bps, min_players=a.min_players, lobby_window=a.lobby_window,
-                   npcs=[x for x in (a.npcs or "").split(",") if x], npc_rounds=a.npc_rounds,
-                   bond_bps=a.bond_bps, bond_rounds=a.bond_rounds, skip_dead=not a.dead_tables, sensei=a.sensei,
-                   riddle_pack=a.riddle_pack)
-    sp.payout_mode = {v: k for k, v in payload.MODE_NAMES.items()}[a.payout_mode]
-    sp.run(a.rounds, stop_below=a.stop_below)
+    throwaway = _take_ephemeral(a)
+    seedconf.warn_leftovers(exclude=a.conf)
+    with seedconf.ephemeral(throwaway):
+        h = _house(a, True)
+        sp = spar.Spar(h, a.belts.split(","), a.entry_fee, a.commit_window, a.reveal_window,
+                       riddle_dir=os.path.join(a.data, "riddles"), web_out=a.out,
+                       metrics_path=os.path.join(a.data, "metrics.jsonl"), seed=a.rng_seed, poll=a.poll,
+                       match_bps=a.match_bps, min_players=a.min_players, lobby_window=a.lobby_window,
+                       npcs=[x for x in (a.npcs or "").split(",") if x], npc_rounds=a.npc_rounds,
+                       bond_bps=a.bond_bps, bond_rounds=a.bond_rounds, skip_dead=not a.dead_tables, sensei=a.sensei,
+                       riddle_pack=a.riddle_pack)
+        sp.payout_mode = {v: k for k, v in payload.MODE_NAMES.items()}[a.payout_mode]
+        sp.run(a.rounds, stop_below=a.stop_below)
 
 
 def cmd_house_resume(a):
@@ -358,6 +378,7 @@ def cmd_bot_init(a):
     """The bowing-in rite: signer, seed, name, node, mind, purse. Every stage
     verifies rather than printing, and every prompt has a flag, so a
     professional runs the whole thing on one non-interactive line."""
+    seedconf.warn_leftovers(exclude=a.conf)
     wizard.init(a)
 
 
@@ -584,23 +605,26 @@ def cmd_bot_stats(a):
 
 
 def cmd_bot_run(a):
-    _bot_defaults(a)
-    chain = _chain(a, True)
-    bot = Bot(chain, a.state, a.solver, name=a.name, max_stake=a.max_stake, solver_timeout=a.solver_timeout,
-              strategy_cmd=a.strategy)
-    while True:
-        try:
-            board = fetch_board(a.board)
-            if a.name:
-                bot.house = board["house"]
-                bot.bow()
-            for line in bot.step(board):
-                print(time.strftime("%H:%M:%S"), line, flush=True)
-        except (Unknown, ChainError, BotError, OSError, ValueError) as e:
-            print(time.strftime("%H:%M:%S"), f"warning: {e}", file=sys.stderr, flush=True)
-        if a.once:
-            return
-        time.sleep(a.interval)
+    throwaway = _take_ephemeral(a)
+    seedconf.warn_leftovers(exclude=a.conf)
+    with seedconf.ephemeral(throwaway):
+        _bot_defaults(a)
+        chain = _chain(a, True)
+        bot = Bot(chain, a.state, a.solver, name=a.name, max_stake=a.max_stake, solver_timeout=a.solver_timeout,
+                  strategy_cmd=a.strategy)
+        while True:
+            try:
+                board = fetch_board(a.board)
+                if a.name:
+                    bot.house = board["house"]
+                    bot.bow()
+                for line in bot.step(board):
+                    print(time.strftime("%H:%M:%S"), line, flush=True)
+            except (Unknown, ChainError, BotError, OSError, ValueError) as e:
+                print(time.strftime("%H:%M:%S"), f"warning: {e}", file=sys.stderr, flush=True)
+            if a.once:
+                return
+            time.sleep(a.interval)
 
 
 def build_parser():
@@ -704,6 +728,8 @@ def build_parser():
     d.add_argument("--bond-rounds", type=int, default=0, help="rounds the winner must fight before release")
     d.add_argument("--dead-tables", action="store_true", help="publish belts even when no outsider may sit there")
     d.add_argument("--sensei", action="store_true", help="let a fighter sit below its belt, capped to its stake, no belt points")
+    d.add_argument("--ephemeral-conf", metavar="PATH",
+                   help="a throwaway seed conf: sign with it, shred it when this run exits (never a conf you keep)")
     d.set_defaults(fn=cmd_house_spar)
     d = s.add_parser("resume", help="drive a round left open by a dead supervisor to settlement")
     d.add_argument("round", type=int); d.add_argument("--entry-fee", type=int, default=1000)
@@ -807,6 +833,8 @@ def build_parser():
     d.add_argument("--max-stake", type=int); d.add_argument("--solver-timeout", type=float, default=60.0)
     d.add_argument("--interval", type=float, default=5.0); d.add_argument("--once", action="store_true")
     d.add_argument("--strategy", nargs="+", help="program deciding whether to enter a round (docs/api.md)")
+    d.add_argument("--ephemeral-conf", metavar="PATH",
+                   help="a throwaway seed conf: sign with it, shred it when this run exits (never a conf you keep)")
     d.set_defaults(fn=cmd_bot_run)
 
     return p
