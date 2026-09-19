@@ -196,7 +196,29 @@ function setHTML(id, html) {
   if (!el) return false;
   el.innerHTML = html;
   S.cache[id] = html;
+  scheduleScrollMarks();
   return true;
+}
+
+// A table wider than its panel scrolls sideways, and nothing said so: the
+// VERDICT column of a hex round sat off the right edge behind an invisible
+// scroll. Mark the .tscroll containers that really overflow, so the CSS can
+// show its fade and SCROLL → hint only where there is something to scroll
+// to, and drop them again once the reader has scrolled to the end. Only the
+// active screen can be measured: a display:none section has no width.
+function markScrollables() {
+  for (const el of $$('.screen.active .tscroll')) {
+    const more = el.scrollWidth > el.clientWidth + 1;
+    el.classList.toggle('can-scroll', more);
+    el.classList.toggle('at-end', more && el.scrollLeft + el.clientWidth >= el.scrollWidth - 1);
+  }
+}
+// Every render funnels through setHTML, so measure once per frame, after
+// layout, rather than once per container.
+let scrollMarkFrame = 0;
+function scheduleScrollMarks() {
+  cancelAnimationFrame(scrollMarkFrame);
+  scrollMarkFrame = requestAnimationFrame(markScrollables);
 }
 
 // ---------------------------------------------------------------- avatars
@@ -885,6 +907,15 @@ function renderFight() {
   setHTML('fight-body', parts.join(''));
 }
 
+// A 64-character digest as an answer pushed VERDICT, the column a spectator
+// most wants, off the edge of the ENTRIES table. Past 24 characters the cell
+// shows head and tail and carries the whole value in its title.
+function shortAnswer(a) {
+  const s = String(a);
+  if (s.length <= 24) return esc(s);
+  return `<span title="${esc(s)}">${esc(s.slice(0, 4))}…${esc(s.slice(-4))}</span>`;
+}
+
 function entriesTable(r) {
   const entries = (r.entries || []).slice().sort((a, b) => entryTick(a) - entryTick(b));
   if (!entries.length) return '<p class="muted">No entries were observed in this round.</p>';
@@ -898,7 +929,7 @@ function entriesTable(r) {
       ${lobby ? `<td>${e.enter_tx ? txAt(e.enter_tx, e.enter_tick) : '<span class="muted">—</span>'}</td>` : ''}
       <td>${e.commit_tx ? txAt(e.commit_tx, e.commit_tick) : '<span class="muted">—</span>'}</td>
       <td>${e.reveal_tx ? txAt(e.reveal_tx, e.reveal_tick) : '<span class="muted">—</span>'}</td>
-      <td class="mono">${e.answer === null || e.answer === undefined ? '<span class="muted">—</span>' : esc(e.answer)}</td>
+      <td class="mono">${e.answer === null || e.answer === undefined ? '<span class="muted">—</span>' : shortAnswer(e.answer)}</td>
       <td>${entryStatus(e, r)}</td>
     </tr>`).join('')}</tbody></table></div>`;
 }
@@ -2112,6 +2143,7 @@ function applyHash() {
   $$('.screen').forEach(s => s.classList.toggle('active', s.dataset.screen === name));
   $$('.hud-nav a').forEach(a => a.classList.toggle('on', a.dataset.screen === name || (name === 'fighter' && a.dataset.screen === 'fighters')));
   window.scrollTo({ top: 0 });
+  scheduleScrollMarks();   // the screen just shown was unmeasurable while hidden
 }
 function go(name, arg) {
   const target = `#${name}${arg !== undefined ? '/' + arg : ''}`;
@@ -2187,6 +2219,13 @@ function wire() {
   document.addEventListener('focusout', hideTip);
   window.addEventListener('scroll', hideTip, { passive: true });
   window.addEventListener('resize', hideTip);
+  window.addEventListener('resize', scheduleScrollMarks);
+  // An element's scroll event does not bubble; capture it to keep .at-end honest.
+  document.addEventListener('scroll', e => {
+    if (e.target && e.target.classList && e.target.classList.contains('tscroll')) markScrollables();
+  }, { capture: true, passive: true });
+  // The pixel font arrives late and is wider than its fallback: re-measure then.
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(scheduleScrollMarks);
   $('#btn-crt').addEventListener('click', e => {
     const on = !document.body.classList.contains('crt-on');
     document.body.classList.toggle('crt-on', on);

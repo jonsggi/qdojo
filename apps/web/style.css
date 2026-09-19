@@ -437,7 +437,24 @@ a.tname { display: inline-flex; align-items: center; gap: 8px; }
 .verify-out .bad { color: var(--red); }
 
 /* ---- Tables -------------------------------------------------------- */
-.tscroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+/* A table wider than its panel scrolls sideways. app.js marks a .tscroll that
+   really overflows with .can-scroll, and .at-end once it is scrolled to the
+   end; this paints a fade over the right edge and a SCROLL → hint under it.
+   Both are pseudo-elements in the table's own grid, stuck to the scrollport's
+   right edge, so no wrapper markup is needed and the table scrolls under them. */
+.tscroll { overflow-x: auto; -webkit-overflow-scrolling: touch; display: grid; grid-template-columns: 1fr; }
+.tscroll > table { grid-area: 1 / 1; }
+.tscroll.can-scroll::before {
+  content: ""; grid-area: 1 / 1; justify-self: end; align-self: stretch; width: 56px;
+  position: sticky; right: 0; pointer-events: none;
+  background: linear-gradient(to right, rgba(5, 7, 31, 0), var(--panel) 80%);
+}
+.tscroll.can-scroll::after {
+  content: "SCROLL \25B6"; grid-area: 2 / 1; justify-self: end;
+  position: sticky; right: 0; pointer-events: none;
+  margin-top: 6px; font-size: 9px; letter-spacing: 1px; color: var(--cyan);
+}
+.tscroll.can-scroll.at-end::before, .tscroll.can-scroll.at-end::after { display: none; }
 table { border-collapse: collapse; width: 100%; font-size: 9px; }
 th, td { padding: 7px 8px; text-align: left; vertical-align: middle; border-bottom: 2px solid var(--navy-2); white-space: nowrap; }
 th { color: var(--cyan); font-size: 8px; letter-spacing: 1px; border-bottom: 3px solid var(--cyan); }
