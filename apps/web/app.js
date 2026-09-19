@@ -96,6 +96,7 @@ const S = {
   liveSeen: false,     // a live history.json was loaded at least once
   lastLiveOk: 0,       // ms timestamp of the last successful live fetch
   fetchedAt: 0,        // ms timestamp when generated_tick was observed
+  polledAt: 0,         // ms timestamp of the last poll attempt (drives the idle meter)
   screen: 'title',
   round: null,         // selected round on the results screen
   fighter: null,       // selected identity on the fighter card screen
@@ -818,6 +819,27 @@ function lobbyHTML(r) {
   `;
 }
 
+// Between rounds the FIGHT screen was one cyan box over half a page, and it
+// is the screen a recording opens on. The last settled round's call and its
+// winners give it something to look at; the rows are the results screen's.
+function lastRoundHTML(r) {
+  const c = callout(r), s = r.settlement;
+  const winners = (s.winners || []).map(id => (r.entries || []).find(e => e.identity === id) || { identity: id });
+  const payoutFor = id => (s.payouts || []).find(p => p.identity === id && p.kind === 'win');
+  const podium = r.payout_mode === 'podium';
+  return `<div class="panel panel-green">
+    <h3>LAST ROUND · ${r.round_id}<small>${esc(r.title)} · ${esc(c.text)}${c.sub ? ' · ' + esc(c.sub) : ''}</small></h3>
+    ${winners.length ? `<div class="winners">${winners.map((e, i) => { const p = payoutFor(e.identity); return `<div class="winner-row">
+        ${podium ? `<span class="podium-place place-${i + 1}">${ordinal(i + 1)}</span>` : ''}
+        ${fighterLink(e.identity, avatarSVG(e.identity, 'avatar-lg'))}
+        <div class="wname">${fighterLink(e.identity, displayName(e))}<br>${idLink(e.identity)}</div>
+        <div class="wamt">+${fmt(p ? p.amount : 0)} QU</div>
+      </div>`; }).join('')}</div>`
+      : `<p class="muted">${isVoid(r) ? 'The table never filled; every seat was refunded.' : `Nobody solved it. ${fmt(s.carry)} QU carried into the next seed.`}</p>`}
+    <p style="margin:12px 0 0"><a class="btn btn-sm btn-cyan" href="#results/${r.round_id}">FULL RESULTS &#9654;</a> <a class="btn btn-sm" href="#history">ALL ROUNDS</a></p>
+  </div>`;
+}
+
 function renderFight() {
   const d = S.data;
   const parts = [];
@@ -825,13 +847,19 @@ function renderFight() {
     const settled = d.rounds.filter(r => r.settlement);
     const last = settled[settled.length - 1];
     const settling = d.rounds.filter(r => r.state === 'settling');
-    parts.push(`<h2 class="screen-title">NOW FIGHTING<small>${settling.length ? 'THE HOUSE IS SETTLING ROUND ' + settling.map(r => r.round_id).join(', ') : 'WAITING FOR THE BELL'}</small></h2>`);
-    parts.push(`<div class="panel panel-cyan"><div class="waiting">
-      <div class="big blink">${settling.length ? 'SETTLING…' : 'WAITING FOR THE BELL'}</div>
-      <p class="muted">The house publishes the next riddle on chain. This page polls every 10 seconds.</p>
-      ${last ? `<p>LAST ROUND: <a href="#results/${last.round_id}">ROUND ${last.round_id} · ${esc(last.title)} · ${esc(callout(last).text)}</a></p>` : ''}
-      ${settling.map(r => `<p><a href="#results/${r.round_id}">ROUND ${r.round_id} · ${esc(r.title)} · SETTLING</a></p>`).join('')}
-    </div></div>`);
+    const secs = POLL_MS / 1000;
+    parts.push(`<h2 class="screen-title">NOW FIGHTING<small>${settling.length ? 'THE HOUSE IS SETTLING ROUND ' + settling.map(r => r.round_id).join(', ') : 'BETWEEN ROUNDS · THE NEXT TABLE OPENS ON CHAIN'}</small></h2>`);
+    parts.push(`<div class="cols">
+      <div class="panel panel-cyan idle"><div class="waiting">
+        <div class="big blink">${settling.length ? 'SETTLING…' : 'WAITING FOR THE BELL'}</div>
+        <p class="muted">The house publishes the next riddle on chain. This page asks for the export every ${secs} seconds and rings the moment a table opens.</p>
+        ${settling.map(r => `<p><a href="#results/${r.round_id}">ROUND ${r.round_id} · ${esc(r.title)} · SETTLING</a></p>`).join('')}
+      </div>
+      <div class="meter-label"><span>POLLING EVERY ${secs} S</span><b>NEXT IN <span data-poll-left>—</span> S</b></div>
+      ${meterHTML('poll', 'seed')}
+      </div>
+      ${last ? lastRoundHTML(last) : ''}
+    </div>`);
     setHTML('fight-body', parts.join(''));
     return;
   }
@@ -1657,6 +1685,13 @@ function updateTicks() {
   const t = nowTick();
   const tickEl = $('#hud-tick');
   if (tickEl) { tickEl.textContent = fmt(t); tickEl.setAttribute('href', tickHref(t)); }
+  // the idle FIGHT screen's meter: drains between polls, refills on each
+  const pollFill = $('[data-meter="poll"]');
+  if (pollFill) {
+    const left = Math.max(0, POLL_MS - (Date.now() - S.polledAt));
+    pollFill.style.width = `${(100 * left / POLL_MS).toFixed(1)}%`;
+    const pl = $('[data-poll-left]'); if (pl) pl.textContent = String(Math.ceil(left / 1000));
+  }
   for (const r of S.data.open) {
     const id = r.round_id;
     let p = phaseAt(r, t);
@@ -1747,6 +1782,7 @@ function diffCallouts(data) {
 
 // ---------------------------------------------------------------- polling
 async function poll() {
+  S.polledAt = Date.now();
   try {
     const { history, board, fighters, belts, source } = await loadData();
     const data = normalise(history, board, fighters, belts);

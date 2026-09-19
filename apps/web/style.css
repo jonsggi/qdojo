@@ -27,6 +27,7 @@ html { background: var(--navy); }
 body {
   margin: 0;
   min-height: 100vh;
+  display: flex; flex-direction: column;   /* main grows, so the footer pins to the bottom of a short screen */
   color: var(--white);
   background:
     linear-gradient(rgba(10, 15, 61, .92), rgba(10, 15, 61, .92)),
@@ -106,7 +107,7 @@ body.shake { animation: shake .45s steps(2) 1; }
 .pill-lost { color: var(--red); animation: blink 1.1s steps(1) infinite; }
 
 /* ---- Layout -------------------------------------------------------- */
-#main { padding: 20px var(--gutter) 40px; max-width: 1200px; margin: 0 auto; }
+#main { padding: 20px var(--gutter) 40px; max-width: 1200px; margin: 0 auto; width: 100%; flex: 1 0 auto; }
 .screen { display: none; }
 /* A short CRT "channel change" flicker on screen switch. Never fully hides the
    content: a frame caught mid-animation must still be readable. */
@@ -401,6 +402,9 @@ a.tname { display: inline-flex; align-items: center; gap: 8px; }
 .stat.cyan { border-color: var(--cyan); }
 
 .waiting { text-align: center; padding: 30px 0; }
+/* Beside the last round's winners the idle box is as tall as they are; keep
+   its few lines and the poll meter in the middle rather than at the top. */
+.panel.idle { display: flex; flex-direction: column; justify-content: center; }
 .waiting .big { font-size: clamp(14px, 4vw, 26px); color: var(--cyan); text-shadow: 3px 3px 0 var(--black); margin-bottom: 14px; }
 
 /* ---- Results ------------------------------------------------------- */
