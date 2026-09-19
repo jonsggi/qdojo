@@ -155,6 +155,9 @@ def main():
             out = cli_sign(seed, amount, tick)
             if out is None:
                 sign_bad.append((got_id, amount, tick, None, None))
+                print(f"     {RED}!! {got_id[:12]}… amount={amount} tick={tick}: "
+                      f"the reference printed no hex (harness/network, not a "
+                      f"signature difference){RST}", flush=True)
                 continue
             ref, ref_amount, ref_tick = out
             if ref_amount != amount:
@@ -166,6 +169,8 @@ def main():
             got = Transaction.to_identity(public, dest, amount, ref_tick).sign(subseed).payload()
             if got != ref:
                 sign_bad.append((got_id, amount, ref_tick, ref.hex(), got.hex()))
+                print(f"     {RED}!! SIGNATURE MISMATCH {got_id} amount={amount} "
+                      f"tick={ref_tick}{RST}", flush=True)
             else:
                 ok_s += 1
         for input_type, size in PAYLOAD_VECTORS:
@@ -173,6 +178,8 @@ def main():
             out = cli_sign_custom(seed, 3, input_type, body)
             if out is None:
                 sign_bad.append((got_id, f"payload/{size}", None, None, None))
+                print(f"     {RED}!! {got_id[:12]}… payload/{size}: the reference "
+                      f"printed no hex (harness/network){RST}", flush=True)
                 continue
             ref, _ref_amount, ref_tick, ref_size = out
             if ref_size != size:
@@ -182,6 +189,8 @@ def main():
                                           input_type=input_type, payload=body).sign(subseed).payload()
             if got != ref:
                 sign_bad.append((got_id, f"payload/{size}", ref_tick, ref.hex(), got.hex()))
+                print(f"     {RED}!! SIGNATURE MISMATCH {got_id} payload/{size} "
+                      f"type=0x{input_type:04X} tick={ref_tick}{RST}", flush=True)
             else:
                 ok_s += 1
         print(f"   {got_id[:12]}…  {GRN if not (derive_bad or sign_bad) else YEL}"
