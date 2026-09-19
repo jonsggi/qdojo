@@ -22,6 +22,17 @@ starts, or expect to explain why the site says nothing is happening.
     qdojo house export --out apps/web/data
     git add apps/web/data && git commit && git push origin main
 
+## Keeping the public page live during a run
+
+`scripts/publish-export.sh` is the answer to "the site says STALE while a
+round is being fought". Started next to `qdojo house spar` (detached, in the
+checkout the house exports into), it commits `apps/web/data` and pushes
+every time the newest round on the board changes state, so the container
+rebuilds and the public page follows the run a minute or two behind. Kill it
+by PID when the run ends. Without it the deployed page is exactly as fresh as
+the last push, and the HUD's STALE pill (three minutes after `generated_at`)
+is telling the truth.
+
 ## `qdojo-web` serves with the prefix stripped
 
 `qdojo-web --prefix /qdojo` is what the reverse proxy strips, not what the
@@ -187,8 +198,8 @@ qubic-cli, which shares none of the code under test. All five balances
 reconcile exactly to what the round implies. Five independent bot processes
 signed concurrently and landed in one tick with no collisions.
 
-**Status:** the native chain lives on branch `native-signer` and is **not
-merged**. `scripts/crosscheck-signer.py` is its gate — run it after touching
-anything under `packages/qdojo/src/qdojo/qubic/`, and note that a "reference
-printed no hex" result is qubic-cli failing to reach the node, not a signature
-difference.
+**Status:** merged on 2026-09-19 (#13): the native chain is the default and
+qubic-cli is only what `scripts/crosscheck-signer.py` compares it against.
+Run that check after touching anything under `packages/qdojo/src/qdojo/qubic/`,
+and read a "reference printed no hex" result as qubic-cli failing to reach the
+node, not as a signature difference.
