@@ -96,6 +96,7 @@ const S = {
   liveSeen: false,     // a live history.json was loaded at least once
   lastLiveOk: 0,       // ms timestamp of the last successful live fetch
   fetchedAt: 0,        // ms timestamp when generated_tick was observed
+  polledAt: 0,         // ms timestamp of the last poll attempt (drives the idle meter)
   screen: 'title',
   round: null,         // selected round on the results screen
   fighter: null,       // selected identity on the fighter card screen
@@ -151,6 +152,27 @@ function ticksToHuman(t) {
   const m = Math.floor(s / 60), r = s % 60;
   return r ? `${m}m${String(r).padStart(2, '0')}s` : `${m}m`;
 }
+// "45 s", "12 min", "5 h", "467 d": one unit, no decimals. Seconds under 90 s,
+// minutes under 90 min, hours under 48 h, days from there. The tick screen
+// ("467 d AGO") and the STALE pill ("STALE 12 min") both use it, so they agree.
+function ageText(secs) {
+  secs = Math.max(0, Number(secs) || 0);
+  if (secs < 90) return `${Math.round(secs)} s`;
+  if (secs < 90 * 60) return `${Math.round(secs / 60)} min`;
+  if (secs < 48 * 3600) return `${Math.round(secs / 3600)} h`;
+  return `${Math.round(secs / 86400)} d`;
+}
+// What the tick screen says under TICK N. Every input is a tick number, so
+// apps/web/tests/when.test.cjs runs it in a bare VM: `t` is the tick shown,
+// `now` the tick the page believes it is, `first` the earliest tick of any
+// round (null when there is none). Before the first round a day count is a
+// sum, not information -- and the export carries no wall-clock anchor that
+// could turn a tick that old into an honest date, so it says what it knows.
+function tickWhen(t, now, first) {
+  if (first !== null && first !== undefined && t < first) return 'BEFORE ROUND 1';
+  if (t > now) return `IN ${Math.round((t - now) * TICK_MS / 1000)} s`;
+  return `${ageText((now - t) * TICK_MS / 1000)} AGO`;
+}
 function ordinal(n) { return n === 1 ? '1ST' : n === 2 ? '2ND' : n === 3 ? '3RD' : `${n}TH`; }
 function signed(n) {
   if (n === null || n === undefined || Number.isNaN(Number(n))) return '—';
@@ -175,7 +197,29 @@ function setHTML(id, html) {
   if (!el) return false;
   el.innerHTML = html;
   S.cache[id] = html;
+  scheduleScrollMarks();
   return true;
+}
+
+// A table wider than its panel scrolls sideways, and nothing said so: the
+// VERDICT column of a hex round sat off the right edge behind an invisible
+// scroll. Mark the .tscroll containers that really overflow, so the CSS can
+// show its fade and SCROLL → hint only where there is something to scroll
+// to, and drop them again once the reader has scrolled to the end. Only the
+// active screen can be measured: a display:none section has no width.
+function markScrollables() {
+  for (const el of $$('.screen.active .tscroll')) {
+    const more = el.scrollWidth > el.clientWidth + 1;
+    el.classList.toggle('can-scroll', more);
+    el.classList.toggle('at-end', more && el.scrollLeft + el.clientWidth >= el.scrollWidth - 1);
+  }
+}
+// Every render funnels through setHTML, so measure once per frame, after
+// layout, rather than once per container.
+let scrollMarkFrame = 0;
+function scheduleScrollMarks() {
+  cancelAnimationFrame(scrollMarkFrame);
+  scrollMarkFrame = requestAnimationFrame(markScrollables);
 }
 
 // ---------------------------------------------------------------- avatars
@@ -775,6 +819,27 @@ function lobbyHTML(r) {
   `;
 }
 
+// Between rounds the FIGHT screen was one cyan box over half a page, and it
+// is the screen a recording opens on. The last settled round's call and its
+// winners give it something to look at; the rows are the results screen's.
+function lastRoundHTML(r) {
+  const c = callout(r), s = r.settlement;
+  const winners = (s.winners || []).map(id => (r.entries || []).find(e => e.identity === id) || { identity: id });
+  const payoutFor = id => (s.payouts || []).find(p => p.identity === id && p.kind === 'win');
+  const podium = r.payout_mode === 'podium';
+  return `<div class="panel panel-green">
+    <h3>LAST ROUND · ${r.round_id}<small>${esc(r.title)} · ${esc(c.text)}${c.sub ? ' · ' + esc(c.sub) : ''}</small></h3>
+    ${winners.length ? `<div class="winners">${winners.map((e, i) => { const p = payoutFor(e.identity); return `<div class="winner-row">
+        ${podium ? `<span class="podium-place place-${i + 1}">${ordinal(i + 1)}</span>` : ''}
+        ${fighterLink(e.identity, avatarSVG(e.identity, 'avatar-lg'))}
+        <div class="wname">${fighterLink(e.identity, displayName(e))}<br>${idLink(e.identity)}</div>
+        <div class="wamt">+${fmt(p ? p.amount : 0)} QU</div>
+      </div>`; }).join('')}</div>`
+      : `<p class="muted">${isVoid(r) ? 'The table never filled; every seat was refunded.' : `Nobody solved it. ${fmt(s.carry)} QU carried into the next seed.`}</p>`}
+    <p style="margin:12px 0 0"><a class="btn btn-sm btn-cyan" href="#results/${r.round_id}">FULL RESULTS &#9654;</a> <a class="btn btn-sm" href="#history">ALL ROUNDS</a></p>
+  </div>`;
+}
+
 function renderFight() {
   const d = S.data;
   const parts = [];
@@ -782,13 +847,19 @@ function renderFight() {
     const settled = d.rounds.filter(r => r.settlement);
     const last = settled[settled.length - 1];
     const settling = d.rounds.filter(r => r.state === 'settling');
-    parts.push(`<h2 class="screen-title">NOW FIGHTING<small>${settling.length ? 'THE HOUSE IS SETTLING ROUND ' + settling.map(r => r.round_id).join(', ') : 'WAITING FOR THE BELL'}</small></h2>`);
-    parts.push(`<div class="panel panel-cyan"><div class="waiting">
-      <div class="big blink">${settling.length ? 'SETTLING…' : 'WAITING FOR THE BELL'}</div>
-      <p class="muted">The house publishes the next riddle on chain. This page polls every 10 seconds.</p>
-      ${last ? `<p>LAST ROUND: <a href="#results/${last.round_id}">ROUND ${last.round_id} · ${esc(last.title)} · ${esc(callout(last).text)}</a></p>` : ''}
-      ${settling.map(r => `<p><a href="#results/${r.round_id}">ROUND ${r.round_id} · ${esc(r.title)} · SETTLING</a></p>`).join('')}
-    </div></div>`);
+    const secs = POLL_MS / 1000;
+    parts.push(`<h2 class="screen-title">NOW FIGHTING<small>${settling.length ? 'THE HOUSE IS SETTLING ROUND ' + settling.map(r => r.round_id).join(', ') : 'BETWEEN ROUNDS · THE NEXT TABLE OPENS ON CHAIN'}</small></h2>`);
+    parts.push(`<div class="cols">
+      <div class="panel panel-cyan idle"><div class="waiting">
+        <div class="big blink">${settling.length ? 'SETTLING…' : 'WAITING FOR THE BELL'}</div>
+        <p class="muted">The house publishes the next riddle on chain. This page asks for the export every ${secs} seconds and rings the moment a table opens.</p>
+        ${settling.map(r => `<p><a href="#results/${r.round_id}">ROUND ${r.round_id} · ${esc(r.title)} · SETTLING</a></p>`).join('')}
+      </div>
+      <div class="meter-label"><span>POLLING EVERY ${secs} S</span><b>NEXT IN <span data-poll-left>—</span> S</b></div>
+      ${meterHTML('poll', 'seed')}
+      </div>
+      ${last ? lastRoundHTML(last) : ''}
+    </div>`);
     setHTML('fight-body', parts.join(''));
     return;
   }
@@ -864,6 +935,15 @@ function renderFight() {
   setHTML('fight-body', parts.join(''));
 }
 
+// A 64-character digest as an answer pushed VERDICT, the column a spectator
+// most wants, off the edge of the ENTRIES table. Past 24 characters the cell
+// shows head and tail and carries the whole value in its title.
+function shortAnswer(a) {
+  const s = String(a);
+  if (s.length <= 24) return esc(s);
+  return `<span title="${esc(s)}">${esc(s.slice(0, 4))}…${esc(s.slice(-4))}</span>`;
+}
+
 function entriesTable(r) {
   const entries = (r.entries || []).slice().sort((a, b) => entryTick(a) - entryTick(b));
   if (!entries.length) return '<p class="muted">No entries were observed in this round.</p>';
@@ -877,7 +957,7 @@ function entriesTable(r) {
       ${lobby ? `<td>${e.enter_tx ? txAt(e.enter_tx, e.enter_tick) : '<span class="muted">—</span>'}</td>` : ''}
       <td>${e.commit_tx ? txAt(e.commit_tx, e.commit_tick) : '<span class="muted">—</span>'}</td>
       <td>${e.reveal_tx ? txAt(e.reveal_tx, e.reveal_tick) : '<span class="muted">—</span>'}</td>
-      <td class="mono">${e.answer === null || e.answer === undefined ? '<span class="muted">—</span>' : esc(e.answer)}</td>
+      <td class="mono">${e.answer === null || e.answer === undefined ? '<span class="muted">—</span>' : shortAnswer(e.answer)}</td>
       <td>${entryStatus(e, r)}</td>
     </tr>`).join('')}</tbody></table></div>`;
 }
@@ -911,7 +991,7 @@ function payoutsTable(s, r) {
     <tbody>${rows.map(p => {
       const rel = p.kind === 'bond_release' ? released.find(b => b.identity === p.identity && b.amount === p.amount) : null;
       return `<tr>
-      <td>${fighterLink(p.identity, `${avatarSVG(p.identity, 'avatar-sm')} ${displayName({ identity: p.identity })}`, 'tname')} ${idLink(p.identity)}</td>
+      <td>${rakeLabel(p.kind) || fighterLink(p.identity, `${avatarSVG(p.identity, 'avatar-sm')} ${displayName({ identity: p.identity })}`, 'tname')} ${idLink(p.identity)}</td>
       <td>${payoutBadge(p.kind)}${rel && rel.bond_round ? ` <a class="tiny" href="#results/${rel.bond_round}">FROM R${rel.bond_round}</a>` : ''}</td>
       <td class="num">${fmt(p.amount)}</td>
       <td>${txLink(p.tx)}</td>
@@ -1204,13 +1284,29 @@ function fightsOf(identity) {
   return out.sort((a, b) => (b.r.round_id - a.r.round_id) || (entryTick(b.e) - entryTick(a.e)));
 }
 
+// The name a fighter bowed with, matched without regard to case: names are
+// what people type into a URL and paste into chat, identities are what the
+// page's own links carry.
+function fighterByName(name) {
+  const want = String(name || '').toUpperCase();
+  if (!want) return null;
+  for (const f of S.data.profiles.values()) if (f.name && String(f.name).toUpperCase() === want) return f;
+  return null;
+}
+
 function renderFighter() {
   const d = S.data;
   const id = S.fighter;
   const p = id ? profileOf(id) : null;
   if (!p) {
+    // #fighter/EVO-DS3 is a name. Send it to the identity form, so one URL is
+    // the card -- but only while this screen is showing: renderAll calls this
+    // for a hidden screen too, and must not drag the reader off wherever they are.
+    const named = S.screen === 'fighter' ? fighterByName(id) : null;
+    if (named) { go('fighter', named.identity); return; }
+    const identity = /^[A-Z]{60}$/.test(id || '');
     setHTML('fighter-body', `<h2 class="screen-title">FIGHTER CARD<small>${id ? 'UNKNOWN FIGHTER' : 'PICK A FIGHTER'}</small></h2>
-      <div class="panel"><p class="muted">${id ? `${esc(shortId(id))} has not fought here. ${idLink(id)}` : 'Nobody selected.'}</p>
+      <div class="panel"><p class="muted">${!id ? 'Nobody selected.' : identity ? `${esc(shortId(id))} has not fought here. ${idLink(id)}` : `No fighter here is called ${esc(id)}.`}</p>
       <a class="btn btn-sm btn-cyan" href="#fighters">FIGHTER SELECT</a></div>`);
     return;
   }
@@ -1544,24 +1640,36 @@ function renderJoin() {
   `);
 }
 
-function renderFooter() {
-  const d = S.data;
-  const src = S.source === 'live' ? 'LIVE EXPORT' : S.source === 'sample' ? 'SAMPLE DATA (no house running)' : 'EMBEDDED (nothing could be fetched)';
-  setHTML('foot-data', `DATA: ${src} · GENERATED ${esc(d.generated_at || '—')} @ TICK ${fmt(d.generated_tick)} · HOUSE ${idLink(d.house)} · <a href="https://explorer.qubic.org" target="_blank" rel="noopener">QUBIC EXPLORER</a> · 1 TICK ≈ 0.5 s`);
+// The HUD pill and the footer describe the same export, so they are decided
+// in one place: a STALE pill beside a footer saying LIVE EXPORT read as a
+// contradiction. `pill` is the HUD word, `src` what the footer calls the
+// data, `flag` what it appends after the GENERATED stamp.
+function exportState() {
+  if (S.source === 'sample') return { cls: 'pill-demo', pill: 'DEMO', src: 'SAMPLE DATA (no house running)', flag: '' };
+  if (S.source === 'embedded') return { cls: 'pill-demo', pill: 'NO SIGNAL', src: 'EMBEDDED (nothing could be fetched)', flag: '' };
+  if (S.source !== 'live') return { cls: 'pill-demo', pill: 'DEMO', src: '—', flag: '' };
+  const gap = Date.now() - S.lastLiveOk;
+  const gen = S.data && S.data.generated_at ? Date.parse(S.data.generated_at) : NaN;
+  const age = Number.isNaN(gen) ? 0 : Date.now() - gen;
+  if (gap > POLL_MS * 3) return { cls: 'pill-lost', pill: 'SIGNAL LOST', src: 'EXPORT', flag: ` (SIGNAL LOST · LAST FETCHED ${ageText(gap / 1000)} AGO)` };
+  if (age > STALE_AFTER_MS) return { cls: 'pill-lost', pill: `STALE ${ageText(age / 1000)}`, src: 'EXPORT', flag: ` (STALE · ${ageText(age / 1000)} OLD)` };
+  return { cls: 'pill-live', pill: 'LIVE', src: 'LIVE EXPORT', flag: '' };
 }
 
+function renderFooter() {
+  const d = S.data, st = exportState();
+  setHTML('foot-data', `DATA: <span id="foot-source">${esc(st.src)}</span> · GENERATED ${esc(d.generated_at || '—')} @ TICK ${fmt(d.generated_tick)}<span id="foot-flag">${esc(st.flag)}</span> · HOUSE ${idLink(d.house)} · <a href="https://explorer.qubic.org" target="_blank" rel="noopener">QUBIC EXPLORER</a> · 1 TICK ≈ 0.5 s`);
+}
+
+// Every poll, not only on a data change: the export ages while nothing else moves.
 function renderStatus() {
+  const st = exportState();
   const el = $('#hud-source');
-  let cls = 'pill-demo', txt = 'DEMO';
-  if (S.source === 'live') {
-    const age = Date.now() - S.lastLiveOk;
-    const gen = S.data.generated_at ? Date.parse(S.data.generated_at) : NaN;
-    if (age > POLL_MS * 3) { cls = 'pill-lost'; txt = 'SIGNAL LOST'; }
-    else if (!Number.isNaN(gen) && Date.now() - gen > STALE_AFTER_MS) { cls = 'pill-lost'; txt = 'STALE'; }
-    else { cls = 'pill-live'; txt = 'LIVE'; }
-  } else if (S.source === 'embedded') { txt = 'NO SIGNAL'; }
-  if (el.textContent !== txt) el.textContent = txt;
-  el.className = `pill ${cls}`;
+  if (el.textContent !== st.pill) el.textContent = st.pill;
+  el.className = `pill ${st.cls}`;
+  const src = $('#foot-source'), flag = $('#foot-flag');
+  if (src && src.textContent !== st.src) src.textContent = st.src;
+  if (flag && flag.textContent !== st.flag) flag.textContent = st.flag;
 }
 
 function renderAll() {
@@ -1577,6 +1685,13 @@ function updateTicks() {
   const t = nowTick();
   const tickEl = $('#hud-tick');
   if (tickEl) { tickEl.textContent = fmt(t); tickEl.setAttribute('href', tickHref(t)); }
+  // the idle FIGHT screen's meter: drains between polls, refills on each
+  const pollFill = $('[data-meter="poll"]');
+  if (pollFill) {
+    const left = Math.max(0, POLL_MS - (Date.now() - S.polledAt));
+    pollFill.style.width = `${(100 * left / POLL_MS).toFixed(1)}%`;
+    const pl = $('[data-poll-left]'); if (pl) pl.textContent = String(Math.ceil(left / 1000));
+  }
   for (const r of S.data.open) {
     const id = r.round_id;
     let p = phaseAt(r, t);
@@ -1667,6 +1782,7 @@ function diffCallouts(data) {
 
 // ---------------------------------------------------------------- polling
 async function poll() {
+  S.polledAt = Date.now();
   try {
     const { history, board, fighters, belts, source } = await loadData();
     const data = normalise(history, board, fighters, belts);
@@ -1731,6 +1847,15 @@ function nearestTick(t) {
   if (!ts.length) return null;
   return ts.reduce((best, x) => (Math.abs(x - t) < Math.abs(best - t) ? x : best), ts[0]);
 }
+// The earliest tick any round touched: the lobby of round 1, or its PUBLISH
+// when it had no lobby. Null until a round exists.
+function firstRoundTick() {
+  let first = null;
+  for (const r of S.data.rounds) for (const t of [r.lobby_tick, r.publish_tick]) {
+    if (t !== null && t !== undefined && (first === null || t < first)) first = t;
+  }
+  return first;
+}
 
 function tickShard(tick) {
   return lazyJSON(`./data/ticks/${Math.floor(tick / TICK_BUCKET)}.json`, 0, () => { if (S.screen === 'tick') renderTick(); });
@@ -1752,10 +1877,26 @@ function counterparty(e) {
   const id = e.dir === 'out' ? (e.to || e.identity) : (e.from || e.identity);
   return id && id !== S.data.house ? id : null;
 }
-function tickEventRow(e, decoded) {
+// The rake's developer share goes to an identity that never bowed or fought,
+// so there is no fighter card behind it: label it DEV instead of a stranger's
+// avatar and "???". Null for every ordinary payee.
+function rakeLabel(kind) {
+  const m = /^rake_([a-z]+)$/.exec(String(kind || ''));
+  return m ? `<span class="badge" title="THE ${esc(m[1].toUpperCase())} SHARE OF THE RAKE">${esc(m[1].toUpperCase())}</span>` : null;
+}
+function payoutKind(e) { return e.payout_kind || (e.fields && e.fields.payout_kind); }
+
+// `status` is the shard's: the English sentence is only "loading" while its
+// request is in flight. Once it has failed, or the shard came back without
+// this event, the sentence is not coming, and the row must say so instead of
+// promising one under a footnote that says the payloads are not published.
+function tickEventRow(e, decoded, status) {
   const id = counterparty(e);
   const nm = id ? (S.data.names.get(id) || shortId(id)) : 'THE HOUSE';
-  const who = id ? fighterLink(id, `${avatarSVG(id, 'avatar-sm')} ${esc(nm)}`) : `<b>${esc(nm)}</b>`;
+  const who = (e.kind === 'PAYOUT' && rakeLabel(payoutKind(e))) || (id ? fighterLink(id, `${avatarSVG(id, 'avatar-sm')} ${esc(nm)}`) : `<b>${esc(nm)}</b>`);
+  const sentence = decoded && decoded.text ? esc(decoded.text)
+    : status === 'loading' ? '<span class="muted">Loading the decoded message…</span>'
+    : '<span class="muted">Payload not published yet</span>';
   const amount = e.amount ? `<span class="qu">${e.dir === 'out' ? '−' : '+'}${fmt(e.amount)} QU</span>` : '';
   const rnd = e.round_id != null ? `<a href="#results/${e.round_id}">ROUND ${e.round_id}</a>` : '';
   const raw = decoded && decoded.payload
@@ -1768,7 +1909,7 @@ function tickEventRow(e, decoded) {
     <div class="hr-num">${esc(e.kind)}</div>
     <div>
       <div class="hr-title">${who} ${rnd} ${legacy} ${e.verdict && e.verdict !== 'pending' ? entryStatus({ verdict: e.verdict }) : ''}</div>
-      <div class="hr-sub">${decoded && decoded.text ? esc(decoded.text) : '<span class="muted">Loading the decoded message…</span>'}</div>
+      <div class="hr-sub">${sentence}</div>
       ${raw}
     </div>
     <div class="hr-call">${amount}<br><small>${e.tx ? txLink(e.tx, 'TX') : ''}</small></div>
@@ -1787,9 +1928,7 @@ function renderTick() {
   const byTx = new Map((sh.events || []).map(e => [e.tx, e]));
   const parts = [];
 
-  const ago = (now - t) * TICK_MS / 1000;
-  const when = t > now ? `IN ${Math.round((t - now) * TICK_MS / 1000)} s` :
-    (ago < 90 ? `${Math.round(ago)} s AGO` : ago < 5400 ? `${Math.round(ago / 60)} min AGO` : `${(ago / 3600).toFixed(1)} h AGO`);
+  const when = tickWhen(t, now, firstRoundTick());
   const prev = neighbourTick(t, -1), next = neighbourTick(t, 1);
   parts.push(`<h2 class="screen-title">TICK ${fmt(t)}<small${h('tick')}>${when} · ONE TICK IS ABOUT HALF A SECOND</small></h2>`);
   parts.push(`<div class="res-nav">
@@ -1815,7 +1954,7 @@ function renderTick() {
     </div>`);
   } else {
     parts.push(`<div class="panel panel-yellow"><h3>WHAT HAPPENED${sh.summary ? ` · ${esc(sh.summary.toUpperCase())}` : ''}</h3>
-      <div class="hist-list">${rows.map(e => tickEventRow(e, byTx.get(e.tx) || (sh.events ? e : null))).join('')}</div>
+      <div class="hist-list">${rows.map(e => tickEventRow(e, byTx.get(e.tx) || (sh.events ? e : null), sh.status)).join('')}</div>
       ${sh.foreign && sh.foreign.count ? `<p class="tiny muted" style="margin:10px 0 0">${sh.foreign.count} transfer${sh.foreign.count === 1 ? '' : 's'}
         totalling ${fmt(sh.foreign.amount)} QU also reached the house in this tick carrying no dojo message. They are not part of any round.</p>` : ''}
       ${sh.status === 'missing' ? '<p class="tiny muted" style="margin:10px 0 0">The decoded payloads for this stretch of chain are not published yet, so these are shown as structure only.</p>' : ''}
@@ -1847,8 +1986,8 @@ function renderTick() {
       <p class="ko-text win">THE HOUSE PAID ${fmt(total)} QU IN THIS TICK</p>
       <div class="tscroll"><table class="fame-table"><thead><tr><th>TO</th><th>KIND</th><th class="num">AMOUNT</th><th>ROUND</th><th>TX</th></tr></thead>
       <tbody>${paid.map(e => `<tr>
-        <td>${(x => x ? fighterLink(x, esc(S.data.names.get(x) || shortId(x))) : '<span class="muted">the house</span>')(counterparty(e))}</td>
-        <td>${payoutBadge(e.payout_kind || (e.fields && e.fields.payout_kind))}</td>
+        <td>${rakeLabel(payoutKind(e)) || (x => x ? fighterLink(x, esc(S.data.names.get(x) || shortId(x))) : '<span class="muted">the house</span>')(counterparty(e))}</td>
+        <td>${payoutBadge(payoutKind(e))}</td>
         <td class="num qu">${fmt(e.amount)}</td>
         <td><a href="#results/${e.round_id}">R${e.round_id}</a></td>
         <td>${txLink(e.tx)}</td></tr>`).join('')}</tbody></table></div></div>`);
@@ -2040,6 +2179,7 @@ function applyHash() {
   $$('.screen').forEach(s => s.classList.toggle('active', s.dataset.screen === name));
   $$('.hud-nav a').forEach(a => a.classList.toggle('on', a.dataset.screen === name || (name === 'fighter' && a.dataset.screen === 'fighters')));
   window.scrollTo({ top: 0 });
+  scheduleScrollMarks();   // the screen just shown was unmeasurable while hidden
 }
 function go(name, arg) {
   const target = `#${name}${arg !== undefined ? '/' + arg : ''}`;
@@ -2115,6 +2255,13 @@ function wire() {
   document.addEventListener('focusout', hideTip);
   window.addEventListener('scroll', hideTip, { passive: true });
   window.addEventListener('resize', hideTip);
+  window.addEventListener('resize', scheduleScrollMarks);
+  // An element's scroll event does not bubble; capture it to keep .at-end honest.
+  document.addEventListener('scroll', e => {
+    if (e.target && e.target.classList && e.target.classList.contains('tscroll')) markScrollables();
+  }, { capture: true, passive: true });
+  // The pixel font arrives late and is wider than its fallback: re-measure then.
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(scheduleScrollMarks);
   $('#btn-crt').addEventListener('click', e => {
     const on = !document.body.classList.contains('crt-on');
     document.body.classList.toggle('crt-on', on);

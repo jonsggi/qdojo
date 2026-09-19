@@ -156,6 +156,15 @@ and `--ephemeral-conf` is refused. On tmpfs the overwrite is belt-and-braces
 and the unlink is what matters. `scripts/crosscheck-signer.py` uses the same
 helper for its temporary conf. Never pass a cohort conf here.
 
+## The spectator page changes screen on its own until it is clicked
+
+Opened at `#title`, the page runs an attract loop: it flips to another screen
+every 6–22 s until a real `pointerdown` lands on it. Hovering, scrolling and
+the ATTRACT and HELP chips do not count. Anyone screen-recording or
+screenshotting it should click the cabinet first, somewhere neutral, or the
+capture races the loop and the screen changes mid-take. A deep link such as
+`#results/118` starts with the loop off.
+
 ## `pkill -f` kills the shell that runs it
 
 `pkill -f "qdojo.*bot --state"` matches the invoking shell's own command line,
