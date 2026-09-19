@@ -1225,13 +1225,29 @@ function fightsOf(identity) {
   return out.sort((a, b) => (b.r.round_id - a.r.round_id) || (entryTick(b.e) - entryTick(a.e)));
 }
 
+// The name a fighter bowed with, matched without regard to case: names are
+// what people type into a URL and paste into chat, identities are what the
+// page's own links carry.
+function fighterByName(name) {
+  const want = String(name || '').toUpperCase();
+  if (!want) return null;
+  for (const f of S.data.profiles.values()) if (f.name && String(f.name).toUpperCase() === want) return f;
+  return null;
+}
+
 function renderFighter() {
   const d = S.data;
   const id = S.fighter;
   const p = id ? profileOf(id) : null;
   if (!p) {
+    // #fighter/EVO-DS3 is a name. Send it to the identity form, so one URL is
+    // the card -- but only while this screen is showing: renderAll calls this
+    // for a hidden screen too, and must not drag the reader off wherever they are.
+    const named = S.screen === 'fighter' ? fighterByName(id) : null;
+    if (named) { go('fighter', named.identity); return; }
+    const identity = /^[A-Z]{60}$/.test(id || '');
     setHTML('fighter-body', `<h2 class="screen-title">FIGHTER CARD<small>${id ? 'UNKNOWN FIGHTER' : 'PICK A FIGHTER'}</small></h2>
-      <div class="panel"><p class="muted">${id ? `${esc(shortId(id))} has not fought here. ${idLink(id)}` : 'Nobody selected.'}</p>
+      <div class="panel"><p class="muted">${!id ? 'Nobody selected.' : identity ? `${esc(shortId(id))} has not fought here. ${idLink(id)}` : `No fighter here is called ${esc(id)}.`}</p>
       <a class="btn btn-sm btn-cyan" href="#fighters">FIGHTER SELECT</a></div>`);
     return;
   }
