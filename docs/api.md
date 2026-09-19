@@ -51,7 +51,7 @@ defensively and treat a missing field as "this round predates it".
 | `commit_window`, `reveal_window` | int | commit in `publish_tick+1 .. publish_tick+commit_window`, reveal in the `reveal_window` ticks after |
 | `entry_fee` | int QU | the stake: the ENTER amount in a lobby round, the COMMIT amount otherwise |
 | `house_seed`, `match_bps`, `carry_in` | int | the house adds `min(house_seed, stakes*match_bps/10000) + carry_in` to the pot; `match_bps = 0` means a fixed `house_seed` |
-| `payout_mode` | `first`, `split` or `podium` | first: the earliest correct commit tick takes the pot, same-tick solvers share; split: all solvers share; podium: the first three correct commits take 5:3:2 |
+| `payout_mode` | `first`, `split` or `podium` | first: the earliest correct commit tick takes the pot, same-tick solvers share; split: all solvers share; podium: the first three correct commits take 5:3:2, and same-tick solvers share a placing and split its weights (docs/spec.md §5, ties) |
 | `bond_bps`, `bond_rounds` | int | this share of each win is held by the house and released once the winner has fought `bond_rounds` more rounds |
 | `sensei` | bool | true: a fighter ranked above this belt may sit as a sensei — it plays for the sensei pot (the senseis' own stakes, no seed, no carry) and earns no belt points. False: sitting below your belt is refused (`outranked`) |
 | `rake_house_bps`, `rake_dev_bps`, `rake_share_bps` | int | how the round's rake is split between the house treasury, the dev team and the shareholder pool |

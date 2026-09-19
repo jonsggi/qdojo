@@ -170,12 +170,19 @@ def grade(rd: dict, answer: str | None, seconds: float, error: str = "") -> Atte
 
 def unreproducible_because(rd: dict) -> str:
     """The most likely reason a published round does not re-settle to what was
-    paid. A sensei table whose settlement has no `pots` was settled under the
-    stake cap; everything else is the unpublished house-fighter list."""
+    paid. A settlement without `pots` predates 2026-09-19: a sensei table was
+    then settled under the stake cap, and a podium with same-tick winners was
+    ordered by transaction id. Everything else is the unpublished
+    house-fighter list."""
     doc = rd.get("settlement") or {}
-    if any(e.get("sensei") for e in rd.get("entries", [])) and "pots" not in doc:
-        return ("this round was settled under the earlier sensei rule (the stake cap), which today's "
-                "engine no longer has, so the purse cannot be recomputed")
+    if "pots" not in doc:            # settled by the engine as it was before 2026-09-19
+        if any(e.get("sensei") for e in rd.get("entries", [])):
+            return ("this round was settled under the earlier sensei rule (the stake cap), which today's "
+                    "engine no longer has, so the purse cannot be recomputed")
+        ticks = [e.get("commit_tick") for e in rd.get("entries", []) if e.get("verdict") == "winner"]
+        if rd.get("payout_mode") == "podium" and len(ticks) != len(set(ticks)):
+            return ("this round's podium was settled before the dead-heat rule, with same-tick winners "
+                    "ordered by transaction id, so the purse cannot be recomputed")
     return "the house's seed rules for this round are not fully published, so the purse cannot be recomputed"
 
 

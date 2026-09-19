@@ -148,6 +148,19 @@ def test_a_round_settled_under_the_cap_is_declined_not_mispriced():
     assert a.correct is True and a.would_pay is None and "stake cap" in a.why_unpriced
 
 
+def test_a_podium_tie_settled_by_transaction_id_is_declined_not_mispriced():
+    """Before the dead-heat rule, same-tick winners were ordered by transaction
+    id and paid 5:3:2. Such a round no longer re-settles; say why."""
+    r = rd(payout_mode="podium", house_seed=7000,
+           entries=[entry("a", 1030), entry("b", 1030), entry("c", 1031)],
+           settlement={"answer": "142", "void": False,
+                       "payouts": [{"identity": "a" * 60, "amount": 5000, "kind": "win"},
+                                   {"identity": "b" * 60, "amount": 3000, "kind": "win"},
+                                   {"identity": "c" * 60, "amount": 2000, "kind": "win"}]})
+    a = training.grade(r, "142", seconds=1.0)
+    assert a.would_pay is None and "dead-heat" in a.why_unpriced
+
+
 def test_entries_are_rebuilt_each_time_because_settle_rewrites_verdicts():
     r = rd(payout_mode="podium", entries=[entry("a", 1030), entry("b", 1031), entry("c", 1032),
                                           entry("d", 1033)])

@@ -542,3 +542,78 @@ def test_the_pots_add_up_to_the_settlement_and_are_published(txf, salt):
     assert d["pots"] == ev.pots and d["pot"] == ev.pot                          # additive: the old fields stay
     lobby = spec(lobby_tick=50, lobby_window=40, min_players=5)
     assert "pots" not in to_dict(void(lobby, [], HOUSE))                        # a void table has no pots
+
+
+# ----------------------------------------------------------------- dead heats
+# Same-tick correct commits share a placing and split the placings' weights
+# (docs/spec.md §5 "Ties", docs/product-decisions.md "Regular-round ties").
+
+D_, E_, F_ = ident("D"), ident("E"), ident("F")
+
+
+def _podium(txf, salt, seats, **over):
+    s = spec(payout_mode=P.MODE_PODIUM, rake_bps=0, house_seed=7000, **over)   # 10,000 to share: one part is 1,000
+    return evaluate(s, _table(txf, salt, seats), HOUSE, DOJO_SALT, ANSWER, belts=over.get("belts"))
+
+
+def test_two_tied_for_first_take_four_parts_each_and_third_takes_two(txf, salt):
+    ev = _podium(txf, salt, [(ALICE, 110, "42"), (BOB, 110, "42"), (CARL, 111, "42"), (D_, 112, "42")])
+    assert ev.pot == 11_000
+    assert {p.identity: p.amount for p in ev.payouts} == {ALICE: 4400, BOB: 4400, CARL: 2200}
+    assert ev.winners == [ALICE, BOB, CARL] and ev.carry == 0
+    assert {e.identity: e.verdict for e in ev.entries}[D_] == "solved"
+
+
+def test_two_tied_for_second_split_second_and_third(txf, salt):
+    ev = _podium(txf, salt, [(ALICE, 110, "42"), (BOB, 111, "42"), (CARL, 111, "42"), (D_, 112, "42")])
+    assert {p.identity: p.amount for p in ev.payouts} == {ALICE: 5500, BOB: 2750, CARL: 2750}
+    assert {e.identity: e.verdict for e in ev.entries}[D_] == "solved"      # the podium is full at three
+
+
+def test_four_tied_for_third_all_stand_on_the_podium(txf, salt):
+    ev = _podium(txf, salt, [(ALICE, 110, "42"), (BOB, 111, "42"), (CARL, 112, "42"), (D_, 112, "42"),
+                             (E_, 112, "42"), (F_, 112, "42"), (ident("G"), 113, "42")])
+    dist = 7000 + 7000
+    assert {p.identity: p.amount for p in ev.payouts} == {ALICE: dist * 5 // 10, BOB: dist * 3 // 10,
+                                                          CARL: 700, D_: 700, E_: 700, F_: 700}
+    assert len(ev.winners) == 6 and ev.carry == 0
+    assert {e.identity: e.verdict for e in ev.entries}[ident("G")] == "solved"
+
+
+def test_three_or_more_tied_for_first_split_everything_evenly(txf, salt):
+    ev = _podium(txf, salt, [(ALICE, 110, "42"), (BOB, 110, "42"), (CARL, 110, "42"), (D_, 111, "42")])
+    assert {p.identity: p.amount for p in ev.payouts} == {ALICE: 11_000 // 3, BOB: 11_000 // 3, CARL: 11_000 // 3}
+    assert ev.carry == 11_000 - 3 * (11_000 // 3)
+    assert {e.identity: e.verdict for e in ev.entries}[D_] == "solved"     # a tie for first can fill the podium
+    five = _podium(txf, salt, [(who, 110, "42") for who in (ALICE, BOB, CARL, D_, E_)])
+    assert [p.amount for p in five.payouts] == [12_000 // 5] * 5 and five.winners == [ALICE, BOB, CARL, D_, E_]
+
+
+def test_a_tie_is_a_dead_heat_not_a_transaction_id_lottery(txf, salt):
+    """The same tick in either transaction order pays the same money to each."""
+    a = _podium(txf, salt, [(ALICE, 110, "42"), (BOB, 110, "42"), (CARL, 111, "42")])
+    b = _podium(txf, salt, [(BOB, 110, "42"), (ALICE, 110, "42"), (CARL, 111, "42")])
+    assert {p.identity: p.amount for p in a.payouts} == {p.identity: p.amount for p in b.payouts}
+    assert a.payouts[0].amount == a.payouts[1].amount
+
+
+def test_first_mode_still_splits_the_earliest_tick_equally(txf, salt):
+    s = spec(payout_mode=P.MODE_FIRST, rake_bps=0, house_seed=7000)
+    ev = evaluate(s, _table(txf, salt, [(ALICE, 110, "42"), (BOB, 110, "42"), (CARL, 111, "42")]), HOUSE, DOJO_SALT, ANSWER)
+    assert {p.identity: p.amount for p in ev.payouts} == {ALICE: 5000, BOB: 5000}
+
+
+def test_dead_heats_are_settled_per_pot_on_a_sensei_table(txf, salt):
+    """Two senseis tied for first in their pot; two beginners tied for first
+    in theirs. Each pot runs its own dead heat, the tick shared across pots
+    means nothing."""
+    belts = {ALICE: BLUE, BOB: BLUE}
+    s = _round89(belt_rank=0, carry_in=2000, bond_bps=0, rake_bps=0)
+    seats = [(ALICE, 110, "42"), (BOB, 110, "42"), (CARL, 110, "42"), (D_, 110, "42"), (E_, 111, "42"), (F_, 112, "1")]
+    ev = evaluate(s, _table(txf, salt, seats), HOUSE, DOJO_SALT, ANSWER, belts=belts)
+    assert ev.pots["sensei"]["payouts"] == [{"identity": ALICE, "amount": 1000}, {"identity": BOB, "amount": 1000}]
+    belt_dist = 2000 + 4000 + 4000                                          # carry, four beginners matched, their stakes
+    assert ev.pots["belt"]["payouts"] == [{"identity": CARL, "amount": belt_dist * 8 // 10 // 2},
+                                          {"identity": D_, "amount": belt_dist * 8 // 10 // 2},
+                                          {"identity": E_, "amount": belt_dist * 2 // 10}]
+    assert ev.winners == [CARL, D_, E_, ALICE, BOB]

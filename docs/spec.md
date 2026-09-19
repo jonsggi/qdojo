@@ -121,9 +121,20 @@ identity counts.
     real time, first is skill, not network latency.
   - `split`: every solver shares `pot - rake` equally.
   - `podium`: the first three correct commits take 5:3:2 of `pot - rake`
-    (5:3 for two, all for one); same-tick solvers are ordered by
-    transaction id. Later solvers are `solved`, unpaid.
+    (5:3 for two, all for one). Later solvers are `solved`, unpaid.
   The integer remainder carries into the next round's seed.
+- **Ties.** Solvers whose correct commits share a tick are a dead heat and
+  share a placing; chain order inside a tick is not skill, so nothing else
+  breaks a tie and nothing is replayed. Under `first` everyone in the
+  earliest tick splits the pot equally, as above. Under `podium` the tied
+  solvers pool the weights of the placings they span and split them
+  equally: two tied for first take 4 parts each and the next solver takes
+  2 as third; three or more tied for first split all ten parts evenly; a
+  tie for the last podium place brings everyone tied onto the podium and
+  splits that place's weight among them, so the podium can grow (first 5,
+  second 3, four tied for third half a part each). Decided 2026-09-19,
+  docs/product-decisions.md; rounds before it ordered same-tick solvers by
+  transaction id.
 - **Bond.** PUBLISH announces `bond_bps` and `bond_rounds`. That share of
   every win stays with the house as the winner's bond and is paid out with
   the settlement of the round in which the winner completes `bond_rounds`

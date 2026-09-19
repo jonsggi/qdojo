@@ -3,6 +3,7 @@
 Everything here is deterministic given the same inputs, so a settlement can
 be recomputed by anyone from the published data and the revealed dojo salt.
 """
+import itertools
 from dataclasses import dataclass, field
 
 from . import hashing, payload
@@ -366,13 +367,23 @@ def _pay(spec: RoundSpec, solved: list, distributable: int) -> _Paid:
             if e.commit_tick != first_tick:
                 e.verdict = "solved"
     if spec.payout_mode == payload.MODE_PODIUM and solved:
-        podium = solved[:len(payload.PODIUM_WEIGHTS)]
-        for e in solved[len(podium):]:
-            e.verdict = "solved"
-        weights = payload.PODIUM_WEIGHTS[:len(podium)]
-        total_w = sum(weights)
-        wins = [(e.identity, distributable * w // total_w) for e, w in zip(podium, weights)]
-        return _Paid([e.identity for e in podium], wins, distributable - sum(a for _, a in wins))
+        # A dead heat: solvers whose correct commits share a tick share a
+        # placing. They pool the podium weights of the placings they span and
+        # split them equally, and a tie for the last place brings everyone
+        # tied onto the podium. Chain order inside a tick is not skill, so
+        # nothing else breaks a tie (docs/spec.md §5, docs/product-decisions.md).
+        heats = [list(g) for _, g in itertools.groupby(solved, key=lambda e: e.commit_tick)]
+        podium, place = [], 0
+        for heat in heats:
+            if place < len(payload.PODIUM_WEIGHTS):
+                podium.append((heat, sum(payload.PODIUM_WEIGHTS[place:place + len(heat)])))
+            else:
+                for e in heat:
+                    e.verdict = "solved"
+            place += len(heat)
+        total_w = sum(w for _, w in podium)
+        wins = [(e.identity, distributable * w // total_w // len(heat)) for heat, w in podium for e in heat]
+        return _Paid([i for i, _ in wins], wins, distributable - sum(a for _, a in wins))
     winners = [e.identity for e in solved if e.verdict == "winner"]
     if not winners:
         return _Paid([], [], distributable)
