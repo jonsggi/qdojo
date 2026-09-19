@@ -106,3 +106,21 @@ test('versioned preview fixtures cover both character variants', () => {
     assert.equal(createHash('sha256').update(avatars.svg(id)).digest('hex'), expected);
   }
 });
+
+test('frame clips keep the default pose as frame zero and stay inside the 32×32 canvas', () => {
+  const strip = (id, clip) => avatars.svg(id, 'sprite').replace(/^<svg[^>]*>|<\/svg>$/g, '');
+  for (const id of [identity, 'fixture-0', 'sample-3', 'sample-9']) {
+    const idle = avatars.frames(id, 'idle'), jab = avatars.frames(id, 'jab');
+    assert.equal(idle[0], strip(id));
+    assert.equal(idle.length, avatars.clips.idle.frames.length);
+    assert.ok(new Set(idle).size > 1 && new Set(jab).size > 1);
+    assert.notEqual(jab[1], idle[0]);
+    for (const body of [...idle, ...jab]) {
+      for (const [, x, w] of body.matchAll(/M(\d+) \d+h(\d+)v1/g)) assert.ok(Number(x) + Number(w) <= 32, body.slice(0, 40));
+    }
+    const s = avatars.strip(id, 'jab');
+    assert.equal((s.match(/<g data-frame=/g) || []).length, jab.length);
+    assert.doesNotMatch(s, /<animate|<script|\bid=/);
+  }
+  assert.equal(avatars.frames(identity, 'no-such-clip')[0], strip(identity));
+});

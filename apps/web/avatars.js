@@ -2,6 +2,10 @@
  * No external assets, fonts, randomness, network, or animation. Appearance does
  * not depend on live rank. This is preview art, not a minted NFT collection.
  * Keep the old skin/gi/hair picks so returning fighters retain their colours.
+ *
+ * Experiment: a sprite can be drawn in a pose (whole-body pixel offsets, a
+ * lead-arm state, a blink). The default pose is byte-identical to the static
+ * art. `frames`/`strip` return frame sequences; playback belongs to the page.
  */
 'use strict';
 const QDojoAvatars = (() => {
@@ -18,6 +22,12 @@ const QDojoAvatars = (() => {
   const ACCENTS = ['#24e6ff', '#ffd200', '#ff4b69', '#a2ff7a', '#f4f4f4'];
   const INK = '#080b20';
   const cache = new Map();
+  // Frame clips. Integer pixel moves only, so the art stays crisp at any scale.
+  // Legs and boots stay planted; dx/dy move everything above the belt.
+  const CLIPS = Object.freeze({
+    idle: { fps: 4, frames: [{}, { dy: 1 }, { dy: 1, blink: true }, { dy: 1 }, {}, {}, { blink: true }, {}] },
+    jab: { fps: 12, frames: [{ lead: 'wind' }, { lead: 'jab', dx: 1 }, { lead: 'jab', dx: 1 }, { lead: 'jab' }, {}, {}] },
+  });
 
   function hash(s) {
     let h = 2166136261 >>> 0;
@@ -51,7 +61,9 @@ const QDojoAvatars = (() => {
     });
   }
 
-  function sprite(identity) {
+  function sprite(identity, pose = {}) {
+    const { dx = 0, dy = 0, lead = 'guard', blink = false } = pose;
+    let ox = 0, oy = 0; // current pose offset; zero while drawing the planted legs
     const h = hash(identity), detail = hash('qdojo/fighter/v1/' + identity);
     const skin = SKIN[h % SKIN.length], gi = GI[(h >>> 4) % GI.length], hair = HAIR[(h >>> 8) % HAIR.length];
     // Four hand-drawn kits and three fighting guards; trait picks are independent
@@ -64,6 +76,7 @@ const QDojoAvatars = (() => {
     const skinDark = shade(skin, -46), skinLight = shade(skin, 23);
     const pixels = Array(SIZE * SIZE).fill(null);
     const rect = (x, y, w, ht, c) => {
+      x += ox; y += oy;
       for (let yy = y; yy < y + ht; yy++) for (let xx = x; xx < x + w; xx++) {
         if (xx >= 0 && xx < SIZE && yy >= 0 && yy < SIZE) pixels[yy * SIZE + xx] = c;
       }
@@ -72,6 +85,7 @@ const QDojoAvatars = (() => {
 
     // Hair behind the body: a strong silhouette at thumbnail size. Female
     // sentinels and shinobi keep their protective headgear with an exposed braid.
+    ox = dx; oy = dy;
     if (female) {
       const hairLight = shade(hair, 48);
       if (kit >= 2 || cut === 2) {
@@ -92,6 +106,7 @@ const QDojoAvatars = (() => {
     }
 
     // Wide planted legs, trouser folds, ankle wraps, and individually lit boots.
+    ox = 0; oy = 0;
     rect(11, 22, 10, 3, dark);
     rect(10, 24, 5, 5, cloth); rect(9, 27, 5, 2, cloth);
     rect(10, 24, 2, 3, light); rect(13, 24, 2, 4, dark);
@@ -102,6 +117,7 @@ const QDojoAvatars = (() => {
     rect(8, 29, 3, 1, '#7b8da6'); rect(24, 29, 3, 1, '#7b8da6');
 
     // Rear arm: low fist, boxer guard, or a wide power stance.
+    ox = dx; oy = dy;
     const arm = kit === 1 ? skin : cloth, armDark = kit === 1 ? skinDark : dark;
     if (stance === 0) {
       rect(8, 16, 4, 5, arm); rect(7, 19, 4, 4, armDark);
@@ -160,20 +176,42 @@ const QDojoAvatars = (() => {
         rect(12, 20, 1, 2, accent); rect(18, 21, 1, 2, light);
       }
       // Knee guards and taller boots echo the jacket without changing the pose.
+      ox = 0; oy = 0;
       rect(10, 26, 4, 2, dark); rect(10, 26, 2, 1, light);
       rect(20, 26, 4, 2, dark); rect(21, 26, 2, 1, light);
       rect(9, 28, 5, 1, '#48516a'); rect(20, 28, 4, 1, '#48516a');
       dot(10, 28, accent); dot(22, 28, accent);
+      ox = dx; oy = dy;
     }
 
     // Raised leading fist, bent elbow, wrist tape, visible knuckle highlights.
-    rect(20, 18, 4, 4, armDark); rect(22, 17, 4, 4, arm);
-    rect(24, 14, 3, 5, arm); rect(24, 14, 3, 2, accent);
-    rect(23, 11, 5, 3, skinDark); rect(23, 10, 4, 3, skin);
-    rect(24, 10, 2, 1, skinLight); dot(27, 12, skin);
-    if (kit === 2) { // Armoured glove and elbow plate.
-      rect(23, 10, 4, 3, cloth); rect(24, 10, 2, 1, light);
-      rect(24, 12, 3, 1, accent); rect(20, 20, 3, 2, '#536781');
+    if (lead === 'jab') { // Arm straight out, fist at shoulder height.
+      rect(20, 16, 4, 4, armDark); rect(23, 15, 4, 3, arm);
+      rect(25, 15, 1, 3, accent);
+      rect(26, 14, 4, 4, skinDark); rect(26, 14, 4, 3, skin);
+      rect(27, 14, 2, 1, skinLight);
+      if (kit === 2) {
+        rect(26, 14, 4, 3, cloth); rect(27, 14, 2, 1, light);
+        rect(26, 16, 3, 1, accent); rect(20, 17, 3, 2, '#536781');
+      }
+    } else if (lead === 'wind') { // Fist pulled to the chin before the punch.
+      rect(20, 18, 4, 4, armDark); rect(22, 17, 3, 4, arm);
+      rect(22, 14, 3, 4, arm); rect(22, 14, 3, 1, accent);
+      rect(21, 11, 4, 3, skinDark); rect(21, 11, 4, 2, skin);
+      dot(22, 11, skinLight);
+      if (kit === 2) {
+        rect(21, 11, 4, 3, cloth); rect(22, 11, 2, 1, light);
+        rect(21, 13, 3, 1, accent); rect(20, 20, 3, 2, '#536781');
+      }
+    } else {
+      rect(20, 18, 4, 4, armDark); rect(22, 17, 4, 4, arm);
+      rect(24, 14, 3, 5, arm); rect(24, 14, 3, 2, accent);
+      rect(23, 11, 5, 3, skinDark); rect(23, 10, 4, 3, skin);
+      rect(24, 10, 2, 1, skinLight); dot(27, 12, skin);
+      if (kit === 2) { // Armoured glove and elbow plate.
+        rect(23, 10, 4, 3, cloth); rect(24, 10, 2, 1, light);
+        rect(24, 12, 3, 1, accent); rect(20, 20, 3, 2, '#536781');
+      }
     }
 
     // A neutral utility sash, NOT a randomly awarded rank belt. Earned rank is
@@ -187,7 +225,7 @@ const QDojoAvatars = (() => {
     rect(11, 9, 2, 3, skinDark); rect(19, 9, 2, 2, skin);
     rect(14, 7, 5, 1, skinLight); rect(12, 7, 1, 4, skinDark);
     rect(15, 8, 2, 1, INK); rect(18, 8, 2, 1, INK);
-    dot(16, 9, '#ffffff'); dot(19, 9, '#ffffff');
+    if (!blink) { dot(16, 9, '#ffffff'); dot(19, 9, '#ffffff'); }
     dot(17, 10, skinDark); rect(16, 12, 3, 1, '#703746');
     if (female) {
       rect(13, 12, 1, 2, INK); dot(14, 13, INK); dot(19, 13, INK);
@@ -337,11 +375,27 @@ const QDojoAvatars = (() => {
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" shape-rendering="crispEdges" focusable="false">${mode === 'sprite' || mode === 'portrait' ? body : art}</svg>`;
   }
 
+  // Frame bodies for one clip: each entry is the path markup of a 32×32 sprite.
+  function frames(identity, clip = 'idle') {
+    identity = String(identity || '');
+    const c = CLIPS[clip] || CLIPS.idle;
+    return c.frames.map(pose => sprite(identity, pose));
+  }
+
+  // One sprite SVG holding every frame of a clip as a hidden group. Nothing in
+  // it moves by itself; the page shows one <g data-frame> at a time.
+  function strip(identity, clip = 'idle') {
+    const c = CLIPS[clip] || CLIPS.idle;
+    const groups = frames(identity, clip)
+      .map((body, i) => `<g data-frame="${i}"${i ? ' style="display:none"' : ''}>${body}</g>`).join('');
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" shape-rendering="crispEdges" focusable="false" data-clip="${clip}" data-fps="${c.fps}" data-frames="${c.frames.length}">${groups}</svg>`;
+  }
+
   function render(identity, className = '') {
     // A portrait crop at 24px; full character on the mat; artwork on big cards.
     const classes = String(className).split(/\s+/).filter(c => /^[a-zA-Z0-9_-]+$/.test(c));
     const mode = classes.includes('avatar-sm') ? 'portrait' : classes.includes('avatar-xl') ? 'artwork' : 'sprite';
     return `<span class="avatar ${classes.join(' ')}" aria-hidden="true">${svg(identity, mode)}</span>`;
   }
-  return Object.freeze({ version: VERSION, render, svg, traits });
+  return Object.freeze({ version: VERSION, render, svg, traits, frames, strip, clips: CLIPS });
 })();

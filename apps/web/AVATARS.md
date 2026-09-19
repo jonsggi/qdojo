@@ -36,7 +36,19 @@ QDojoAvatars.svg(identity, 'sprite');      // transparent 32×32 sprite
 QDojoAvatars.svg(identity, 'portrait');    // compact portrait
 QDojoAvatars.traits(identity);             // frozen descriptive traits
 QDojoAvatars.version;                     // qdojo-fighters-v2-preview
+QDojoAvatars.frames(identity, 'jab');      // experiment: sprite bodies, one per frame
+QDojoAvatars.strip(identity, 'idle');      // experiment: one SVG, frames as hidden <g>
+QDojoAvatars.clips;                        // { idle: {fps, frames}, jab: {...} }
 ```
+
+### Animation experiment
+
+`frames` and `strip` draw the same sprite in poses: whole-body integer pixel
+offsets above the belt (legs stay planted), a lead-arm state (`guard`, `wind`,
+`jab`) and a blink. Frame zero of `idle` is byte-identical to the static
+sprite, and the static exports are untouched. Nothing in `avatars.js` plays a
+clip; `anim.html` is a sparring demo that shows one frame group at a time from
+the elapsed clock. This is an experiment, not part of the collectible contract.
 
 The SVG export is artwork only. It contains no wallet secrets or user-provided
 markup. Rasterize at a suitable integer scale with nearest-neighbour/crisp-edge

@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QDOJO · sparring</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<style>
+  /* Experiment page. Frame playback lives here, not in avatars.js. */
+  .ring { padding: var(--gutter); max-width: 960px; margin: 0 auto; }
+  .ring h1 { font-size: 16px; color: var(--yellow); margin: 0 0 4px; }
+  .ring p { color: var(--grey); font-size: 9px; margin: 0 0 18px; }
+  .mat { position: relative; background: var(--black); border: var(--border) solid var(--blue);
+         padding: 40px 24px 0; display: flex; justify-content: center; gap: 96px; align-items: flex-end;
+         min-height: 260px; overflow: hidden; }
+  .mat::after { content: ''; display: block; position: absolute; left: 0; right: 0; bottom: 0; height: 28px;
+                background: repeating-linear-gradient(90deg, #232955 0 14px, #1a1f45 14px 28px); border-top: 3px solid var(--cyan); }
+  .fighter { position: relative; z-index: 1; width: 160px; height: 160px; image-rendering: pixelated;
+             filter: drop-shadow(4px 4px 0 #000); margin-bottom: 20px; cursor: pointer; }
+  .fighter svg { width: 100%; height: 100%; display: block; }
+  .fighter.left { transform: scaleX(-1); }
+  .fighter .tag { position: absolute; top: -28px; left: 0; right: 0; text-align: center; font-size: 8px;
+                  color: var(--cyan); letter-spacing: 1px; }
+  .fighter.left .tag { transform: scaleX(-1); }
+  .fighter.hit { animation: flinch .18s steps(2) 1; }
+  @keyframes flinch { from { filter: drop-shadow(4px 4px 0 #000) brightness(3); } to { filter: drop-shadow(4px 4px 0 #000); } }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 14px 0; font-size: 9px; }
+  .controls button { font: inherit; font-size: 9px; padding: 8px 12px; background: var(--navy-2); color: var(--white);
+                     border: 3px solid var(--cyan); cursor: pointer; }
+  .controls button:hover { background: var(--blue); }
+  .controls label { color: var(--grey); display: flex; gap: 8px; align-items: center; }
+  .sheet { margin-top: 24px; }
+  .sheet h2 { font-size: 10px; color: var(--magenta); margin: 0 0 8px; }
+  .sheet .row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; align-items: center; }
+  .sheet .row span { font-size: 8px; color: var(--grey); width: 48px; }
+  .sheet .frame { width: 64px; height: 64px; background: #131838; border: 2px solid #232955; image-rendering: pixelated; }
+  .sheet .frame svg { width: 100%; height: 100%; display: block; }
+  .hint { font-size: 8px; color: var(--grey); }
+</style>
+</head>
+<body class="crt-on">
+<div class="crt" aria-hidden="true"></div>
+<main class="ring">
+  <h1>SPARRING</h1>
+  <p>ONE 32×32 SPRITE, INTEGER PIXEL OFFSETS PER FRAME. CLICK A FIGHTER TO JAB · SPACE / ENTER FOR BOTH · NEXT SWAPS THE PAIR.</p>
+  <div class="mat">
+    <div class="fighter left" id="f-left" tabindex="0"><div class="tag"></div></div>
+    <div class="fighter" id="f-right" tabindex="0"><div class="tag"></div></div>
+  </div>
+  <div class="controls">
+    <button id="jab-left">JAB ◀</button>
+    <button id="jab-right">▶ JAB</button>
+    <button id="spar">AUTO SPAR</button>
+    <button id="next">NEXT PAIR</button>
+    <label>SPEED <input id="speed" type="range" min="25" max="300" value="100"> <b id="speed-v">1.0×</b></label>
+    <span class="hint" id="src"></span>
+  </div>
+  <section class="sheet">
+    <h2>FRAME SHEET</h2>
+    <div id="sheet"></div>
+  </section>
+</main>
+<script src="avatars.js"></script>
+<script>
+(() => {
+  'use strict';
+  // Playback: frame index is a pure function of elapsed time, so it never
+  // drifts and can be re-derived after a tab sleeps. Idle loops, jab plays
+  // once at its own fps and hands back to idle.
+  const FALLBACK = Array.from({ length: 12 }, (_, i) => ({ identity: 'sample-' + (i * 7 + 3), name: 'SAMPLE ' + i }));
+  let roster = FALLBACK, cursor = 0, speed = 1, sparring = false;
+  const now = () => performance.now();
+
+  function makeActor(el, fighter) {
+    el.dataset.identity = fighter.identity;
+    el.querySelector('.tag').textContent = fighter.name || fighter.identity.slice(0, 8);
+    const strips = {};
+    for (const clip of Object.keys(QDojoAvatars.clips)) {
+      const wrap = document.createElement('div');
+      wrap.innerHTML = QDojoAvatars.strip(fighter.identity, clip);
+      strips[clip] = wrap.firstChild;
+      strips[clip].style.display = 'none';
+      el.appendChild(strips[clip]);
+    }
+    return { el, strips, clip: 'idle', start: now(), shown: null };
+  }
+
+  function play(actor, clip) {
+    actor.clip = clip; actor.start = now();
+  }
+
+  function tick(actor) {
+    const spec = QDojoAvatars.clips[actor.clip];
+    const n = spec.frames.length;
+    const elapsed = (now() - actor.start) * speed;
+    let i = Math.floor(elapsed / 1000 * spec.fps);
+    if (actor.clip !== 'idle' && i >= n) { play(actor, 'idle'); return tick(actor); }
+    i %= n;
+    if (actor.shown && actor.shown[0] === actor.clip && actor.shown[1] === i) return;
+    for (const [name, svg] of Object.entries(actor.strips)) svg.style.display = name === actor.clip ? '' : 'none';
+    const groups = actor.strips[actor.clip].querySelectorAll('g[data-frame]');
+    groups.forEach((g, k) => { g.style.display = k === i ? '' : 'none'; });
+    actor.shown = [actor.clip, i];
+  }
+
+  const left = document.getElementById('f-left'), right = document.getElementById('f-right');
+  let actors = [];
+  function cast() {
+    for (const el of [left, right]) el.querySelectorAll('svg').forEach(s => s.remove());
+    const a = roster[cursor % roster.length], b = roster[(cursor + 1) % roster.length];
+    actors = [makeActor(left, a), makeActor(right, b)];
+    sheet();
+  }
+  function jab(k) {
+    const attacker = actors[k], target = actors[1 - k];
+    if (attacker.clip === 'jab') return;
+    play(attacker, 'jab');
+    // The fist lands on frame index 1 at the clip's fps; flash the target then.
+    const landAt = 1000 / QDojoAvatars.clips.jab.fps / speed;
+    setTimeout(() => { target.el.classList.remove('hit'); void target.el.offsetWidth; target.el.classList.add('hit'); }, landAt);
+  }
+  function sheet() {
+    const out = [];
+    for (const actor of actors) {
+      for (const [clip, spec] of Object.entries(QDojoAvatars.clips)) {
+        const frames = QDojoAvatars.frames(actor.el.dataset.identity, clip);
+        out.push(`<div class="row"><span>${clip.toUpperCase()}<br>${spec.fps}FPS</span>${frames.map(f =>
+          `<div class="frame"><svg viewBox="0 0 32 32" shape-rendering="crispEdges">${f}</svg></div>`).join('')}</div>`);
+      }
+    }
+    document.getElementById('sheet').innerHTML = out.join('');
+  }
+
+  left.addEventListener('click', () => jab(0));
+  right.addEventListener('click', () => jab(1));
+  document.getElementById('jab-left').addEventListener('click', () => jab(0));
+  document.getElementById('jab-right').addEventListener('click', () => jab(1));
+  document.getElementById('next').addEventListener('click', () => { cursor += 2; cast(); });
+  document.getElementById('spar').addEventListener('click', e => { sparring = !sparring; e.target.textContent = sparring ? 'STOP' : 'AUTO SPAR'; });
+  document.getElementById('speed').addEventListener('input', e => {
+    speed = e.target.value / 100; document.getElementById('speed-v').textContent = speed.toFixed(2).replace(/0$/, '') + '×';
+    for (const a of actors) a.start = now();
+  });
+  document.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); jab(0); setTimeout(() => jab(1), 260); } });
+
+  let nextSpar = 0;
+  (function loop(t) {
+    for (const a of actors) tick(a);
+    if (sparring && t > nextSpar) { jab(Math.random() < 0.5 ? 0 : 1); nextSpar = t + 500 + Math.random() * 900; }
+    requestAnimationFrame(loop);
+  })(0);
+
+  cast();
+  fetch('data/fighters.json').then(r => r.json()).then(d => {
+    const named = d.fighters.filter(f => f.name && f.identity);
+    if (named.length >= 2) { roster = named; cursor = 0; cast(); document.getElementById('src').textContent = 'ROSTER: ' + named.length + ' FIGHTERS'; }
+  }).catch(() => { document.getElementById('src').textContent = 'ROSTER: SAMPLES (NO DATA SERVED)'; });
+})();
+</script>
+</body>
+</html>
