@@ -3,10 +3,11 @@ the developer API.
 
 A cohort of archetypes (solve probability and latency per belt, entry
 appetite) fights simulated rounds through the REAL evaluator
-(`round.evaluate`), the REAL ladder (`belts.apply_settlement`) and the
-same bond rules the house applies, so the money and the belts move exactly
-as they would on chain. No chain, no LLM: a round costs microseconds, so
-parameters can be swept and confidence intervals estimated.
+(`round.evaluate`, and with it `round.settle`, so the sensei rule is the
+house's own and not a copy), the REAL ladder (`belts.apply_settlement`)
+and the same bond rules the house applies, so the money and the belts move
+exactly as they would on chain. No chain, no LLM: a round costs
+microseconds, so parameters can be swept and confidence intervals estimated.
 
 What it answers: what a round costs the house, who ends up with the money,
 how fast the ladder sorts fighters, how much a dominant bot can sweep, and
@@ -74,7 +75,7 @@ class Params:
     reveal_window: int = 120
     start_balance: int = 20000
     npc_rounds: int = 3        # house tops NPCs up to this many stakes before each round
-    gate: str = "strict"       # strict: own belt or above | soft: one belt below | handicap: any table, stake x 2^gap | sensei: any table, but below your belt you win back at most your stake and earn no points
+    gate: str = "strict"       # strict: own belt or above | soft: one belt below | handicap: any table, stake x 2^gap | sensei: any table; below your belt you are a sensei (round.settle decides the money, no points move)
     season: int = 0            # reset the ladder every N rounds (0 = never)
 
 
@@ -86,6 +87,9 @@ class Fighter:
     staked: int = 0
     earned: int = 0
     bonds: list = field(default_factory=list)
+    sensei_seats: int = 0        # seats taken below its own belt, and what they cost and returned (gross, bond included)
+    sensei_staked: int = 0
+    sensei_won: int = 0
 
 
 def _enter_p(arch, belt):
@@ -113,7 +117,7 @@ def simulate(params: Params, cohort: list[Archetype], rng: random.Random) -> dic
     belt_state, carry, house = {}, 0, 0
     house_cost, pots, rounds_played, void_rounds = [], [], 0, 0
     belt_hist, promotions, demotions = [], 0, 0
-    per_round_top = []
+    per_round_top, carries = [], []
     HOUSE = "H" * 60
     dojo_salt, answer = b"\x0d" * 16, "42"
     npc_funding_total, void_reasons = 0, {"no_quorum": 0}
@@ -137,8 +141,6 @@ def simulate(params: Params, cohort: list[Archetype], rng: random.Random) -> dic
             gap = B.rank_of(belt_state, f.identity) - rank
             return gap <= (1 if params.gate == "soft" else 0)
 
-        def is_sensei(f):
-            return params.gate == "sensei" and params.ladder and B.rank_of(belt_state, f.identity) > rank
         eligible = [f for f in fighters if allowed(f) and f.balance >= stake_for(f) and rng.random() < _enter_p(f.arch, belt)]
         if len(eligible) < params.min_players:
             void_rounds += 1
@@ -147,11 +149,13 @@ def simulate(params: Params, cohort: list[Archetype], rng: random.Random) -> dic
         spec = RoundSpec(r, publish, params.entry_fee, params.commit_window, params.reveal_window, b"\x11" * 32,
                          hashing.answer_commitment(r, dojo_salt, answer), "integer", params.seed_cap, params.rake_bps,
                          params.payout_mode, params.match_bps, carry, lobby_tick=900, lobby_window=50,
-                         min_players=params.min_players, belt_rank=rank if (params.ladder and params.gate == "strict") else None,
+                         min_players=params.min_players,
+                         belt_rank=rank if (params.ladder and params.gate in ("strict", "sensei")) else None,
                          bond_bps=params.bond_bps, bond_rounds=params.bond_rounds,
                          house_fighters=tuple(f.identity for f in fighters if f.arch.house_funded),
                          rake_house_bps=params.rake_house_bps, rake_dev_bps=params.rake_dev_bps,
-                         rake_share_bps=params.rake_share_bps)
+                         rake_share_bps=params.rake_share_bps, sensei=params.gate == "sensei")
+        carries.append(carry)
         obs, n = [], 0
         for f in eligible:
             n += 1
@@ -170,32 +174,27 @@ def simulate(params: Params, cohort: list[Archetype], rng: random.Random) -> dic
             obs.append(Observed(spec.reveal_start + 5, f"r{r}_{n:04d}", f.identity, HOUSE, 0, payload.INPUT_TYPE,
                                 payload.encode(payload.Reveal(r, salt, ans))))
         ev = evaluate(spec, obs, HOUSE, dojo_salt, answer, final=True, belts=belt_state)
-        senseis = {f.identity for f in eligible if is_sensei(f)}
-        if senseis:
-            excess = 0
-            for p in ev.payouts:
-                if p.kind == "win" and p.identity in senseis:
-                    stake = next((e.stake for e in ev.entries if e.identity == p.identity), 0)
-                    if p.amount > stake:
-                        excess += p.amount - stake; p.amount = stake
-            others = [p for p in ev.payouts if p.kind == "win" and p.identity not in senseis]
-            if others and excess:
-                each = excess // len(others)
-                for p in others:
-                    p.amount += each
-                ev.carry += excess - each * len(others)
-            else:
-                ev.carry += excess
+        # With the sensei gate the spec carries the belt and `sensei=True`, so the
+        # evaluator seats the seniors as senseis and settle() applies the house's
+        # own money rule to them. The model holds no rule of its own.
+        senseis = {e.identity for e in ev.entries if e.sensei}
         rounds_played += 1
         if not any(not f.arch.house_funded for f in eligible):
             void_reasons["dead_table"] = void_reasons.get("dead_table", 0) + 1
         # money
+        held = {b.identity: b.amount for b in ev.bonds}
         for e in ev.entries:
             if e.verdict in ("winner", "solved", "wrong", "no_reveal", "no_commit", "bad_reveal"):
-                by_id[e.identity].balance -= e.stake; by_id[e.identity].staked += e.stake
+                f = by_id[e.identity]
+                f.balance -= e.stake; f.staked += e.stake
+                if e.sensei:
+                    f.sensei_seats += 1; f.sensei_staked += e.stake
         for p in ev.payouts:
             if p.kind == "win":
-                by_id[p.identity].balance += p.amount; by_id[p.identity].earned += p.amount
+                f = by_id[p.identity]
+                f.balance += p.amount; f.earned += p.amount
+                if p.identity in senseis:
+                    f.sensei_won += p.amount + held.get(p.identity, 0)   # the bond is won, just held
         # bonds: hold, release, forfeit
         fought = {e.identity for e in ev.entries if e.verdict in ("winner", "solved", "wrong", "no_reveal", "no_commit", "bad_reveal")}
         forfeited = 0
@@ -238,7 +237,9 @@ def simulate(params: Params, cohort: list[Archetype], rng: random.Random) -> dic
                            "net_per_round": round(sum(f.earned - f.staked for f in fs) / len(fs) / max(1, rounds_played), 1),
                            "earned_share": round(sum(f.earned for f in fs) / total_earn, 3),
                            "final_belts": [B.belt_name(B.rank_of(belt_state, f.identity)) for f in fs],
-                           "broke": sum(1 for f in fs if f.balance < params.entry_fee)}
+                           "broke": sum(1 for f in fs if f.balance < params.entry_fee),
+                           "sensei_seats": sum(f.sensei_seats for f in fs),
+                           "sensei_net_per_seat": _per_seat(fs)}
     return {"rounds_played": rounds_played, "void_rounds": void_rounds, "dead_tables": void_reasons.get("dead_table", 0),
             "house_cost_per_round": round(sum(house_cost) / max(1, len(house_cost)), 1),
             "npc_funding_per_round": round(npc_funding_total / max(1, rounds_played), 1),
@@ -251,7 +252,18 @@ def simulate(params: Params, cohort: list[Archetype], rng: random.Random) -> dic
             "promotions": promotions, "demotions": demotions, "by_archetype": by_arch,
             "bonds_open": sum(1 for f in fighters for b in f.bonds if not b.get("done")),
             "bonds_forfeited": sum(b["amount"] for f in fighters for b in f.bonds if b.get("done") == "forfeited"),
+            # the carry: what the pots did not pay, waiting for the next eligible winner
+            "carry_end": carry, "avg_carry_in": round(statistics.mean(carries), 1) if carries else 0,
+            # the sensei seat as a bet: what a seat below your belt returned, gross of the bond, net of the stake
+            "sensei_seats_per_round": round(sum(f.sensei_seats for f in fighters) / max(1, rounds_played), 2),
+            "sensei_net_per_seat": _per_seat(fighters),
             "belt_history": belt_hist}
+
+
+def _per_seat(fs):
+    """Net per sensei seat across these fighters, or None when none sat down as a sensei."""
+    seats = sum(f.sensei_seats for f in fs)
+    return round(sum(f.sensei_won - f.sensei_staked for f in fs) / seats, 1) if seats else None
 
 
 def _gini(xs):
@@ -280,12 +292,18 @@ def run(params: Params, cohort_spec=None, replicates: int = 10, seed: int = 1) -
            "promotions": agg("promotions"), "demotions": agg("demotions"), "void_rounds": agg("void_rounds"),
            "dead_tables": agg("dead_tables"),
            "bonds_forfeited": agg("bonds_forfeited"),
+           "carry_end": agg("carry_end"), "avg_carry_in": agg("avg_carry_in"),
+           "sensei_seats_per_round": agg("sensei_seats_per_round"), "sensei_net_per_seat": agg("sensei_net_per_seat"),
            "by_archetype": {}}
     for name in runs[0]["by_archetype"]:
+        per_seat = [r["by_archetype"][name]["sensei_net_per_seat"] for r in runs
+                    if r["by_archetype"][name]["sensei_net_per_seat"] is not None]
         out["by_archetype"][name] = {
             "net_per_round": round(statistics.mean(r["by_archetype"][name]["net_per_round"] for r in runs), 1),
             "earned_share": round(statistics.mean(r["by_archetype"][name]["earned_share"] for r in runs), 3),
             "broke": round(statistics.mean(r["by_archetype"][name]["broke"] for r in runs), 2),
+            "sensei_seats": round(statistics.mean(r["by_archetype"][name]["sensei_seats"] for r in runs), 1),
+            "sensei_net_per_seat": round(statistics.mean(per_seat), 1) if per_seat else None,
             "final_belts": _belt_dist(sum((r["by_archetype"][name]["final_belts"] for r in runs), []))}
     out["belt_history"] = runs[0]["belt_history"]
     return out
@@ -334,5 +352,9 @@ def sweep(base: Params, grid: dict, cohort_spec=None, replicates: int = 5, seed:
                         "max_fighter_share": r["max_fighter_share_of_earnings"]["mean"],
                         "promotions": r["promotions"]["mean"], "void_rounds": r["void_rounds"]["mean"],
                         "dead_tables": r["dead_tables"]["mean"],
-                        "by_archetype": {k: v["net_per_round"] for k, v in r["by_archetype"].items()}})
+                        "carry_end": r["carry_end"]["mean"], "avg_carry_in": r["avg_carry_in"]["mean"],
+                        "sensei_seats_per_round": r["sensei_seats_per_round"]["mean"],
+                        "sensei_net_per_seat": (r["sensei_net_per_seat"] or {}).get("mean"),
+                        "by_archetype": {k: v["net_per_round"] for k, v in r["by_archetype"].items()},
+                        "sensei_by_archetype": {k: v["sensei_net_per_seat"] for k, v in r["by_archetype"].items()}})
     return results

@@ -51,9 +51,9 @@ defensively and treat a missing field as "this round predates it".
 | `commit_window`, `reveal_window` | int | commit in `publish_tick+1 .. publish_tick+commit_window`, reveal in the `reveal_window` ticks after |
 | `entry_fee` | int QU | the stake: the ENTER amount in a lobby round, the COMMIT amount otherwise |
 | `house_seed`, `match_bps`, `carry_in` | int | the house adds `min(house_seed, stakes*match_bps/10000) + carry_in` to the pot; `match_bps = 0` means a fixed `house_seed` |
-| `payout_mode` | `first`, `split` or `podium` | first: the earliest correct commit tick takes the pot, same-tick solvers share; split: all solvers share; podium: the first three correct commits take 5:3:2 |
+| `payout_mode` | `first`, `split` or `podium` | first: the earliest correct commit tick takes the pot, same-tick solvers share; split: all solvers share; podium: the first three correct commits take 5:3:2, and same-tick solvers share a placing and split its weights (docs/spec.md §5, ties) |
 | `bond_bps`, `bond_rounds` | int | this share of each win is held by the house and released once the winner has fought `bond_rounds` more rounds |
-| `sensei` | bool | true: a fighter ranked above this belt may sit as a sensei — it wins back at most its own stake and earns no belt points. False: sitting below your belt is refused (`outranked`) |
+| `sensei` | bool | true: a fighter ranked above this belt may sit as a sensei — it plays for the sensei pot (the senseis' own stakes, no seed, no carry) and earns no belt points. False: sitting below your belt is refused (`outranked`) |
 | `rake_house_bps`, `rake_dev_bps`, `rake_share_bps` | int | how the round's rake is split between the house treasury, the dev team and the shareholder pool |
 | `riddle`, `riddle_hash`, `answer_commitment` | object, hex, hex | null until published; verify `riddle_hash` before solving (docs/protocol.md) |
 | `entries` | list | history only, see below |
@@ -83,9 +83,10 @@ transaction.
 |---|---|
 | `round_id`, `house`, `publish_tx` | which round, whose house |
 | `entries`, `strikes` | every seat and its verdict; strikes per identity |
-| `pot`, `seed_used`, `carry` | the pot, how much seed the house actually added, what carries on |
+| `pot`, `seed_used`, `carry` | the pot, how much seed the house actually added (carry in included), what carries on |
 | `rake`, `rake_split` | the rake and its `{house, dev, shareholders}` split |
 | `winners`, `payouts` | who was paid; each payout has `identity`, `amount`, `kind`, `tx`, `tick`, `confirmed` |
+| `pots` | the two pots the round was settled as, `{"belt": {...}, "sensei": {...}}`, see below. Settlements before 2026-09-19 have no `pots`: they were settled as one pot with a sensei cap |
 | `bonds_held`, `bonds_released`, `bonds_forfeited` | bonds taken from this round's wins, bonds paid out with it, and bonds lost to the pot |
 | `shareholder_pool_after` | the shareholder rake pool after this round |
 | `answer`, `dojo_salt` | the answer and the salt, so anyone can check the published commitment |
@@ -94,6 +95,40 @@ transaction.
 
 Payout `kind` is `win`, `refund`, `bond_release` or `rake_dev`. `void: true`
 marks a table that never filled; its payouts are all refunds.
+
+**The two pots.** Each entry of `pots` has the same shape:
+
+```json
+"pots": {
+  "belt":   {"carry_in": 13200, "matched": 4000, "stakes": 4000, "pot": 21200, "rake": 800,
+             "distributable": 20400, "paid": 0, "carry": 20400, "winners": [], "payouts": []},
+  "sensei": {"carry_in": 0, "matched": 0, "stakes": 10000, "pot": 10000, "rake": 2000,
+             "distributable": 8000, "paid": 8000, "carry": 0,
+             "winners": ["<identity>", "<identity>", "<identity>"],
+             "payouts": [{"identity": "<identity>", "amount": 4000},
+                         {"identity": "<identity>", "amount": 2400},
+                         {"identity": "<identity>", "amount": 1600}]}
+}
+```
+
+| field | meaning |
+|---|---|
+| `carry_in` | carry from earlier rounds; always 0 for the sensei pot |
+| `matched` | the house's own money added this round (`seed_used - carry_in`); always 0 for the sensei pot |
+| `stakes` | the counted stakes of this pot's fighters: at-belt fighters, or senseis |
+| `pot` | `carry_in + matched + stakes` |
+| `rake` | the rake taken from this pot's stakes |
+| `distributable` | `pot - rake` |
+| `paid` | what the payout mode paid out of it, before bonds are held |
+| `carry` | `distributable - paid`, what this pot carries into the next round's belt pot |
+| `winners` | who this pot paid, in payout order |
+| `payouts` | `{identity, amount}` per winner, the gross win before the bond; the bond and the net amount are in `payouts[]` and `bonds_held[]` above |
+
+They add up: `pots.belt.pot + pots.sensei.pot == pot`, likewise `rake` and
+`carry`; `pots.belt.carry_in + pots.belt.matched == seed_used`; and
+`pots.belt.winners + pots.sensei.winners == winners`. A table without
+senseis has a sensei pot of zeros. The example is round 89 as it would be
+settled today.
 
 **Training data.** Every settled round gives you the riddle
 (`rounds/<id>.json`), its canonical answer and the salt (`settlement`), and

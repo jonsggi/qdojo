@@ -727,7 +727,7 @@ def build_parser():
     d.add_argument("--bond-bps", type=int, default=0, help="share of each win held as a bond")
     d.add_argument("--bond-rounds", type=int, default=0, help="rounds the winner must fight before release")
     d.add_argument("--dead-tables", action="store_true", help="publish belts even when no outsider may sit there")
-    d.add_argument("--sensei", action="store_true", help="let a fighter sit below its belt, capped to its stake, no belt points")
+    d.add_argument("--sensei", action="store_true", help="let a fighter sit below its belt: it plays for the sensei pot, no belt points")
     d.add_argument("--ephemeral-conf", metavar="PATH",
                    help="a throwaway seed conf: sign with it, shred it when this run exits (never a conf you keep)")
     d.set_defaults(fn=cmd_house_spar)

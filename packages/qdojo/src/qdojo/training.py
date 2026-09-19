@@ -106,7 +106,9 @@ def reproduces(rd: dict) -> bool:
     It is not always yes, and that matters. `house_fighters` -- the identities
     the house funds, whose stakes join the pot but are not matched by the seed
     -- is not in the export, so on an NPC round the matched seed comes out too
-    high. When we cannot reproduce the round we did not understand it, and we
+    high. And a round settled under a rule the engine no longer has (the
+    sensei stake cap, replaced by the two pots) re-settles to different money.
+    When we cannot reproduce the round we did not understand it, and we
     decline to put a number on the purse rather than inventing one. An unknown
     is not a zero.
     """
@@ -154,8 +156,7 @@ def grade(rd: dict, answer: str | None, seconds: float, error: str = "") -> Atte
     a.rank = sum(1 for r in rivals if r < a.commit_tick) + 1
 
     if not reproduces(rd):
-        a.why_unpriced = ("the house's seed rules for this round are not fully published, "
-                          "so the purse cannot be recomputed")
+        a.why_unpriced = unreproducible_because(rd)
         return a
     spec = spec_from_round(rd)
     mine = Entry(identity=ME, commit_tick=a.commit_tick, commit_tx="t" * 60, stake=spec.entry_fee,
@@ -165,6 +166,24 @@ def grade(rd: dict, answer: str | None, seconds: float, error: str = "") -> Atte
     a.would_pay += sum(b.amount for b in ev.bonds if b.identity == ME)   # the bond is won, just held
     a.net = a.would_pay - a.stake
     return a
+
+
+def unreproducible_because(rd: dict) -> str:
+    """The most likely reason a published round does not re-settle to what was
+    paid. A settlement without `pots` predates 2026-09-19: a sensei table was
+    then settled under the stake cap, and a podium with same-tick winners was
+    ordered by transaction id. Everything else is the unpublished
+    house-fighter list."""
+    doc = rd.get("settlement") or {}
+    if "pots" not in doc:            # settled by the engine as it was before 2026-09-19
+        if any(e.get("sensei") for e in rd.get("entries", [])):
+            return ("this round was settled under the earlier sensei rule (the stake cap), which today's "
+                    "engine no longer has, so the purse cannot be recomputed")
+        ticks = [e.get("commit_tick") for e in rd.get("entries", []) if e.get("verdict") == "winner"]
+        if rd.get("payout_mode") == "podium" and len(ticks) != len(set(ticks)):
+            return ("this round's podium was settled before the dead-heat rule, with same-tick winners "
+                    "ordered by transaction id, so the purse cannot be recomputed")
+    return "the house's seed rules for this round are not fully published, so the purse cannot be recomputed"
 
 
 # ----------------------------------------------------------------- the fights
