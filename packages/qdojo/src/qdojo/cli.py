@@ -14,6 +14,7 @@ from .chain.base import Unknown, ChainError
 from .house import House, HouseError
 from .bot import Bot, BotError, fetch_board
 from . import nodes, onboard, spar, events, lab, wizard, term, training, prompts as P, dash
+from . import settings
 from .shares import Shares, SharesError
 
 
@@ -350,8 +351,8 @@ def _bot_defaults(a):
         if not a.solver:
             sys.exit("qdojo: no solver: pass --solver, or run `qdojo bot setup` to record one")
     # setdefault, never overwrite: an explicitly exported PI_MODEL=x still wins.
-    for k, v in (prof.get("solver_env") or {}).items():
-        os.environ.setdefault(k, str(v))
+    # A secret setting is copied from the variable it names, here, in-process.
+    a._applied_env = settings.apply_env(prof, {})
 
 
 def cmd_bot_init(a):
@@ -387,8 +388,7 @@ def cmd_train(a):
     solver = a.solver or (onboard.load_profile(a.state) or {}).get("solver")
     if not solver:
         sys.exit("qdojo: no solver: pass --solver, or run `qdojo bot init` to choose one")
-    for k, v in ((onboard.load_profile(a.state) or {}).get("solver_env") or {}).items():
-        os.environ.setdefault(k, str(v))
+    settings.apply_env(onboard.load_profile(a.state) or {}, {})
 
     pool = training.settled_rounds(history)
     if not pool:
@@ -481,6 +481,67 @@ def cmd_bot_dash(a):
         httpd.serve_forever()
     except KeyboardInterrupt:
         print("  stopped.")
+
+
+def cmd_bot_settings(a):
+    """Your fighter's knobs, as its manifest declares them (docs/api.md,
+    'Settings'). Reads and writes bot.json only; needs no seed, no node."""
+    try:
+        if a.action == "set":
+            row = settings.set_value(a.state, a.key, a.value)
+            shown = f"${row['env_name']}" if row["type"] == "secret" else row["value"]
+            print(f"{a.key} = {shown}  (a running bot picks it up on its next poll)")
+            return
+        if a.action == "unset":
+            settings.unset_value(a.state, a.key)
+            print(f"{a.key} unset")
+            return
+        if a.action == "describe":
+            print(json.dumps(settings.describe(a.state), indent=2))
+            return
+        rows = settings.rows(a.state)
+    except settings.SettingsError as e:
+        sys.exit(f"qdojo: {e}")
+    if a.json:
+        print(json.dumps(rows, indent=2))
+        return
+    if not rows:
+        doc = settings.describe(a.state)
+        print(f"no settings: {doc['shipped'] or 'the solver has no manifest'} and {doc['user']} declare none.")
+        print("declare one in the second file (docs/api.md, 'Settings').")
+        return
+
+    def shown(r):
+        if r["type"] == "secret":
+            name = r.get("env_name")
+            return f"${name} ({'set' if r.get('set_in_env') else 'NOT set'})" if name else "—"
+        return "—" if r.get("value") is None else str(r["value"])
+
+    def default(r):
+        d = r.get("default")
+        if r["type"] == "secret":
+            return f"${d}" if d else "—"
+        return "—" if d is None else str(d)
+
+    table = [(r["key"], shown(r), default(r), r["source"],
+              (r.get("help") or "") + (" (not in the manifest)" if r.get("unknown") else "")) for r in rows]
+    widths = [max(len(t[i]) for t in [("KEY", "VALUE", "DEFAULT", "SOURCE", "")] + table) for i in range(4)]
+    room = term.width() - sum(widths) - 8
+    # Help beside the row when it fits, under it when the terminal is narrow:
+    # a help text cut to thirty characters explains nothing.
+    beside = room >= 48
+    print("  ".join(h.ljust(w) for h, w in zip(("KEY", "VALUE", "DEFAULT", "SOURCE"), widths)) + ("  HELP" if beside else ""))
+    for row in table:
+        line = "  ".join(v.ljust(w) for v, w in zip(row[:4], widths))
+        if beside:
+            print(line + "  " + term.fit(row[4], room))
+        else:
+            print(line)
+            if row[4]:
+                print("    " + term.fit(row[4], term.width() - 4))
+    print(f"\nchange one: qdojo bot settings set KEY VALUE   (a running bot picks it up on its next poll)")
+    doc = settings.describe(a.state)
+    print(f"declared in: {doc['shipped'] or '(no shipped manifest)'}\n         and {doc['user']}")
 
 
 def cmd_prompts(a):
@@ -791,6 +852,15 @@ def build_parser():
     d.add_argument("--board", help="the house to read your published record from")
     d.add_argument("--read-only", action="store_true", help="show everything, save nothing")
     d.set_defaults(fn=cmd_bot_dash)
+    d = s.add_parser("settings", help="your fighter's knobs: list, set KEY VALUE, unset KEY, describe")
+    d.add_argument("--json", action="store_true", help="the rows as JSON")
+    ss = d.add_subparsers(dest="action")
+    x = ss.add_parser("set", help="validate against the manifest and write bot.json")
+    x.add_argument("key"); x.add_argument("value")
+    x = ss.add_parser("unset", help="forget a stored value; the default applies again")
+    x.add_argument("key")
+    ss.add_parser("describe", help="the merged manifest as JSON, with current values")
+    d.set_defaults(fn=cmd_bot_settings, action="", key="", value="")
     d = s.add_parser("nodes", help="discover live nodes and refresh the cache"); d.set_defaults(fn=cmd_nodes)
     d = s.add_parser("stats", help="this bot's performance as the house publishes it"); d.add_argument("--board", required=True)
     d.set_defaults(fn=cmd_bot_stats)
