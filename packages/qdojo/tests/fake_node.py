@@ -15,16 +15,28 @@ import socketserver
 import struct
 import threading
 
+from qdojo.qubic.contracts import (
+    ASSET_ISSUANCE,
+    ASSET_OWNERSHIP,
+    ASSET_REQ_OWNERSHIPS,
+    asset_name_bytes,
+)
 from qdojo.qubic.node import (
     BROADCAST_TRANSACTION,
     END_RESPOND,
     EXCHANGE_PUBLIC_PEERS,
     HEADER_SIZE,
+    REQUEST_ASSETS,
+    REQUEST_CONTRACT_FUNCTION,
     REQUEST_CURRENT_TICK_INFO,
     REQUEST_ENTITY,
+    REQUEST_OWNED_ASSETS,
     REQUEST_TICK_TRANSACTIONS,
+    RESPOND_ASSETS,
+    RESPOND_CONTRACT_FUNCTION,
     RESPOND_CURRENT_TICK_INFO,
     RESPOND_ENTITY,
+    RESPOND_OWNED_ASSETS,
 )
 
 
@@ -42,6 +54,24 @@ def entity_body(public_key: bytes, incoming: int, outgoing: int, tick: int,
     return rec + struct.pack("<Ii", tick, 0) + bytes(32 * 24)
 
 
+def issuance_record(issuer_key: bytes, name: str, decimals: int = 0) -> bytes:
+    """A 48-byte AssetRecord of type ISSUANCE (structs.h)."""
+    return struct.pack("<32sB7sb7s", issuer_key, ASSET_ISSUANCE, asset_name_bytes(name)[:7],
+                       decimals, bytes(7))
+
+
+def ownership_record(owner_key: bytes, shares: int, managing_contract: int = 1, index: int = 0) -> bytes:
+    """A 48-byte AssetRecord of type OWNERSHIP."""
+    return struct.pack("<32sBxHIq", owner_key, ASSET_OWNERSHIP, managing_contract, index, shares)
+
+
+def owned_asset_body(owner_key: bytes, issuer_key: bytes, name: str, shares: int, tick: int) -> bytes:
+    """A full RespondOwnedAssets: ownership, issuance, tick, universe index,
+    and the 24 sibling hashes a real node appends (872 bytes)."""
+    return ownership_record(owner_key, shares) + issuance_record(issuer_key, name) \
+        + struct.pack("<II", tick, 0) + bytes(32 * 24)
+
+
 class FakeNode:
     """A node on 127.0.0.1. Use as a context manager; `.port` is the address.
 
@@ -53,12 +83,18 @@ class FakeNode:
     def __init__(self, host="127.0.0.1", port=0, tick=1000, epoch=42, initial_tick=900, balances=None,
                  tick_txs=None, peers=("9.9.9.9", "8.8.8.8"), announce_peers=True,
                  noise_before_answer=0, bad_size=False, hang_up=False, silent=False,
-                 lie_about=None):
+                 lie_about=None, contract_outputs=None, owned=None, holders=None):
         self.host, self.want_port = host, port
         self.ip, self.port = host, port   # known before start when a port was given
         self.tick, self.epoch, self.initial_tick = tick, epoch, initial_tick
         self.balances = dict(balances or {})          # public_key bytes -> (in, out)
         self.tick_txs = dict(tick_txs or {})          # tick -> [payload bytes]
+        # (contract index, function) -> output bytes; b"" is the node's way of
+        # saying it could not run the function
+        self.contract_outputs = dict(contract_outputs or {})
+        self.owned = dict(owned or {})                # owner key -> [(issuer key, name, shares)]
+        self.holders = dict(holders or {})            # (issuer key, name) -> [(owner key, shares)]
+        self.contract_calls: list[tuple[int, int, bytes]] = []   # (index, function, input) asked
         self.peers, self.announce_peers = list(peers), announce_peers
         self.noise_before_answer = noise_before_answer
         self.bad_size, self.hang_up, self.silent = bad_size, hang_up, silent
@@ -171,6 +207,23 @@ class FakeNode:
             tick = struct.unpack("<I", body[:4])[0]
             for payload in self.tick_txs.get(tick, []):
                 sock.sendall(frame(BROADCAST_TRANSACTION, payload))
+            sock.sendall(frame(END_RESPOND))
+        elif msg_type == REQUEST_CONTRACT_FUNCTION:
+            index, fn, size = struct.unpack("<IHH", body[:8])
+            self.contract_calls.append((index, fn, body[8:8 + size]))
+            sock.sendall(frame(RESPOND_CONTRACT_FUNCTION, self.contract_outputs.get((index, fn), b"")))
+        elif msg_type == REQUEST_OWNED_ASSETS:
+            owner = body[:32]
+            for issuer, name, shares in self.owned.get(owner, []):
+                sock.sendall(frame(RESPOND_OWNED_ASSETS, owned_asset_body(owner, issuer, name, shares, self.tick)))
+            sock.sendall(frame(END_RESPOND))
+        elif msg_type == REQUEST_ASSETS:
+            kind, _flags, _oc, _pc = struct.unpack("<HHHH", body[:8])
+            issuer, name = body[8:40], body[40:48]
+            if kind == ASSET_REQ_OWNERSHIPS:
+                for i, (owner, shares) in enumerate(self.holders.get((issuer, name), [])):
+                    sock.sendall(frame(RESPOND_ASSETS, ownership_record(owner, shares, index=i)
+                                       + struct.pack("<II", self.tick, i)))
             sock.sendall(frame(END_RESPOND))
 
 

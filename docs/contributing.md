@@ -11,9 +11,15 @@
   --node IP`: it signs real transactions both ways and compares every byte.
   Signing is deterministic, so "it verifies" is not good enough — it must be
   the same bytes.
-- **Markers, not exit codes.** qubic-cli exits 0 on failure. Every wrapper
-  parses stdout for the marker that proves success and treats its absence as
-  failure, with an explicit timeout on every call.
+- **A bot needs nothing but Python.** No bot command may look for qubic-cli
+  unless `--chain cli` was asked for; the binary is built only by someone who
+  wants to run the crosscheck. A new chain call gets a native implementation
+  and a frozen `-print-only hex` vector from the reference (test_contracts.py
+  shows how), not a shell-out.
+- **Markers, not exit codes.** qubic-cli exits 0 on failure. Under
+  `--chain cli` every wrapper parses stdout for the marker that proves
+  success and treats its absence as failure, with an explicit timeout on
+  every call.
 - **No seed anywhere but a 0600 conf.** Never argv, never stdout, never a
   log, never git. `.githooks/pre-commit` refuses any commit that stages a
   `seed=` line or a bare 55-character lowercase token, and runs the tests;

@@ -1,7 +1,8 @@
 """`qdojo bot init` / `qdojo bot setup` as a ceremony that VERIFIES.
 
 Six staged steps. Each one proves something instead of printing a claim:
-qubic-cli is not merely found but run; the seed conf is not merely written but
+the signer is not merely imported but made to reproduce a reference
+transaction byte for byte; the seed conf is not merely written but
 stat'ed for mode 0600; the name is not merely measured but pushed through
 `payload.encode(payload.Bow(name))`; the node is not merely named but asked for
 its tick; the model is not merely configured but made to solve one cheap test
@@ -22,7 +23,6 @@ import re
 import shlex
 import shutil
 import stat
-import subprocess
 import sys
 import textwrap
 import time
@@ -42,11 +42,12 @@ class WizardError(RuntimeError):
 DEFAULT_STATE = os.path.expanduser("~/.qdojo/bot")
 DEFAULT_BOARD = "https://klabautermann.tailb4bd0.ts.net/qdojo/data/board.json"
 DEFAULT_SEAT = 1000          # a white-belt seat, when no board says otherwise
-BUILD_CLI = "./scripts/build-qubic-cli.sh"
 
 # One frozen vector out of qubic-cli, so the signer can be proved here with
 # no binary and no network. The seed is the publicly known 55 'a's -- the
 # identity anyone can spend from, which is why it is safe to write down.
+# This is the only thing the rite wants from qubic-cli, and it wants it
+# from the past: nobody has to build the binary to bow in.
 SIGNER_CHECK_SEED = "a" * 55
 SIGNER_CHECK_IDENTITY = "BZBQFLLBNCXEMGLOBHUVFTLUPLVCPQUASSILFABOFFBCADQSSUPNWLZBQEXK"
 SIGNER_CHECK_PAYLOAD = bytes.fromhex(
@@ -56,11 +57,13 @@ SIGNER_CHECK_PAYLOAD = bytes.fromhex(
     "8d2fa826775df4d167899079219766339c2a7ca28ceb338911a780e45c29502e"
     "053763bd193d8b4ed9a41dbcba3ec9119b5faa422fae7c0487848f8262080600"
 )
-CLI_MARKERS = ("qubic", "nodeip", "showkeys", "getbalance", "usage", "sendtoaddress")
 
 PROFILE_KEYS = ("conf", "identity", "name", "cli", "provider", "model", "solver", "solver_env",
                 "key_source", "setup_at")
-PROFILE_DEFAULTS = {"conf": "", "identity": "", "name": "", "cli": "qubic-cli", "provider": "",
+# "cli" is a path to qubic-cli and is read only under `--chain cli`. Empty
+# means none is installed and none is needed; the key stays so profiles keep
+# their documented shape.
+PROFILE_DEFAULTS = {"conf": "", "identity": "", "name": "", "cli": "", "provider": "",
                     "model": "", "solver": [], "solver_env": {}, "key_source": "none", "setup_at": 0}
 
 # A name for anything that must never be written down, and a shape for a value
@@ -170,7 +173,7 @@ class Opts:
     keyword arguments, which win. `None` on the object means "not given".
     """
     state: str = DEFAULT_STATE          # bot state dir (seed conf, profile, node cache)
-    cli: str | None = None              # path to qubic-cli; "qubic-cli" is read as "not given"
+    cli: str | None = None              # path to qubic-cli, for --chain cli only; "qubic-cli" means "not given"
     conf: str | None = None             # seed conf path; default <state>/bot.conf
     name: str | None = None             # fighter name (<= 32 bytes as a BOW payload)
     node: str | None = None             # IP[:PORT] to use instead of discovery
@@ -328,7 +331,7 @@ def load_profile(state_dir: str) -> dict:
 def _profile(ctx) -> dict:
     prev = ctx.get("prof") or {}
     p = {"conf": ctx["conf"], "identity": ctx["identity"], "name": ctx.get("name") or "",
-         "cli": ctx.get("cli") or prev.get("cli") or "qubic-cli",
+         "cli": ctx.get("cli") or prev.get("cli") or "",
          "provider": ctx.get("provider", prev.get("provider", "")),
          "model": ctx.get("model", prev.get("model", "")),
          "solver": list(ctx.get("solver") or prev.get("solver") or []),
@@ -385,25 +388,6 @@ def _say(text: str) -> None:
         print("    " + term.c(line, "dim"))
 
 
-def _build_hint() -> None:
-    print("    " + term.c("build the reference signer, once:", "dim"))
-    print("    " + term.c(BUILD_CLI, "bold"))
-
-
-def _cli_answers(cli: str) -> str | None:
-    """Run qubic-cli once and look for a marker. Its exit code is worthless:
-    it exits 0 on failure, so the text is the only evidence."""
-    for args in ([cli, "-help"], [cli]):
-        try:
-            p = subprocess.run(args, capture_output=True, text=True, timeout=20)
-        except (OSError, subprocess.TimeoutExpired):
-            continue
-        out = (p.stdout or "") + "\n" + (p.stderr or "")
-        if any(m in out.lower() for m in CLI_MARKERS):
-            return out
-    return None
-
-
 def _step_cli(opts, ctx, n, total):
     """Prove the signer, rather than prove a binary is installed.
 
@@ -428,8 +412,8 @@ def _step_cli(opts, ctx, n, total):
                   "this build is broken; do not fight with it")
         raise
     term.ok("signer verified", "a known transaction signs to the exact bytes "
-                               "qubic-cli produces")
-    ctx["cli"] = opts.cli or "qubic-cli"    # only --chain cli uses it
+                               "the reference produced; no binary needed")
+    ctx["cli"] = opts.cli or ""    # recorded for --chain cli only; empty is the normal case
 
 
 def _step_seed(opts, ctx, n, total):
@@ -478,13 +462,14 @@ def _step_nodes(opts, ctx, n, total):
     term.step(n, total, "THE NETWORK — live nodes that agree on the tick")
     probe = nodes.native_probe()
     if opts.node:
-        ip = opts.node.partition(":")[0]
-        with term.spinner(f"asking {ip} for its tick"):
-            tick, _ = probe(ip)
+        # The whole IP[:PORT] is kept: a node on another port is still that
+        # node, and the purse step and `bot run` both split the port off.
+        with term.spinner(f"asking {opts.node} for its tick"):
+            tick, _ = probe(opts.node)
         if not tick:
             term.fail("that node did not answer", opts.node)
             raise WizardError(f"{opts.node} gave no tick; drop --node to discover one")
-        found = [{"ip": ip, "tick": tick, "lag": 0}]
+        found = [{"ip": opts.node, "tick": tick, "lag": 0}]
     else:
         with term.spinner("probing the bootstrap nodes and every peer they name"):
             found = nodes.discover(probe)
@@ -676,9 +661,8 @@ def _ensure_chain(opts, ctx):
     if ctx.get("node"):
         return
     if opts.node:
-        ip = opts.node.partition(":")[0]
-        tick, _ = nodes.native_probe()(ip)
-        ctx["node"] = {"ip": ip, "tick": tick or 0, "lag": 0}
+        tick, _ = nodes.native_probe()(opts.node)
+        ctx["node"] = {"ip": opts.node, "tick": tick or 0, "lag": 0}
         return
     cached = nodes.load(opts.state)
     if cached:

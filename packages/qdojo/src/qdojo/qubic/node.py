@@ -34,8 +34,15 @@ REQUEST_TICK_TRANSACTIONS = 29
 REQUEST_ENTITY = 31
 RESPOND_ENTITY = 32
 END_RESPOND = 35
+REQUEST_OWNED_ASSETS = 38
+RESPOND_OWNED_ASSETS = 39
+REQUEST_CONTRACT_FUNCTION = 42
+RESPOND_CONTRACT_FUNCTION = 43
+REQUEST_ASSETS = 52
+RESPOND_ASSETS = 53
 
 NUMBER_OF_TRANSACTIONS_PER_TICK = 4096
+MAX_ASSET_RECORDS = 1 << 16     # a bound on a multi-packet asset answer, not a protocol limit
 NUMBER_OF_EXCHANGED_PEERS = 4
 SPECTRUM_DEPTH = 24
 
@@ -219,3 +226,55 @@ class Node:
             if msg_type == BROADCAST_TRANSACTION:
                 out.append(body)
         return out
+
+    # ---------------------------------------------------- contracts, assets
+    def contract_function(self, contract_index: int, function: int, data: bytes = b"") -> bytes:
+        """Call a contract's read-only function and return its raw output.
+
+        The node answers a function it could not run -- none registered under
+        that number, or one that timed out -- with an EMPTY body, not an
+        error. qubic-cli zero-fills its output struct and reads a fee of 0
+        out of that. Here it is an exception: an unknown is never a zero.
+        """
+        from .contracts import contract_function_request
+        self._send(packet(REQUEST_CONTRACT_FUNCTION,
+                          contract_function_request(contract_index, function, data)))
+        body = self._await(RESPOND_CONTRACT_FUNCTION)
+        if not body:
+            raise NodeError(f"{self.ip} could not run contract {contract_index} "
+                            f"function {function} (empty answer)")
+        return body
+
+    def _collect(self, wanted: int, limit: int = MAX_ASSET_RECORDS) -> list[bytes]:
+        """Every packet of type `wanted` until END_RESPOND, skipping others."""
+        out: list[bytes] = []
+        while len(out) < limit:
+            msg_type, body = self._next_packet()
+            if msg_type == END_RESPOND:
+                break
+            if msg_type == wanted:
+                out.append(body)
+        return out
+
+    def owned_assets(self, public_key: bytes) -> list[dict]:
+        """Every asset ownership record of one identity, with the issuance
+        each is of: [{issuer, name, shares, managing_contract, tick, ...}].
+        Multi-packet, closed by END_RESPOND; nothing owned is an empty list."""
+        from .contracts import decode_owned_asset
+        if len(public_key) != 32:
+            raise ValueError("public key must be 32 bytes")
+        self._send(packet(REQUEST_OWNED_ASSETS, public_key))
+        try:
+            return [decode_owned_asset(b) for b in self._collect(RESPOND_OWNED_ASSETS)]
+        except ValueError as e:
+            raise NodeError(f"{self.ip} sent a malformed asset record: {e}") from e
+
+    def asset_records(self, request: bytes) -> list[dict]:
+        """Asset records matching a RequestAssets filter (contracts.py builds
+        them): issuance, ownership or possession records as decoded dicts."""
+        from .contracts import decode_asset_response
+        self._send(packet(REQUEST_ASSETS, request))
+        try:
+            return [decode_asset_response(b) for b in self._collect(RESPOND_ASSETS)]
+        except ValueError as e:
+            raise NodeError(f"{self.ip} sent a malformed asset record: {e}") from e

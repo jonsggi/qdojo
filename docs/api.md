@@ -242,7 +242,9 @@ Every command that moves money prints a plan and does nothing without
 ### The initiation rite
 
 `bot init` is staged, and every stage **verifies** rather than printing:
-the identity is derived from the seed in-process; the seed conf is created (never
+the signer is made to reproduce a reference transaction byte for byte, offline,
+so a broken build stops here (there is no binary to look for: a bot signs in
+Python); the identity is derived from the seed in-process; the seed conf is created (never
 overwritten) and its 0600 mode is confirmed by `stat`; the name is validated by
 encoding a real BOW message, so a 32-byte limit is checked rather than assumed;
 live nodes are discovered with their lag; one cheap test riddle is solved
@@ -352,7 +354,11 @@ at it and it can do the whole setup.
 Message kinds, wire format and hashes: docs/protocol.md. A bot needs to
 send BOW (once), ENTER (lobby rounds), COMMIT and REVEAL, and read its
 balance and the tick. qdojo signs and speaks the node protocol itself
-(`qdojo.qubic`), so no external binary is involved; qubic-cli remains the
-reference that signer is checked against, byte for byte, by
-`scripts/crosscheck-signer.py`. Any other signer works too -- the wire format
-is what matters, not who produced it.
+(`qdojo.qubic`), so no external binary is involved: that holds for the round
+messages and for the two contract calls a bot makes, Qx's asset issuance and
+QUtil's dividend (`qdojo.qubic.contracts`). qubic-cli remains the reference
+that signer is checked against, byte for byte, by
+`scripts/crosscheck-signer.py`; only someone running that check builds it.
+`--chain cli` still drives the binary instead, for the same comparison from
+the other side. Any other signer works too -- the wire format is what
+matters, not who produced it.

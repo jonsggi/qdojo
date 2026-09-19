@@ -20,13 +20,14 @@ class OnboardError(Exception):
 
 def find_cli(explicit: str | None = None) -> str:
     """Locate qubic-cli. Only `--chain cli` and the conformance script need it;
-    the default native chain does not, which is why setup no longer fails when
-    it is missing."""
+    no bot command calls this on the default native chain, so a bot never
+    fails for the lack of a binary."""
     for cand in ([explicit] if explicit else []) + [os.environ.get("QUBIC_CLI"), "qubic-cli",
                                                     os.path.expanduser("~/.qdojo/qubic-cli")]:
         if cand and (shutil.which(cand) or os.access(cand, os.X_OK)):
             return shutil.which(cand) or cand
-    raise OnboardError("qubic-cli not found: build it with scripts/build-qubic-cli.sh or pass --cli")
+    raise OnboardError("qubic-cli not found: only --chain cli and scripts/crosscheck-signer.py need it; "
+                       "build it with scripts/build-qubic-cli.sh or pass --cli, or drop --chain cli")
 
 
 def new_seed(rng=secrets) -> str:

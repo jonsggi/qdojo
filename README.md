@@ -33,7 +33,7 @@ worth playing, then set it. See `docs/roadmap.md`.
 | `apps/web/` | the spectator page: every round from the beginning |
 | `examples/` | riddles, solvers (bare, prompt-driven, LLM, evolving, NPC) and strategies |
 | `prompts/` | the prompt files a prompt-driven fighter reads; yours to edit |
-| `scripts/` | build the reference qubic-cli, and check the native signer against it |
+| `scripts/` | the conformance check: build the reference qubic-cli and prove the native signer against it, byte for byte (nothing a bot needs) |
 | `dojo` | the one command: set up, then fight a round for nothing |
 
 ## Quick start (bot)
@@ -115,9 +115,12 @@ House money settings live on the `house` command itself (`--rake-bps`,
 - Amounts are always derived from a live balance, never from a stored number.
 - A failed query is an unknown, never a zero — including an indexer that has
   not reached a tick yet.
-- qubic-cli exits 0 on failure: every wrapper of it parses a marker. The
-  native chain does not use it, and treats a node that answers badly as
-  exactly as useless as one that does not answer.
+- A bot needs nothing but Python. qdojo signs and speaks the node protocol
+  itself, shares and dividends included, and treats a node that answers
+  badly as exactly as useless as one that does not answer. qubic-cli is only
+  the reference `scripts/crosscheck-signer.py` compares the signer against;
+  if you ever drive it yourself, know that it exits 0 on failure, so parse
+  its output for a marker and never trust its exit code.
 - A transaction is confirmed by inclusion in a tick, never by "sent". No
   entry is paid until a node confirms its own transactions.
 - Tests first. `make test` must be green before a commit.
