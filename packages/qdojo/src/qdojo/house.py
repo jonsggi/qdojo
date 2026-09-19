@@ -168,7 +168,8 @@ class House:
     # --------------------------------------------------------------- publish
     def publish(self, riddle_path: str, entry_fee: int, commit_window: int, reveal_window: int,
                 house_seed: int | None = None, payout_mode: int = payload.MODE_FIRST, match_bps: int = 10000,
-                belt: str = "", bond_bps: int = 0, bond_rounds: int = 0, sensei: bool = False) -> dict:
+                belt: str = "", bond_bps: int = 0, bond_rounds: int = 0, sensei: bool = False,
+                fee_policy: dict | None = None) -> dict:
         r, secret = R.load_authored(riddle_path)
         st = self.state()
         if r.round_id != st["next_round"]:
@@ -195,7 +196,7 @@ class House:
                 "payout_mode": payload.MODE_NAMES[payout_mode], "match_bps": match_bps, "carry_in": carry_in,
                 "riddle_hash": r.hash().hex(), "answer_commitment": msg.answer_commitment.hex(), "uri": uri,
                 "belt": belt, "bond_bps": bond_bps, "bond_rounds": bond_rounds, "sensei": bool(sensei),
-                "house_fighters": list(self.house_fighters),
+                "house_fighters": list(self.house_fighters), "fee_policy": fee_policy,
                 "rake_house_bps": self.rake_house_bps, "rake_dev_bps": self.rake_dev_bps, "rake_share_bps": self.rake_share_bps,
                 "publish_tx": None, "scheduled_tick": None, "publish_tick": None, "status": "publishing"}
         _write(self._rpath(r.round_id, "meta.json"), meta)
@@ -211,9 +212,11 @@ class House:
     def open_lobby(self, riddle_path: str, entry_fee: int, min_players: int, lobby_window: int, commit_window: int,
                    reveal_window: int, house_seed: int | None = None, payout_mode: int = payload.MODE_FIRST,
                    match_bps: int = 10000, belt: str = "", bond_bps: int = 0, bond_rounds: int = 0,
-                   sensei: bool = False) -> dict:
+                   sensei: bool = False, fee_policy: dict | None = None) -> dict:
         """Announce a round and open the table. The riddle is chosen now and
-        kept secret; PUBLISH follows when the table is full."""
+        kept secret; PUBLISH follows when the table is full. `fee_policy` is
+        how `entry_fee` was derived when a controller chose it (fees.py); it
+        is published with the round so anyone can replay it."""
         r, secret = R.load_authored(riddle_path)
         st = self.state()
         if r.round_id != st["next_round"]:
@@ -239,7 +242,7 @@ class House:
                 "riddle_hash": r.hash().hex(), "answer_commitment": R.commitment_for(r, secret).hex(), "uri": uri,
                 "belt": belt, "min_players": min_players, "lobby_window": lobby_window,
                 "bond_bps": bond_bps, "bond_rounds": bond_rounds, "sensei": bool(sensei),
-                "house_fighters": list(self.house_fighters),
+                "house_fighters": list(self.house_fighters), "fee_policy": fee_policy,
                 "rake_house_bps": self.rake_house_bps, "rake_dev_bps": self.rake_dev_bps, "rake_share_bps": self.rake_share_bps,
                 "lobby_tx": None, "lobby_scheduled_tick": None, "lobby_tick": None,
                 "publish_tx": None, "scheduled_tick": None, "publish_tick": None, "status": "lobby_opening"}
@@ -352,6 +355,21 @@ class House:
                          tuple(m.get("house_fighters", [])),
                          rake_house_bps=m.get("rake_house_bps", 10000), rake_dev_bps=m.get("rake_dev_bps", 0),
                          rake_share_bps=m.get("rake_share_bps", 0), sensei=bool(m.get("sensei", False)))
+
+    def fee_rows(self) -> list[dict]:
+        """One row per settled or void round with what the fee controller
+        reads (fees.py): the same numbers history.json publishes for the
+        round, so a bot replaying the export computes the same fee."""
+        rows = []
+        for rid in self.round_ids():
+            meta = self.meta(rid)
+            if meta["status"] not in ("settled", "void"):
+                continue
+            doc = _read(self._rpath(rid, "settlement.json")) or {}
+            rows.append({"round_id": rid, "belt": meta.get("belt", ""), "state": meta["status"],
+                         "entrants": len([e for e in doc.get("entries", []) if e["verdict"] not in ("late", "underpaid")]),
+                         "entry_fee": meta["entry_fee"]})
+        return rows
 
     # --------------------------------------------------------------- collect
     def collect(self, up_to_tick: int | None = None) -> int:
@@ -753,6 +771,7 @@ class House:
                   "entrants": len([e for e in entries if e["verdict"] not in ("late", "underpaid")]),
                   "publish_tx": meta["publish_tx"], "commit_window": meta["commit_window"],
                   "reveal_window": meta["reveal_window"], "entry_fee": meta["entry_fee"],
+                  "fee_policy": meta.get("fee_policy"),
                   "house_seed": meta["house_seed"], "rake_bps": meta["rake_bps"],
                   "payout_mode": meta.get("payout_mode", "split"), "match_bps": meta.get("match_bps", 0),
                   "bond_bps": meta.get("bond_bps", 0), "bond_rounds": meta.get("bond_rounds", 0),

@@ -149,15 +149,29 @@ def _add_fee_flags(d):
     return d
 
 
+def _fee_policy(a):
+    """The controller `--entry-fee auto` asks for, or None for a fixed fee."""
+    if a.entry_fee != "auto":
+        return None
+    floor, floors = fees.parse_floor(a.fee_floor)
+    return fees.FeePolicy(alpha=a.fee_alpha, window=a.fee_window, headroom=a.fee_headroom, clamp=a.fee_clamp,
+                          floor=floor, start=a.fee_start, cap=a.fee_cap, floors=floors)
+
+
 def cmd_house_spar(a):
+    policy = _fee_policy(a)
+    npcs = [x for x in (a.npcs or "").split(",") if x]
+    if policy and npcs:
+        sys.exit("qdojo: --entry-fee auto and --npcs do not mix: a house fighter sits at any price, "
+                 "so the fee could only rise (docs/model.md, the entry-fee section)")
     h = _house(a, True)
-    sp = spar.Spar(h, a.belts.split(","), a.entry_fee, a.commit_window, a.reveal_window,
+    sp = spar.Spar(h, a.belts.split(","), a.fee_start if policy else a.entry_fee, a.commit_window, a.reveal_window,
                    riddle_dir=os.path.join(a.data, "riddles"), web_out=a.out,
                    metrics_path=os.path.join(a.data, "metrics.jsonl"), seed=a.rng_seed, poll=a.poll,
                    match_bps=a.match_bps, min_players=a.min_players, lobby_window=a.lobby_window,
-                   npcs=[x for x in (a.npcs or "").split(",") if x], npc_rounds=a.npc_rounds,
+                   npcs=npcs, npc_rounds=a.npc_rounds,
                    bond_bps=a.bond_bps, bond_rounds=a.bond_rounds, skip_dead=not a.dead_tables, sensei=a.sensei,
-                   riddle_pack=a.riddle_pack)
+                   riddle_pack=a.riddle_pack, fee_policy=policy)
     sp.payout_mode = {v: k for k, v in payload.MODE_NAMES.items()}[a.payout_mode]
     sp.run(a.rounds, stop_below=a.stop_below)
 
@@ -731,7 +745,7 @@ def build_parser():
     d.add_argument("--riddle-pack", choices=riddles.PACKS, default="classic",
                    help="opt-in challenge pool; qubic supports orange,green,blue only")
     d.add_argument("--rounds", type=int, default=10); d.add_argument("--belts", default="white,yellow,orange,green,blue")
-    d.add_argument("--entry-fee", type=int, default=1000); d.add_argument("--commit-window", type=int, default=300)
+    _add_fee_flags(d); d.add_argument("--commit-window", type=int, default=300)
     d.add_argument("--reveal-window", type=int, default=120); d.add_argument("--out", default="apps/web/data")
     d.add_argument("--rng-seed", type=int, default=None); d.add_argument("--poll", type=int, default=15)
     d.add_argument("--stop-below", type=int, default=0); d.add_argument("--match-bps", type=int, default=10000)

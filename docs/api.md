@@ -50,6 +50,7 @@ defensively and treat a missing field as "this round predates it".
 | `publish_tick` | int or null | null while the riddle is sealed |
 | `commit_window`, `reveal_window` | int | commit in `publish_tick+1 .. publish_tick+commit_window`, reveal in the `reveal_window` ticks after |
 | `entry_fee` | int QU | the stake: the ENTER amount in a lobby round, the COMMIT amount otherwise |
+| `fee_policy` | object or null | null when the operator fixed the fee; otherwise how this round's `entry_fee` was derived from earlier rounds, see "The entry fee" below |
 | `house_seed`, `match_bps`, `carry_in` | int | the house adds `min(house_seed, stakes*match_bps/10000) + carry_in` to the pot; `match_bps = 0` means a fixed `house_seed` |
 | `payout_mode` | `first`, `split` or `podium` | first: the earliest correct commit tick takes the pot, same-tick solvers share; split: all solvers share; podium: the first three correct commits take 5:3:2 |
 | `bond_bps`, `bond_rounds` | int | this share of each win is held by the house and released once the winner has fought `bond_rounds` more rounds |
@@ -99,6 +100,47 @@ marks a table that never filled; its payouts are all refunds.
 (`rounds/<id>.json`), its canonical answer and the salt (`settlement`), and
 what every fighter answered and how fast. That is the dojo's published
 corpus; there is no separate generator.
+
+## The entry fee
+
+`entry_fee` is either fixed by the operator or retargeted per belt from the
+rounds in `history.json` (docs/spec.md §5). A round priced that way carries
+the derivation in `fee_policy`, so you can check it and budget for the next
+table:
+
+```json
+{"mode": "auto", "alpha": 0.5, "window": 8, "headroom": 2, "clamp": 1.5,
+ "floor": 100, "floors": {}, "cap": 0, "start": 1000,
+ "fee": 1410, "from_fee": 1000, "occ": 10.0, "tgt": 5, "f_star": 5000.0,
+ "floor_b": 100, "rounds": [101, 102, 103, 104, 105, 106, 107, 108],
+ "seed_cap": 5000, "rake_bps": 2000}
+```
+
+To compute the next fee at belt `b` yourself:
+
+1. Take the rounds in `history.json` with `belt == b` and `state` of
+   `settled` or `void`, sort them by `round_id`, keep the last `window`.
+   Open rounds are not counted. With none, the fee is `start`, bounded as
+   in steps 4 and 5.
+2. `occ` is the mean of their `entrants`; `from_fee` is the `entry_fee` of
+   the last of them; `tgt = min_players + headroom`, with `min_players` as
+   the house's last round announced it.
+3. `fee' = from_fee · (occ / tgt) ^ alpha`, then held within
+   `from_fee / clamp .. from_fee · clamp`.
+4. `f* = seed_cap / (tgt · rake_bps / 10000)`, none when `rake_bps` is 0.
+   `seed_cap` is the `house_seed` every round announces and `rake_bps` its
+   rake. The ceiling is the lower of `f*` and `cap`, whichever exist; an
+   `f*` below the belt's floor is not applied. The belt's floor is
+   `floors[b]` if present, else `floor`. `fee = max(floor_b, min(fee', ceiling))`.
+5. Round to three significant figures, half up; if that crosses a bound,
+   round toward the inside instead; never below 1 QU.
+
+The reference is `fees.next_fee` in `packages/qdojo/src/qdojo/fees.py`,
+and every value in `fee_policy` is an input or an intermediate of it, so a
+mismatch is a bug worth reporting. The house publishes the number it used
+in LOBBY before anyone sits down; your own computation is a forecast of
+the next table, and at a rounding boundary the published `entry_fee` wins.
+The sweep that chose the defaults is in docs/model.md.
 
 ## fighters.json
 
