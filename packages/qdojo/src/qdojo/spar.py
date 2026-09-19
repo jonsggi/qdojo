@@ -19,7 +19,12 @@ def log(msg):
 class Spar:
     def __init__(self, house, belts, entry_fee, commit_window, reveal_window, riddle_dir, web_out, metrics_path,
                  seed=None, payout_mode=1, poll=15, match_bps=10000, min_players=0, lobby_window=0,
-                 npcs=(), npc_rounds=3, bond_bps=0, bond_rounds=0, skip_dead=True, sensei=False):
+                 npcs=(), npc_rounds=3, bond_bps=0, bond_rounds=0, skip_dead=True, sensei=False,
+                 riddle_pack="classic"):
+        for belt in belts:
+            if not riddles.kinds(belt, pack=riddle_pack):
+                raise riddles.RiddleGenError(f"no riddles for belt {belt!r} in pack {riddle_pack!r}")
+        self.riddle_pack = riddle_pack
         self.h, self.belts = house, belts
         self.entry_fee, self.wc, self.wr = entry_fee, commit_window, reveal_window
         self.riddle_dir, self.web_out, self.metrics_path = riddle_dir, web_out, metrics_path
@@ -122,7 +127,7 @@ class Spar:
     def one_round(self, belt: str) -> dict | None:
         rid = self.h.state()["next_round"]
         npc_funding = self.fund_npcs() if self.npcs else 0
-        r = riddles.generate(belt, self.rng, rid)
+        r = riddles.generate(belt, self.rng, rid, pack=self.riddle_pack)
         path = os.path.join(self.riddle_dir, f"{rid:04d}.json")
         with open(path, "w", encoding="utf-8") as f:
             json.dump(r, f, indent=2, ensure_ascii=False)
@@ -216,6 +221,7 @@ class Spar:
         solved = [e for e in entries if e["verdict"] in ("winner", "solved")]
         payouts = (doc or {}).get("payouts", [])
         return {"round_id": rid, "belt": belt, "kind": r["kind"], "title": r["title"], "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "riddle_pack": self.riddle_pack,
                 "publish_tick": spec.publish_tick, "entry_fee": spec.entry_fee, "house_seed": spec.house_seed,
                 "payout_mode": spec.payout_mode, "settled": bool(doc) and self.h.meta(rid)["status"] == "settled",
                 "pot": (doc or {}).get("pot"), "seed_used": (doc or {}).get("seed_used"), "match_bps": spec.match_bps,

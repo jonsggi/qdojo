@@ -6,7 +6,7 @@ import os
 import sys
 import time
 
-from . import __version__, payload, riddle as R, hashing
+from . import __version__, payload, riddle as R, hashing, riddles
 from .chain.cli import QubicCli
 from .chain.rpc import Indexer
 from .chain.base import Unknown, ChainError
@@ -49,6 +49,18 @@ def cmd_riddle_hash(a):
     with open(a.file, encoding="utf-8") as f:
         r = R.from_public(json.load(f))
     print(r.hash().hex())
+
+
+def cmd_riddle_list(a):
+    print(json.dumps({belt: riddles.kinds(belt, pack=a.pack) for belt in riddles.BELTS}, indent=2))
+
+
+def cmd_riddle_sample(a):
+    import random
+    if a.round_id < 1:
+        raise R.RiddleError("round ID must be positive")
+    doc = riddles.generate_kind(a.kind, random.Random(a.rng_seed), a.round_id)
+    print(json.dumps(doc if a.with_answer else R.from_public(doc).public(), indent=2))
 
 
 def _house(a, signing):
@@ -107,7 +119,8 @@ def cmd_house_spar(a):
                    metrics_path=os.path.join(a.data, "metrics.jsonl"), seed=a.rng_seed, poll=a.poll,
                    match_bps=a.match_bps, min_players=a.min_players, lobby_window=a.lobby_window,
                    npcs=[x for x in (a.npcs or "").split(",") if x], npc_rounds=a.npc_rounds,
-                   bond_bps=a.bond_bps, bond_rounds=a.bond_rounds, skip_dead=not a.dead_tables, sensei=a.sensei)
+                   bond_bps=a.bond_bps, bond_rounds=a.bond_rounds, skip_dead=not a.dead_tables, sensei=a.sensei,
+                   riddle_pack=a.riddle_pack)
     sp.payout_mode = {v: k for k, v in payload.MODE_NAMES.items()}[a.payout_mode]
     sp.run(a.rounds, stop_below=a.stop_below)
 
@@ -605,6 +618,13 @@ def build_parser():
 
     s = sub.add_parser("riddle").add_subparsers(dest="sub", required=True)
     d = s.add_parser("hash"); d.add_argument("file"); d.set_defaults(fn=cmd_riddle_hash)
+    d = s.add_parser("list", help="list available challenge families by belt")
+    d.add_argument("--pack", choices=riddles.PACKS, default="classic"); d.set_defaults(fn=cmd_riddle_list)
+    d = s.add_parser("sample", help="generate an offline practice riddle; public fields by default")
+    d.add_argument("kind"); d.add_argument("--rng-seed", type=int, default=None)
+    d.add_argument("--round-id", type=int, default=1)
+    d.add_argument("--with-answer", action="store_true", help="include the answer for a local authored fixture")
+    d.set_defaults(fn=cmd_riddle_sample)
 
     hp = sub.add_parser("house")
     hp.add_argument("--data", default=os.environ.get("QDOJO_DATA", "private/house"))
@@ -651,6 +671,8 @@ def build_parser():
     d = s.add_parser("distribute-shareholders", help="pay the accrued shareholder rake pool via QUtil")
     d.add_argument("asset"); d.add_argument("--apply", action="store_true"); d.set_defaults(fn=cmd_house_distribute)
     d = s.add_parser("spar", help="generated riddles, rounds back to back, metrics per round")
+    d.add_argument("--riddle-pack", choices=riddles.PACKS, default="classic",
+                   help="opt-in challenge pool; qubic supports orange,green,blue only")
     d.add_argument("--rounds", type=int, default=10); d.add_argument("--belts", default="white,yellow,orange,green,blue")
     d.add_argument("--entry-fee", type=int, default=1000); d.add_argument("--commit-window", type=int, default=300)
     d.add_argument("--reveal-window", type=int, default=120); d.add_argument("--out", default="apps/web/data")
@@ -777,7 +799,7 @@ def main(argv=None):
     a = build_parser().parse_args(argv)
     try:
         a.fn(a)
-    except (HouseError, BotError, ChainError, R.RiddleError, payload.PayloadError, onboard.OnboardError, SharesError, term.TermError, RuntimeError) as e:
+    except (HouseError, BotError, ChainError, R.RiddleError, riddles.RiddleGenError, payload.PayloadError, onboard.OnboardError, SharesError, term.TermError, RuntimeError) as e:
         sys.exit(f"qdojo: {e}")
 
 
