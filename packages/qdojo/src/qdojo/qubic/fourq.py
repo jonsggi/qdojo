@@ -201,6 +201,11 @@ def encode(p):
     """
     x, y = pt_affine(p)
     out = bytearray(y[0].to_bytes(16, "little") + y[1].to_bytes(16, "little"))
+    # The x[0] == 0 branch is structurally unreachable from any test: a random
+    # point has a zero real part with probability about 2^-127. It is kept
+    # because the reference has the same branch and the encoding must match
+    # it bit for bit, not because a test will ever land on it. Do not chase
+    # coverage for it.
     sign_src = x[1] if x[0] == 0 else x[0]
     out[31] |= ((sign_src >> 126) & 1) << 7
     return bytes(out)
@@ -233,7 +238,7 @@ def decode(enc):
     if not on_curve(x, y):
         return None
 
-    sign_src = x[1] if x[0] == 0 else x[0]
+    sign_src = x[1] if x[0] == 0 else x[0]   # same unreachable branch as encode(), same reason
     if ((sign_src >> 126) & 1) != sign:
         x = f_neg(x)
     return pt_from_affine(x, y)
