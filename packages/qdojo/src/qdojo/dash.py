@@ -1,10 +1,11 @@
-"""Your fighter's own page, on your own machine.
+"""Your fighter's cockpit, on your own machine.
 
-The spectator site shows everyone. This shows you: the record the house
-publishes about your identity, the rounds this machine actually played, the
-training fights that never touched the chain and never will appear anywhere
-else -- and your prompt files, which you can edit here and have live on the
-next round.
+The spectator site shows everyone. This shows you: whether your bot is
+running and what it is doing about the round on the board, the metrics it
+recorded for you, its settings, the record the house publishes about your
+identity, the rounds this machine actually played, the training fights that
+never touched the chain -- and your prompt files, which you can edit here and
+have live on the next round.
 
 THIS WRITES FILES TO DISK FROM A BROWSER. That is the whole risk, so:
 
@@ -13,16 +14,25 @@ THIS WRITES FILES TO DISK FROM A BROWSER. That is the whole risk, so:
   phone" and has published an unauthenticated file editor.
 * There is no generic static handler. Four literal URLs map to four files
   resolved at startup. No request path is ever turned into a path to read.
-* The only writable directory is the prompts directory, and a write must land
-  inside its realpath, so a symlink planted there cannot escape.
-* It refuses to start if that directory contains a seed conf.
-* Edit only: no create, no delete, no upload. A file the solver never reads
-  would be a trap for the user.
+* Two things can be written, and neither is a path. A prompt: edit only, .md
+  only, and the write must land inside the prompts directory's realpath, so a
+  symlink planted there cannot escape. A setting: one key the solver's
+  manifest knows, checked by settings.py, into bot.json's solver_env or
+  secret_env -- a secret setting is the NAME of a variable, and a value with
+  the shape of a key is refused.
+* It refuses to start if the prompts directory contains a seed conf.
+* No create, no delete, no upload. A file the solver never reads would be a
+  trap for the user.
 * A per-run token, a Host check, no Access-Control-Allow-* header on any
   response, and a body-size cap. Together those stop a page in another tab
-  writing your prompts.
-* The state directory is never a route. This module opens no .conf, and reads
-  the profile only for the identity, the name and the model.
+  writing your prompts or your settings.
+* The state directory is never a route. This module opens no .conf. It reads
+  the profile for the identity, the name, the model and the solver argv; the
+  settings rows it serves carry stored values (never a key: check_no_secrets
+  guards that store) and, for a secret, the variable's name and whether it
+  is set in this process's environment -- never what it holds. The
+  heartbeat, the metrics and the log tail are read through cockpit.py, and
+  the log carries what bot run printed, including a failing solver's stderr.
 """
 import hmac
 import html
@@ -35,7 +45,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import prompts as P
+from . import cockpit, prompts as P, settings as SETTINGS, wizard
 
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}\.md$")
 MAX_BODY = 65536
@@ -85,6 +95,46 @@ class Fighter:
 
     def training(self) -> dict:
         return _read_json(os.path.join(self.state, "training.json"), {}) or {}
+
+    # ---- the cockpit: status, metrics, settings, log (cockpit.py, settings.py)
+
+    def status(self) -> dict:
+        return cockpit.status(self.state)
+
+    def metrics(self) -> dict:
+        return cockpit.summary(self.state, last=40)
+
+    def settings(self) -> dict:
+        """The merged manifest with current values. A secret row carries the
+        NAME of the variable and whether it is set, never its value."""
+        return SETTINGS.describe(self.state, wizard.load_profile(self.state))
+
+    def set_setting(self, key, value) -> dict:
+        if not isinstance(key, str) or not SETTINGS.KEY_RE.match(key):
+            raise DashError("that is not a setting key")
+        if not isinstance(value, (str, int, float, bool)):
+            raise DashError("a value is a string, a number or a boolean")
+        if isinstance(value, str) and len(value) > SETTINGS.MAX_VALUE:
+            raise DashError("that is too long for a setting")
+        try:
+            return SETTINGS.set_value(self.state, key, value)
+        except SETTINGS.SettingsError as e:
+            raise DashError(str(e))
+
+    def unset_setting(self, key) -> None:
+        if not isinstance(key, str) or not SETTINGS.KEY_RE.match(key):
+            raise DashError("that is not a setting key")
+        try:
+            SETTINGS.unset_value(self.state, key)
+        except SETTINGS.SettingsError as e:
+            raise DashError(str(e))
+
+    def log_tail(self, n) -> list:
+        try:
+            n = max(1, min(int(n or 50), 500))
+        except (TypeError, ValueError):
+            n = 50
+        return cockpit.log_tail(self.state, n)
 
     def local_rounds(self) -> list:
         rounds = _read_json(os.path.join(self.state, "rounds.json"), {}) or {}
@@ -218,6 +268,17 @@ def make_handler(fighter: Fighter, token: str, port: int, assets: dict, read_onl
                     return self._json(200, {"name": q.get("name"), "text": fighter.prompt_text(q.get("name", ""))})
                 except (DashError, P.PromptError) as e:
                     return self._json(400, {"error": str(e)})
+            if path == "/api/status":
+                return self._json(200, fighter.status())
+            if path == "/api/metrics":
+                return self._json(200, fighter.metrics())
+            if path == "/api/settings":
+                try:
+                    return self._json(200, {**fighter.settings(), "read_only": read_only})
+                except SETTINGS.SettingsError as e:
+                    return self._json(200, {"error": str(e), "settings": [], "read_only": read_only})
+            if path == "/api/log":
+                return self._json(200, {"lines": fighter.log_tail(q.get("n"))})
             return self._send(404, "text/plain", "no")
 
         def do_PUT(self):
@@ -237,6 +298,23 @@ def make_handler(fighter: Fighter, token: str, port: int, assets: dict, read_onl
                 return self._json(413, {"error": "too long"})
             try:
                 doc = json.loads(self.rfile.read(n).decode("utf-8"))
+                if not isinstance(doc, dict):
+                    raise ValueError("expected an object")
+            except (ValueError, TypeError) as e:
+                return self._json(400, {"error": f"bad body: {e}"})
+            route = self.path.partition("?")[0]
+            if route == "/api/settings":
+                try:
+                    if doc.get("unset"):
+                        fighter.unset_setting(doc.get("key"))
+                        return self._json(200, {"unset": doc.get("key"), "live": "next poll"})
+                    row = fighter.set_setting(doc.get("key"), doc.get("value"))
+                except DashError as e:
+                    return self._json(400, {"error": str(e)})
+                return self._json(200, {"saved": row["key"], "row": row, "live": "next poll"})
+            if route != "/api/prompt":
+                return self._send(404, "text/plain", "no")
+            try:
                 name, text = doc["name"], doc["text"]
                 if not isinstance(text, str):
                     raise ValueError("text must be a string")

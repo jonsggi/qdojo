@@ -8,7 +8,7 @@ import urllib.request
 
 import pytest
 
-from qdojo import dash, prompts
+from qdojo import cockpit, dash, prompts, settings, wizard
 
 
 @pytest.fixture
@@ -19,8 +19,17 @@ def served(tmp_path, monkeypatch):
     with open(state / "bot.conf", "w") as f:
         f.write("seed=" + "a" * 55 + "\n")
     os.chmod(state / "bot.conf", 0o600)
+    # a solver with a manifest beside it, so the settings routes have rows
+    solver = tmp_path / "mine.py"
+    solver.write_text("print('{\"answer\": 1}')\n")
+    json.dump({"settings": [
+        {"key": "MY_LEVEL", "type": "enum", "choices": ["low", "high"], "default": "low", "help": "how hard"},
+        {"key": "MY_ROUNDS", "type": "int", "default": 3, "min": 1, "max": 10},
+        {"key": "MY_API_KEY", "type": "secret", "default": "MY_KEY_VAR"}]},
+        open(tmp_path / "mine.settings.json", "w"))
     json.dump({"identity": "A" * 60, "name": "RYUBOT", "model": "m",
-               "key_source": "env:OPENROUTER_API_KEY"}, open(state / "bot.json", "w"))
+               "key_source": "env:OPENROUTER_API_KEY", "solver": ["python3", str(solver)]},
+              open(state / "bot.json", "w"))
     json.dump({"scorecard": {"fought": 3, "solved": 2, "would_have_placed": 1,
                              "would_have_earned": 500, "median_solve_ticks": 21},
                "attempts": []}, open(state / "training.json", "w"))
@@ -72,23 +81,36 @@ def test_no_route_reaches_the_state_directory(served):
         assert "seed=" not in body and "a" * 55 not in body
 
 
-def test_the_module_reads_exactly_three_files_out_of_the_state_dir():
-    """Naming them is the point: bot.json, training.json, rounds.json, and
-    nothing else. The seed conf is not among them and must never be."""
+def _file_literals(module):
     import ast
-    src = open(os.path.join(os.path.dirname(dash.__file__), "dash.py"), encoding="utf-8").read()
+    src = open(module.__file__, encoding="utf-8").read()
     tree = ast.parse(src)
     for node in ast.walk(tree):
         if isinstance(node, (ast.Module, ast.FunctionDef, ast.ClassDef)) and ast.get_docstring(node):
             node.body = node.body[1:]
     literals = {n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)}
-    named = {x for x in literals if x.endswith(".json")}
+    return literals, {x for x in literals if x.endswith((".json", ".jsonl", ".log"))}
+
+
+def test_the_modules_behind_the_page_name_every_file_they_read_out_of_the_state_dir():
+    """Naming them is the point. dash.py itself: bot.json, training.json,
+    rounds.json and the house's fighters.json. cockpit.py: the heartbeat, the
+    metrics, the log, rounds.json. settings.py: the two manifests. The seed
+    conf is in none of these lists and must never be."""
+    literals, named = _file_literals(dash)
     assert named == {"bot.json", "training.json", "rounds.json", "fighters.json", "/fighters.json"}, named
     # No path-LIKE literal may name a conf. Prose is exempt: the guard's own
     # refusal message has to be able to say the word.
     paths = {x for x in literals if x and " " not in x}
     assert not [x for x in paths if "conf" in x and x != ".conf"], paths
     assert ".conf" in paths             # present only as the guard that REFUSES such a directory
+    _, named = _file_literals(cockpit)
+    assert named == {"heartbeat.json", "metrics.jsonl", "bot.log", "rounds.json"}, named
+    literals, named = _file_literals(settings)
+    assert named == {"settings.json", ".settings.json"}, named
+    for mod in (cockpit, settings):
+        paths = {x for x in _file_literals(mod)[0] if x and " " not in x}
+        assert not [x for x in paths if "conf" in x], (mod.__name__, paths)
 
 
 def test_it_refuses_to_serve_a_directory_holding_a_seed(tmp_path, monkeypatch):
@@ -220,3 +242,126 @@ def test_the_api_shows_the_training_scorecard_and_never_a_key(served):
     assert doc["profile"]["key_source"] == "env:OPENROUTER_API_KEY"   # the NAME of a place
     assert "sk-" not in body and "seed" not in body
     assert {"identity", "name", "provider", "model", "key_source"} == set(doc["profile"])
+
+
+# ------------------------------------------------------------- the cockpit
+
+def put_setting(s, body, token=None):
+    req = urllib.request.Request(f"{s['base']}/api/settings?t={s['token']}", data=json.dumps(body).encode(), method="PUT")
+    req.add_header("Content-Type", "application/json")
+    req.add_header("X-QDojo-Token", s["token"] if token is None else token)
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return r.status, json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read().decode() or "{}")
+
+
+def test_every_cockpit_route_needs_the_token(served):
+    for path in ("/api/status", "/api/metrics", "/api/settings", "/api/log"):
+        assert get(served, path, token="")[0] == 403, path
+        assert get(served, path, token="nope")[0] == 403, path
+        assert get(served, path, host="evil.example")[0] == 403, path
+        code, _, headers = get(served, path)
+        assert code == 200 and not [k for k in headers if k.lower().startswith("access-control")], path
+
+
+def test_status_is_idle_until_a_bot_runs_and_running_once_it_beats(served):
+    doc = json.loads(get(served, "/api/status")[1])
+    assert doc["state"] == "idle" and doc["rounds"] == []
+    cockpit.Heartbeat(served["state"], 5.0, board="http://x/board.json", solver=["evo.py"]).beat(
+        board={"generated_tick": 77, "rounds": [{"round_id": 9, "belt": "white", "state": "commit",
+                                                 "riddle": {"title": "White belt: sum the numbers"}}]},
+        actions=["round 9: committed 12345678… for tick 90"])
+    json.dump({"9": {"answer": "3", "commit_tick": 90}}, open(os.path.join(served["state"], "rounds.json"), "w"))
+    doc = json.loads(get(served, "/api/status")[1])
+    assert doc["state"] == "running" and doc["tick"] == 77 and doc["pid"] == os.getpid()
+    assert doc["rounds"][0]["did"] == "committed for tick 90, answer '3'"
+
+
+def test_metrics_and_log_come_from_the_same_files_the_cli_reads(served):
+    rec = cockpit.Recorder(served["state"])
+    rec.note(1, belt="white", title="White belt: sum the numbers", entered=True, stake=1000, answer="1",
+             solver_seconds=2.0, verdict="winner", earned=3000, net=2000)
+    rec.note(2, belt="white", title="White belt: sum the numbers", skipped=True, why="below my belt")
+    cockpit.open_log(served["state"]).info("round 1: committed")
+    m = json.loads(get(served, "/api/metrics")[1])
+    assert m["rounds_seen"] == 2 and m["solved"] == 1 and m["net"] == 2000 and m["last"][0]["round_id"] == 2
+    assert m == cockpit.summary(served["state"], last=40)
+    lines = json.loads(get(served, "/api/log?n=5")[1])["lines"]
+    assert len(lines) == 1 and lines[0].endswith("round 1: committed")
+    assert json.loads(get(served, "/api/log?n=abc")[1])["lines"] == lines      # a bad n is the default n
+
+
+def test_settings_show_the_manifest_and_a_write_changes_bot_json(served, monkeypatch):
+    doc = json.loads(get(served, "/api/settings")[1])
+    assert [r["key"] for r in doc["settings"]] == ["MY_LEVEL", "MY_ROUNDS", "MY_API_KEY"]
+    assert doc["shipped"].endswith("mine.settings.json") and doc["read_only"] is False
+    assert next(r for r in doc["settings"] if r["key"] == "MY_LEVEL")["source"] == "default"
+    code, out = put_setting(served, {"key": "MY_LEVEL", "value": "high"})
+    assert code == 200 and out["saved"] == "MY_LEVEL" and out["row"]["value"] == "high" and out["live"] == "next poll"
+    prof = json.load(open(os.path.join(served["state"], "bot.json")))
+    assert prof["solver_env"] == {"MY_LEVEL": "high"} and prof["identity"] == "A" * 60     # the rest untouched
+    assert oct(os.stat(os.path.join(served["state"], "bot.json")).st_mode & 0o777) == "0o600"
+    code, out = put_setting(served, {"key": "MY_ROUNDS", "value": 7})                        # a JSON number is fine
+    assert code == 200 and json.load(open(os.path.join(served["state"], "bot.json")))["solver_env"]["MY_ROUNDS"] == "7"
+    code, out = put_setting(served, {"key": "MY_LEVEL", "unset": True})
+    assert code == 200 and out["unset"] == "MY_LEVEL"
+    assert json.load(open(os.path.join(served["state"], "bot.json")))["solver_env"] == {"MY_ROUNDS": "7"}
+
+
+def test_a_settings_write_is_validated_and_refuses_what_the_manifest_does_not_know(served):
+    for body, why in (({"key": "MY_ROUNDS", "value": "eleven"}, "not an integer"),
+                      ({"key": "MY_ROUNDS", "value": "99"}, "above the maximum"),
+                      ({"key": "MY_LEVEL", "value": "wild"}, "not one of"),
+                      ({"key": "MY_NEW_ONE", "value": "1"}, "no such setting"),
+                      ({"key": "../bot.conf", "value": "1"}, "not a setting key"),
+                      ({"key": "MY_LEVEL", "value": ["a"]}, "a value is a string"),
+                      ({"key": "MY_LEVEL", "value": "x" * (settings.MAX_VALUE + 1)}, "too long")):
+        code, out = put_setting(served, body)
+        assert code == 400 and why in out["error"], (body, out)
+    assert json.load(open(os.path.join(served["state"], "bot.json"))).get("solver_env", {}) == {}
+    assert put_setting(served, {"key": "MY_LEVEL", "value": "high"}, token="wrong")[0] == 403
+
+
+def test_a_secret_setting_is_a_name_on_every_route_and_never_a_value(served, monkeypatch):
+    monkeypatch.setenv("MY_KEY_VAR", "sk-live-value-that-must-never-appear")
+    code, out = put_setting(served, {"key": "MY_API_KEY", "value": "sk-live-value-that-must-never-appear"})
+    assert code == 400 and "never the key itself" in out["error"]
+    code, out = put_setting(served, {"key": "MY_API_KEY", "value": "MY_KEY_VAR"})
+    assert code == 200 and out["row"]["env_name"] == "MY_KEY_VAR" and out["row"]["set_in_env"] is True
+    prof = json.load(open(os.path.join(served["state"], "bot.json")))
+    assert prof["secret_env"] == {"MY_API_KEY": "MY_KEY_VAR"} and "MY_API_KEY" not in prof.get("solver_env", {})
+    for path in ("/api/settings", "/api/fighter", "/api/status", "/api/metrics", "/api/log"):
+        assert "sk-live" not in get(served, path)[1], path
+    assert "sk-live" not in open(os.path.join(served["state"], "bot.json")).read()
+
+
+def test_read_only_serves_the_cockpit_and_refuses_a_settings_write(tmp_path, monkeypatch):
+    state = tmp_path / "bot"
+    os.makedirs(state)
+    json.dump({"identity": "A" * 60}, open(state / "bot.json", "w"))
+    monkeypatch.setenv("QDOJO_PROMPTS", str(tmp_path / "prompts"))
+    prompts.install(str(tmp_path))
+    httpd, url = dash.serve(str(state), board="", port=0, read_only=True)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base, _, q = url.partition("?")
+    s = {"base": base.rstrip("/"), "token": q.split("=", 1)[1]}
+    try:
+        assert json.loads(get(s, "/api/settings")[1])["read_only"] is True
+        assert get(s, "/api/status")[0] == 200
+        assert put_setting(s, {"key": "MY_LEVEL", "value": "high"})[0] == 403
+    finally:
+        httpd.shutdown()
+
+
+def test_a_put_to_an_unknown_route_is_a_404_not_a_write(served):
+    req = urllib.request.Request(f"{served['base']}/api/other?t={served['token']}", data=b'{"key": "x"}', method="PUT")
+    req.add_header("Content-Type", "application/json")
+    req.add_header("X-QDojo-Token", served["token"])
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            code = r.status
+    except urllib.error.HTTPError as e:
+        code = e.code
+    assert code == 404

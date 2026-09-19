@@ -474,9 +474,10 @@ def cmd_bot_dash(a):
                                 port=a.port, read_only=a.read_only)
     except dash.DashError as e:
         sys.exit(f"qdojo: {e}")
-    print(f"\n  your fighter page is up:\n\n    {url}\n")
+    print(f"\n  your cockpit is up:\n\n    {url}\n")
     print("  it binds 127.0.0.1 only and serves nothing from your state directory.")
-    print("  edit a prompt there and the next round uses it. ctrl-c to stop.\n")
+    print("  status, metrics, settings, training, prompts: a setting saved there is live on")
+    print("  the bot's next poll, a prompt on the next round. ctrl-c to stop.\n")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
