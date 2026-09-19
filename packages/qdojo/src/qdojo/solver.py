@@ -6,7 +6,10 @@ from . import hashing
 
 
 class SolverError(Exception):
-    pass
+    """`exit_code` and `stderr` are filled when a process actually ran and
+    failed, so a recorder can file them without parsing the message."""
+    exit_code = None
+    stderr = ""
 
 
 def run_solver(command: list[str], riddle_public: dict, timeout: float = 60.0):
@@ -19,7 +22,9 @@ def run_solver(command: list[str], riddle_public: dict, timeout: float = 60.0):
     except OSError as e:
         raise SolverError(f"solver could not start: {e}")
     if p.returncode != 0:
-        raise SolverError(f"solver exited {p.returncode}: {p.stderr.decode('utf-8', 'replace')[-300:]}")
+        err = SolverError(f"solver exited {p.returncode}: {p.stderr.decode('utf-8', 'replace')[-300:]}")
+        err.exit_code, err.stderr = p.returncode, p.stderr.decode("utf-8", "replace")[-300:]
+        raise err
     line = p.stdout.decode("utf-8", "replace").strip().splitlines()
     if not line:
         raise SolverError("solver printed nothing")

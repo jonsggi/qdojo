@@ -14,7 +14,7 @@ from .chain.base import Unknown, ChainError
 from .house import House, HouseError
 from .bot import Bot, BotError, fetch_board
 from . import nodes, onboard, spar, events, lab, wizard, term, training, prompts as P, dash
-from . import settings
+from . import settings, cockpit
 from .shares import Shares, SharesError
 
 
@@ -647,21 +647,139 @@ def cmd_bot_stats(a):
 def cmd_bot_run(a):
     _bot_defaults(a)
     chain = _chain(a, True)
+    recorder = cockpit.Recorder(a.state)
     bot = Bot(chain, a.state, a.solver, name=a.name, max_stake=a.max_stake, solver_timeout=a.solver_timeout,
-              strategy_cmd=a.strategy)
-    while True:
-        try:
-            board = fetch_board(a.board)
-            if a.name:
-                bot.house = board["house"]
-                bot.bow()
-            for line in bot.step(board):
-                print(time.strftime("%H:%M:%S"), line, flush=True)
-        except (Unknown, ChainError, BotError, OSError, ValueError) as e:
-            print(time.strftime("%H:%M:%S"), f"warning: {e}", file=sys.stderr, flush=True)
-        if a.once:
-            return
-        time.sleep(a.interval)
+              strategy_cmd=a.strategy, recorder=recorder)
+    log = cockpit.open_log(a.state)
+    beat = cockpit.Heartbeat(a.state, a.interval, board=a.board, solver=a.solver)
+    applied = getattr(a, "_applied_env", {})
+    looked = 0.0
+
+    def say(line, err=False):
+        print(time.strftime("%H:%M:%S"), line, file=sys.stderr if err else sys.stdout, flush=True)
+        log.info(line)
+
+    try:
+        while True:
+            try:
+                # A setting saved from the cockpit or `bot settings set` is live
+                # on this poll: the solver is a fresh process and inherits it.
+                applied = settings.apply_env(wizard.load_profile(a.state), applied)
+                board = fetch_board(a.board)
+                if a.name:
+                    bot.house = board["house"]
+                    bot.bow()
+                acts = bot.step(board)
+                for line in acts:
+                    say(line)
+                beat.beat(board=board, actions=acts)
+                if recorder.pending() and time.time() - looked > cockpit.HISTORY_EVERY:
+                    looked = time.time()
+                    for row in recorder.settle_from_history(fetch_board(_history_url(a.board)), a.identity):
+                        say(f"round {row['round_id']}: settled {row['verdict']}, earned {row['earned']}, net {row['net']}")
+            except (Unknown, ChainError, BotError, OSError, ValueError) as e:
+                say(f"warning: {e}", err=True)
+                beat.beat(error=e)
+            if a.once:
+                return
+            time.sleep(a.interval)
+    finally:
+        beat.close()
+
+
+def _age(seconds) -> str:
+    if seconds is None:
+        return "—"
+    s = int(seconds)
+    if s < 60:
+        return f"{s}s"
+    if s < 3600:
+        return f"{s // 60}m{s % 60:02d}s"
+    return f"{s // 3600}h{(s % 3600) // 60:02d}m"
+
+
+def cmd_bot_status(a):
+    """Is a bot running for this state dir, and what is it doing. Reads the
+    heartbeat, rounds.json and the metrics; needs no seed and no node."""
+    st = cockpit.status(a.state)
+    if a.json:
+        print(json.dumps(st, indent=2))
+        return
+    term.set_enabled(a.color)
+    if st["state"] == "running":
+        head = term.c("RUNNING", "bgreen", "bold") + f"   pid {st['pid']} · heartbeat {_age(st['age'])} ago · "                f"polls every {st['interval']:g}s · up {_age(time.time() - (st['started_at'] or time.time()))}"
+    elif st["state"] == "stale":
+        head = term.c("STALE", "bred", "bold") + f"   pid {st['pid']} last beat {_age(st['age'])} ago: it died "                f"without cleaning up, or the machine slept"
+    else:
+        head = term.c("IDLE", "byellow", "bold") + f"   no bot is running for {a.state}"
+    rows = [term.kv("bot", head)]
+    if st["board"]:
+        rows.append(term.kv("board", st["board"]))
+    if st["solver"]:
+        rows.append(term.kv("solver", " ".join(st["solver"])))
+    if st["tick"] is not None:
+        rows.append(term.kv("tick", str(st["tick"])))
+    for r in st["rounds"]:
+        what = " · ".join(x for x in (r.get("belt"), r.get("kind") or r.get("title"), r.get("state")) if x)
+        rows.append(term.kv(f"R{r['round_id']}", what or "on the board"))
+        rows.append(term.kv("  did", r["did"]))
+    if not st["rounds"]:
+        rows.append(term.kv("rounds", "none seen yet"))
+    for act in st["last_actions"][-3:]:
+        rows.append(term.kv("last", time.strftime("%H:%M:%S", time.localtime(act["at"])) + " " + act["text"]))
+    if st["last_error"]:
+        rows.append(term.kv("warning", time.strftime("%H:%M:%S", time.localtime(st["last_error"]["at"])) + " "
+                            + st["last_error"]["text"]))
+    print(term.box(rows, title="YOUR BOT"))
+
+
+def cmd_bot_metrics(a):
+    """What this machine recorded about every round its bot saw."""
+    m = cockpit.summary(a.state, last=a.last)
+    if a.json:
+        print(json.dumps(m, indent=2))
+        return
+    term.set_enabled(a.color)
+    if not m["rounds_seen"]:
+        print(f"no rounds recorded in {os.path.join(a.state, cockpit.METRICS)} yet; `qdojo bot run` writes it.")
+        return
+    pc = lambda x: "—" if x is None else f"{round(x * 100)}%"
+    rows = [term.kv("rounds", f"{m['rounds_seen']} seen · {m['entered']} entered · {m['skipped']} sat out · "
+                              f"{m['pending']} awaiting settlement"),
+            term.kv("solved", f"{m['solved']} of {m['settled']} settled ({pc(m['solve_rate'])}) · "
+                              f"{m['wins']} paid ({pc(m['win_rate'])})"),
+            term.kv("solve time", "—" if m["avg_solve_seconds"] is None else
+                    f"avg {m['avg_solve_seconds']}s · best {m['best_solve_seconds']}s"),
+            term.kv("purse", f"staked {term.qu(m['staked'])} · earned {term.qu(m['earned'])} · "
+                             f"net {term.qu(m['net'])}" + (f" · bond held {term.qu(m['bond_held'])}" if m["bond_held"] else "")),
+            term.kv("streak", f"{m['streak']:+d} (best {m['best_streak']})"),
+            term.kv("solver", f"failed on {m['solver_failed']} round(s)")]
+    print(term.box(rows, title="THIS MACHINE"))
+    if m["by_kind"]:
+        print()
+        print("KIND" + " " * 38 + "SEEN  ENTERED  SETTLED  SOLVED  RATE")
+        for k, b in sorted(m["by_kind"].items(), key=lambda kv: -kv[1]["seen"]):
+            print(f"{term.fit(k, 40):40}  {b['seen']:4}  {b['entered']:7}  {b['settled']:7}  {b['solved']:6}  {pc(b['solve_rate'])}")
+    if m["last"]:
+        print()
+        print("ROUND  BELT    KIND                          VERDICT     ANSWER        SOLVE   STAKE   NET")
+        for r in m["last"]:
+            state = r.get("verdict") or ("sat out" if r.get("skipped") else ("pending" if r.get("entered") else "seen"))
+            ans = "—" if r.get("answer") is None else str(r["answer"])[:12]
+            took = "—" if r.get("solver_seconds") is None else f"{r['solver_seconds']}s"
+            net = "—" if r.get("net") is None else f"{r['net']:+,}"
+            print(f"R{r['round_id']:<5} {str(r.get('belt') or '—'):7} {term.fit(r.get('kind') or '—', 29):29} "
+                  f"{state:11} {ans:13} {took:7} {str(r.get('stake') or 0):7} {net}")
+
+
+def cmd_bot_log(a):
+    """The tail of bot run's own log."""
+    lines = cockpit.log_tail(a.state, a.n)
+    if not lines:
+        print(f"no log at {os.path.join(a.state, cockpit.LOG)} yet; `qdojo bot run` writes it.")
+        return
+    for line in lines:
+        print(line)
 
 
 def build_parser():
@@ -861,6 +979,16 @@ def build_parser():
     x.add_argument("key")
     ss.add_parser("describe", help="the merged manifest as JSON, with current values")
     d.set_defaults(fn=cmd_bot_settings, action="", key="", value="")
+    d = s.add_parser("status", help="is a bot running for this state dir, and what is it doing")
+    d.add_argument("--json", action="store_true"); d.add_argument("--no-color", dest="color", action="store_false", default=None)
+    d.set_defaults(fn=cmd_bot_status)
+    d = s.add_parser("metrics", help="what this machine recorded about every round its bot saw")
+    d.add_argument("--json", action="store_true"); d.add_argument("--last", type=int, default=20, help="rows to show")
+    d.add_argument("--no-color", dest="color", action="store_false", default=None)
+    d.set_defaults(fn=cmd_bot_metrics)
+    d = s.add_parser("log", help="the tail of bot run's log")
+    d.add_argument("-n", type=int, default=50, help="lines")
+    d.set_defaults(fn=cmd_bot_log)
     d = s.add_parser("nodes", help="discover live nodes and refresh the cache"); d.set_defaults(fn=cmd_nodes)
     d = s.add_parser("stats", help="this bot's performance as the house publishes it"); d.add_argument("--board", required=True)
     d.set_defaults(fn=cmd_bot_stats)
