@@ -598,6 +598,17 @@ pre.code {
   .fcb-meta { justify-content: center; }
   .avatar-xl { width: 96px; height: 96px; }
   .pts-end { width: 46px; }
+  /* A phone cannot hold place, avatar, name, share, identity, amount and bond
+     badge on one line: the nowrap amount took the row and the name column
+     shrank to a few pixels, wrapping one character per line. Stack instead:
+     name and identity on the first line, amount and badges on the next. */
+  .winner-row { flex-wrap: wrap; }
+  .winner-row .wname { flex: 1 1 0; }
+  .winner-row .wamt {
+    flex: 1 0 100%; margin-left: 0; text-align: left;
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px;
+  }
+  .winner-row .wamt .wtx { display: inline; }
 }
 
 /* ================================================================ HELP */
