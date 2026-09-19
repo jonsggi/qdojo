@@ -242,7 +242,7 @@ Every command that moves money prints a plan and does nothing without
 ### The initiation rite
 
 `bot init` is staged, and every stage **verifies** rather than printing:
-qubic-cli is resolved and actually run; the seed conf is created (never
+the identity is derived from the seed in-process; the seed conf is created (never
 overwritten) and its 0600 mode is confirmed by `stat`; the name is validated by
 encoding a real BOW message, so a 32-byte limit is checked rather than assumed;
 live nodes are discovered with their lag; one cheap test riddle is solved
@@ -351,4 +351,8 @@ at it and it can do the whole setup.
 
 Message kinds, wire format and hashes: docs/protocol.md. A bot needs to
 send BOW (once), ENTER (lobby rounds), COMMIT and REVEAL, and read its
-balance and the tick. Any signer works; the reference is qubic-cli.
+balance and the tick. qdojo signs and speaks the node protocol itself
+(`qdojo.qubic`), so no external binary is involved; qubic-cli remains the
+reference that signer is checked against, byte for byte, by
+`scripts/crosscheck-signer.py`. Any other signer works too -- the wire format
+is what matters, not who produced it.

@@ -7,6 +7,7 @@ import shutil
 import string
 import subprocess
 
+from . import qubic
 from .chain.cli import check_seed_conf
 
 SEED_ALPHABET = string.ascii_lowercase
@@ -18,6 +19,9 @@ class OnboardError(Exception):
 
 
 def find_cli(explicit: str | None = None) -> str:
+    """Locate qubic-cli. Only `--chain cli` and the conformance script need it;
+    the default native chain does not, which is why setup no longer fails when
+    it is missing."""
     for cand in ([explicit] if explicit else []) + [os.environ.get("QUBIC_CLI"), "qubic-cli",
                                                     os.path.expanduser("~/.qdojo/qubic-cli")]:
         if cand and (shutil.which(cand) or os.access(cand, os.X_OK)):
@@ -47,18 +51,21 @@ def create_conf(path: str, seed: str | None = None) -> str:
 
 
 def derive_identity(cli: str, conf: str, timeout: float = 20.0) -> str:
-    """The identity a conf signs as, from qubic-cli -showkeys. Only the
-    Identity line is read; the private key it also prints is discarded."""
+    """The identity a conf signs as, derived here.
+
+    This used to shell out to `qubic-cli -showkeys`, which meant a bot could
+    not learn its own address without a compiled binary -- and that binary
+    printed the private key to stdout on the way. `cli` and `timeout` are
+    kept so existing callers and tests need no change; neither is used.
+    """
     check_seed_conf(conf)
-    try:
-        out = subprocess.run([cli, "-conf", conf, "-showkeys"], capture_output=True, text=True, timeout=timeout).stdout
-    except (subprocess.TimeoutExpired, OSError) as e:
-        raise OnboardError(f"qubic-cli -showkeys failed: {e}")
-    for line in out.splitlines():
-        if line.startswith("Identity: "):
-            idn = line.split(": ", 1)[1].strip()
-            if len(idn) == 60 and idn.isupper():
-                return idn
+    with open(conf, encoding="utf-8") as f:
+        for line in f:
+            if line.strip().startswith("seed="):
+                try:
+                    return qubic.identity_from_seed(line.strip()[5:])
+                except ValueError as e:
+                    raise OnboardError(f"could not derive an identity from the conf: {e}")
     raise OnboardError("could not derive an identity from the conf")
 
 

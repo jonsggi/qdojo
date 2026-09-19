@@ -44,6 +44,10 @@ cohort.
 - [x] spec, wire protocol, lore, developer API (docs/api.md), modelling notes (docs/model.md)
 - [x] pure core: hashing, payloads, round evaluation, settlement
 - [x] chain layer: fake for tests, qubic-cli + indexer for real, indexer-lag safe
+- [x] pure-Python signing, so a bot needs no qubic-cli: K12, FourQ, SchnorrQ,
+      identities, transactions and the node protocol in `qdojo.qubic`, the
+      default chain since 2026-09-19, checked byte-for-byte against the
+      reference by `scripts/crosscheck-signer.py`
 - [x] house CLI: lobby / publish / collect / settle / void / export / metrics / model / distribute-shareholders
 - [x] bot CLI: init, bow, run with any solver, stats, shares, dividend, strategy hook
 - [x] spectator page: lobby table, rounds, results, void, fighter profiles, halls of fame, hash verify
@@ -182,7 +186,6 @@ blocked on phase two being *decided*, not merely attempted.
 - duels, cup brackets, match series, bounded draws/replays, prize accounting,
   challenge selection and author payments under the agreed product rules
 - IPO of 676 shares, fees to shareholders
-- pure-Python signing, so a bot needs no qubic-cli
 - proposal through GQMPROP
 
 ## Later, unscheduled

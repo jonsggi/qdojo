@@ -68,10 +68,22 @@ def fake_cli(tmp_path):
     return str(p)
 
 
-def test_derive_identity_reads_only_the_identity_line(tmp_path):
-    cli = fake_cli(tmp_path)
+def test_derive_identity_derives_it_here(tmp_path):
+    """No subprocess at all. The old version read the Identity line out of
+    qubic-cli -showkeys, which also printed the private key; now the identity
+    comes from the seed directly and the binary is never run -- so a bot can
+    learn its own address with nothing installed."""
     conf = onboard.create_conf(str(tmp_path / "bot.conf"), seed="q" * 55)
-    assert onboard.derive_identity(cli, conf) == "Q" * 60
+    from qdojo.qubic import identity_from_seed
+    assert onboard.derive_identity("/nonexistent/qubic-cli", conf) == identity_from_seed("q" * 55)
+
+
+def test_derive_identity_refuses_a_conf_it_cannot_trust(tmp_path):
+    p = tmp_path / "loose.conf"
+    p.write_text("seed=" + "q" * 55 + "\n")
+    os.chmod(p, 0o644)
+    with pytest.raises(Exception):
+        onboard.derive_identity("/nonexistent/qubic-cli", str(p))
 
 
 def test_find_cli_prefers_explicit_then_env(tmp_path, monkeypatch):
@@ -90,7 +102,7 @@ def test_bot_init_end_to_end(tmp_path, monkeypatch, capsys):
     from qdojo.cli import main
     cli = fake_cli(tmp_path)
     state = str(tmp_path / "state")
-    monkeypatch.setattr(nodes, "cli_probe", lambda binary, timeout=6.0: (lambda ip: (1000, [])))
+    monkeypatch.setattr(nodes, "native_probe", lambda timeout=6.0: (lambda ip: (1000, [])))
     main(["--cli", cli, "bot", "--state", state, "init", "--name", "RYUBOT",
           "--provider", "none", "--skip-probe", "--yes", "--no-color"])
     out = capsys.readouterr().out

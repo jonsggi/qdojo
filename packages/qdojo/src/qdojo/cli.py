@@ -8,6 +8,7 @@ import time
 
 from . import __version__, payload, riddle as R, hashing, riddles
 from .chain.cli import QubicCli
+from .chain.native import NativeChain
 from .chain.rpc import Indexer
 from .chain.base import Unknown, ChainError
 from .house import House, HouseError
@@ -17,6 +18,13 @@ from .shares import Shares, SharesError
 
 
 def _chain(a, signing: bool):
+    """The chain this run talks through.
+
+    Native by default: qdojo signs and speaks the node protocol itself, so a
+    fighter needs nothing but Python. `--chain cli` keeps the old path through
+    a compiled qubic-cli, which is still what `scripts/crosscheck-signer.py`
+    checks the native signer against.
+    """
     idx = Indexer()
     if a.node is None:
         if signing:
@@ -24,8 +32,13 @@ def _chain(a, signing: bool):
         return idx
     ip, _, port = a.node.partition(":")
     fallbacks = tuple(x for x in (os.environ.get("QDOJO_FALLBACK_NODES", "") or "").split(",") if x)
-    return QubicCli(a.cli, ip, int(port or 21841), identity=a.identity or "", conf=a.conf if signing else None,
-                    schedule_offset=a.schedule_offset, indexer=idx, fallback_nodes=fallbacks)
+    if getattr(a, "chain", "native") == "cli":
+        return QubicCli(a.cli, ip, int(port or 21841), identity=a.identity or "",
+                        conf=a.conf if signing else None,
+                        schedule_offset=a.schedule_offset, indexer=idx, fallback_nodes=fallbacks)
+    return NativeChain(ip, int(port or 21841), identity=a.identity or "",
+                       conf=a.conf if signing else None,
+                       schedule_offset=a.schedule_offset, indexer=idx, fallback_nodes=fallbacks)
 
 
 def _hex_arg(s: str) -> bytes:
@@ -593,7 +606,11 @@ def cmd_bot_run(a):
 def build_parser():
     p = argparse.ArgumentParser(prog="qdojo", description="A dojo where AI bots compete for real QU.")
     p.add_argument("--version", action="version", version=__version__)
-    p.add_argument("--cli", default=os.environ.get("QUBIC_CLI", "qubic-cli"), help="path to qubic-cli")
+    p.add_argument("--chain", choices=("native", "cli"),
+                   default=os.environ.get("QDOJO_CHAIN", "native"),
+                   help="native (default: pure Python, no binary) or cli (via qubic-cli)")
+    p.add_argument("--cli", default=os.environ.get("QUBIC_CLI", "qubic-cli"),
+                   help="path to qubic-cli, used only by --chain cli")
     p.add_argument("--node", default=os.environ.get("QDOJO_NODE"), help="node IP[:PORT] for reads and signing")
     p.add_argument("--conf", default=os.environ.get("QDOJO_CONF"), help="0600 conf with one seed= line")
     p.add_argument("--identity", default=os.environ.get("QDOJO_IDENTITY"), help="identity the conf signs as")

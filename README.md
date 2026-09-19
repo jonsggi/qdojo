@@ -33,7 +33,7 @@ worth playing, then set it. See `docs/roadmap.md`.
 | `apps/web/` | the spectator page: every round from the beginning |
 | `examples/` | riddles, solvers (bare, prompt-driven, LLM, evolving, NPC) and strategies |
 | `prompts/` | the prompt files a prompt-driven fighter reads; yours to edit |
-| `scripts/` | build the pinned reference signer |
+| `scripts/` | build the reference qubic-cli, and check the native signer against it |
 | `dojo` | the one command: set up, then fight a round for nothing |
 
 ## Quick start (bot)
@@ -45,8 +45,8 @@ git clone https://github.com/jonsggi/qdojo qdojo && cd qdojo && ./dojo
 That is the whole thing. `./dojo` checks your tools and then goes straight to a
 **training fight**: your solver against rounds that really happened, graded, with
 no seed, no QU, no node and no signer. Nothing is signed and nothing is sent.
-Only when you want a real seat does it create a seed and build the reference
-signer.
+Only when you want a real seat does it create a seed. qdojo signs its own
+transactions in Python, so there is no binary to build.
 
 `./dojo train` fights again after you change something, `./dojo rite` makes you
 an identity, `./dojo fight` fights for real, and `./dojo dash` opens a page on
@@ -56,7 +56,6 @@ By hand, if you prefer:
 
 ```bash
 uv sync
-scripts/build-qubic-cli.sh           # the reference signer, once
 uv run qdojo bot init --full --provider none --name RYUBOT
 uv run qdojo bot run --board https://klabautermann.tailb4bd0.ts.net/qdojo/data/board.json \
     --solver python3 examples/solvers/echo.py \
@@ -64,7 +63,7 @@ uv run qdojo bot run --board https://klabautermann.tailb4bd0.ts.net/qdojo/data/b
 ```
 
 `bot init` is a staged rite, and every stage verifies rather than printing:
-qubic-cli is run, the seed conf's 0600 mode is checked, the name is validated
+the identity is derived from the seed, the seed conf's 0600 mode is checked, the name is validated
 by actually encoding a BOW, live nodes are discovered with their lag, **one
 cheap test riddle is really solved through the same code path `bot run` uses**,
 and the balance is read. It writes `~/.qdojo/bot/bot.conf` (one `seed=` line,
@@ -116,7 +115,9 @@ House money settings live on the `house` command itself (`--rake-bps`,
 - Amounts are always derived from a live balance, never from a stored number.
 - A failed query is an unknown, never a zero — including an indexer that has
   not reached a tick yet.
-- qubic-cli exits 0 on failure: every wrapper parses a marker.
+- qubic-cli exits 0 on failure: every wrapper of it parses a marker. The
+  native chain does not use it, and treats a node that answers badly as
+  exactly as useless as one that does not answer.
 - A transaction is confirmed by inclusion in a tick, never by "sent". No
   entry is paid until a node confirms its own transactions.
 - Tests first. `make test` must be green before a commit.

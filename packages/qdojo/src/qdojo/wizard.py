@@ -27,9 +27,9 @@ import sys
 import textwrap
 import time
 
-from . import nodes, onboard, payload, prompts, term
+from . import nodes, onboard, payload, prompts, qubic, term
 from .chain.base import ChainError, Unknown
-from .chain.cli import QubicCli
+from .chain.native import NativeChain
 from .payload import PayloadError
 from .solver import SolverError, run_solver
 
@@ -43,6 +43,19 @@ DEFAULT_STATE = os.path.expanduser("~/.qdojo/bot")
 DEFAULT_BOARD = "https://klabautermann.tailb4bd0.ts.net/qdojo/data/board.json"
 DEFAULT_SEAT = 1000          # a white-belt seat, when no board says otherwise
 BUILD_CLI = "./scripts/build-qubic-cli.sh"
+
+# One frozen vector out of qubic-cli, so the signer can be proved here with
+# no binary and no network. The seed is the publicly known 55 'a's -- the
+# identity anyone can spend from, which is why it is safe to write down.
+SIGNER_CHECK_SEED = "a" * 55
+SIGNER_CHECK_IDENTITY = "BZBQFLLBNCXEMGLOBHUVFTLUPLVCPQUASSILFABOFFBCADQSSUPNWLZBQEXK"
+SIGNER_CHECK_PAYLOAD = bytes.fromhex(
+    "1f590d03e613bdded38b4c0820ac44615f91af12435980b3ede3c08c315a2544"
+    "1f590d03e613bdded38b4c0820ac44615f91af12435980b3ede3c08c315a2544"
+    "3930000000000000f0e0cf0400000000"
+    "8d2fa826775df4d167899079219766339c2a7ca28ceb338911a780e45c29502e"
+    "053763bd193d8b4ed9a41dbcba3ec9119b5faa422fae7c0487848f8262080600"
+)
 CLI_MARKERS = ("qubic", "nodeip", "showkeys", "getbalance", "usage", "sendtoaddress")
 
 PROFILE_KEYS = ("conf", "identity", "name", "cli", "provider", "model", "solver", "solver_env",
@@ -392,19 +405,31 @@ def _cli_answers(cli: str) -> str | None:
 
 
 def _step_cli(opts, ctx, n, total):
-    term.step(n, total, "THE SIGNER — qubic-cli, the reference implementation")
+    """Prove the signer, rather than prove a binary is installed.
+
+    This stage used to look for qubic-cli and refuse to go on without it,
+    which made a C++ build the price of entry. qdojo signs for itself now, so
+    what is worth verifying is that the signing code produces the right bytes
+    -- and that can be checked here, offline, in milliseconds, against a
+    vector qubic-cli itself produced.
+    """
+    term.step(n, total, "THE SIGNER — qdojo signs for itself, in Python")
     try:
-        cli = onboard.find_cli(opts.cli)
-    except onboard.OnboardError as e:
-        term.fail("qubic-cli not found", str(e))
-        _build_hint()
-        raise WizardError("qubic-cli not found")
-    if _cli_answers(cli) is None:
-        term.fail("qubic-cli does not answer", f"{cli} ran but printed nothing we recognise")
-        _build_hint()
-        raise WizardError(f"{cli} did not respond to a harmless call")
-    term.ok("qubic-cli responds", cli)
-    ctx["cli"] = cli
+        got = qubic.identity_from_seed(SIGNER_CHECK_SEED)
+        if got != SIGNER_CHECK_IDENTITY:
+            raise WizardError(f"derived {got}, expected {SIGNER_CHECK_IDENTITY}")
+        subseed, _priv, public = qubic.keys_from_seed(SIGNER_CHECK_SEED)
+        signed = qubic.Transaction.to_identity(public, SIGNER_CHECK_IDENTITY,
+                                               12345, 80732400).sign(subseed)
+        if signed.payload() != SIGNER_CHECK_PAYLOAD:
+            raise WizardError("the signature does not match the reference vector")
+    except WizardError:
+        term.fail("the signer is not producing the reference bytes",
+                  "this build is broken; do not fight with it")
+        raise
+    term.ok("signer verified", "a known transaction signs to the exact bytes "
+                               "qubic-cli produces")
+    ctx["cli"] = opts.cli or "qubic-cli"    # only --chain cli uses it
 
 
 def _step_seed(opts, ctx, n, total):
@@ -422,7 +447,7 @@ def _step_seed(opts, ctx, n, total):
         raise WizardError(f"{conf} is mode {oct(mode)}, must be 0600")
     term.ok("mode 0600 confirmed", "only you can read it — back this file up")
     ctx["conf"] = conf
-    ctx["identity"] = onboard.derive_identity(ctx["cli"], conf)
+    ctx["identity"] = onboard.derive_identity("", conf)
     term.ok("identity derived", ctx["identity"][:12] + "…" + ctx["identity"][-6:])
 
 
@@ -451,7 +476,7 @@ def _step_name(opts, ctx, n, total):
 
 def _step_nodes(opts, ctx, n, total):
     term.step(n, total, "THE NETWORK — live nodes that agree on the tick")
-    probe = nodes.cli_probe(ctx["cli"])
+    probe = nodes.native_probe()
     if opts.node:
         ip = opts.node.partition(":")[0]
         with term.spinner(f"asking {ip} for its tick"):
@@ -648,13 +673,11 @@ def _seat_fee(opts) -> int:
 
 
 def _ensure_chain(opts, ctx):
-    if not ctx.get("cli"):
-        ctx["cli"] = onboard.find_cli(opts.cli or (ctx.get("prof") or {}).get("cli"))
     if ctx.get("node"):
         return
     if opts.node:
         ip = opts.node.partition(":")[0]
-        tick, _ = nodes.cli_probe(ctx["cli"])(ip)
+        tick, _ = nodes.native_probe()(ip)
         ctx["node"] = {"ip": ip, "tick": tick or 0, "lag": 0}
         return
     cached = nodes.load(opts.state)
@@ -662,7 +685,7 @@ def _ensure_chain(opts, ctx):
         ctx["node"] = cached[0]
         return
     with term.spinner("probing the bootstrap nodes and every peer they name"):
-        found = nodes.discover(nodes.cli_probe(ctx["cli"]))
+        found = nodes.discover(nodes.native_probe())
     if not found:
         raise WizardError("no live Qubic node reachable")
     nodes.save(opts.state, found)
@@ -677,7 +700,7 @@ def _step_purse(opts, ctx, n, total):
     ip, _, port = str(ctx["node"]["ip"]).partition(":")
     bal = None
     try:
-        chain = QubicCli(ctx["cli"], ip, int(port or nodes.PORT), identity=ctx["identity"])
+        chain = NativeChain(ip, int(port or nodes.PORT), identity=ctx["identity"])
         with term.spinner(f"reading the balance of {ctx['identity'][:8]}… from {ip}"):
             bal = chain.balance(ctx["identity"])
     except (Unknown, ChainError, ValueError, OSError) as e:
