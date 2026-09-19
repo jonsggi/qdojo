@@ -19,6 +19,7 @@ OPENAI_TIMEOUT, OPENAI_TEMPERATURE, QDOJO_PROMPTS (where your prompts live).
 """
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -31,6 +32,24 @@ except ImportError:
     print("prompted.py: cannot import qdojo.prompts — run me through `uv run` from the checkout,"
           " or set PYTHONPATH to packages/qdojo/src", file=sys.stderr)
     sys.exit(2)
+
+
+def answer_from(text):
+    """The answer in a model's output, or None. Models are asked for ONE line,
+    {"answer": VALUE}, and most comply; the rest wrap it in a code fence or
+    pretty-print it over several lines (round 121: KEN-2 printed the right
+    answer as three lines and was scored no_commit for it). So this scans the
+    whole output for the LAST JSON object that carries an "answer" key,
+    across lines, and takes that -- the last, because a model that thinks
+    aloud tends to revise and then finish with its final word."""
+    for m in reversed(re.findall(r"\{[^{}]*\}", text, re.S)):
+        try:
+            d = json.loads(m)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(d, dict) and "answer" in d:
+            return d["answer"]
+    return None
 
 riddle = json.load(sys.stdin)
 base = os.environ.get("OPENAI_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
@@ -73,15 +92,10 @@ try:
 except (KeyError, IndexError, TypeError):
     print("no choices in response: " + json.dumps(doc)[:300], file=sys.stderr)
     sys.exit(1)
-for line in reversed([l.strip().strip("`") for l in text.splitlines() if l.strip()]):
-    if line.startswith("{") and line.endswith("}"):
-        try:
-            d = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if "answer" in d:
-            print(json.dumps({"answer": d["answer"]}))
-            sys.exit(0)
+answer = answer_from(text)
+if answer is not None:
+    print(json.dumps({"answer": answer}))
+    sys.exit(0)
 # The contract sentence in solver-system.md is what makes this work. If you
 # edited it away, this is where it shows up.
 print(f"no JSON answer in model output (prompts: {os.path.basename(system_p)}, "

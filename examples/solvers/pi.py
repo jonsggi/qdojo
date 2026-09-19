@@ -4,6 +4,7 @@ settings). Env: PI_TOOLS ("" = pure LLM, "bash" = agent with a shell),
 PI_THINKING (off/low/medium/high), PI_TIMEOUT seconds, PI_MODEL optional."""
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -14,6 +15,23 @@ tools = os.environ.get("PI_TOOLS", "")
 thinking = os.environ.get("PI_THINKING", "low")
 timeout = float(os.environ.get("PI_TIMEOUT", "150"))
 model = os.environ.get("PI_MODEL")
+
+def answer_from(text):
+    """The answer in a model's output, or None. Models are asked for ONE line,
+    {"answer": VALUE}, and most comply; the rest wrap it in a code fence or
+    pretty-print it over several lines (round 121: KEN-2 printed the right
+    answer as three lines and was scored no_commit for it). So this scans the
+    whole output for the LAST JSON object that carries an "answer" key,
+    across lines, and takes that -- the last, because a model that thinks
+    aloud tends to revise and then finish with its final word."""
+    for m in reversed(re.findall(r"\{[^{}]*\}", text, re.S)):
+        try:
+            d = json.loads(m)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(d, dict) and "answer" in d:
+            return d["answer"]
+    return None
 if not model:
     print("pi.py: set PI_MODEL — refusing to fall back to pi's default model", file=sys.stderr)
     sys.exit(2)
@@ -54,14 +72,9 @@ with tempfile.TemporaryDirectory() as cwd:
         p = subprocess.run(args, capture_output=True, text=True, timeout=timeout, cwd=cwd)
     except subprocess.TimeoutExpired:
         print("pi timed out", file=sys.stderr); sys.exit(2)
+answer = answer_from(p.stdout)
+if answer is not None:
+    print(json.dumps({"answer": answer})); sys.exit(0)
 lines = [l.strip() for l in p.stdout.splitlines() if l.strip()]
-for line in reversed(lines):
-    if line.startswith("{") and line.endswith("}"):
-        try:
-            d = json.loads(line)
-            if "answer" in d:
-                print(json.dumps({"answer": d["answer"]})); sys.exit(0)
-        except json.JSONDecodeError:
-            continue
 print("no JSON answer in pi output: " + " | ".join(lines[-3:])[:300], file=sys.stderr)
 sys.exit(1)
