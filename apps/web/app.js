@@ -932,7 +932,7 @@ function payoutsTable(s, r) {
     <tbody>${rows.map(p => {
       const rel = p.kind === 'bond_release' ? released.find(b => b.identity === p.identity && b.amount === p.amount) : null;
       return `<tr>
-      <td>${fighterLink(p.identity, `${avatarSVG(p.identity, 'avatar-sm')} ${displayName({ identity: p.identity })}`, 'tname')} ${idLink(p.identity)}</td>
+      <td>${rakeLabel(p.kind) || fighterLink(p.identity, `${avatarSVG(p.identity, 'avatar-sm')} ${displayName({ identity: p.identity })}`, 'tname')} ${idLink(p.identity)}</td>
       <td>${payoutBadge(p.kind)}${rel && rel.bond_round ? ` <a class="tiny" href="#results/${rel.bond_round}">FROM R${rel.bond_round}</a>` : ''}</td>
       <td class="num">${fmt(p.amount)}</td>
       <td>${txLink(p.tx)}</td>
@@ -1581,24 +1581,36 @@ function renderJoin() {
   `);
 }
 
-function renderFooter() {
-  const d = S.data;
-  const src = S.source === 'live' ? 'LIVE EXPORT' : S.source === 'sample' ? 'SAMPLE DATA (no house running)' : 'EMBEDDED (nothing could be fetched)';
-  setHTML('foot-data', `DATA: ${src} · GENERATED ${esc(d.generated_at || '—')} @ TICK ${fmt(d.generated_tick)} · HOUSE ${idLink(d.house)} · <a href="https://explorer.qubic.org" target="_blank" rel="noopener">QUBIC EXPLORER</a> · 1 TICK ≈ 0.5 s`);
+// The HUD pill and the footer describe the same export, so they are decided
+// in one place: a STALE pill beside a footer saying LIVE EXPORT read as a
+// contradiction. `pill` is the HUD word, `src` what the footer calls the
+// data, `flag` what it appends after the GENERATED stamp.
+function exportState() {
+  if (S.source === 'sample') return { cls: 'pill-demo', pill: 'DEMO', src: 'SAMPLE DATA (no house running)', flag: '' };
+  if (S.source === 'embedded') return { cls: 'pill-demo', pill: 'NO SIGNAL', src: 'EMBEDDED (nothing could be fetched)', flag: '' };
+  if (S.source !== 'live') return { cls: 'pill-demo', pill: 'DEMO', src: '—', flag: '' };
+  const gap = Date.now() - S.lastLiveOk;
+  const gen = S.data && S.data.generated_at ? Date.parse(S.data.generated_at) : NaN;
+  const age = Number.isNaN(gen) ? 0 : Date.now() - gen;
+  if (gap > POLL_MS * 3) return { cls: 'pill-lost', pill: 'SIGNAL LOST', src: 'EXPORT', flag: ` (SIGNAL LOST · LAST FETCHED ${ageText(gap / 1000)} AGO)` };
+  if (age > STALE_AFTER_MS) return { cls: 'pill-lost', pill: `STALE ${ageText(age / 1000)}`, src: 'EXPORT', flag: ` (STALE · ${ageText(age / 1000)} OLD)` };
+  return { cls: 'pill-live', pill: 'LIVE', src: 'LIVE EXPORT', flag: '' };
 }
 
+function renderFooter() {
+  const d = S.data, st = exportState();
+  setHTML('foot-data', `DATA: <span id="foot-source">${esc(st.src)}</span> · GENERATED ${esc(d.generated_at || '—')} @ TICK ${fmt(d.generated_tick)}<span id="foot-flag">${esc(st.flag)}</span> · HOUSE ${idLink(d.house)} · <a href="https://explorer.qubic.org" target="_blank" rel="noopener">QUBIC EXPLORER</a> · 1 TICK ≈ 0.5 s`);
+}
+
+// Every poll, not only on a data change: the export ages while nothing else moves.
 function renderStatus() {
+  const st = exportState();
   const el = $('#hud-source');
-  let cls = 'pill-demo', txt = 'DEMO';
-  if (S.source === 'live') {
-    const age = Date.now() - S.lastLiveOk;
-    const gen = S.data.generated_at ? Date.parse(S.data.generated_at) : NaN;
-    if (age > POLL_MS * 3) { cls = 'pill-lost'; txt = 'SIGNAL LOST'; }
-    else if (!Number.isNaN(gen) && Date.now() - gen > STALE_AFTER_MS) { cls = 'pill-lost'; txt = 'STALE'; }
-    else { cls = 'pill-live'; txt = 'LIVE'; }
-  } else if (S.source === 'embedded') { txt = 'NO SIGNAL'; }
-  if (el.textContent !== txt) el.textContent = txt;
-  el.className = `pill ${cls}`;
+  if (el.textContent !== st.pill) el.textContent = st.pill;
+  el.className = `pill ${st.cls}`;
+  const src = $('#foot-source'), flag = $('#foot-flag');
+  if (src && src.textContent !== st.src) src.textContent = st.src;
+  if (flag && flag.textContent !== st.flag) flag.textContent = st.flag;
 }
 
 function renderAll() {
@@ -1798,6 +1810,15 @@ function counterparty(e) {
   const id = e.dir === 'out' ? (e.to || e.identity) : (e.from || e.identity);
   return id && id !== S.data.house ? id : null;
 }
+// The rake's developer share goes to an identity that never bowed or fought,
+// so there is no fighter card behind it: label it DEV instead of a stranger's
+// avatar and "???". Null for every ordinary payee.
+function rakeLabel(kind) {
+  const m = /^rake_([a-z]+)$/.exec(String(kind || ''));
+  return m ? `<span class="badge" title="THE ${esc(m[1].toUpperCase())} SHARE OF THE RAKE">${esc(m[1].toUpperCase())}</span>` : null;
+}
+function payoutKind(e) { return e.payout_kind || (e.fields && e.fields.payout_kind); }
+
 // `status` is the shard's: the English sentence is only "loading" while its
 // request is in flight. Once it has failed, or the shard came back without
 // this event, the sentence is not coming, and the row must say so instead of
@@ -1805,7 +1826,7 @@ function counterparty(e) {
 function tickEventRow(e, decoded, status) {
   const id = counterparty(e);
   const nm = id ? (S.data.names.get(id) || shortId(id)) : 'THE HOUSE';
-  const who = id ? fighterLink(id, `${avatarSVG(id, 'avatar-sm')} ${esc(nm)}`) : `<b>${esc(nm)}</b>`;
+  const who = (e.kind === 'PAYOUT' && rakeLabel(payoutKind(e))) || (id ? fighterLink(id, `${avatarSVG(id, 'avatar-sm')} ${esc(nm)}`) : `<b>${esc(nm)}</b>`);
   const sentence = decoded && decoded.text ? esc(decoded.text)
     : status === 'loading' ? '<span class="muted">Loading the decoded message…</span>'
     : '<span class="muted">Payload not published yet</span>';
@@ -1898,8 +1919,8 @@ function renderTick() {
       <p class="ko-text win">THE HOUSE PAID ${fmt(total)} QU IN THIS TICK</p>
       <div class="tscroll"><table class="fame-table"><thead><tr><th>TO</th><th>KIND</th><th class="num">AMOUNT</th><th>ROUND</th><th>TX</th></tr></thead>
       <tbody>${paid.map(e => `<tr>
-        <td>${(x => x ? fighterLink(x, esc(S.data.names.get(x) || shortId(x))) : '<span class="muted">the house</span>')(counterparty(e))}</td>
-        <td>${payoutBadge(e.payout_kind || (e.fields && e.fields.payout_kind))}</td>
+        <td>${rakeLabel(payoutKind(e)) || (x => x ? fighterLink(x, esc(S.data.names.get(x) || shortId(x))) : '<span class="muted">the house</span>')(counterparty(e))}</td>
+        <td>${payoutBadge(payoutKind(e))}</td>
         <td class="num qu">${fmt(e.amount)}</td>
         <td><a href="#results/${e.round_id}">R${e.round_id}</a></td>
         <td>${txLink(e.tx)}</td></tr>`).join('')}</tbody></table></div></div>`);

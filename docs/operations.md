@@ -97,6 +97,15 @@ Also: count before concluding one is missing. `ls -la <dir> | head -5` on that
 directory shows five of twenty-six files and reads exactly like "it is not
 there".
 
+## The spectator page changes screen on its own until it is clicked
+
+Opened at `#title`, the page runs an attract loop: it flips to another screen
+every 6–22 s until a real `pointerdown` lands on it. Hovering, scrolling and
+the ATTRACT and HELP chips do not count. Anyone screen-recording or
+screenshotting it should click the cabinet first, somewhere neutral, or the
+capture races the loop and the screen changes mid-take. A deep link such as
+`#results/118` starts with the loop off.
+
 ## `pkill -f` kills the shell that runs it
 
 `pkill -f "qdojo.*bot --state"` matches the invoking shell's own command line,
