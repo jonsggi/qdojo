@@ -1782,10 +1782,17 @@ function counterparty(e) {
   const id = e.dir === 'out' ? (e.to || e.identity) : (e.from || e.identity);
   return id && id !== S.data.house ? id : null;
 }
-function tickEventRow(e, decoded) {
+// `status` is the shard's: the English sentence is only "loading" while its
+// request is in flight. Once it has failed, or the shard came back without
+// this event, the sentence is not coming, and the row must say so instead of
+// promising one under a footnote that says the payloads are not published.
+function tickEventRow(e, decoded, status) {
   const id = counterparty(e);
   const nm = id ? (S.data.names.get(id) || shortId(id)) : 'THE HOUSE';
   const who = id ? fighterLink(id, `${avatarSVG(id, 'avatar-sm')} ${esc(nm)}`) : `<b>${esc(nm)}</b>`;
+  const sentence = decoded && decoded.text ? esc(decoded.text)
+    : status === 'loading' ? '<span class="muted">Loading the decoded message…</span>'
+    : '<span class="muted">Payload not published yet</span>';
   const amount = e.amount ? `<span class="qu">${e.dir === 'out' ? '−' : '+'}${fmt(e.amount)} QU</span>` : '';
   const rnd = e.round_id != null ? `<a href="#results/${e.round_id}">ROUND ${e.round_id}</a>` : '';
   const raw = decoded && decoded.payload
@@ -1798,7 +1805,7 @@ function tickEventRow(e, decoded) {
     <div class="hr-num">${esc(e.kind)}</div>
     <div>
       <div class="hr-title">${who} ${rnd} ${legacy} ${e.verdict && e.verdict !== 'pending' ? entryStatus({ verdict: e.verdict }) : ''}</div>
-      <div class="hr-sub">${decoded && decoded.text ? esc(decoded.text) : '<span class="muted">Loading the decoded message…</span>'}</div>
+      <div class="hr-sub">${sentence}</div>
       ${raw}
     </div>
     <div class="hr-call">${amount}<br><small>${e.tx ? txLink(e.tx, 'TX') : ''}</small></div>
@@ -1843,7 +1850,7 @@ function renderTick() {
     </div>`);
   } else {
     parts.push(`<div class="panel panel-yellow"><h3>WHAT HAPPENED${sh.summary ? ` · ${esc(sh.summary.toUpperCase())}` : ''}</h3>
-      <div class="hist-list">${rows.map(e => tickEventRow(e, byTx.get(e.tx) || (sh.events ? e : null))).join('')}</div>
+      <div class="hist-list">${rows.map(e => tickEventRow(e, byTx.get(e.tx) || (sh.events ? e : null), sh.status)).join('')}</div>
       ${sh.foreign && sh.foreign.count ? `<p class="tiny muted" style="margin:10px 0 0">${sh.foreign.count} transfer${sh.foreign.count === 1 ? '' : 's'}
         totalling ${fmt(sh.foreign.amount)} QU also reached the house in this tick carrying no dojo message. They are not part of any round.</p>` : ''}
       ${sh.status === 'missing' ? '<p class="tiny muted" style="margin:10px 0 0">The decoded payloads for this stretch of chain are not published yet, so these are shown as structure only.</p>' : ''}
