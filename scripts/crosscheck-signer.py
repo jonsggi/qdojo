@@ -51,6 +51,14 @@ HEX_RE = re.compile(r"-+ hex -+\s*\n([0-9a-f]+)", re.I)
 VECTORS = [(0, 1), (1, 80000000), (12345, 4294967295), (1000000000, 2),
            (4294967295, 2147483648), (8000000000, None), (999999999999999, None)]
 
+# Payload transactions. EVERY dojo message is one of these -- BOW, COMMIT,
+# REVEAL and SETTLE all ride in `input` under type 0x444F -- so a conformance
+# run over bare transfers alone would leave the format the game actually uses
+# completely unchecked. Sizes are chosen at the boundaries: empty, one byte,
+# an odd length, and MAX_INPUT_SIZE exactly.
+PAYLOAD_VECTORS = [(0x444F, 0), (0x444F, 1), (0x444F, 37), (0x444F, 512),
+                   (0x444F, 1023), (0x444F, 1024), (0, 64), (65535, 100)]
+
 
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -92,6 +100,24 @@ def main():
             if line.startswith("Identity: "):
                 return line[10:].strip()
         return None
+
+    def cli_sign_custom(seed, amount, input_type, payload):
+        """The reference's payload transaction. -sendcustomtransaction takes
+        the tick from the node, so it is read back out of the output."""
+        write_conf(seed)
+        argv = [a.cli, "-conf", conf, "-nodeip", ip, "-nodeport", str(a.port),
+                "-print-only", "hex", "-scheduletick", "20",
+                "-sendcustomtransaction", dest, str(input_type), str(amount),
+                str(len(payload)), payload.hex() or "00"]
+        assert "-print-only" in argv, "refusing to run qubic-cli without -print-only"
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=60)
+        m = HEX_RE.search(p.stdout or "")
+        if not m:
+            return None
+        raw = bytes.fromhex(m.group(1).strip())
+        return (raw, int.from_bytes(raw[64:72], "little"),
+                int.from_bytes(raw[72:76], "little"),
+                int.from_bytes(raw[78:80], "little"))
 
     def cli_sign(seed, amount, tick):
         """(hex, amount_used, tick_used) from the reference, or None."""
@@ -140,6 +166,22 @@ def main():
             got = Transaction.to_identity(public, dest, amount, ref_tick).sign(subseed).payload()
             if got != ref:
                 sign_bad.append((got_id, amount, ref_tick, ref.hex(), got.hex()))
+            else:
+                ok_s += 1
+        for input_type, size in PAYLOAD_VECTORS:
+            body = bytes((i * 7 + size) & 0xFF for i in range(size))
+            out = cli_sign_custom(seed, 3, input_type, body)
+            if out is None:
+                sign_bad.append((got_id, f"payload/{size}", None, None, None))
+                continue
+            ref, _ref_amount, ref_tick, ref_size = out
+            if ref_size != size:
+                unexpressible.append((size, ref_size))
+                continue
+            got = Transaction.to_identity(public, dest, 3, ref_tick,
+                                          input_type=input_type, payload=body).sign(subseed).payload()
+            if got != ref:
+                sign_bad.append((got_id, f"payload/{size}", ref_tick, ref.hex(), got.hex()))
             else:
                 ok_s += 1
         print(f"   {got_id[:12]}…  {GRN if not (derive_bad or sign_bad) else YEL}"
