@@ -52,7 +52,7 @@ class RoundSpec:
     rake_house_bps: int = 10000     # split of the rake: house / dev / shareholders, sum 10000
     rake_dev_bps: int = 0
     rake_share_bps: int = 0
-    sensei: bool = False            # a fighter above this belt may sit, capped to its stake and earning no points
+    sensei: bool = False            # a fighter above this belt may sit as a sensei: its own pot, no belt points
 
     @property
     def lobby(self) -> bool:
@@ -100,7 +100,7 @@ class Entry:
     stake: int
     enter_tick: int | None = None
     enter_tx: str | None = None
-    sensei: bool = False            # sat below its own belt: wins back at most its stake, no belt points
+    sensei: bool = False            # sat below its own belt: plays for the sensei pot only, no belt points
     reveal_tick: int | None = None
     reveal_tx: str | None = None
     answer: str | None = None
@@ -133,6 +133,7 @@ class Evaluation:
     winners: list[str] = field(default_factory=list)
     payouts: list[Payout] = field(default_factory=list)
     bonds: list[Bond] = field(default_factory=list)      # held this round, from the winners' shares
+    pots: dict = field(default_factory=dict)             # {"belt": {...}, "sensei": {...}}: which pot paid whom (docs/api.md)
 
     def strike(self, identity: str, reason: str):
         self.strikes.setdefault(identity, []).append(reason)
@@ -296,25 +297,69 @@ def evaluate(spec: RoundSpec, observed, house: str, dojo_salt: bytes | None, can
 
 
 def settle(spec: RoundSpec, ev: Evaluation, refunds=()) -> Evaluation:
-    """Turn verdicts into money: the seed, the pot, the rake and its three-way
-    split, the winners under this round's payout mode, the sensei cap, the bonds
-    held and the carry. Pure, and the ONLY place any of that arithmetic lives.
+    """Turn verdicts into money: the seed, the two pots, the rake and its
+    three-way split, the winners of each pot under this round's payout mode,
+    the bonds held and the carry. Pure, and the ONLY place any of that
+    arithmetic lives.
+
+    Two pots (docs/spec.md §5 and §6). The belt pot is the seed, the carry in
+    and the stakes of the fighters at their own belt, paid to the at-belt
+    solvers. The sensei pot is the sensei stakes alone -- no seed, no carry --
+    paid to the sensei solvers. A sensei's winnings can therefore only ever be
+    other seniors' money; no cap is needed because there is nothing else in
+    its pot to take. The rake is the same rate on both pots, the bond is held
+    from every win alike, and whatever neither pot pays carries.
 
     Split out of evaluate() so `qdojo train` can grade a hypothetical entry with
     the house's real engine instead of a second implementation that would drift
     -- and drift here would be about money.
     """
     counted = [e for e in ev.entries if e.verdict in ("winner", "solved", "wrong", "no_reveal", "no_commit", "bad_reveal")]
-    stakes = sum(e.stake for e in counted)
-    matchable = sum(e.stake for e in counted if e.identity not in spec.house_fighters)
+    belt_stakes = sum(e.stake for e in counted if not e.sensei)
+    sensei_stakes = sum(e.stake for e in counted if e.sensei)
+    # The seed matches at-belt stakes only: the house does not match its own
+    # fighters' money, and it does not match a sensei's either.
+    matchable = sum(e.stake for e in counted if not e.sensei and e.identity not in spec.house_fighters)
     ev.seed_used = spec.seed_for(matchable)
-    ev.pot = ev.seed_used + stakes
-    ev.rake = stakes * spec.rake_bps // 10000
+    ev.pot = ev.seed_used + belt_stakes + sensei_stakes
+    belt_rake = belt_stakes * spec.rake_bps // 10000
+    sensei_rake = sensei_stakes * spec.rake_bps // 10000
+    ev.rake = belt_rake + sensei_rake
     dev = ev.rake * spec.rake_dev_bps // 10000
     share = ev.rake * spec.rake_share_bps // 10000
     ev.rake_split = {"house": ev.rake - dev - share, "dev": dev, "shareholders": share}
-    distributable = ev.pot - ev.rake
-    solved = sorted((e for e in ev.entries if e.verdict == "winner"), key=lambda e: (e.commit_tick, e.commit_tx))
+    solved = [e for e in ev.entries if e.verdict == "winner"]
+    belt = _pay(spec, [e for e in solved if not e.sensei], ev.seed_used + belt_stakes - belt_rake)
+    sensei = _pay(spec, [e for e in solved if e.sensei], sensei_stakes - sensei_rake)
+    ev.pots = {"belt": _pot_doc(spec.carry_in, ev.seed_used - spec.carry_in, belt_stakes, belt_rake, belt),
+               "sensei": _pot_doc(0, 0, sensei_stakes, sensei_rake, sensei)}
+    ev.winners = belt.winners + sensei.winners
+    ev.payouts = [Payout(i, a, "win") for i, a in belt.wins + sensei.wins if a > 0]
+    ev.carry = belt.carry + sensei.carry
+    if spec.bond_bps:
+        for p in ev.payouts:
+            held = p.amount * spec.bond_bps // 10000
+            if held:
+                ev.bonds.append(Bond(p.identity, held))
+                p.amount -= held
+    ev.payouts += refunds
+    held_total = sum(b.amount for b in ev.bonds)
+    assert ev.total_out + ev.rake + ev.carry + held_total == ev.pot + sum(r.amount for r in refunds), "money must balance"
+    return ev
+
+
+@dataclass
+class _Paid:
+    """One pot after its payout mode ran: who won, the gross win of each, what is left."""
+    winners: list = field(default_factory=list)      # identities, in payout order (a zero-amount win still counts)
+    wins: list = field(default_factory=list)         # (identity, amount) before the bond is held
+    carry: int = 0
+
+
+def _pay(spec: RoundSpec, solved: list, distributable: int) -> _Paid:
+    """Run the round's payout mode over one pot. `solved` are its correct
+    reveals; the ones the mode does not pay are demoted to "solved" in place."""
+    solved = sorted(solved, key=lambda e: (e.commit_tick, e.commit_tx))
     if spec.payout_mode == payload.MODE_FIRST and solved:
         first_tick = solved[0].commit_tick
         for e in solved:
@@ -326,43 +371,22 @@ def settle(spec: RoundSpec, ev: Evaluation, refunds=()) -> Evaluation:
             e.verdict = "solved"
         weights = payload.PODIUM_WEIGHTS[:len(podium)]
         total_w = sum(weights)
-        wins = [Payout(e.identity, distributable * w // total_w, "win") for e, w in zip(podium, weights)]
-        ev.winners = [e.identity for e in podium]
-        ev.payouts = [p for p in wins if p.amount > 0]
-        ev.carry = distributable - sum(p.amount for p in wins)
-    else:
-        ev.winners = [e.identity for e in solved if e.verdict == "winner"]
-        if ev.winners:
-            share = distributable // len(ev.winners)
-            ev.payouts = [Payout(w, share, "win") for w in ev.winners if share > 0]
-            ev.carry = distributable - share * len(ev.winners)
-        else:
-            ev.carry = distributable
-    senseis = {e.identity: e.stake for e in ev.entries if e.sensei}
-    if senseis:
-        excess = 0
-        for p in ev.payouts:
-            if p.kind == "win" and p.identity in senseis and p.amount > senseis[p.identity]:
-                excess += p.amount - senseis[p.identity]
-                p.amount = senseis[p.identity]
-        others = [p for p in ev.payouts if p.kind == "win" and p.identity not in senseis]
-        if others and excess:
-            each = excess // len(others)
-            for p in others:
-                p.amount += each
-            ev.carry += excess - each * len(others)
-        elif excess:
-            ev.carry += excess
-    if spec.bond_bps:
-        for p in ev.payouts:
-            held = p.amount * spec.bond_bps // 10000
-            if held:
-                ev.bonds.append(Bond(p.identity, held))
-                p.amount -= held
-    ev.payouts += refunds
-    held_total = sum(b.amount for b in ev.bonds)
-    assert ev.total_out + ev.rake + ev.carry + held_total == ev.pot + sum(r.amount for r in refunds), "money must balance"
-    return ev
+        wins = [(e.identity, distributable * w // total_w) for e, w in zip(podium, weights)]
+        return _Paid([e.identity for e in podium], wins, distributable - sum(a for _, a in wins))
+    winners = [e.identity for e in solved if e.verdict == "winner"]
+    if not winners:
+        return _Paid([], [], distributable)
+    share = distributable // len(winners)
+    return _Paid(winners, [(w, share) for w in winners], distributable - share * len(winners))
+
+
+def _pot_doc(carry_in: int, matched: int, stakes: int, rake: int, paid: _Paid) -> dict:
+    """One pot as the settlement document shows it (docs/api.md, settlement.pots)."""
+    pot = carry_in + matched + stakes
+    return {"carry_in": carry_in, "matched": matched, "stakes": stakes, "pot": pot, "rake": rake,
+            "distributable": pot - rake, "paid": sum(a for _, a in paid.wins), "carry": paid.carry,
+            "winners": list(paid.winners),
+            "payouts": [{"identity": i, "amount": a} for i, a in paid.wins if a > 0]}
 
 
 def _above_belt(spec: RoundSpec, belts: dict | None, identity: str) -> bool:
@@ -407,6 +431,8 @@ def to_dict(ev: Evaluation, dojo_salt: bytes | None = None, answer: str | None =
         "payouts": [vars(p) for p in ev.payouts],
         "bonds_held": [vars(b) for b in ev.bonds],
     }
+    if ev.pots:
+        d["pots"] = ev.pots      # settled rounds only; a void round has no pots and older documents predate them
     if dojo_salt is not None:
         d["dojo_salt"] = dojo_salt.hex()
     if answer is not None:

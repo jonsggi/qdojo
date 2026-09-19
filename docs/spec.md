@@ -90,18 +90,30 @@ identity counts.
   fighters one to one: an empty round costs nothing, and one fighter alone
   can never take out more than a multiple of what they put in. With
   `match_bps = 0` the seed is fixed at `seed_cap` (the round-one behaviour).
-  Stakes of the house's own fighters join the pot but are never matched:
-  the house does not match its own money, so a table with only house
-  fighters at it adds no seed and simply carries.
-- **Pot** = seed actually added + carry in + every counted stake.
-- **Rake** = `rake_bps / 10000` of the counted stakes, never of the seed. It
-  is split three ways by the round's `rake_house_bps`, `rake_dev_bps` and
-  `rake_share_bps`: the house treasury keeps its share, the dev/team share
-  is paid out with the settlement, and the shareholder share accrues to a
-  pool paid to the house asset's holders. The winners' side of the pot is
-  `pot - rake` however the rake is split.
+  The seed matches **at-belt stakes only**. Stakes of the house's own
+  fighters join the pot but are never matched: the house does not match its
+  own money, so a table with only house fighters at it adds no seed and
+  simply carries. A sensei's stake (§6) is not matched either, and does not
+  go into the belt pot at all.
+- **Pot** = seed actually added + carry in + every counted stake. It is
+  kept as **two pots** settled side by side:
+  - the **belt pot** = seed + carry in + the stakes of the fighters at their
+    own belt, paid to the at-belt solvers;
+  - the **sensei pot** = the sensei stakes only, no seed, no carry, paid to
+    the sensei solvers. There is one sensei pot per round whatever belts the
+    senseis hold.
+  A table without senseis has an empty sensei pot and is settled exactly as
+  before.
+- **Rake** = `rake_bps / 10000` of the counted stakes, never of the seed,
+  taken at the same rate from each pot's stakes. It is split three ways by
+  the round's `rake_house_bps`, `rake_dev_bps` and `rake_share_bps`: the
+  house treasury keeps its share, the dev/team share is paid out with the
+  settlement, and the shareholder share accrues to a pool paid to the house
+  asset's holders. The winners' side of a pot is `pot - rake` however the
+  rake is split.
 - **Solvers** are every identity with a counted commit and a correct reveal.
-- **Payout mode** is set per round in PUBLISH:
+- **Payout mode** is set per round in PUBLISH and runs once per pot, over
+  that pot's solvers:
   - `first` (default): the solver with the earliest commit tick takes
     `pot - rake`. Solvers that share that tick split it equally. Later
     solvers are recorded as `solved`, get nothing, and keep their stake in
@@ -119,7 +131,10 @@ identity counts.
   bond to the pot. Bonds are listed in `bonds.json`; every hold, release and
   forfeit is in the hashed settlement.
 - **No winners:** `pot - rake` carries into the next round. The house keeps
-  only the rake.
+  only the rake. This holds per pot: a belt pot nobody at the belt solved
+  carries whole, as a jackpot for the next belt-eligible winner, with no cap
+  and no decay; a sensei pot nobody solved carries too, into the next
+  round's belt pot, so money can flow down the ladder but never up.
 - **Refunds.** A commit that was underpaid or landed outside the window is
   refunded in full at settlement. A stake behind a wrong or missing reveal
   stays in the pot: you paid to play.
@@ -139,14 +154,23 @@ its own across the whole range, or be demoted back.
 
 **The sensei seat.** A round may open its low tables to fighters from above
 (`sensei` in LOBBY and PUBLISH). A fighter sitting below its own belt is a
-*sensei*: it pays the entry fee and its stake joins the pot like anyone's,
-but it can **win back at most its own stake** — any surplus it would have
-won goes to the winners who belong at that belt, or carries — and the round
-**moves no belt points for it**, up or down. It still counts as one of the
-fights that release its bond. So a senior fighter has a reason to keep the
+*sensei*: it pays the entry fee, but its stake goes into the **sensei pot**
+(§5), not the belt pot. The senseis at a table, whatever their belts,
+compete for the sum of their own stakes under the round's payout mode; the
+seed, the carry and the beginners' stakes are the belt pot and are paid only
+to fighters at the belt. So a sensei's winnings can only ever be other
+seniors' money, and a sensei alone at a table can win back at most its own
+stake. The round **moves no belt points for it**, up or down. A sensei win
+holds a bond like any win, and the round still counts as one of the fights
+that release its bond. So a senior fighter has a reason to keep the
 beginners' tables alive without being able to take the beginners' money.
 Without sensei seats, a fighter who sits below its belt is refused
 (`outranked`) and refunded.
+
+Before 2026-09-19 a sensei was instead capped at its own stake out of the
+single pot and the surplus went to the at-belt winners or carried. Rounds
+89-118 were settled that way; the carry they built up stands and is paid to
+the next at-belt winner as above.
 
 Points move at your own belt: winner +2, solved +1, any failure -1. At +3
 you are promoted one belt and points reset; at -3 you are demoted one belt
@@ -179,7 +203,8 @@ For every round the house publishes, on chain and on the page:
 - the riddle document at the URI
 - the settlement document: every observed transaction with its verdict,
   the winners, every payout with its transaction id and confirmed tick,
-  `dojo_salt`, the carry into the next round
+  the two pots and what each paid, `dojo_salt`, the carry into the next
+  round
 - the SETTLE transaction carrying the settlement document's hash
 
 ## 9. Verification rules the house obeys

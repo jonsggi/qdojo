@@ -2,7 +2,7 @@ import pytest
 
 from qdojo import hashing, payload as P
 from qdojo.round import RoundSpec, evaluate, Observed
-from conftest import ALICE, BOB, CARL, HOUSE
+from conftest import ALICE, BOB, CARL, HOUSE, ident
 
 DOJO_SALT = b"\x0d" * 16
 ANSWER = "42"
@@ -372,3 +372,173 @@ def test_without_sensei_the_same_fighter_is_refused(txf, salt):
     obs = [txf.commit(ALICE, 110, 1, salt, "42", amount=1000), txf.reveal(ALICE, 160, 1, salt, "42")]
     ev = evaluate(s, obs, HOUSE, DOJO_SALT, ANSWER, belts=belts)
     assert ev.entries[0].verdict == "outranked" and ev.payouts[0].kind == "refund"
+
+
+# ------------------------------------------------------------------ two pots
+# The belt pot (seed + carry + at-belt stakes) pays at-belt solvers; the sensei
+# pot (sensei stakes only) pays sensei solvers. docs/spec.md §5-6, issue #10.
+
+BLUE = {"rank": 4, "points": 0}
+GREEN = {"rank": 3, "points": 0}
+ORANGE = {"rank": 2, "points": 0}
+WHITE = {"rank": 0, "points": 0}
+
+
+def _table(txf, salt, seats):
+    """seats: (identity, commit_tick, answer). Every seat stakes 1000 and reveals."""
+    obs = []
+    for who, tick, ans in seats:
+        obs.append(txf.commit(who, tick, 1, salt, ans, amount=1000))
+        obs.append(txf.reveal(who, 160, 1, salt, ans))
+    return obs
+
+
+def _round89(**over):
+    """Round 89's terms: an orange table, podium, 20% rake split 60/10/30,
+    5,000 cap matched 1:1, 13,200 carried in, 50% bond for 3 fights."""
+    d = dict(belt_rank=2, sensei=True, payout_mode=P.MODE_PODIUM, rake_bps=2000, rake_house_bps=6000,
+             rake_dev_bps=1000, rake_share_bps=3000, house_seed=5000, match_bps=10000, carry_in=13_200,
+             bond_bps=5000, bond_rounds=3)
+    d.update(over)
+    return spec(**d)
+
+
+def test_round_89_the_seniors_settle_among_themselves_and_the_beginners_money_waits(txf, salt):
+    """Issue #10's worked example: ten senseis (eight blue, two green) and four
+    at-belt fighters at an orange table. Sensei pot 10,000 - rake 2,000 ->
+    4,000 / 2,400 / 1,600 (was 1,000 each under the cap); the belt pot
+    13,200 + 4,000 + 4,000 has no at-belt solver, so it carries."""
+    senseis = [(c + "ABCDEFGHIJ"[i]).ljust(60, c) for i, c in enumerate("SCOWFQYXZL")]   # 60 letters, all distinct
+    at_belt = [ident("M"), ident("K"), ident("Q"), ident("A")]
+    belts = {s: (BLUE if i < 8 else GREEN) for i, s in enumerate(senseis)}
+    belts |= {at_belt[0]: ORANGE, at_belt[1]: ORANGE, at_belt[2]: WHITE, at_belt[3]: WHITE}
+    seats = [(senseis[0], 131, "42"), (senseis[1], 133, "42"), (senseis[2], 135, "42")]        # the sensei podium
+    seats += [(s, 140 + i, "42") for i, s in enumerate(senseis[3:])]                          # seven more, correct but later
+    seats += [(a, 136 + i, "1") for i, a in enumerate(at_belt)]                               # nobody at the belt solves
+    ev = evaluate(_round89(), _table(txf, salt, seats), HOUSE, DOJO_SALT, ANSWER, belts=belts)
+    # The real round had pot 32,200: the cap matched 5,000 because it matched the
+    # senseis' stakes too. Now the house matches the 4,000 at the belt and no more.
+    assert ev.pot == 31_200 and ev.seed_used == 13_200 + 4000 and ev.rake == 2800
+    assert ev.pots["sensei"] == {"carry_in": 0, "matched": 0, "stakes": 10_000, "pot": 10_000, "rake": 2000,
+                                 "distributable": 8000, "paid": 8000, "carry": 0, "winners": senseis[:3],
+                                 "payouts": [{"identity": senseis[0], "amount": 4000}, {"identity": senseis[1], "amount": 2400},
+                                             {"identity": senseis[2], "amount": 1600}]}
+    assert ev.pots["belt"] == {"carry_in": 13_200, "matched": 4000, "stakes": 4000, "pot": 21_200, "rake": 800,
+                               "distributable": 20_400, "paid": 0, "carry": 20_400, "winners": [], "payouts": []}
+    assert ev.winners == senseis[:3] and ev.carry == 20_400
+    wins = {p.identity: p.amount for p in ev.payouts if p.kind == "win"}
+    assert wins == {senseis[0]: 2000, senseis[1]: 1200, senseis[2]: 800}                  # half of each win is the bond
+    assert [(b.identity, b.amount) for b in ev.bonds] == [(senseis[0], 2000), (senseis[1], 1200), (senseis[2], 800)]
+    assert {e.identity: e.verdict for e in ev.entries}[senseis[3]] == "solved"
+    assert all(e.sensei for e in ev.entries if e.identity in senseis) and not any(e.sensei for e in ev.entries if e.identity in at_belt)
+
+
+def test_round_89_with_the_at_belt_solvers_it_actually_had(txf, salt):
+    """The real round 89 had two orange fighters solve it behind the senseis.
+    Under the cap they were 'solved' and unpaid; under two pots the belt pot
+    is theirs, 5:3, and nothing carries."""
+    senseis = [(c + "ABCDEFGHIJ"[i]).ljust(60, c) for i, c in enumerate("SCOWFQYXZL")]
+    k, m, q, a = ident("K"), ident("M"), ident("Q"), ident("A")
+    belts = {s: BLUE for s in senseis} | {k: ORANGE, m: ORANGE, q: WHITE, a: WHITE}
+    seats = [(senseis[0], 131, "42"), (senseis[1], 133, "42"), (senseis[2], 135, "42")]
+    seats += [(s, 140 + i, "42") for i, s in enumerate(senseis[3:])]
+    seats += [(k, 135, "42"), (m, 141, "42"), (q, 133, "1"), (a, 137, "1")]
+    ev = evaluate(_round89(), _table(txf, salt, seats), HOUSE, DOJO_SALT, ANSWER, belts=belts)
+    assert ev.pots["belt"]["winners"] == [k, m] and ev.pots["belt"]["payouts"] == [
+        {"identity": k, "amount": 20_400 * 5 // 8}, {"identity": m, "amount": 20_400 * 3 // 8}]
+    assert ev.pots["sensei"]["payouts"][0] == {"identity": senseis[0], "amount": 4000}
+    assert ev.winners == [k, m] + senseis[:3]
+    assert ev.carry == 20_400 - 12_750 - 7650 == ev.pots["belt"]["carry"] + ev.pots["sensei"]["carry"]
+
+
+def test_all_sensei_table_the_carry_stands_and_the_ratchet_never_starts(txf, salt):
+    """Rounds 112-118's shape: seven blue senseis alone at a white table with
+    7,600 carried in. The house matches nothing (no at-belt stake), the carry
+    waits untouched for a white belt, and the seniors play for their 7,000."""
+    senseis = [ident(c) for c in "ABCDEFG"]
+    belts = {s: BLUE for s in senseis}
+    s = _round89(belt_rank=0, carry_in=7600)
+    seats = [(senseis[0], 110, "42"), (senseis[1], 111, "42"), (senseis[2], 112, "42"), (senseis[3], 113, "42"),
+             (senseis[4], 114, "1"), (senseis[5], 115, "1"), (senseis[6], 116, "1")]
+    ev = evaluate(s, _table(txf, salt, seats), HOUSE, DOJO_SALT, ANSWER, belts=belts)
+    assert ev.seed_used == 7600 and ev.pots["belt"]["matched"] == 0             # not one QU of new seed
+    assert ev.pot == 7600 + 7000 and ev.rake == 1400
+    assert ev.pots["belt"]["carry"] == 7600 and ev.pots["belt"]["winners"] == []
+    assert [(p["identity"], p["amount"]) for p in ev.pots["sensei"]["payouts"]] == [
+        (senseis[0], 2800), (senseis[1], 1680), (senseis[2], 1120)]              # 5:3:2 of 5,600
+    assert ev.carry == 7600                                                       # was 7,600 + 5,600 - 3,000 under the cap
+    # Round 113 opens with the same carry, so the pot stops growing on sensei-only tables.
+    nxt = evaluate(_round89(belt_rank=1, carry_in=ev.carry), _table(txf, salt, seats), HOUSE, DOJO_SALT, ANSWER, belts=belts)
+    assert nxt.carry == 7600 and nxt.seed_used == 7600
+
+
+def test_a_lone_sensei_wins_back_at_most_its_stake_less_the_rake(txf, salt):
+    """The old cap as a special case: alone in its pot a sensei can only win its own money."""
+    belts = {ALICE: BLUE}
+    s = _round89(belt_rank=0, carry_in=0, bond_bps=0)
+    ev = evaluate(s, _table(txf, salt, [(ALICE, 110, "42"), (BOB, 111, "1"), (CARL, 112, "1")]),
+                  HOUSE, DOJO_SALT, ANSWER, belts=belts)
+    assert [(p.identity, p.amount) for p in ev.payouts] == [(ALICE, 800)]         # 1,000 less the 20% rake
+    assert ev.pots["belt"] == {"carry_in": 0, "matched": 2000, "stakes": 2000, "pot": 4000, "rake": 400,
+                               "distributable": 3600, "paid": 0, "carry": 3600, "winners": [], "payouts": []}
+    assert ev.seed_used == 2000                                                   # Bob and Carl matched, Alice not
+
+
+def test_a_sensei_pot_nobody_wins_carries_down_to_the_belt(txf, salt):
+    belts = {ALICE: BLUE}
+    s = _round89(belt_rank=0, carry_in=0, bond_bps=0)
+    ev = evaluate(s, _table(txf, salt, [(ALICE, 110, "1"), (BOB, 111, "42")]), HOUSE, DOJO_SALT, ANSWER, belts=belts)
+    assert ev.pots["sensei"]["carry"] == 800 and ev.pots["belt"]["paid"] == 1000 + 1000 - 200
+    assert ev.carry == 800                                                        # next round's carry_in, belt money from then on
+
+
+def test_first_mode_runs_once_per_pot(txf, salt):
+    """Under `first` each pot goes to its own earliest tick: a sensei that
+    commits first does not take the belt pot, and the belt's first solver
+    does not have to beat the seniors."""
+    belts = {ALICE: BLUE, BOB: WHITE, CARL: WHITE}
+    s = _round89(belt_rank=0, carry_in=0, bond_bps=0, payout_mode=P.MODE_FIRST, rake_bps=0)
+    ev = evaluate(s, _table(txf, salt, [(ALICE, 110, "42"), (BOB, 120, "42"), (CARL, 121, "42")]),
+                  HOUSE, DOJO_SALT, ANSWER, belts=belts)
+    assert ev.pots["belt"]["winners"] == [BOB] and ev.pots["sensei"]["winners"] == [ALICE]
+    assert {p.identity: p.amount for p in ev.payouts} == {BOB: 2000 + 2000, ALICE: 1000}
+    assert {e.identity: e.verdict for e in ev.entries}[CARL] == "solved"
+
+
+def test_without_senseis_the_two_pots_are_the_old_single_pot(txf, salt):
+    """No sensei at the table: every number the old settlement produced,
+    unchanged, and the sensei pot is an explicit zero."""
+    s = spec(payout_mode=P.MODE_PODIUM, rake_bps=2000, house_seed=5000, match_bps=10000, carry_in=3333,
+             bond_bps=5000, bond_rounds=3)
+    seats = [(ALICE, 110, "42"), (BOB, 111, "42"), (CARL, 111, "1"), (ident("D"), 112, "42"), (ident("E"), 113, "42")]
+    ev = evaluate(s, _table(txf, salt, seats), HOUSE, DOJO_SALT, ANSWER)
+    stakes, seed = 5000, 3333 + 5000
+    rake = stakes * 2000 // 10000
+    dist = seed + stakes - rake
+    gross = [dist * 5 // 10, dist * 3 // 10, dist * 2 // 10]
+    assert (ev.pot, ev.seed_used, ev.rake, ev.carry) == (seed + stakes, seed, rake, dist - sum(gross))
+    assert ev.winners == [ALICE, BOB, ident("D")]
+    assert [(p.identity, p.amount) for p in ev.payouts] == [(ALICE, gross[0] - gross[0] // 2), (BOB, gross[1] - gross[1] // 2),
+                                                            (ident("D"), gross[2] - gross[2] // 2)]
+    assert [b.amount for b in ev.bonds] == [g // 2 for g in gross]
+    assert ev.pots["sensei"] == {"carry_in": 0, "matched": 0, "stakes": 0, "pot": 0, "rake": 0, "distributable": 0,
+                                 "paid": 0, "carry": 0, "winners": [], "payouts": []}
+    b = ev.pots["belt"]
+    assert (b["pot"], b["rake"], b["carry"], b["winners"]) == (ev.pot, ev.rake, ev.carry, ev.winners)
+    assert b["carry_in"] + b["matched"] == ev.seed_used
+
+
+def test_the_pots_add_up_to_the_settlement_and_are_published(txf, salt):
+    from qdojo.round import to_dict, void
+    belts = {ALICE: BLUE, BOB: BLUE}
+    s = _round89(belt_rank=0)
+    ev = evaluate(s, _table(txf, salt, [(ALICE, 110, "42"), (BOB, 110, "1"), (CARL, 111, "42")]),
+                  HOUSE, DOJO_SALT, ANSWER, belts=belts)
+    b, se = ev.pots["belt"], ev.pots["sensei"]
+    assert b["pot"] + se["pot"] == ev.pot and b["rake"] + se["rake"] == ev.rake and b["carry"] + se["carry"] == ev.carry
+    assert b["carry_in"] + b["matched"] == ev.seed_used and b["winners"] + se["winners"] == ev.winners
+    assert b["paid"] + se["paid"] == sum(p.amount for p in ev.payouts if p.kind == "win") + sum(x.amount for x in ev.bonds)
+    d = to_dict(ev)
+    assert d["pots"] == ev.pots and d["pot"] == ev.pot                          # additive: the old fields stay
+    lobby = spec(lobby_tick=50, lobby_window=40, min_players=5)
+    assert "pots" not in to_dict(void(lobby, [], HOUSE))                        # a void table has no pots

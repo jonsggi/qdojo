@@ -21,9 +21,17 @@ def rd(**kw):
     return base | kw
 
 
-def entry(idn, tick, verdict="winner", stake=1000, answer="142"):
+def entry(idn, tick, verdict="winner", stake=1000, answer="142", sensei=False):
     return {"identity": idn * 60, "commit_tick": tick, "commit_tx": idn * 60, "stake": stake,
-            "reveal_tick": tick + 1, "reveal_tx": idn * 60, "answer": answer, "verdict": verdict}
+            "reveal_tick": tick + 1, "reveal_tx": idn * 60, "answer": answer, "verdict": verdict, "sensei": sensei}
+
+
+def settled(r):
+    """Publish `r` the way the house would: its settlement is what settle() says."""
+    ev = training._settled(training.spec_from_round(r), training.entries_from_round(r))
+    r["settlement"] = r["settlement"] | {"payouts": [{"identity": p.identity, "amount": p.amount, "kind": p.kind}
+                                                     for p in ev.payouts], "pots": ev.pots}
+    return r
 
 
 # ------------------------------------------------- the safety property itself
@@ -112,6 +120,34 @@ def test_an_unreproducible_round_declines_to_price_rather_than_guess():
     assert a.would_pay is None and "not fully published" in a.why_unpriced
 
 
+def test_a_sensei_table_pays_the_newcomer_from_the_belt_pot():
+    """A white belt walking into rounds 112-118: the seniors are playing for
+    their own stakes, the belt pot (carry + seed + its own stake) is waiting
+    for exactly this fighter."""
+    r = settled(rd(payout_mode="podium", sensei=True, carry_in=7600, house_seed=5000, match_bps=10000, rake_bps=2000,
+                   entries=[entry("a", 1030, sensei=True), entry("b", 1031, sensei=True), entry("c", 1032, sensei=True),
+                            entry("d", 1033, "wrong", answer="1", sensei=True)]))
+    assert training.reproduces(r)
+    a = training.grade(r, "142", seconds=30.0)          # slower than every sensei, and it does not matter
+    assert a.correct and a.rank == 4
+    belt_pot = 7600 + 1000 + 1000                        # carry in, the house matching my stake, my stake
+    assert a.would_pay == belt_pot - 1000 * 2000 // 10000 and a.net == a.would_pay - 1000
+    # the seniors' purse is untouched by my entry
+    assert {p["identity"]: p["amount"] for p in r["settlement"]["payouts"]}["a" * 60] == 3200 * 5 // 10
+
+
+def test_a_round_settled_under_the_cap_is_declined_not_mispriced():
+    """Rounds 89-118 were settled under the sensei stake cap. Today's engine
+    has two pots instead, so their payouts do not reproduce; the grader must
+    say so rather than price them under a rule they were not fought under."""
+    r = rd(payout_mode="podium", sensei=True, carry_in=7600, house_seed=5000, match_bps=10000, rake_bps=2000,
+           entries=[entry("a", 1030, sensei=True), entry("b", 1031, sensei=True), entry("c", 1032, sensei=True)],
+           settlement={"answer": "142", "void": False,
+                       "payouts": [{"identity": c * 60, "amount": 1000, "kind": "win"} for c in "abc"]})
+    a = training.grade(r, "142", seconds=1.0)
+    assert a.correct is True and a.would_pay is None and "stake cap" in a.why_unpriced
+
+
 def test_entries_are_rebuilt_each_time_because_settle_rewrites_verdicts():
     r = rd(payout_mode="podium", entries=[entry("a", 1030), entry("b", 1031), entry("c", 1032),
                                           entry("d", 1033)])
@@ -149,10 +185,18 @@ def test_the_real_corpus_is_gradeable():
     h = json.load(open(REAL, encoding="utf-8"))
     rounds = training.settled_rounds(h)
     assert len(rounds) > 100
-    # Every recent round must re-settle to exactly what the house paid. If this
-    # breaks, the money column of the scorecard has stopped being true.
+    # Every recent round fought under today's rules must re-settle to exactly
+    # what the house paid. If this breaks, the money column of the scorecard
+    # has stopped being true. Rounds with senseis settled before the two pots
+    # (no `pots` in their settlement) cannot reproduce; they must be declined,
+    # never priced.
     recent = rounds[-30:]
-    assert all(training.reproduces(r) for r in recent)
+    under_todays_rules = [r for r in recent if not (any(e.get("sensei") for e in r["entries"]) and "pots" not in r["settlement"])]
+    assert under_todays_rules and all(training.reproduces(r) for r in under_todays_rules)
+    for r in recent:
+        if r not in under_todays_rules:
+            a = training.grade(r, r["settlement"]["answer"], seconds=1.0)
+            assert a.would_pay is None and "stake cap" in a.why_unpriced, r["round_id"]
 
 
 @pytest.mark.skipif(not os.path.exists(REAL), reason="no live export here")
@@ -161,7 +205,8 @@ def test_replay_scores_a_perfect_solver_against_real_rounds():
     the plumbing end to end: riddle in, answer compared, money graded."""
     import subprocess, sys, textwrap
     h = json.load(open(REAL, encoding="utf-8"))
-    rounds = training.settled_rounds(h)[-3:]
+    # the last three rounds the engine can still stand behind (see the test above)
+    rounds = [r for r in training.settled_rounds(h) if training.reproduces(r)][-3:]
     truth = {r["round_id"]: r["settlement"]["answer"] for r in rounds}
     prog = textwrap.dedent(f"""
         import json, sys

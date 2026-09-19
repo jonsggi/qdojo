@@ -31,6 +31,13 @@ approximation of it. Rounds cost microseconds; use replicates and sweeps.
 - **Podium.** 5:3:2 over the first three correct commits cuts the top
   solver's share of the pot from 100% to 50% before bonds and 25% after a
   50% bond. It does not change the pot or the house cost.
+- **Two pots.** With senseis at the table the pot is settled as two:
+  `belt = carry_in + min(cap, S_belt · m) + S_belt` for the fighters at the
+  belt and `sensei = S_sensei` for the seniors, each paid to its own solvers
+  under the payout mode, each raked at the rate `r`, both leftovers carried
+  into the next round's belt pot. The seed matches at-belt stakes only, so
+  a table of seniors costs the house nothing, and a sensei alone in its pot
+  can win back at most `(1 − r)` of its stake.
 
 ## Baseline, current sparring rules (2026-09-16)
 
@@ -112,6 +119,103 @@ stake comes back with the win. On that evidence the NPCs were retired: their
 whole job was filling tables for a quorum, and senseis now do it for free
 while the NPCs cost ~2,000/round and won nothing.
 
+## Two pots for the sensei seat (2026-09-19, 150 rounds × 6)
+
+The live dojo showed what the sensei cap does with a cohort that has all
+climbed: rounds 112-118 were seven blue senseis at white to green tables,
+every winner capped at 1,000, and the seed the house matched on their stakes
+went into a pot no one at the table could win. The carry went 7,600 →
+53,700 in seven rounds and emptied only at blue, onto the strongest fighter.
+Issue #10 replaces the cap with two pots: the belt pot (seed + carry +
+at-belt stakes) for the fighters at the belt, the sensei pot (the seniors'
+stakes, no seed, no carry) for the seniors. Priced before it was built, as
+the seat itself was.
+
+**The model now runs the house's own settlement for the sensei seat.** With
+the sensei gate the model's round carries the belt and `sensei = true`, so
+`round.evaluate` seats the seniors as senseis and `round.settle` applies the
+money rule; the copy of the cap the model used to carry is gone. That copy
+had run *after* the bond was held, so it let a sensei keep more than the
+house actually pays, and the sensei figures in the gate section above are
+too kind to the cap: through the real engine the cap reads Gini 0.78, not
+0.51. The cap column below was measured with the engine as it was before
+this change, the two-pot column with it, on the same seeds.
+
+Run parameters: the live-calibrated cohort from `apps/web/data/fighters.json`
+(24 fighters with three or more rounds; the five NPCs dropped, 19 remain),
+gate `sensei`, 150 rounds × 6 replicates, seeds 1-6, podium, 20% rake split
+60 / 10 / 30 (house / dev / shareholders), 50% bond for 3 fights, fee 1,000,
+min 3 players, ladder on, no season. Every fighter sits at every table it
+may (entry appetite 1.0, the calibration has no other). Two seed settings:
+a 5,000 cap matched 1:1, and no seed. "Net per sensei seat" is what a seat
+taken below one's belt returned, gross of the bond, less the stake.
+
+| measure | cap, seed 5,000 | two pots, seed 5,000 | cap, no seed | two pots, no seed |
+|---|---|---|---|---|
+| house cost / round (seed − rake) | 3,022 | **−276** | −1,622 | −1,639 |
+| house net / round (after dev and shareholder shares) | −3,813 | **−532** | | |
+| average carry in | 15,928 | **594** | 4,784 | 206 |
+| carry at the end of the run | 0 | 177 | 307 | 0 |
+| Gini of net | 0.78 | 0.81 | 0.87 | 0.86 |
+| top solver's share of a pot | 0.09 | 0.19 | 0.11 | 0.20 |
+| largest fighter's share of all earnings | 0.24 | 0.19 | 0.22 | 0.22 |
+| dead tables / void rounds of 150 | 0 / 0 | 0 / 0 | 0 / 0.2 | 0 / 0 |
+| sensei seats per round | 6.5 | 6.7 | 5.2 | 5.3 |
+| net per sensei seat, whole cohort | −655 | **−201** | −583 | −201 |
+
+Per fighter, net per sensei seat (cap → two pots, seed 5,000): EVO-G31
+−324 → **+345**, EVO-QWEN −592 → +53, EVO-DS −538 → −32, EVO-DS3 −641 →
+−101, EVO-DS2 −590 → −103, EVO-GEM2 −671 → −151, EVO-GEM −677 → −374,
+RYUBOT −835 → −356, the LLM agents (KEN-2, GEM-LITE, PI-AGENT, QWEN-AGENT,
+GEM-2) −800 to −950 → −600 to −790.
+
+What it says:
+
+1. **The ratchet is gone.** Under the cap a round opened with 15,900 of
+   carry on average, because the seed matched the seniors' stakes into a pot
+   the seniors could not win, and it emptied only at blue. Under two pots
+   the seed matches at-belt stakes alone: the average carry in is 594, and
+   the house is 3,300 per round better off on the same tables. At a 20%
+   rake it is now ahead on seed versus rake (−276) and at −532 after the
+   dev and shareholder shares, against −3,813 under the cap.
+2. **A sensei seat is a fair game among peers, minus the rake.** Net per
+   sensei seat is −201 on a 1,000 stake at 20% rake, which is the rake and
+   nothing else: the pool returns what went in. Under the cap it was −655,
+   strictly negative for everyone, break-even at best. Whether the seat is
+   worth taking now depends on who else is sitting: the strongest solver
+   in the cohort (EVO-G31, 0.92 at white, 0.91 at yellow) makes +345 a
+   seat, the second tier is about break-even, the weaker seniors lose. That
+   is the shape a fair game should have, and it closes the phase-two item
+   ("make the sensei seat worth taking"). Caveat: the cohort sits at every
+   table; with EV-driven entry the losing seniors would stay away and thin
+   the pool, which the model does not yet do (see below).
+3. **Inequality does not move; the top win does.** The Gini of net is 0.78
+   → 0.81, within noise of each other and set by the cohort's spread of
+   skill. The top solver's share of a pot doubles (0.09 → 0.19) because the
+   best sensei win is no longer one stake; it stays below the strict gate's
+   0.35. The largest fighter's share of all earnings falls (0.24 → 0.19):
+   the carry that dumped onto the blue tables used to go to one fighter.
+4. **The seed has become nearly irrelevant to these tables.** Without any
+   seed the two-pot numbers barely move (−201 a seat either way; house cost
+   −276 → −1,639), because there are few at-belt stakes to match once the
+   cohort has climbed. The seed taper the rake section asks for can start
+   sooner than planned; what the seed still buys is a newcomer's first
+   tables.
+5. **The carry backlog is left standing.** The 53,700 the cap built up is
+   belt money and is paid to the next at-belt winner in full: no cap, no
+   decay. The model gives no reason to touch it -- under two pots it cannot
+   grow again (an all-sensei table adds no seed and pays its own pot), and
+   a jackpot at the low tables is the strongest reason a newcomer has to sit
+   down.
+6. **The teaching fee** the roadmap sketched as a way to pay senseis for
+   liquidity is no longer needed to make the seat rational; the seniors now
+   pay rake and can win. Worth re-deciding rather than building.
+
+Not answered here: EV-driven entry (whether a seat is *taken* when it is
+worth it), same-tick ties among identical bots, and coordinated senseis
+sharing a solver, which under two pots would farm each other, not the
+beginners.
+
 ## The rake, and whether the house can pay for itself (2026-09-16)
 
 The rake is split three ways in basis points of the rake: house (treasury /
@@ -164,7 +268,7 @@ shareholder pool via `qdojo house distribute-shareholders`.
 
 Latency races between equal fighters at the tick level, lost commits,
 solver timeouts, LLM cost per round, a real sweeper strategy with several
-identities, rake, fee scaling per belt, seasons.
+identities, fee scaling per belt, EV-driven entry appetite.
 
 ## Planned execution costs (2026-09-19)
 

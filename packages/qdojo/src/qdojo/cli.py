@@ -703,7 +703,7 @@ def build_parser():
     d.add_argument("--bond-bps", type=int, default=0, help="share of each win held as a bond")
     d.add_argument("--bond-rounds", type=int, default=0, help="rounds the winner must fight before release")
     d.add_argument("--dead-tables", action="store_true", help="publish belts even when no outsider may sit there")
-    d.add_argument("--sensei", action="store_true", help="let a fighter sit below its belt, capped to its stake, no belt points")
+    d.add_argument("--sensei", action="store_true", help="let a fighter sit below its belt: it plays for the sensei pot, no belt points")
     d.set_defaults(fn=cmd_house_spar)
     d = s.add_parser("resume", help="drive a round left open by a dead supervisor to settlement")
     d.add_argument("round", type=int); d.add_argument("--entry-fee", type=int, default=1000)

@@ -37,3 +37,17 @@ def test_calibrate_house_funded_comes_from_identities_not_names():
                        {"identity": "B" * 60, "name": "REAL", "rounds_played": 5, "by_belt": {}}]}
     c = {x["name"]: x for x in model.calibrate(fj, npcs={"B" * 60})}
     assert c["NPC-FAKE"]["house_funded"] is False and c["REAL"]["house_funded"] is True
+
+
+def test_sensei_gate_runs_through_the_real_settlement():
+    """The model holds no sensei rule of its own: under the sensei gate the
+    engine seats the seniors and settle() pays them out of their own pot, so
+    across a whole run the seniors can never take out more than they put in."""
+    p = model.Params(rounds=100, gate="sensei", rake_bps=2000, bond_bps=0)
+    r = model.simulate(p, [model.Archetype.from_dict(d) for d in model.DEFAULT_COHORT], random.Random(3))
+    assert r["sensei_seats_per_round"] > 0
+    assert -1000 <= r["sensei_net_per_seat"] <= 0                 # a fair pool less the rake, never the beginners' money
+    assert r["carry_end"] >= 0 and r["avg_carry_in"] >= 0
+    res = model.sweep(model.Params(rounds=40, bond_bps=0), {"gate": ["strict", "sensei"]}, replicates=2)
+    assert res[0]["sensei_seats_per_round"] == 0 and res[0]["sensei_net_per_seat"] is None
+    assert res[1]["sensei_seats_per_round"] > 0
