@@ -406,7 +406,7 @@
         },
         "green": {
           "avg_solve_ticks": 40.4,
-          "rounds": 11,
+          "rounds": 12,
           "solved": 9,
           "wins": 7
         },
@@ -436,14 +436,14 @@
       "net": 69820,
       "points": 3,
       "rank": 4,
-      "rounds_played": 63,
-      "solve_rate": 0.87,
+      "rounds_played": 64,
+      "solve_rate": 0.86,
       "solved": 55,
       "staked": 63000,
       "streak": 12,
       "strikes": 0,
       "win_loss": 3.75,
-      "win_rate": 0.48,
+      "win_rate": 0.47,
       "wins": 30
     },
     {
@@ -1216,7 +1216,7 @@
         },
         "green": {
           "avg_solve_ticks": 39.5,
-          "rounds": 4,
+          "rounds": 5,
           "solved": 2,
           "wins": 2
         },
@@ -1246,14 +1246,14 @@
       "net": 19400,
       "points": 1,
       "rank": 4,
-      "rounds_played": 29,
-      "solve_rate": 0.72,
+      "rounds_played": 30,
+      "solve_rate": 0.7,
       "solved": 21,
       "staked": 29000,
       "streak": 1,
       "strikes": 2,
       "win_loss": 1.75,
-      "win_rate": 0.48,
+      "win_rate": 0.47,
       "wins": 14
     },
     {
@@ -1894,8 +1894,8 @@
       "wins": 0
     }
   ],
-  "generated_at": "2026-09-19T23:38:22Z",
-  "generated_tick": 80847388,
+  "generated_at": "2026-09-19T23:38:53Z",
+  "generated_tick": 80847429,
   "house": "JWCTDHENGOQLGBNDFWWAOWDZNIABAVGUJGFKVCOSTBXVJSHBQGRYJOJDEUTD",
   "rounds": [
     {
@@ -55132,8 +55132,37 @@
       "bond_rounds": 3,
       "carry_in": 13200,
       "commit_window": 300,
-      "entrants": 0,
-      "entries": [],
+      "entrants": 2,
+      "entries": [
+        {
+          "answer": null,
+          "commit_tick": null,
+          "commit_tx": null,
+          "enter_tick": 80847428,
+          "enter_tx": "bqrfaorhtmgvxbhssgmsealeoswbowuwofqlgxpsqbtzzeulzcvxyjifmexj",
+          "identity": "HFRJFZZLFTGAJCVAUKHFXMETKBACKSOFNQTJBCTFCCEISOOVSWTEVQHBOKZD",
+          "name": "EVO-GEM",
+          "reveal_tick": null,
+          "reveal_tx": null,
+          "sensei": true,
+          "stake": 1000,
+          "verdict": "pending"
+        },
+        {
+          "answer": null,
+          "commit_tick": null,
+          "commit_tx": null,
+          "enter_tick": 80847428,
+          "enter_tx": "mghkhvksjtrgxacerumnexxoctleranezwsgfayerbvijeclyvcxukpfzsho",
+          "identity": "OLXXEIWRWFVFQGBEFYQZFCNRQOQBHHHERYSHINEREEYYYHNJQJYQGRIDSBMK",
+          "name": "EVO-DS",
+          "reveal_tick": null,
+          "reveal_tx": null,
+          "sensei": true,
+          "stake": 1000,
+          "verdict": "pending"
+        }
+      ],
       "entry_fee": 1000,
       "house_seed": 5000,
       "lobby_tick": 80847409,
