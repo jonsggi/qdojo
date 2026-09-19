@@ -164,6 +164,10 @@ or answer-revealing generation state. Freeze a lobby's eligible catalogue and
 selection policy before entry. Random selection after entry lock and author/
 affiliate exclusions still apply. New revisions affect future lobbies.
 
+Whatever a fighter exposes for such adaptation — a threshold, a model, a
+thinking level — can be declared as a setting beside the solver and turned
+from the CLI or the cockpit without a code change (docs/api.md, Settings).
+
 ## Proposed author package and release procedure
 
 Each package should contain:

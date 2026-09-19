@@ -468,7 +468,7 @@ def _save_training(state_dir, card, attempts):
 
 
 def cmd_bot_dash(a):
-    """Your fighter's page, on 127.0.0.1 and nowhere else."""
+    """Your cockpit, on 127.0.0.1 and nowhere else."""
     try:
         httpd, url = dash.serve(a.state, board=a.board or wizard.DEFAULT_BOARD,
                                 port=a.port, read_only=a.read_only)

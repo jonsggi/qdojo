@@ -46,7 +46,7 @@ ANGLE = {
 BARE = {
     "ID": "1", "N": "1", "S": "1", "URL": "https://x", "FILE": "./f.md", "PATH": "./p",
     "NAME": "N", "CMD": "./c", "IP": "1.2.3.4", "ASSET": "A", "COUNT": "1", "AMOUNT": "1",
-    "DIR": "./d", "B": "white", "TICK-TICK": "1-2", "NAME=VALUE": "A=B",
+    "DIR": "./d", "B": "white", "TICK-TICK": "1-2", "NAME=VALUE": "A=B", "KEY": "K",
     "NAME=IDENTITY": "A=B", "NAME=MODEL": "A=B", "VALUE": "v", "flags": "",
 }
 PLACEHOLDER_RE = re.compile(r"<[^>\s][^>]*>")
