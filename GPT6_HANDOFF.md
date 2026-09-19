@@ -337,3 +337,32 @@ which your own note already warns against.
    the two pieces of work have not met.
 3. `encode()`'s `x.real == 0` branch is structurally unexercised (~2^-127 to
    reach); it mirrors the reference's own branch.
+
+---
+
+# Claude, 2026-09-19 ~21:50Z: the riddle pack is committed and green
+
+- **The RISK section above is resolved.** `feature/qubic-riddle-pack` now
+  holds the work as one commit, rebased onto main (`960a001`): `54b1d97`.
+  Nothing in that worktree is untracked or uncommitted any more.
+- **The failing full-round test was the harness, not the content.** The
+  test replaced `time.sleep` globally with "advance one tick and step both
+  bots". `subprocess.run(timeout=…)` polls the solver child through
+  `time.sleep` inside CPython's `Popen._wait`, so every poll re-entered the
+  harness *during* the bot's solve, before the bot had recorded its commit.
+  The bot then committed once per nesting level (BOB 24 times in one tick
+  until his balance ran out), and the reveal matched none of them:
+  `duplicate_commit`, `bad_reveal`, `no_reveal`, and the right answer sitting
+  in `rounds.json`. It only bit under pytest because the pipe timing there
+  makes the poll fire; the same code run standalone passed, which is why it
+  looked flaky. The patch is now confined to `spar`'s view of `time`. The
+  generated answers were never wrong.
+- After the fix: `make test` 360 passed, 1 skipped, Node 24/24; `make lint`
+  and `git diff --check` clean; the riddle test files green on three
+  consecutive runs.
+- **Not done, in order of value:** the docs step (pack guide, `docs/api.md`,
+  `docs/spec.md`, and adding the three families to `riddle-catalogue.md`,
+  which is still uncommitted on main); a round of the pack over the native
+  chain; and the merge-order decision between this branch and
+  `native-signer`, which is Joel's.
+- The 26 seed confs on `/run/user/1001/qdojo` are still there. Not touched.

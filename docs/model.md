@@ -165,3 +165,52 @@ shareholder pool via `qdojo house distribute-shareholders`.
 Latency races between equal fighters at the tick level, lost commits,
 solver timeouts, LLM cost per round, a real sweeper strategy with several
 identities, rake, fee scaling per belt, seasons.
+
+## Planned execution costs (2026-09-19)
+
+The off-chain estimates above do not establish profitability of the eventual
+contract or an oracle-based verifier. Include these recurring costs when
+selecting the settlement architecture and launch parameters:
+
+The current decision is hash-based settlement without oracle-dependent judging.
+Contract execution costs apply to that design; oracle/EVM/proof expenses below
+remain comparisons for deferred alternatives.
+
+- Qubic contract execution and state hashing, including recurring tick hooks,
+  failed/repeated calls and the reserve needed to keep the contract operating.
+- Oracle fees per actual query attempt, with explicit retry limits and timeout
+  cases; never assume every query yields a usable result.
+- EVM execution, proof generation where applicable, and relay transactions if
+  the EVM-oracle design is selected. Record foreign-chain fees in their native
+  currency as well as a common unit using the rate at measurement time.
+- House hosting/operations, fixed seed subsidies, other sponsored participation
+  and any guaranteed cup contributions. Keep solver costs separately visible
+  when assessing whether fighters would voluntarily participate.
+
+Calculate available margin from the retained house share, after shareholder,
+developer and applicable author allocations, rather than the total rake:
+
+`house operating net = house rake allocation - author fees - seed/NPC support
+                       - contract execution - oracle queries
+                       - external verification/relay - allocated operations`
+
+Use actual integer allocation/rounding rules in the model. Attribute allocated
+operations consistently and do not subtract any fee twice. Keep registration
+receipts, IPO/reserve funding, capital top-ups and sponsor contributions
+separate from recurring regular-round revenue. Upfront execution-reserve
+funding does not eliminate the recurring cost consumed from that reserve.
+
+Illustration, not agreed launch parameters: five 1,000-QU entries at 20% rake
+produce 1,000 QU total rake. With a 60% house allocation and an author fee of
+10% of that allocation, the house retains 540 QU before operating costs.
+The inspected EvmLogRead interface charges 1,000 QU per query, so even one
+such query exceeds that round's retained rake by 460 QU before seed, contract
+execution, EVM gas or hosting. See
+[verification research](verification-research.md) for the pinned source.
+
+Compare per-submission, per-round and validated batch settlement, using the
+same participation assumptions. Report total costs for empty/expired rounds,
+small tables, full tables, retries and failed verification, plus settlement
+latency. Set explicit execution, query and retry budgets before choosing the
+architecture. Batching is only a candidate: its completeness and proof rules
+must be specified, and delayed payouts affect the game.
