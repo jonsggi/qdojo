@@ -13,7 +13,7 @@ from .chain.rpc import Indexer
 from .chain.base import Unknown, ChainError
 from .house import House, HouseError
 from .bot import Bot, BotError, fetch_board
-from . import nodes, onboard, spar, events, lab, wizard, term, training, prompts as P, dash
+from . import nodes, onboard, spar, events, lab, wizard, term, training, prompts as P, dash, fees
 from .shares import Shares, SharesError
 
 
@@ -125,6 +125,30 @@ def cmd_house_settle(a):
         print("\nPLAN ONLY. Nothing was sent. Re-run with --apply to pay.", file=sys.stderr)
 
 
+def _fee_arg(text):
+    """--entry-fee takes a whole number of QU, or 'auto' (docs/spec.md §5)."""
+    if text.strip().lower() == "auto":
+        return "auto"
+    try:
+        return int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r}: a whole number of QU, or auto")
+
+
+def _add_fee_flags(d):
+    """--entry-fee and the knobs of its auto mode, shared by spar and model."""
+    d.add_argument("--entry-fee", type=_fee_arg, default=1000,
+                   help="QU per seat, or 'auto': retargeted per belt from the house's own history (docs/spec.md §5)")
+    d.add_argument("--fee-alpha", type=float, default=0.5, help="auto: fee' = fee * (occupancy / target) ** alpha")
+    d.add_argument("--fee-window", type=int, default=8, help="auto: settled or void rounds at the belt that count")
+    d.add_argument("--fee-headroom", type=int, default=2, help="auto: target occupancy = min_players + headroom")
+    d.add_argument("--fee-clamp", type=float, default=1.5, help="auto: one retarget moves the fee by at most this factor")
+    d.add_argument("--fee-floor", default="100", help="auto: the lowest fee in QU; one number, or belt=QU,belt=QU")
+    d.add_argument("--fee-cap", type=int, default=0, help="auto: the highest fee in QU (0 = none); the only ceiling without a rake")
+    d.add_argument("--fee-start", type=int, default=1000, help="auto: the fee at a belt with no history yet")
+    return d
+
+
 def cmd_house_spar(a):
     h = _house(a, True)
     sp = spar.Spar(h, a.belts.split(","), a.entry_fee, a.commit_window, a.reveal_window,
@@ -167,19 +191,35 @@ def cmd_house_distribute(a):
     print(f"distributed {pool} to holders of {a.asset}: {res.tx_id} tick {res.scheduled_tick}")
 
 
+def _sweep_value(v):
+    for cast in (int, float):
+        try:
+            return cast(v)
+        except ValueError:
+            pass
+    return {"true": True, "false": False}.get(v.lower(), v)
+
+
 def cmd_house_model(a):
     from . import model
-    p = model.Params(rounds=a.rounds, entry_fee=a.entry_fee, seed_cap=a.seed_cap, match_bps=a.match_bps,
+    auto = a.entry_fee == "auto"
+    p = model.Params(rounds=a.rounds, entry_fee=a.fee_start if auto else a.entry_fee, seed_cap=a.seed_cap, match_bps=a.match_bps,
                      rake_bps=a.rake_bps, payout_mode={v: k for k, v in payload.MODE_NAMES.items()}[a.payout_mode],
                      bond_bps=a.bond_bps, bond_rounds=a.bond_rounds, min_players=a.min_players,
                      ladder=not a.no_ladder, start_balance=a.start_balance, gate=a.gate, season=a.season,
-                     rake_house_bps=a.rake_house_bps, rake_dev_bps=a.rake_dev_bps, rake_share_bps=a.rake_share_bps)
+                     rake_house_bps=a.rake_house_bps, rake_dev_bps=a.rake_dev_bps, rake_share_bps=a.rake_share_bps,
+                     fee_mode="auto" if auto else "fixed", fee_alpha=a.fee_alpha, fee_window=a.fee_window,
+                     fee_headroom=a.fee_headroom, fee_clamp=a.fee_clamp, fee_floor=fees.parse_floor(a.fee_floor)[0],
+                     fee_start=a.fee_start, fee_cap=a.fee_cap, demand=a.demand, refill=a.refill,
+                     target_pot=a.target_pot, target_pot_taper=a.target_pot_taper)
     cohort = None
     if a.cohort:
         cohort = json.load(open(a.cohort))
     elif a.calibrate:
         cohort = model.calibrate(json.load(open(a.calibrate)),
                                  npcs=set(x for x in (a.npcs or "").split(",") if x) if a.npcs else None)
+        if a.no_house_fighters:
+            cohort = [c for c in cohort if not c.get("house_funded")]
         if a.clones > 1:
             for c in cohort:
                 c["count"] = a.clones
@@ -187,7 +227,7 @@ def cmd_house_model(a):
         grid = {}
         for item in a.sweep:
             k, vs = item.split("=")
-            grid[k] = [int(v) if v.lstrip("-").isdigit() else v for v in vs.split(",")]
+            grid[k] = [_sweep_value(v) for v in vs.split(",")]
         print(json.dumps(model.sweep(p, grid, cohort, a.replicates, a.seed), indent=2))
     else:
         print(json.dumps(model.run(p, cohort, a.replicates, a.seed), indent=2))
@@ -712,7 +752,7 @@ def build_parser():
     d = s.add_parser("metrics"); d.set_defaults(fn=cmd_house_metrics)
     d = s.add_parser("model", help="offline model of the mechanics through the real evaluator and ladder (house-side)")
     d.add_argument("--rounds", type=int, default=200); d.add_argument("--replicates", type=int, default=10); d.add_argument("--seed", type=int, default=1)
-    d.add_argument("--entry-fee", type=int, default=1000); d.add_argument("--seed-cap", type=int, default=5000)
+    _add_fee_flags(d); d.add_argument("--seed-cap", type=int, default=5000)
     d.add_argument("--match-bps", type=int, default=10000); d.add_argument("--rake-bps", type=int, default=0)
     d.add_argument("--payout-mode", choices=sorted(payload.MODE_NAMES.values()), default="podium")
     d.add_argument("--bond-bps", type=int, default=5000); d.add_argument("--bond-rounds", type=int, default=3)
@@ -720,7 +760,13 @@ def build_parser():
     d.add_argument("--start-balance", type=int, default=20000)
     d.add_argument("--gate", choices=["strict", "soft", "handicap", "sensei"], default="strict")
     d.add_argument("--season", type=int, default=0, help="reset the ladder every N rounds")
+    d.add_argument("--demand", choices=["none", "ev"], default="none",
+                   help="none: every eligible fighter sits at any price; ev: only when its own expected value is >= 0 (what makes --entry-fee auto mean anything)")
+    d.add_argument("--refill", action="store_true", help="owners top a broke fighter back up to --start-balance (their money, not the house's)")
+    d.add_argument("--target-pot", type=int, default=0, help="the corollary: seed_cap = max(0, target_pot - target * fee); 0 = fixed --seed-cap")
+    d.add_argument("--target-pot-taper", type=int, default=0, help="rounds over which --target-pot declines linearly to 0")
     d.add_argument("--cohort", help="JSON list of archetypes"); d.add_argument("--calibrate", help="a fighters.json to derive archetypes from")
+    d.add_argument("--no-house-fighters", action="store_true", help="with --calibrate: leave the house-funded fighters out")
     d.add_argument("--clones", type=int, default=1, help="with --calibrate: copies of each measured fighter")
     d.add_argument("--npcs", help="with --calibrate: comma-separated house-funded identities (names are untrusted)")
     d.add_argument("--sweep", nargs="+", help="param=v1,v2,... (e.g. match_bps=0,5000,10000 bond_bps=0,5000)")

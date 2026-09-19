@@ -160,11 +160,209 @@ seed is off and tables fill with paying players rather than NPCs. A house
 share asset issued on Qx (the bot-share machinery, reused) receives the
 shareholder pool via `qdojo house distribute-shareholders`.
 
+## The entry fee as a controller (2026-09-19)
+
+The buy-in was the one unpriced number in the dojo: `--entry-fee 1000` at
+every belt since round one. Issue #9 proposes pricing it from published
+data, per belt: the next fee follows the occupancy of the belt's own last
+few tables, bounded below by a floor and above by the fair-game fee. This
+section is the model run before the wiring, the way the sensei seat was
+done. The rule is in docs/spec.md §5 and the exact inputs in docs/api.md.
+
+Per belt, over the last `K` settled or void rounds at that belt:
+
+    occ  = mean entrants                  void rounds count with their real number
+    tgt  = min_players + headroom
+    fee' = fee · (occ / tgt)^α            held within fee / clamp .. fee · clamp
+    fee  = max(floor_b, min(fee', f*))    then three significant figures
+    f*   = seed_cap / (tgt · ρ)           the fee at which the seed exactly refunds the rake
+
+`f*` is where the average fighter, with share `1/n` of the winners' pot
+under podium, breaks even; below it every seat is +EV before any skill,
+and `f* − fee` is the subsidy per seat. With today's numbers (5,000 seed,
+five seats, 20% rake) `f* = 5,000`; the fee is 1,000.
+
+**Two things the model had to learn first.** Its fighters used to sit
+down at any price, which makes a fee loop meaningless. `--demand ev` makes
+a fighter enter only when its own expected value at the announced fee is
+non-negative: it solves with its calibrated probability and shares the
+winners' pot with the other expected solvers at a table of `tgt`; a
+sensei, who can win back at most its stake, sits only while it has a bond
+to release; house fighters sit regardless. And `--refill` lets an owner
+top a broke fighter back up to its starting purse, which is what happens
+in practice and the only way to see where the loop settles rather than
+where the purses run out. Both are assumptions and are reported as such.
+
+**Baseline, reproduced today.** Live-calibrated cohort from
+`apps/web/data/fighters.json` at 119 rounds (19 named fighters with three
+rounds or more; the five NPCs left out unless said), sensei gate, 20% rake,
+5,000 seed matched 1:1, podium, 50% bond for 3 fights, min 3 players,
+150 rounds = 30 tables per belt, 6 replicates:
+
+| run | void | house cost / round | avg pot | Gini | note |
+|---|---|---|---|---|---|
+| strict gate, NPCs, rake 0, everyone sits | 0 | 7,764 | 20,337 | 0.35 | the gate table's first row read 7,092 / 0.35 on 09-16 |
+| sensei, no NPCs, rake 20%, everyone sits | 0 | 2,912 | 19,122 | 0.75 | the sensei row read Gini 0.51 |
+| the same, `ev` demand, fixed 1,000 | 0 | 3,376 | 13,395 | 0.59 | the weak stay home: the pot shrinks, the house pays more |
+| the same, `ev` demand, refill, fixed 1,000 | 0 | 3,333 | 13,619 | 0.49 | the comparison basis for everything below |
+
+The cohort has 55 more rounds of history than on 09-16 and is stronger,
+which is why the reproduced rows differ from the dated ones. Every number
+below is against these rows, on the same code.
+
+**The controller at its defaults** (α 0.5, K 8, headroom 2, clamp 1.5,
+floor 100, start 1,000):
+
+| run | void | house cost / round | avg pot | top share | Gini | final fee w / y / o / g / b | reversals in the last 20 tables | subsidy / seat |
+|---|---|---|---|---|---|---|---|---|
+| fixed 1,000, refill | 0 | 3,333 | 13,619 | 0.13 | 0.49 | 1,000 everywhere | 0 | — |
+| **auto, refill** | 0 | **−471** | 33,796 | 0.17 | 0.36 | 5,000 / 4,850 / 4,090 / 1,950 / 5,000 | 0.2 / 0.5 / 1.3 / 0.0 / 0.0 | 420 / 520 / 830 / 1,570 / 400 |
+| fixed 1,000, finite purses | 0 | 3,376 | 13,395 | 0.13 | 0.59 | 1,000 everywhere | 0 | — |
+| auto, finite purses | 5 | 2,027 | 17,263 | 0.17 | 0.77 | 620 / 510 / 740 / 260 / 2,310 | 0.2 / 0.0 / 0.3 / 0.0 / 0.5 | 2,400 / 2,500 / 2,500 / 2,900 / 1,800 |
+
+The trajectory of one run with refill, as (fee, entrants) per table at the
+belt:
+
+    white  (1000,14) (1500,11) (2250,8) (3340,7) (4720,7) (5000,5), then 5,000 for the
+           remaining 25 tables at 4-7 entrants, one dip to 4,870 for four tables
+    blue   (1000,13) (1500,13) (2250,12) (3380,12) (5000,9), then 5,000 at 9-11 entrants
+           for every table after, all 80 of them in a 400-round run
+    green  (1000,9) (1340,9) (1800,7) (2320,8) (2980,7) (3770,5) (4620,6) (5000,6) (5000,3)
+           (5000,3) (5000,5) (5000,5) (5000,4) (4810,4) (4560,3) (4140,4) (3640,5) ... (1790,4)
+           at table 30; in the 400-round run it reaches the floor at table 63 and stays
+           there at 3-5 entrants a table
+
+What it says:
+
+1. **The fee climbs to `f*` in five tables at every belt and stops.** At
+   1,000 a 5,000 seed on five seats makes any fighter with a solve
+   probability above a third to a half a +EV entrant, so nine to fourteen
+   sit down and the fee rises by the clamp each table until the ceiling.
+   That is the issue's "+800 per seat" seen from the other end: the
+   controller's first job is to eat the subsidy, and the ceiling is what
+   stops it. With the population held steady the house is paid 471 a
+   round instead of paying 3,333, the pot is 2.5× larger, and the Gini of
+   net falls from 0.49 to 0.36, because a seat is no longer free money
+   for whoever is strongest.
+2. **It settles; it does not oscillate.** Reversals in the last twenty
+   tables are 0 to 1.3 per belt; white and blue sit on `f*` with none.
+3. **The belt shape is discovered, and it follows the population, not the
+   difficulty.** Blue, where 13 of 19 fighters end up, holds `f*` for 80
+   tables at ten entrants. Green, which the ladder empties, drifts from
+   5,000 to 1,790 in 30 tables and ends on the floor with four entrants a
+   table: a quorum, one short of the target, and no price brings a fifth
+   because there is none. Yellow and orange drift down as fighters promote
+   out and back up as senseis with bonds arrive. With finite purses every
+   belt drifts down as fighters go broke; that is the purse, not the
+   price, and the reason the finite-purse rows show 4-20× spreads.
+
+**The carry must not be in `f*`.** The issue's break-even formula has
+`seed + carry` in the numerator, which is right for one round's expected
+value and wrong as a ceiling: the carry is last round's luck. With it in,
+blue reversed 11.5 times in 20 tables and swung 5,000-8,000 while nine
+fighters sat down at every one of them; the fee was chasing no-winner
+rounds, not demand. Without it: 0 reversals, 5,000 flat. A one-seat
+deadband did not help (10.7). So `f* = seed_cap / (tgt · ρ)`, and the
+carry remains what it is, an extra subsidy visible in `carry_in`.
+
+**The sweep** (refill on unless said; spread is max / min over the last 20
+tables at the belt):
+
+| knob | void | house cost / round | Gini | final fee w / y / o / g / b | reversals | spread | reading |
+|---|---|---|---|---|---|---|---|
+| α 0.25 | 0 | +194 | 0.39 | 4,950 / 4,360 / 4,240 / 1,700 / 5,000 | ≤ 1.3 | 1.0-1.7 | slower to the ceiling, otherwise the same |
+| **α 0.5** | 0 | −471 | 0.36 | 5,000 / 4,850 / 4,090 / 1,950 / 5,000 | ≤ 1.3 | 1.0-2.9 | |
+| α 1.0 | 0 | −442 | 0.40 | 5,000 / 4,540 / 3,760 / 950 / 5,000 | ≤ 1.0 | 1.0-11.6 | overshoots at the thin belt |
+| K 4 | 0 | −358 | 0.38 | 4,860 / 4,570 / 3,790 / 1,380 / 5,000 | ≤ 2.7 | 1.1-3.7 | noisier; 2 void with finite purses |
+| **K 8** | 0 | −471 | 0.36 | | ≤ 1.3 | | 5 void with finite purses |
+| K 16 | 0 | −633 | 0.37 | 5,000 / 5,000 / 4,210 / 2,920 / 5,000 | ≤ 0.2 | 1.0-1.9 | smoothest, but 11 void with finite purses: slow to see a belt emptying |
+| headroom 0 (tgt 3) | 0 | −3,091 | 0.35 | 8,330 everywhere | 0 | 1.0 | `f*` is 8,330 and every belt sits on it; 49 of 150 tables void with finite purses |
+| headroom 1 (tgt 4) | 0 | −1,692 | 0.39 | 6,250 everywhere | ≤ 0.3 | 1.0 | |
+| **headroom 2 (tgt 5)** | 0 | −471 | 0.36 | | | | 5 void with finite purses |
+| headroom 4 (tgt 7) | 0 | +1,356 | 0.37 | 490 / 270 / 380 / 100 / 3,570 | ≤ 0.3 | 1.0-12.9 | a target no belt but blue can fill: the fee falls to the floor |
+| clamp 1.2 | 0 | +172 | 0.39 | 4,810 / 4,100 / 2,970 / 1,590 / 5,000 | ≤ 0.7 | 1.0-3.3 | slower |
+| **clamp 1.5** | 0 | −471 | 0.36 | | | | |
+| clamp 2.0 | 0 | −471 | 0.42 | 4,970 / 4,570 / 4,120 / 2,450 / 5,000 | ≤ 1.0 | 1.0-3.4 | |
+| floor 100 / 500 / 1,000, finite purses | 5 | 2,027 / 2,070 / 2,307 | 0.77 | the floor is where a draining belt ends | | | it never binds at a live belt |
+| voids count, finite purses | 5 | 2,027 | 0.77 | 620 / 510 / 740 / 260 / 2,310 | | | |
+| settled only, finite purses | **21** | 1,819 | 0.75 | 1,350 / 1,270 / 1,280 / 1,060 / 2,990 | | | the tables that do not fill are exactly the ones it no longer sees |
+
+The choices, from that: **α 0.5, K 8, headroom 2, clamp 1.5**. The
+headroom is the one that matters: the target has to sit a couple of seats
+above the quorum, or noise voids tables, and below what the belt can
+supply, or the fee falls to the floor. **Void rounds retarget**, as the
+issue leaned: a table that did not fill is the strongest signal that the
+price is above what the belt bears, and leaving it out censors the
+controller upward (21 void tables against 5). **The floor is a fixed QU
+number, not a fraction of `f*`**: without a rake there is no `f*` (the
+live house runs none), `f*` moves with the seed the operator sets, and
+the floor never binds anywhere but at a starved belt, where the question
+is a population one and a number in QU is what an operator can reason
+about. `--fee-floor 100`, or per belt as `white=100,blue=500`.
+
+**What the seed does to it.** `f*` scales with it. Seed 2,000: fees settle
+around 2,000 with 50-400 of subsidy per seat, house −408. Seed 10,000:
+fees 6,500-10,000, subsidy 1,300-5,100, house +394. **Seed 0: there is no
+ceiling** (`f*` is 0, below the floor, so the floor wins and only the cap
+bounds the fee): fees 8,800-17,600, every seat −EV by 4,000-12,000, ten
+tables void. The `f*` ceiling is a launch-subsidy device; it and a retired
+seed cannot coexist, and the day the seed goes to zero is the day the cap
+has to be the ceiling.
+
+**No rake, which is the live house today.** `f*` does not exist. Without a
+cap the blue fee reached 64,000 and ten tables were void; with
+`--fee-cap 5000` every belt is bounded, none void, house cost 4,978
+against 4,860 fixed. So the policy carries an absolute cap, and a house
+without a rake must set one.
+
+**The corollary does not ship.** `seed_cap = max(0, target_pot − tgt · fee)`
+with `target_pot` on a round-count schedule:
+
+| run | void | house cost / round | final fee w / y / o / g / b | subsidy / seat | seed retired at round |
+|---|---|---|---|---|---|
+| auto, target 10,000, no taper | 10 | −7,717 | 8,940 / 7,810 / 5,730 / 480 / 24,870 | −10,900 to +3,460 | never |
+| auto, target 10,000, tapered to 0 over 100 rounds | 4 | −4,468 | 2,040 / 1,070 / 7,030 / 1,380 / 13,770 | −600 to −10,800 | 66 |
+| fixed 1,000, the same taper | 0 | −395 | 1,000 everywhere | — | 55 |
+
+The coupling the issue feared is real and runs the bad way: fee up, seed
+down, `f*` down to nothing, ceiling gone, fee up. Seats end −EV by
+thousands and one table in fifteen voids. A round-count taper on a fixed
+fee retires the seed earlier, voids nothing and costs the house 395 a
+round. The seed taper stays an operator schedule on `--seed`; the
+controller keeps one loop.
+
+**House fighters break it.** Under the strict gate with the five NPCs
+funded at the fee, every belt pins at `f*` whoever else comes, because
+the NPCs sit at any price, and the house then funds their stakes at
+5,000: cost 17,969 a round against 5,492 at a fixed fee. `qdojo house
+spar` refuses `--entry-fee auto` together with `--npcs`; they are retired
+anyway.
+
+**What the model cannot tell us.** Price cannot fix a population drought.
+Green ends on the floor because the ladder promoted everyone out of it,
+and the model has no newcomers, so whether a 100 QU green table brings
+anyone in is not a question it can answer; that is the sensei seat's job
+and, at the floor, the teaching fee's. The demand model is a stated
+assumption: expected value from calibrated solve rates, while real bots
+run `--max-stake` and strategies of their own. Owner refill is an
+assumption. Not modelled: how fast bots react to a fee change (they read
+it in LOBBY, so within a round), latency, the cost of an LLM seat at a
+higher fee, and any deliberate attempt to move the price by abstaining.
+
+To reproduce (the sweep tables are one `--sweep` each):
+
+    uv run qdojo house model --calibrate apps/web/data/fighters.json --no-house-fighters \
+        --gate sensei --rake-bps 2000 --rounds 150 --replicates 6 --demand ev --refill \
+        --entry-fee auto
+    uv run qdojo house model --calibrate apps/web/data/fighters.json --no-house-fighters \
+        --gate sensei --rake-bps 2000 --rounds 150 --replicates 6 --demand ev --refill \
+        --entry-fee auto --sweep fee_headroom=0,1,2,4
+
 ## Not modelled yet
 
 Latency races between equal fighters at the tick level, lost commits,
 solver timeouts, LLM cost per round, a real sweeper strategy with several
-identities, rake, fee scaling per belt, seasons.
+identities, rake, seasons.
 
 ## Planned execution costs (2026-09-19)
 
