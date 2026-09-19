@@ -86,16 +86,64 @@ payload transactions between fighters — those cannot corrupt the roster.
 
 ## Seed confs on tmpfs outlive the run that made them
 
-`/run/user/1001/qdojo/*.conf` survive until reboot, not until the process
-exits. After the 2026-09-19 session there were **26** of them, 20 dating from
-the 2026-09-15/16 runs. They are `0600`, but they are still keys at rest.
-Shred what a run created when it finishes:
+`/run/user/1001/qdojo/` (`$XDG_RUNTIME_DIR/qdojo`) is tmpfs: a file written
+there lives until reboot, not until the process that used it exits. It holds
+**20** `qdojo_*.conf` files (0600, 61 bytes each, written 2026-09-15/16),
+next to a `cohort2.txt` and a `web/` directory. After the 2026-09-19 session
+there were 26; the extra six were round 119's throwaway bots and are gone.
 
-    shred -u -z -n 3 /run/user/1001/qdojo/<name>.conf
+**What the 20 are.** The sparring cohort's keys: `qdojo_bot1`, `qdojo_bot2`,
+`qdojo_dev`, `qdojo_evo1/2/5`, `qdojo_f03/4/5`, `qdojo_llm1-5`, `qdojo_npc1-5`
+and `qdojo_pi`. The operator keeps those bots; they become the founding
+fighter NFTs. They were written there by the operator's launch scripts and by
+ad-hoc runs, not by qdojo: no code path in this repository writes a conf to
+the runtime directory. `bot init` writes `~/.qdojo/bot/bot.conf`
+(`onboard.py`, `O_EXCL`, 0600), and `bot run` and `house spar` only read the
+conf they are given (`--conf`, `QDOJO_CONF`, or the profile).
 
-Also: count before concluding one is missing. `ls -la <dir> | head -5` on that
-directory shows five of twenty-six files and reads exactly like "it is not
-there".
+**Do not delete or shred them.** Every dojo identity also lives in the
+operator's encrypted `qw` keystore (`~/.qw`, managed from `~/qubic-admin`),
+and each tmpfs conf has a durable copy at `~/.qdojo/<bot>/bot.conf` (0600),
+so a run can find it after a reboot. Five cohort bots have no plaintext conf
+on this host at all: `qdojo_evo3`, `qdojo_evo4`, `qdojo_f01`, `qdojo_f02` and
+`qdojo_f06`. Their seeds are in the encrypted keystore; when one is needed,
+export it from `~/qubic-admin` with `qw identity export <name>`, written to a
+0600 file, never printed.
+
+**The startup check.** `bot run`, `house spar` and `bot init` begin by
+listing every `*.conf` in the runtime directory, on stderr:
+
+    warning: 20 seed confs in /run/user/1001/qdojo from earlier runs (nothing is deleted; see docs/operations.md):
+      qdojo_bot1.conf  4d 20h
+      qdojo_bot2.conf  4d 20h
+      ...
+
+It reports and never deletes. It reads the directory in full with `scandir`,
+oldest first, because "there are none" was once concluded from
+`ls -la <dir> | head -5`, which showed five of twenty-six files and read
+exactly like "it is not there". The conf the run itself was given is not
+counted as a leftover. It prints nothing when the directory does not exist
+or holds no conf. The same check from Python is
+`qdojo.seedconf.leftover_confs()`; from the shell, count with
+`ls /run/user/1001/qdojo | wc -l`, never with `head`.
+
+**Throwaway identities.** For a conf a run should take with it, pass it with
+`--ephemeral-conf PATH` in place of `--conf`. Round 119's five `bare.py`
+fighters were this kind of bot: one-off seeds nobody keeps.
+
+    qdojo bot --state /tmp/t1 run --board <board url> --solver ./bare.py \
+        --ephemeral-conf /run/user/1001/qdojo/qdojo_t1.conf
+
+`house spar` takes the same flag. The conf is shredded (overwritten with
+zeros three times, fsynced, unlinked) when the process exits, on every path:
+a normal return, an exception, a startup failure, ctrl-c, and SIGTERM, which
+the run turns into an exception so the shred still happens. SIGKILL cannot
+be caught; that is what the startup check is for. Only the conf named by the
+flag is ever shredded. A conf that arrived through `--conf`, `QDOJO_CONF` or
+the profile is never touched, and naming two different files with `--conf`
+and `--ephemeral-conf` is refused. On tmpfs the overwrite is belt-and-braces
+and the unlink is what matters. `scripts/crosscheck-signer.py` uses the same
+helper for its temporary conf. Never pass a cohort conf here.
 
 ## `pkill -f` kills the shell that runs it
 
