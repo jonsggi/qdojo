@@ -350,3 +350,25 @@ def test_qubic_spar_round_commits_reveals_settles_and_exports(kind, belt, tmp_pa
     public = json.loads((tmp_path / "web" / "rounds" / "1.json").read_text())
     assert "answer" not in public and "dojo_salt" not in public
     assert json.loads((tmp_path / "metrics.jsonl").read_text())["kind"] == kind
+
+
+@pytest.mark.parametrize("kind,belt", FAMILIES.items())
+def test_shipped_solver_solves_fresh_instances_through_the_bot_path(kind, belt):
+    """The deterministic solvers in examples/solvers/ were measured for issue #17 on rng seeds
+    far from the practice seeds. This keeps them, and the qubic_pack dispatcher, solving as the
+    generators evolve, and keeps them sitting out any other family instead of guessing."""
+    import os
+    import sys
+    from qdojo.solver import SolverError, run_solver
+    solvers = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "examples", "solvers")
+    own = [sys.executable, os.path.join(solvers, kind + ".py")]
+    pack = [sys.executable, os.path.join(solvers, "qubic_pack.py")]
+    for seed in range(1_700_000, 1_700_012):
+        d = riddles.generate_kind(kind, random.Random(seed), 1)
+        public = riddle.from_public(d).public()
+        assert run_solver(own, public) == str(d["answer"])
+    assert run_solver(pack, public) == str(d["answer"])
+    other = riddle.from_public(riddles.generate("white", random.Random(0), 1)).public()
+    for cmd in (own, pack):
+        with pytest.raises(SolverError, match="printed nothing"):
+            run_solver(cmd, other)
