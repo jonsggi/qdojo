@@ -30,6 +30,7 @@ import string
 import subprocess
 import sys
 import tempfile
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 "..", "packages", "qdojo", "src"))
@@ -58,6 +59,26 @@ VECTORS = [(0, 1), (1, 80000000), (12345, 4294967295), (1000000000, 2),
 # an odd length, and MAX_INPUT_SIZE exactly.
 PAYLOAD_VECTORS = [(0x444F, 0), (0x444F, 1), (0x444F, 37), (0x444F, 512),
                    (0x444F, 1023), (0x444F, 1024), (0, 64), (65535, 100)]
+
+
+def run_reference(argv, tries=3):
+    """The reference's packet bytes, retried -- or None if it really cannot.
+
+    qubic-cli must open a socket before it will build a transaction, so under
+    a fast run it intermittently prints nothing at all because it could not
+    reach the node. That is the HARNESS failing, not a signing difference: no
+    signature was ever produced to compare. Counting it as a conformance
+    failure makes the gate ambiguous, and ambiguity in a gate that guards
+    money is itself a defect -- so it is retried, and only a persistent
+    no-answer is reported.
+    """
+    for attempt in range(tries):
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=60)
+        m = HEX_RE.search(p.stdout or "")
+        if m:
+            return bytes.fromhex(m.group(1).strip())
+        time.sleep(0.5 * (attempt + 1))
+    return None
 
 
 def parse_args():
@@ -110,11 +131,9 @@ def main():
                 "-sendcustomtransaction", dest, str(input_type), str(amount),
                 str(len(payload)), payload.hex() or "00"]
         assert "-print-only" in argv, "refusing to run qubic-cli without -print-only"
-        p = subprocess.run(argv, capture_output=True, text=True, timeout=60)
-        m = HEX_RE.search(p.stdout or "")
-        if not m:
+        raw = run_reference(argv)
+        if raw is None:
             return None
-        raw = bytes.fromhex(m.group(1).strip())
         return (raw, int.from_bytes(raw[64:72], "little"),
                 int.from_bytes(raw[72:76], "little"),
                 int.from_bytes(raw[78:80], "little"))
@@ -129,11 +148,9 @@ def main():
         else:
             argv += ["-sendtoaddressintick", dest, str(amount), str(tick)]
         assert "-print-only" in argv, "refusing to run qubic-cli without -print-only"
-        p = subprocess.run(argv, capture_output=True, text=True, timeout=60)
-        m = HEX_RE.search(p.stdout or "")
-        if not m:
+        raw = run_reference(argv)
+        if raw is None:
             return None
-        raw = bytes.fromhex(m.group(1).strip())
         return (raw, int.from_bytes(raw[64:72], "little"),
                 int.from_bytes(raw[72:76], "little"))
 
