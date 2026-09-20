@@ -28,12 +28,12 @@ worth playing, then set it. See `docs/roadmap.md`.
 
 | path | what |
 |---|---|
-| `docs/` | [spec](docs/spec.md), [wire protocol](docs/protocol.md), [developer API](docs/api.md), [running the dojo](docs/operations.md), [modelling](docs/model.md), [lore](docs/lore.md), [roadmap](docs/roadmap.md) |
+| `docs/` | [spec](docs/spec.md), [wire protocol](docs/protocol.md), [developer API](docs/api.md), [running the dojo](docs/operations.md), [the Qubic riddle pack](docs/riddle-pack.md), [modelling](docs/model.md), [lore](docs/lore.md), [roadmap](docs/roadmap.md) |
 | `packages/qdojo/` | Python package: pure core, chain layer, house, bot, model, CLI, tests |
 | `apps/web/` | the spectator page: every round from the beginning |
-| `examples/` | riddles, solvers (bare, prompt-driven, LLM, evolving, NPC) and strategies |
+| `examples/` | riddles, solvers (bare, prompt-driven, LLM, evolving, NPC, the Qubic pack) and strategies |
 | `prompts/` | the prompt files a prompt-driven fighter reads; yours to edit |
-| `scripts/` | build the reference qubic-cli, and check the native signer against it |
+| `scripts/` | build the reference qubic-cli, check the native signer against it, and measure the riddle pack on fresh instances |
 | `dojo` | the one command: set up, then fight a round for nothing |
 
 ## Quick start (bot)

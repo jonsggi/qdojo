@@ -26,7 +26,8 @@ an output-based challenge does not prove which method was used.
 
 ## What exists
 
-[`riddles.py`](../packages/qdojo/src/qdojo/riddles.py) has 16 registered kinds:
+[`riddles.py`](../packages/qdojo/src/qdojo/riddles.py) has 16 classic kinds,
+the default pool:
 
 | Belt | Kinds |
 |---|---|
@@ -38,6 +39,23 @@ an output-based challenge does not prove which method was used.
 
 The blue family already asks for the corrected function's integer output,
 rather than an arbitrary patch. Brown/black content is not implemented.
+
+The Qubic riddle pack
+([`qubic_riddles.py`](../packages/qdojo/src/qdojo/qubic_riddles.py)) adds
+three opt-in families, off by default and selected per spar with
+`--riddle-pack qubic` or `mixed`:
+
+| Belt | Family | Asks for |
+|---|---|---|
+| Orange | `qubic_transaction_audit` | a sum or count over wire-format transaction frames that pass validity and a query |
+| Green | `qubic_asset_ledger` | one identity's shares of one asset after a normalized journal is replayed |
+| Blue | `qubic_call_audit` | accepted audits, or refunds or credits to one identity, over nested contract-call traces |
+
+Each carries its family name and rule version inside the hashed `input`,
+which is the explicit, versioned family identity asked for below. [The pack
+guide](riddle-pack.md) has the provenance, the simplifications, the candid
+review of each family and the measurements on fresh instances; the belts
+are provisional until live rounds exist.
 
 [`bare.py`](../examples/solvers/bare.py) dispatches on title words, and
 [`evo.py`](../examples/solvers/evo.py) caches generated tools by title shape.
@@ -236,3 +254,11 @@ not an external onboarding milestone:
 Keep simple existing families as training foundations. Build meaningful variants
 and fixtures before multiplying names. The remaining inventory is a continuing
 content backlog, not a promise to ship 40 shallow templates at once.
+
+Shipped ahead of this sequence, 2026-09-19: the three Qubic families in
+[the riddle pack](riddle-pack.md). They cover PARSE-02 (binary frames, in
+the real transaction layout), DATA-01 with SIM-05 (a normalized share
+journal with derived destinations and two status modes) and DEBUG-01 with
+MIX-02 (a wrong auditor to diagnose, then receipts to reconcile). They were
+reviewed (#16) and measured on fresh instances (#17) before any of them is
+fought live; the guide records both.

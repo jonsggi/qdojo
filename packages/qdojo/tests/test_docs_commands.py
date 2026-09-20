@@ -27,7 +27,7 @@ ROOT = os.path.join(os.path.dirname(__file__), "..", "..", "..")
 # apps/web/tests/setup.test.cjs, which evaluates the literal in a vm instead --
 # the same trick help.test.cjs uses for HELP. Python reads markdown; node reads
 # JavaScript; neither guesses at the other's escaping.
-SURFACES = ["README.md", "docs/api.md", "docs/protocol.md", "apps/web/llms.txt"]
+SURFACES = ["README.md", "docs/api.md", "docs/protocol.md", "docs/riddle-pack.md", "apps/web/llms.txt"]
 
 # A published line is written for a human and carries placeholders. Each one is
 # spelled out here on purpose: an unrecognised placeholder FAILS rather than

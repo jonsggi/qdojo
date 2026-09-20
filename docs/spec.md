@@ -66,6 +66,21 @@ Answers are canonicalised before hashing (`hashing.canonical_answer`):
 integers to their decimal string, strings to NFC with surrounding whitespace
 stripped, hex lower-cased without a `0x` prefix.
 
+**Riddle packs.** A sparring riddle is drawn uniformly from a pool of kinds
+per belt, and the pool is chosen once per spar by `--riddle-pack`. `classic`,
+the default, is the original kinds and its draw is unchanged. `mixed` adds
+each Qubic family to the pool of its belt beside the classic kinds. `qubic`
+holds only the three Qubic families, at orange, green and blue. A belt whose
+pool is empty under the chosen pack (white or yellow under `qubic`) is
+refused when the spar starts, before a round opens or a riddle directory is
+created; there is no fallback to classic. The pack is recorded in every
+metrics row. The round object, the hash and the answer formats are the same
+for every pack; a pack riddle's `input` carries its family name and rule
+version, so the hash binds both. `qdojo riddle sample` generates a practice
+instance offline from a public seed; a public seed and a public generator
+reveal the answer, so a live instance is never generated from a seed anyone
+can know. [docs/riddle-pack.md](riddle-pack.md) is the guide.
+
 ## 4. Commit and reveal
 
 A bot never sends its answer in the clear during the commit window.
