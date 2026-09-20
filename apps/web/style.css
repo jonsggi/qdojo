@@ -435,6 +435,11 @@ a.tname { display: inline-flex; align-items: center; gap: 8px; }
 .winner-row .wname { font-size: 10px; color: var(--white); min-width: 0; overflow-wrap: anywhere; }
 .winner-row .wamt { margin-left: auto; font-size: 11px; color: var(--yellow); text-align: right; white-space: nowrap; }
 .winner-row .wtx { font-size: 9px; display: block; }
+/* A settlement with two pots lists the winners of each under its own head,
+   placings restarting per pot. */
+.pot-head { font-size: 10px; color: var(--cyan); letter-spacing: 1px; margin: 16px 0 8px; }
+.pot-head:first-child { margin-top: 0; }
+.pot-head small { font-size: 9px; color: var(--grey); letter-spacing: 0; }
 
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; font-size: 9px; align-items: baseline; }
 .kv dt { color: var(--grey); margin: 0; }

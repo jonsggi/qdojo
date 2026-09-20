@@ -131,6 +131,17 @@ They add up: `pots.belt.pot + pots.sensei.pot == pot`, likewise `rake` and
 senseis has a sensei pot of zeros. The example is round 89 as it would be
 settled today.
 
+**How the spectator page reads it.** A winner's gross win is `pots.*.payouts`
+when the document has `pots`, and `payouts[]` (the amount sent) plus its
+`bonds_held[]` entry otherwise. Consecutive winners of one pot with the same
+`commit_tick` *and* the same gross win are a dead heat (`TIED 1ST, SPLIT 2
+WAYS`); the same tick alone is not, because rounds settled before the tie
+rule ordered same-tick solvers by transaction and paid them 5:3:2. In a
+document without `pots`, a sensei whose gross win equals its stake and falls
+short of its nominal share was capped (`CAPPED AT STAKE`), and an at-belt
+winner paid more than its nominal share took that surplus. Every share label
+on the page is derived this way, from the numbers, never from the weights.
+
 **Training data.** Every settled round gives you the riddle
 (`rounds/<id>.json`), its canonical answer and the salt (`settlement`), and
 what every fighter answered and how fast. That is the dojo's published
