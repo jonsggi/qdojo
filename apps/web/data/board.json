@@ -37,7 +37,7 @@
     },
     "HFRJFZZLFTGAJCVAUKHFXMETKBACKSOFNQTJBCTFCCEISOOVSWTEVQHBOKZD": {
       "belt": "blue",
-      "points": 1,
+      "points": 3,
       "rank": 4
     },
     "IDGLZEEOPCZGUDMSTCPMGXEICLMDTHRULSHIGKXAXAFVQAVIGZYLKLLEVJIM": {
@@ -57,7 +57,7 @@
     },
     "OHQADTITHSIUSCYGZMMMDBPSSEBAHUQFXAZHFWQOTGPSUBAMQJAWCUGCQLGI": {
       "belt": "blue",
-      "points": 3,
+      "points": 2,
       "rank": 4
     },
     "OLXXEIWRWFVFQGBEFYQZFCNRQOQBHHHERYSHINEREEYYYHNJQJYQGRIDSBMK": {
@@ -77,12 +77,12 @@
     },
     "QPRFCYFLMLJORCLQOOOKTMARGCSAYWIHPTLAVIXLGHPOARJBXIIPGFDHFETF": {
       "belt": "blue",
-      "points": 0,
+      "points": -1,
       "rank": 4
     },
     "QSENWOSFMGXBHAWKRRWNGTGNDJFBFZKKUJSVEPVOPBHHQQYOWZDVTENDYXXM": {
       "belt": "blue",
-      "points": 3,
+      "points": 2,
       "rank": 4
     },
     "QYLXGSFXNDCSTDCYWOHHYZTNVCSBABVDCEVHENAVFEYPRLFIXMDTQHTGHNTH": {
@@ -107,7 +107,7 @@
     },
     "XZFCVRENNZJYRCRIWSPAFTAUSCHDLNFQSTHTJFXEEFJDMRHBWERCASEFBFWH": {
       "belt": "blue",
-      "points": 2,
+      "points": 3,
       "rank": 4
     },
     "YQATRSNPVIPRDBXVIIUXFQVVJWOBPSAHJHNJZRBBYGPFBRRRNBOOIXXDJDUI": {
@@ -121,44 +121,7 @@
       "rank": 4
     }
   },
-  "generated_tick": 80848508,
+  "generated_tick": 80848728,
   "house": "JWCTDHENGOQLGBNDFWWAOWDZNIABAVGUJGFKVCOSTBXVJSHBQGRYJOJDEUTD",
-  "rounds": [
-    {
-      "answer_commitment": "1bec0dc275ee9eb36cd2c2a1c721aef7d4a99f6f8bbaca62028188c12974c651",
-      "belt": "blue",
-      "bond_bps": 5000,
-      "bond_rounds": 3,
-      "carry_in": 25600,
-      "commit_window": 300,
-      "entrants": 13,
-      "entry_fee": 1000,
-      "house_seed": 5000,
-      "lobby_tick": 80848105,
-      "lobby_window": 240,
-      "match_bps": 10000,
-      "min_players": 3,
-      "payout_mode": "podium",
-      "publish_tick": 80848189,
-      "publish_tx": "bkdaqpbpndrgteblsmpnqvyumykcrggtyfeaknxrffnlzzlovhkjldvgetfm",
-      "rake_bps": 2000,
-      "rake_dev_bps": 1000,
-      "rake_house_bps": 6000,
-      "rake_share_bps": 3000,
-      "reveal_window": 120,
-      "riddle": {
-        "answer_format": "integer",
-        "input": "{\"buggy_auditor\":\"if invocator == allowed and root_reward >= fee: return (originator, root_reward - fee, invocator, root_reward)\",\"family\":\"qubic_call_audit\",\"query\":{\"identity\":\"U4\",\"metric\":\"credited\"},\"transactions\":[{\"events\":[{\"contract\":23,\"op\":\"enter\",\"reward\":8234},{\"allowed\":\"U1\",\"fee\":6361,\"op\":\"audit\"},{\"allowed\":\"U2\",\"fee\":0,\"op\":\"audit\"},{\"allowed\":\"U1\",\"fee\":8235,\"op\":\"audit\"},{\"contract\":10,\"op\":\"enter\",\"reward\":1326},{\"allowed\":\"U1\",\"fee\":689,\"op\":\"audit\"},{\"allowed\":\"C23\",\"fee\":0,\"op\":\"audit\"},{\"allowed\":\"U1\",\"fee\":1327,\"op\":\"audit\"},{\"contract\":3,\"op\":\"enter\",\"reward\":5364},{\"allowed\":\"U1\",\"fee\":3855,\"op\":\"audit\"},{\"allowed\":\"C10\",\"fee\":0,\"op\":\"audit\"},{\"allowed\":\"U1\",\"fee\":5365,\"op\":\"audit\"},{\"allowed\":\"U1\",\"fee\":5364,\"op\":\"audit\"},{\"op\":\"exit\"},{\"contract\":6,\"op\":\"enter\",\"reward\":306},{\"allowed\":\"U1\",\"fee\":110,\"op\":\"audit\"},{\"allowed\":\"C10\",\"fee\":0,\"op\":\"audit\"},{\"allowed\":\"U1\",\"fee\":307,\"op\":\"audit\"},{\"allowed\":\"U1\",\"fee\":0,\"op\":\"audit\"},{\"op\":\"exit\"},{\"allowed\":\"U1\",\"fee\":1326,\"op\":\"audit\"},{\"op\":\"exit\"},{\"contract\":6,\"op\":\"enter\",\"reward\":3075},{\"allowed\":\"U1\",\"fee\":2500,\"op\":\"audit\"},{\"allowed\":\"C23\",\"fee\":0,\"op\":\"audit\"},{\"allowed\":\"U1\",\"fee\":3076,\"op\":\"audit\"},{\"contract\":5,\"op\":\"enter\",\"reward\":6467},{\"allowed\":\"U1\",\"fee\":5252,\"op\":\"audit\"},{\"allowed\":\"C6\",\"fee\":0,\"op\":\"audit\"},{\"allowed\":\"U1\",\"fee\":6468,\"op\":\"audit\"},{\"allowed\":\"U1\",\"fee\":0,\"op\":\"audit\"},{\"op\":\"exit\"},{\"contract\":3,\"op\":\"enter\",\"reward\":4967},{\"allowed\":\"U1\",\"fee\":1213,\"op\":\"audit\"},{\"allowed\":\"C6\",\"fee\":0,\"op\":\"audit\"},{\"allowed\":\"U1\",\"fee\":4968,\"op\":\"audit\"},{\"allowed\":\"U1\",\"fee\":4967,\"op\":\"audit\"},{\"op\":\"exit\"},{\"allowed\":\"U1\",\"fee\":0,\"op\":\"audit\"},{\"op\":\"exit\"},{\"allowed\":\"U1\",\"fee\":8235,\"op\":\"audit\"},{\"op\":\"exit\"}],\"originator\":\"U1\"},{\"events\":[{\"contract\":21,\"op\":\"enter\",\"reward\":839},{\"allowed\":\"U2\",\"fee\":706,\"op\":\"audit\"},{\"allowed\":\"U3\",\"fee\":0,\"op\":\"audit\"},{\"allowed\":\"U2\",\"fee\":840,\"op\":\"audit\"},{\"contract\":3,\"op\":\"enter\",\"reward\":9504},{\"allowed\":\"U2\",\"fee\":1450,\"op\":\"audit\"},{\"allowed\":\"C21\",\"fee\":0,\"op\":\"audit\"},{\"allowed\":\"U2\",\"fee\":9505,\"op\":\"audit\"},{\"contract\":2,\"op\":\"enter\",\"reward\":7512},{\"allowed\":\"U2\",\"fee\":4709,\"op\":\"audit\"},{\"allowed\":\"C3\",\"fee\":0,\"op\":\"audit\"},{\"allowed\":\"U2\",\"fee\":7513,\"op\":\"audit\"},{\"allowed\":\"U2\",\"fee\":7512,\"op\":\"audit\"},{\"op\":\"exit\"},{\"contract\":1,\"op\":\"enter\",\"reward\":4423},{\"allowed\":\"U2\",\"fee\":2281,\"op\":\"audit\"},{\"allowed\":\"C3\",\"fee\":0,\"op\":\"audit\"},{\"allowed\":\"U2\",\"fee\":4424,\"op\":\"audit\"},{\"allowed\":\"U2\",\"fee\":4424,\"op\":\"audit\"},{\"op\":\"exit\"},{\"allowed\":\"U2\",\"fee\":0,\"op\":\"audit\"},{\"op\":\"exit\"},{\"contract\":18,\"op\":\"enter\",\"reward\":7243},{\"allowed\":\"U2\",\"fee\":598,\"op\":\"audit\"},{\"allowed\":\"C21\",\"fee\":0,\"op\":\"audit\"},{\"allowed\":\"U2\",\"fee\":7244,\"op\":\"audit\"},{\"contract\":13,\"op\":\"enter\",\"reward\":7897},{\"allowed\":\"U2\",\"fee\":6504,\"op\":\"audit\"},{\"allowed\":\"C18\",\"fee\":0,\"op\":\"audit\"},{\"allowed\":\"U2\",\"fee\":7898,\"op\":\"audit\"},{\"allowed\":\"U2\",\"fee\":7897,\"op\":\"audit\"},{\"op\":\"exit\"},{\"contract\":17,\"op\":\"enter\",\"reward\":2644},{\"allowed\":\"U2\",\"fee\":2348,\"op\":\"audit\"},{\"allowed\":\"C18\",\"fee\":0,\"op\":\"audit\"},{\"allowed\":\"U2\",\"fee\":2645,\"op\":\"audit\"},{\"allowed\":\"U2\",\"fee\":0,\"op\":\"audit\"},{\"op\":\"exit\"},{\"allowed\":\"U2\",\"fee\":0,\"op\":\"audit\"},{\"op\":\"exit\"},{\"allowed\":\"U2\",\"fee\":0,\"op\":\"audit\"},{\"op\":\"exit\"}],\"originator\":\"U2\"},{\"events\":[{\"contract\":22,\"op\":\"enter\",\"reward\":1818},{\"allowed\":\"U3\",\"fee\":905,\"op\":\"audit\"},{\"allowed\":\"U4\",\"fee\":0,\"op\":\"audit\"},{\"allowed\":\"U3\",\"fee\":1819,\"op\":\"audit\"},{\"contract\":12,\"op\":\"enter\",\"reward\":7472},{\"allowed\":\"U3\",\"fee\":1387,\"op\":\"audit\"},{\"allowed\":\"C22\",\"fee\":0,\"op\":\"audit\"},{\"allowed\":\"U3\",\"fee\":7473,\"op\":\"audit\"},{\"contract\":10,\"op\":\"enter\",\"reward\":7536},{\"allowed\":\"U3\",\"fee\":6159,\"op\":\"audit\"},{\"allowed\":\"C12\",\"fee\":0,\"op\":\"audit\"},{\"allowed\":\"U3\",\"fee\":7537,\"op\":\"audit\"},{\"allowed\":\"U3\",\"fee\":7537,\"op\":\"audit\"},{\"op\":\"exit\"},{\"contract\":8,\"op\":\"enter\",\"reward\":1813},{\"allowed\":\"U3\",\"fee\":1157,\"op\":\"audit\"},{\"allowed\":\"C12\",\"fee\":0,\"op\":\"audit\"},{\"allowed\":\"U3\",\"fee\":1814,\"op\":\"audit\"},{\"allowed\":\"U3\",\"fee\":1814,\"op\":\"audit\"},{\"op\":\"exit\"},{\"allowed\":\"U3\",\"fee\":7473,\"op\":\"audit\"},{\"op\":\"exit\"},{\"allowed\":\"U3\",\"fee\":1819,\"op\":\"audit\"},{\"op\":\"exit\"}],\"originator\":\"U3\"},{\"events\":[{\"contract\":24,\"op\":\"enter\",\"reward\":4829},{\"allowed\":\"U4\",\"fee\":2495,\"op\":\"audit\"},{\"allowed\":\"U1\",\"fee\":0,\"op\":\"audit\"},{\"allowed\":\"U4\",\"fee\":4830,\"op\":\"audit\"},{\"contract\":20,\"op\":\"enter\",\"reward\":7455},{\"allowed\":\"U4\",\"fee\":1570,\"op\":\"audit\"},{\"allowed\":\"C24\",\"fee\":0,\"op\":\"audit\"},{\"allowed\":\"U4\",\"fee\":7456,\"op\":\"audit\"},{\"contract\":12,\"op\":\"enter\",\"reward\":2557},{\"allowed\":\"U4\",\"fee\":1835,\"op\":\"audit\"},{\"allowed\":\"C20\",\"fee\":0,\"op\":\"audit\"},{\"allowed\":\"U4\",\"fee\":2558,\"op\":\"audit\"},{\"allowed\":\"U4\",\"fee\":2557,\"op\":\"audit\"},{\"op\":\"exit\"},{\"contract\":17,\"op\":\"enter\",\"reward\":6579},{\"allowed\":\"U4\",\"fee\":4615,\"op\":\"audit\"},{\"allowed\":\"C20\",\"fee\":0,\"op\":\"audit\"},{\"allowed\":\"U4\",\"fee\":6580,\"op\":\"audit\"},{\"allowed\":\"U4\",\"fee\":6579,\"op\":\"audit\"},{\"op\":\"exit\"},{\"allowed\":\"U4\",\"fee\":7455,\"op\":\"audit\"},{\"op\":\"exit\"},{\"contract\":3,\"op\":\"enter\",\"reward\":830},{\"allowed\":\"U4\",\"fee\":26,\"op\":\"audit\"},{\"allowed\":\"C24\",\"fee\":0,\"op\":\"audit\"},{\"allowed\":\"U4\",\"fee\":831,\"op\":\"audit\"},{\"contract\":2,\"op\":\"enter\",\"reward\":9562},{\"allowed\":\"U4\",\"fee\":1953,\"op\":\"audit\"},{\"allowed\":\"C3\",\"fee\":0,\"op\":\"audit\"},{\"allowed\":\"U4\",\"fee\":9563,\"op\":\"audit\"},{\"allowed\":\"U4\",\"fee\":9563,\"op\":\"audit\"},{\"op\":\"exit\"},{\"contract\":1,\"op\":\"enter\",\"reward\":3007},{\"allowed\":\"U4\",\"fee\":337,\"op\":\"audit\"},{\"allowed\":\"C3\",\"fee\":0,\"op\":\"audit\"},{\"allowed\":\"U4\",\"fee\":3008,\"op\":\"audit\"},{\"allowed\":\"U4\",\"fee\":0,\"op\":\"audit\"},{\"op\":\"exit\"},{\"allowed\":\"U4\",\"fee\":830,\"op\":\"audit\"},{\"op\":\"exit\"},{\"allowed\":\"U4\",\"fee\":4830,\"op\":\"audit\"},{\"op\":\"exit\"}],\"originator\":\"U4\"}],\"version\":1}",
-        "round_id": 122,
-        "statement": "Repair the auditor's interpretation of these synthetic, completed user-procedure traces. Each transaction starts with its originator user. enter pushes a contract call frame; exit pops it. At an audit event, originator is the transaction's initiating user, invocator is the parent contract (label C followed by its index) or the user for a top-level call, and invocationReward is the reward on the CURRENT frame. Nested returns restore the parent context. The intended auditor accepts iff originator equals allowed AND invocationReward is at least fee. Each accepted audit produces a hypothetical receipt: refund (invocationReward-fee) to invocator, and credit invocationReward to originator. Rejected audits produce nothing. These are independent read-only calculations, not actual transfers or balance mutations. buggy_auditor is incorrect pseudocode to diagnose; follow the intended rules instead. Query metric accepted counts all accepted audits (ignores identity); refund sums refunds to identity; credited sums credits to identity. Labels represent distinct identities. All calls are assumed completed and sufficiently funded; no system procedures, callbacks or execution fees are modeled. Answer with a single decimal integer. All arithmetic is exact; no overflow.",
-        "title": "Blue belt: Qubic call audit v1"
-      },
-      "riddle_hash": "db85b6b8782830119b14a390605d164ffbcab585cfa7172639576403e5408bdf",
-      "round_id": 122,
-      "sensei": true,
-      "settlement": null,
-      "state": "reveal",
-      "title": "Blue belt: Qubic call audit v1"
-    }
-  ]
+  "rounds": []
 }
