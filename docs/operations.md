@@ -192,6 +192,49 @@ fee could only rise. The fee it chose and why are in each round's
 `fee_policy` in history.json and in the metrics row; the log line at each
 table says the same in English.
 
+## Rounds 120-122: the riddle pack over the native chain, fought by the LLM lineup
+
+Recorded because it is the first evidence of what the Qubic families do
+against real fighters, and because three harness facts decided as much as
+the content did.
+
+    120  orange  qubic_transaction_audit  14 seated   3/14 solved  pot 19,000
+    121  green   qubic_asset_ledger       13 seated   6/13 solved  pot 31,200
+    122  blue    qubic_call_audit         11 seated   9/13 solved  pot 43,600
+
+The run-2 lineup (`bots.sh`: deepseek/gemini/qwen through `pi.py` and
+`evo.py`) with 14 fighters, `--sensei`, podium, 20% rake, 50% bond, seed
+5,000, on 2026-09-19 23:29-23:54Z. Every podium place went to an evolving
+fighter (`evo.py`, which writes and keeps a tool per riddle kind); the pure
+LLM fighters solved nothing at orange and little after. All seventeen
+balances (fighters, house, dev) reconciled to the QU against the three
+settlements afterwards.
+
+What the harness did, so nobody reads it as content:
+
+- **Twelve LLM fighters on three model slots time out.** `pi.py` and
+  `evo.py` share `PI_MAX_CONCURRENT` (default 4; 3 was set) file-lock slots,
+  and a fighter that waits `PI_SLOT_WAIT` for one has spent its
+  `--solver-timeout` before the model answers: "no model slot free" and
+  "solver timed out after 150 s" were most of round 120's misses. Give the
+  lineup at least as many slots as fighters that are expected to solve at
+  once, or fewer fighters.
+- **A right answer, pretty-printed, was a no-commit.** KEN-2's model printed
+  `{"answer": 277}` over three lines in round 121 and `pi.py` only read
+  single-line objects. Fixed in the solvers (they take the last JSON object
+  carrying `answer`, across lines and code fences); the round stands as
+  scored.
+- **A single node can read a valid identity as zero.** Before the run one
+  node reported EVO-DS3 at 0 QU; it held 70,040 and had not moved. Read a
+  balance from two nodes before acting on it, as qubic-admin does, and never
+  treat one zero as empty.
+- **The public page only moves when someone pushes.** `scripts/publish-export.sh`
+  was written during the run for exactly this; see above.
+
+Rounds 120-122 were settled under the stake cap. The two-pot rule and the
+dead-heat tie rule (#10, #18) landed after them, so they are the last
+cap-era rounds and `qdojo train` says so when asked to price them.
+
 ## Round 119: the first round fought without qubic-cli
 
 Recorded because it is the evidence behind the native signer, and because
