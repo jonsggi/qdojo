@@ -15,6 +15,7 @@ from .house import House, HouseError
 from .bot import Bot, BotError, fetch_board
 from . import nodes, onboard, spar, events, lab, wizard, term, training, prompts as P, dash, fees
 from . import seedconf
+from . import settings, cockpit
 from .shares import Shares, SharesError
 
 
@@ -433,8 +434,8 @@ def _bot_defaults(a):
         if not a.solver:
             sys.exit("qdojo: no solver: pass --solver, or run `qdojo bot setup` to record one")
     # setdefault, never overwrite: an explicitly exported PI_MODEL=x still wins.
-    for k, v in (prof.get("solver_env") or {}).items():
-        os.environ.setdefault(k, str(v))
+    # A secret setting is copied from the variable it names, here, in-process.
+    a._applied_env = settings.apply_env(prof, {})
 
 
 def cmd_bot_init(a):
@@ -471,8 +472,7 @@ def cmd_train(a):
     solver = a.solver or (onboard.load_profile(a.state) or {}).get("solver")
     if not solver:
         sys.exit("qdojo: no solver: pass --solver, or run `qdojo bot init` to choose one")
-    for k, v in ((onboard.load_profile(a.state) or {}).get("solver_env") or {}).items():
-        os.environ.setdefault(k, str(v))
+    settings.apply_env(onboard.load_profile(a.state) or {}, {})
 
     pool = training.settled_rounds(history)
     if not pool:
@@ -552,19 +552,81 @@ def _save_training(state_dir, card, attempts):
 
 
 def cmd_bot_dash(a):
-    """Your fighter's page, on 127.0.0.1 and nowhere else."""
+    """Your cockpit, on 127.0.0.1 and nowhere else."""
     try:
         httpd, url = dash.serve(a.state, board=a.board or wizard.DEFAULT_BOARD,
                                 port=a.port, read_only=a.read_only)
     except dash.DashError as e:
         sys.exit(f"qdojo: {e}")
-    print(f"\n  your fighter page is up:\n\n    {url}\n")
+    print(f"\n  your cockpit is up:\n\n    {url}\n")
     print("  it binds 127.0.0.1 only and serves nothing from your state directory.")
-    print("  edit a prompt there and the next round uses it. ctrl-c to stop.\n")
+    print("  status, metrics, settings, training, prompts: a setting saved there is live on")
+    print("  the bot's next poll, a prompt on the next round. ctrl-c to stop.\n")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
         print("  stopped.")
+
+
+def cmd_bot_settings(a):
+    """Your fighter's knobs, as its manifest declares them (docs/api.md,
+    'Settings'). Reads and writes bot.json only; needs no seed, no node."""
+    try:
+        if a.action == "set":
+            row = settings.set_value(a.state, a.key, a.value)
+            shown = f"${row['env_name']}" if row["type"] == "secret" else row["value"]
+            print(f"{a.key} = {shown}  (a running bot picks it up on its next poll)")
+            return
+        if a.action == "unset":
+            settings.unset_value(a.state, a.key)
+            print(f"{a.key} unset")
+            return
+        if a.action == "describe":
+            print(json.dumps(settings.describe(a.state), indent=2))
+            return
+        rows = settings.rows(a.state)
+    except settings.SettingsError as e:
+        sys.exit(f"qdojo: {e}")
+    if a.json:
+        print(json.dumps(rows, indent=2))
+        return
+    if not rows:
+        doc = settings.describe(a.state)
+        print(f"no settings: {doc['shipped'] or 'the solver has no manifest'} and {doc['user']} declare none.")
+        print("declare one in the second file (docs/api.md, 'Settings').")
+        return
+
+    def shown(r):
+        if r["type"] == "secret":
+            name = r.get("env_name")
+            return f"${name} ({'set' if r.get('set_in_env') else 'NOT set'})" if name else "—"
+        return "—" if r.get("value") is None else str(r["value"])
+
+    def default(r):
+        d = r.get("default")
+        if r["type"] == "secret":
+            return f"${d}" if d else "—"
+        return "—" if d is None else str(d)
+
+    table = [(r["key"], shown(r), default(r), r["source"],
+              (r.get("help") or "") + (" (not in the manifest)" if r.get("unknown") else "")) for r in rows]
+    widths = [max(len(t[i]) for t in [("KEY", "VALUE", "DEFAULT", "SOURCE", "")] + table) for i in range(4)]
+    room = term.width() - sum(widths) - 8
+    # Help beside the row when it fits, under it when the terminal is narrow:
+    # a help text cut to thirty characters explains nothing.
+    beside = room >= 48
+    print("  ".join(h.ljust(w) for h, w in zip(("KEY", "VALUE", "DEFAULT", "SOURCE"), widths)) + ("  HELP" if beside else ""))
+    for row in table:
+        line = "  ".join(v.ljust(w) for v, w in zip(row[:4], widths))
+        if beside:
+            print(line + "  " + term.fit(row[4], room))
+        else:
+            print(line)
+            if row[4]:
+                print("    " + term.fit(row[4], term.width() - 4))
+    print(f"\nchange one: qdojo bot settings set KEY VALUE   (a running bot picks it up on its next poll)")
+    doc = settings.describe(a.state)
+    print(f"declared in: {doc['shipped'] or '(no shipped manifest)'}\n         and {doc['user']}")
 
 
 def cmd_prompts(a):
@@ -676,21 +738,139 @@ def cmd_bot_run(a):
     with seedconf.ephemeral(throwaway):
         _bot_defaults(a)
         chain = _chain(a, True)
+        recorder = cockpit.Recorder(a.state)
         bot = Bot(chain, a.state, a.solver, name=a.name, max_stake=a.max_stake, solver_timeout=a.solver_timeout,
-                  strategy_cmd=a.strategy)
-        while True:
-            try:
-                board = fetch_board(a.board)
-                if a.name:
-                    bot.house = board["house"]
-                    bot.bow()
-                for line in bot.step(board):
-                    print(time.strftime("%H:%M:%S"), line, flush=True)
-            except (Unknown, ChainError, BotError, OSError, ValueError) as e:
-                print(time.strftime("%H:%M:%S"), f"warning: {e}", file=sys.stderr, flush=True)
-            if a.once:
-                return
-            time.sleep(a.interval)
+                  strategy_cmd=a.strategy, recorder=recorder)
+        log = cockpit.open_log(a.state)
+        beat = cockpit.Heartbeat(a.state, a.interval, board=a.board, solver=a.solver)
+        applied = getattr(a, "_applied_env", {})
+        looked = 0.0
+
+        def say(line, err=False):
+            print(time.strftime("%H:%M:%S"), line, file=sys.stderr if err else sys.stdout, flush=True)
+            log.info(line)
+
+        try:
+            while True:
+                try:
+                    # A setting saved from the cockpit or `bot settings set` is live
+                    # on this poll: the solver is a fresh process and inherits it.
+                    applied = settings.apply_env(wizard.load_profile(a.state), applied)
+                    board = fetch_board(a.board)
+                    if a.name:
+                        bot.house = board["house"]
+                        bot.bow()
+                    acts = bot.step(board)
+                    for line in acts:
+                        say(line)
+                    beat.beat(board=board, actions=acts)
+                    if recorder.pending() and time.time() - looked > cockpit.HISTORY_EVERY:
+                        looked = time.time()
+                        for row in recorder.settle_from_history(fetch_board(_history_url(a.board)), a.identity):
+                            say(f"round {row['round_id']}: settled {row['verdict']}, earned {row['earned']}, net {row['net']}")
+                except (Unknown, ChainError, BotError, OSError, ValueError) as e:
+                    say(f"warning: {e}", err=True)
+                    beat.beat(error=e)
+                if a.once:
+                    return
+                time.sleep(a.interval)
+        finally:
+            beat.close()
+
+
+def _age(seconds) -> str:
+    if seconds is None:
+        return "—"
+    s = int(seconds)
+    if s < 60:
+        return f"{s}s"
+    if s < 3600:
+        return f"{s // 60}m{s % 60:02d}s"
+    return f"{s // 3600}h{(s % 3600) // 60:02d}m"
+
+
+def cmd_bot_status(a):
+    """Is a bot running for this state dir, and what is it doing. Reads the
+    heartbeat, rounds.json and the metrics; needs no seed and no node."""
+    st = cockpit.status(a.state)
+    if a.json:
+        print(json.dumps(st, indent=2))
+        return
+    term.set_enabled(a.color)
+    if st["state"] == "running":
+        head = term.c("RUNNING", "bgreen", "bold") + f"   pid {st['pid']} · heartbeat {_age(st['age'])} ago · "                f"polls every {st['interval']:g}s · up {_age(time.time() - (st['started_at'] or time.time()))}"
+    elif st["state"] == "stale":
+        head = term.c("STALE", "bred", "bold") + f"   pid {st['pid']} last beat {_age(st['age'])} ago: it died "                f"without cleaning up, or the machine slept"
+    else:
+        head = term.c("IDLE", "byellow", "bold") + f"   no bot is running for {a.state}"
+    rows = [term.kv("bot", head)]
+    if st["board"]:
+        rows.append(term.kv("board", st["board"]))
+    if st["solver"]:
+        rows.append(term.kv("solver", " ".join(st["solver"])))
+    if st["tick"] is not None:
+        rows.append(term.kv("tick", str(st["tick"])))
+    for r in st["rounds"]:
+        what = " · ".join(x for x in (r.get("belt"), r.get("kind") or r.get("title"), r.get("state")) if x)
+        rows.append(term.kv(f"R{r['round_id']}", what or "on the board"))
+        rows.append(term.kv("  did", r["did"]))
+    if not st["rounds"]:
+        rows.append(term.kv("rounds", "none seen yet"))
+    for act in st["last_actions"][-3:]:
+        rows.append(term.kv("last", time.strftime("%H:%M:%S", time.localtime(act["at"])) + " " + act["text"]))
+    if st["last_error"]:
+        rows.append(term.kv("warning", time.strftime("%H:%M:%S", time.localtime(st["last_error"]["at"])) + " "
+                            + st["last_error"]["text"]))
+    print(term.box(rows, title="YOUR BOT"))
+
+
+def cmd_bot_metrics(a):
+    """What this machine recorded about every round its bot saw."""
+    m = cockpit.summary(a.state, last=a.last)
+    if a.json:
+        print(json.dumps(m, indent=2))
+        return
+    term.set_enabled(a.color)
+    if not m["rounds_seen"]:
+        print(f"no rounds recorded in {os.path.join(a.state, cockpit.METRICS)} yet; `qdojo bot run` writes it.")
+        return
+    pc = lambda x: "—" if x is None else f"{round(x * 100)}%"
+    rows = [term.kv("rounds", f"{m['rounds_seen']} seen · {m['entered']} entered · {m['skipped']} sat out · "
+                              f"{m['pending']} awaiting settlement"),
+            term.kv("solved", f"{m['solved']} of {m['settled']} settled ({pc(m['solve_rate'])}) · "
+                              f"{m['wins']} paid ({pc(m['win_rate'])})"),
+            term.kv("solve time", "—" if m["avg_solve_seconds"] is None else
+                    f"avg {m['avg_solve_seconds']}s · best {m['best_solve_seconds']}s"),
+            term.kv("purse", f"staked {term.qu(m['staked'])} · earned {term.qu(m['earned'])} · "
+                             f"net {term.qu(m['net'])}" + (f" · bond held {term.qu(m['bond_held'])}" if m["bond_held"] else "")),
+            term.kv("streak", f"{m['streak']:+d} (best {m['best_streak']})"),
+            term.kv("solver", f"failed on {m['solver_failed']} round(s)")]
+    print(term.box(rows, title="THIS MACHINE"))
+    if m["by_kind"]:
+        print()
+        print("KIND" + " " * 38 + "SEEN  ENTERED  SETTLED  SOLVED  RATE")
+        for k, b in sorted(m["by_kind"].items(), key=lambda kv: -kv[1]["seen"]):
+            print(f"{term.fit(k, 40):40}  {b['seen']:4}  {b['entered']:7}  {b['settled']:7}  {b['solved']:6}  {pc(b['solve_rate'])}")
+    if m["last"]:
+        print()
+        print("ROUND  BELT    KIND                          VERDICT     ANSWER        SOLVE   STAKE   NET")
+        for r in m["last"]:
+            state = r.get("verdict") or ("sat out" if r.get("skipped") else ("pending" if r.get("entered") else "seen"))
+            ans = "—" if r.get("answer") is None else str(r["answer"])[:12]
+            took = "—" if r.get("solver_seconds") is None else f"{r['solver_seconds']}s"
+            net = "—" if r.get("net") is None else f"{r['net']:+,}"
+            print(f"R{r['round_id']:<5} {str(r.get('belt') or '—'):7} {term.fit(r.get('kind') or '—', 29):29} "
+                  f"{state:11} {ans:13} {took:7} {str(r.get('stake') or 0):7} {net}")
+
+
+def cmd_bot_log(a):
+    """The tail of bot run's own log."""
+    lines = cockpit.log_tail(a.state, a.n)
+    if not lines:
+        print(f"no log at {os.path.join(a.state, cockpit.LOG)} yet; `qdojo bot run` writes it.")
+        return
+    for line in lines:
+        print(line)
 
 
 def build_parser():
@@ -889,6 +1069,25 @@ def build_parser():
     d.add_argument("--board", help="the house to read your published record from")
     d.add_argument("--read-only", action="store_true", help="show everything, save nothing")
     d.set_defaults(fn=cmd_bot_dash)
+    d = s.add_parser("settings", help="your fighter's knobs: list, set KEY VALUE, unset KEY, describe")
+    d.add_argument("--json", action="store_true", help="the rows as JSON")
+    ss = d.add_subparsers(dest="action")
+    x = ss.add_parser("set", help="validate against the manifest and write bot.json")
+    x.add_argument("key"); x.add_argument("value")
+    x = ss.add_parser("unset", help="forget a stored value; the default applies again")
+    x.add_argument("key")
+    ss.add_parser("describe", help="the merged manifest as JSON, with current values")
+    d.set_defaults(fn=cmd_bot_settings, action="", key="", value="")
+    d = s.add_parser("status", help="is a bot running for this state dir, and what is it doing")
+    d.add_argument("--json", action="store_true"); d.add_argument("--no-color", dest="color", action="store_false", default=None)
+    d.set_defaults(fn=cmd_bot_status)
+    d = s.add_parser("metrics", help="what this machine recorded about every round its bot saw")
+    d.add_argument("--json", action="store_true"); d.add_argument("--last", type=int, default=20, help="rows to show")
+    d.add_argument("--no-color", dest="color", action="store_false", default=None)
+    d.set_defaults(fn=cmd_bot_metrics)
+    d = s.add_parser("log", help="the tail of bot run's log")
+    d.add_argument("-n", type=int, default=50, help="lines")
+    d.set_defaults(fn=cmd_bot_log)
     d = s.add_parser("nodes", help="discover live nodes and refresh the cache"); d.set_defaults(fn=cmd_nodes)
     d = s.add_parser("stats", help="this bot's performance as the house publishes it"); d.add_argument("--board", required=True)
     d.set_defaults(fn=cmd_bot_stats)

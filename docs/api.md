@@ -308,6 +308,14 @@ qdojo bot setup [flags]                             choose a provider and model 
 qdojo bot nodes                                     refresh the live-node cache
 qdojo bot run --board URL --solver CMD... [--name NAME] [--strategy CMD...] [--max-stake N] [--solver-timeout S] [--ephemeral-conf PATH]
 qdojo bot stats --board URL                         your published performance
+qdojo bot settings [--json]                         what your solver is told, and where each value comes from
+qdojo bot settings set KEY VALUE                    write one, validated against the manifest (Settings, below)
+qdojo bot settings unset KEY                        forget a stored value; the default applies again
+qdojo bot settings describe                         the merged manifest as JSON, with current values
+qdojo bot status [--json]                           is a bot running for this state dir, and what is it doing
+qdojo bot metrics [--json] [--last N]               what this machine recorded about every round its bot saw
+qdojo bot log [-n N]                                the tail of bot run's own log
+qdojo bot dash [--port 7777] [--board URL] [--read-only]   all of the above as a page, on 127.0.0.1 only
 qdojo bot shares [--name ASSET --issuer ID]         assets you own, or holders of an asset
 qdojo bot issue-shares ASSET COUNT [--apply]        issue your shares on Qx (you pay the Qx fee)
 qdojo bot dividend ASSET AMOUNT [--apply]           distribute QU to your shareholders via QUtil
@@ -363,9 +371,10 @@ Flags mirror every prompt, so the rite is one non-interactive line:
 prompts when stdin is not a terminal, so it cannot hang in CI.
 
 The profile (`<state>/bot.json`, mode 0600) gains `provider`, `model`, `solver`,
-`solver_env`, `key_source` and `setup_at`. `bot run` picks up `solver` and
-merges `solver_env` with `setdefault`, so a variable you exported yourself still
-wins. Profiles written before these keys existed still load.
+`solver_env`, `secret_env`, `key_source` and `setup_at`. `bot run` picks up
+`solver` and merges `solver_env` with `setdefault`, so a variable you exported
+yourself still wins; `secret_env` holds variable *names* only (Settings,
+below). Profiles written before these keys existed still load.
 
 ## Training: fight without fighting
 
@@ -413,20 +422,154 @@ dojo reads the last line your model prints. `prompts.check()` asserts that
 instruction survives an edit, the solver exits 2 if it did not, and the rite's
 one-real-riddle probe is therefore the regression net.
 
-## Your own page
+## Settings
+
+```
+qdojo bot settings [--json]
+qdojo bot settings set KEY VALUE
+qdojo bot settings unset KEY
+qdojo bot settings describe
+```
+
+A setting is an environment variable with a manifest behind it. A solver
+declares its knobs in a JSON file beside it, named after the script:
+`examples/solvers/evo.py` has `evo.settings.json`, `pi.py` has
+`pi.settings.json`, and so on for `openai_compat.py` and `prompted.py`. Your
+own additions go in `<state>/settings.json` with the same shape; on a key
+clash yours wins, a new key is appended. The two are merged on every read.
+
+```json
+{"solver": "evo.py", "settings": [
+  {"key": "EVO_THINKING", "label": "thinking", "type": "enum",
+   "choices": ["off", "low", "medium", "high"], "default": "low",
+   "help": "How hard pi thinks before it writes a tool."},
+  {"key": "EVO_TIMEOUT", "label": "pi timeout (s)", "type": "float",
+   "default": 120, "min": 5, "max": 3600, "help": "..."},
+  {"key": "EVO_MODEL", "type": "string", "default": null,
+   "suggestions": ["deepseek/deepseek-v4-flash"], "help": "..."},
+  {"key": "OPENAI_API_KEY", "label": "API key", "type": "secret",
+   "default": "OPENROUTER_API_KEY", "help": "the NAME of the variable"}
+]}
+```
+
+| field | meaning |
+|---|---|
+| `key` | the environment variable, `A-Z 0-9 _`, 64 characters at most; required |
+| `type` | `string`, `int`, `float`, `bool`, `enum` or `secret`; default `string` |
+| `label`, `help` | what the form and the table show; help is 2000 characters at most |
+| `default` | applies when nothing is stored; `null` means none |
+| `choices` | required for `enum`, a list of strings; `""` is a legal choice |
+| `min`, `max` | bounds for `int` and `float`; for `string`, a length |
+| `suggestions` | for `string`: offered by the form, not enforced |
+
+Values are checked against the type on every write, from the CLI and from
+the page alike, and stored as strings in `bot.json` under `solver_env` — the
+key `bot run` already feeds the solver — so a solver reads a setting with
+`os.environ.get("KEY")` and nothing else. A `bool` is stored as `true` or
+`false` (`1/0`, `yes/no`, `on/off` are accepted on the way in). The manifest
+files are capped at 256 KB, a value at 4096 bytes, a profile at 64 settings.
+
+Precedence, as `source` in the table reports it: a variable exported in the
+shell wins (`shell`), then the stored value (`profile`), then the manifest's
+default (`default`). A stored key the manifest does not know is listed and
+flagged; it can be unset but not set, because a write must go through a
+declaration. A running bot re-reads the profile every poll, so a change is
+live on the next round without a restart, and it only ever replaces values it
+put there itself — never one you exported.
+
+**`secret` is the one type whose value is never the thing itself.** It holds
+the NAME of an environment variable, in `bot.json` under `secret_env`, and
+`bot run` reads that variable when it starts and hands the value to the
+solver in-process, exactly as the rite's probe already does; nothing is
+written anywhere. A key named like a credential (`KEY`, `TOKEN`, `SECRET`,
+`PASSWORD`…) must be declared a secret, because `check_no_secrets` refuses
+to store it any other way, and a value with the shape of a live key is
+refused whatever the type. The table and the page show the variable's name
+and whether it is set in the current environment, never what it holds.
+
+### Adding a setting with a coding agent
+
+Three edits and nothing else; no qdojo code changes.
+
+1. Declare it in `<state>/settings.json` (or, for a solver you ship, in its
+   `<stem>.settings.json`): a key, a type, a default and a sentence of help.
+2. Read it in the solver: `os.environ.get("MY_KEY", "default")`. The solver
+   is a fresh process per riddle, so the edit is live on the next round.
+3. `qdojo bot settings` lists it; `qdojo bot settings set MY_KEY VALUE` or
+   the cockpit's form writes it. A bot already running picks it up on its
+   next poll. Nothing to restart.
+
+`qdojo bot settings describe` prints the merged manifest with current values
+as JSON, which is the handle an agent wants to check its work.
+
+## Status, metrics and the log
+
+```
+qdojo bot status [--json]
+qdojo bot metrics [--json] [--last N]
+qdojo bot log [-n N]
+```
+
+`bot run` writes three files to the state directory, and these commands and
+the cockpit read them. None of them needs a seed or a node.
+
+**`heartbeat.json`** is rewritten every poll and removed on exit: pid, start
+time, poll interval, board, solver, the last tick seen, every round on the
+board with what the bot did about it, the last few action lines, the last
+warning. `status` reports `running` while the heartbeat is fresh, `stale`
+when the file is there but older than three polls (the process died without
+cleaning up, or the machine slept), `idle` when there is none. It never
+signals the pid to find out.
+
+**`metrics.jsonl`** gets a line for a round whenever something about it is
+learned. Every line is the round's whole row as known at that moment, so
+the last line per `round_id` is the current row and earlier ones are its
+history; a reader merges by `round_id`, last wins.
+
+| field | meaning |
+|---|---|
+| `round_id`, `belt`, `title`, `kind`, `publish_tick`, `entry_fee` | the round; `kind` is the title without its belt prefix |
+| `entered`, `skipped`, `why` | whether a seat was taken or sat out, and the reason in the bot's own words |
+| `stake`, `enter_tick` | what the seat cost, when it was bought (lobby rounds) |
+| `answer`, `solver_seconds`, `solver_exit`, `solver_stderr`, `solver_failures` | what the solver said, how long it took, how it exited, the tail of its stderr when it failed |
+| `commit_tick`, `commit_sends`, `reveal_tick`, `dead` | the ticks the bot's transactions were scheduled for; `dead` when a commit never landed |
+| `verdict`, `earned`, `refunded`, `bond_held`, `net`, `truth`, `settle_tick` | filled in from `history.json` once the house settles the round; `absent` when the house never saw the commit |
+| `seen_at`, `at` | when the row was first written, when this line was |
+
+`bot run` looks at `history.json` beside the board every two minutes while a
+round it entered awaits settlement, and only then. The summary `metrics`
+prints — solve rate over settled rounds, average and best solver time, net
+QU, the current and best streak, per-kind and per-belt rates, the last N
+rounds — is one function, `cockpit.summary()`, and the page shows the same
+numbers.
+
+**`bot.log`** is what `bot run` printed, with a timestamp, rotated at 1 MB
+with three kept. It carries a failing solver's stderr tail. `log -n N` is
+its tail.
+
+## Your cockpit
 
 ```
 qdojo bot dash [--port 7777] [--board URL] [--read-only]
 ```
 
 Binds `127.0.0.1` and nowhere else — there is deliberately no flag to change
-that. Shows the record the house publishes about your identity, the rounds your
-machine actually played, your training scorecard before you have any chain
-record at all, and your prompt files, editable in the browser. A save is live on
-the next round, because the dojo runs a solver as a fresh process per riddle.
+that. One page, polled every few seconds: STATUS (running, stale or idle;
+pid, heartbeat age, tick, the round on the board and what the bot did about
+it), YOUR FIGHTER, METRICS (the tiles above, net QU over settled rounds as an
+inline sparkline, a per-kind table and a per-round table), SETTINGS (a form
+built from the merged manifest; a secret shows the variable name and whether
+it is set, never a value), TRAINING, the record the house publishes about
+you, the rounds this machine sent, the log tail, and your prompt files,
+editable in the browser. A setting saved there is live on the bot's next
+poll; a prompt on the next round, because the dojo runs a solver as a fresh
+process per riddle. Everything on it is also a command above.
 
-It serves four literal URLs and nothing else; the only writable directory is
-your prompts, and it refuses to start if that directory holds a seed conf.
+It serves four literal asset URLs and six literal `/api/` routes and nothing
+else; no request path is ever turned into a file path. Two things can be
+written, both through the per-run token in a header: a prompt, inside the
+prompts directory only, and a setting, one manifest-known key into
+`bot.json`. It refuses to start if the prompts directory holds a seed conf.
 
 ### For a coding agent
 

@@ -22,8 +22,9 @@ def test_solver_last_line_is_the_answer():
 
 
 def test_solver_failures_are_solver_errors():
-    with pytest.raises(SolverError):
-        run_solver(py("import sys; sys.exit(3)"), RIDDLE)
+    with pytest.raises(SolverError) as e:
+        run_solver(py("import sys; print('why', file=sys.stderr); sys.exit(3)"), RIDDLE)
+    assert e.value.exit_code == 3 and e.value.stderr.strip() == "why"    # filed by the bot's recorder
     with pytest.raises(SolverError):
         run_solver(py("print('not json')"), RIDDLE)
     with pytest.raises(SolverError):

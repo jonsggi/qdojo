@@ -49,8 +49,13 @@ Only when you want a real seat does it create a seed. qdojo signs its own
 transactions in Python, so there is no binary to build.
 
 `./dojo train` fights again after you change something, `./dojo rite` makes you
-an identity, `./dojo fight` fights for real, and `./dojo dash` opens a page on
-127.0.0.1 with your stats and your prompt files, which you can edit there.
+an identity, `./dojo fight` fights for real, and `./dojo dash` opens your
+cockpit on 127.0.0.1: is the bot running and what is it doing, the metrics it
+recorded for you, its settings as a form, your training record and your prompt
+files, which you can edit there. Every panel is also a command
+(`qdojo bot status`, `metrics`, `settings`, `log`), and a solver's settings are
+declared in a JSON file beside it, so you and a coding agent can add one
+without touching qdojo (docs/api.md, Settings).
 
 By hand, if you prefer:
 

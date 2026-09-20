@@ -59,12 +59,16 @@ SIGNER_CHECK_PAYLOAD = bytes.fromhex(
 )
 
 PROFILE_KEYS = ("conf", "identity", "name", "cli", "provider", "model", "solver", "solver_env",
-                "key_source", "setup_at")
+                "secret_env", "key_source", "setup_at")
 # "cli" is a path to qubic-cli and is read only under `--chain cli`. Empty
 # means none is installed and none is needed; the key stays so profiles keep
 # their documented shape.
 PROFILE_DEFAULTS = {"conf": "", "identity": "", "name": "", "cli": "", "provider": "",
-                    "model": "", "solver": [], "solver_env": {}, "key_source": "none", "setup_at": 0}
+                    "model": "", "solver": [], "solver_env": {}, "secret_env": {}, "key_source": "none",
+                    "setup_at": 0}
+# secret_env: solver variable -> the NAME of the owner's variable holding it
+# (settings.py, type "secret"). Names only; check_no_secrets guards solver_env
+# because that one carries values.
 
 # A name for anything that must never be written down, and a shape for a value
 # that is obviously a live credential even under an innocent name.
@@ -336,6 +340,7 @@ def _profile(ctx) -> dict:
          "model": ctx.get("model", prev.get("model", "")),
          "solver": list(ctx.get("solver") or prev.get("solver") or []),
          "solver_env": dict(ctx.get("solver_env", prev.get("solver_env") or {})),
+         "secret_env": dict(prev.get("secret_env") or {}),
          "key_source": ctx.get("key_source", prev.get("key_source", "none")),
          "setup_at": int(time.time())}
     check_no_secrets(p["solver_env"])
