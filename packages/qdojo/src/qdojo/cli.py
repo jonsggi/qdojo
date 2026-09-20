@@ -14,7 +14,7 @@ from .chain.base import Unknown, ChainError
 from .house import House, HouseError
 from .bot import Bot, BotError, fetch_board
 from . import nodes, onboard, spar, events, lab, wizard, term, training, prompts as P, dash, fees
-from . import seedconf
+from . import portable, seedconf
 from .shares import Shares, SharesError
 
 
@@ -454,7 +454,7 @@ def _history_url(board: str) -> str:
     """history.json sits beside board.json. The same derivation evo.py makes."""
     if board.endswith("history.json"):
         return board
-    return board.rsplit("/", 1)[0] + "/history.json" if "/" in board else "history.json"
+    return portable.sibling(board, "history.json")
 
 
 def cmd_train(a):
@@ -561,6 +561,16 @@ def cmd_bot_dash(a):
     print(f"\n  your fighter page is up:\n\n    {url}\n")
     print("  it binds 127.0.0.1 only and serves nothing from your state directory.")
     print("  edit a prompt there and the next round uses it. ctrl-c to stop.\n")
+    if getattr(a, "open", False):
+        # Opt-in, because a browser opening on its own is a surprise. The
+        # stdlib asks the OS for its default browser (os.startfile on
+        # Windows), and a machine without one is not an error: the URL is
+        # printed above either way.
+        import webbrowser
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
@@ -662,8 +672,7 @@ def cmd_bot_dividend(a):
 def cmd_bot_stats(a):
     """This bot's published performance, straight from the house's API."""
     _bot_defaults(a)
-    base = a.board.rsplit("/", 1)[0] if "/" in a.board else "."
-    doc = fetch_board(f"{base}/fighters.json")
+    doc = fetch_board(portable.sibling(a.board, "fighters.json"))
     me = next((f for f in doc.get("fighters", []) if f["identity"] == a.identity), None)
     if me is None:
         sys.exit(f"qdojo: {a.identity[:8]}… has not fought at this house yet")
@@ -888,6 +897,7 @@ def build_parser():
     d.add_argument("--port", type=int, default=7777)
     d.add_argument("--board", help="the house to read your published record from")
     d.add_argument("--read-only", action="store_true", help="show everything, save nothing")
+    d.add_argument("--open", action="store_true", help="also open the page in your default browser")
     d.set_defaults(fn=cmd_bot_dash)
     d = s.add_parser("nodes", help="discover live nodes and refresh the cache"); d.set_defaults(fn=cmd_nodes)
     d = s.add_parser("stats", help="this bot's performance as the house publishes it"); d.add_argument("--board", required=True)
@@ -913,6 +923,7 @@ def build_parser():
 
 
 def main(argv=None):
+    portable.tolerant_stdio()      # a redirected Windows stdout must not die on a tick mark
     a = build_parser().parse_args(argv)
     try:
         a.fn(a)

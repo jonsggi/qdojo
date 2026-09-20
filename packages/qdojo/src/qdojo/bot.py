@@ -6,7 +6,7 @@ import secrets
 import subprocess
 import urllib.request
 
-from . import hashing, payload, riddle as R
+from . import hashing, payload, portable, riddle as R
 from .belts import BELTS, RANKS
 from .solver import run_solver, SolverError
 from .chain.base import Unknown, ChainError
@@ -69,7 +69,8 @@ class Bot:
         except Unknown:
             ctx["me"]["balance"] = None
         try:
-            p = subprocess.run(self.strategy_cmd, input=json.dumps(ctx).encode(), capture_output=True, timeout=20)
+            p = subprocess.run(portable.resolve_command(self.strategy_cmd), input=json.dumps(ctx).encode(),
+                               capture_output=True, timeout=20)
             d = json.loads(p.stdout.decode("utf-8", "replace").strip().splitlines()[-1])
             if d.get("enter") is False:
                 actions.append(f"round {rid}: strategy says skip" + (f" ({d.get('why')})" if d.get("why") else ""))

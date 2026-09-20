@@ -1,0 +1,8 @@
+# Line endings, fixed per file so a checkout on either OS runs: the sh
+# launcher must stay LF on a Windows checkout with autocrlf, and cmd.exe
+# misreads a batch file with LF-only endings in places (labels, blocks), so
+# the shim is CRLF everywhere. PowerShell reads both; CRLF keeps Notepad happy.
+dojo     text eol=lf
+*.sh     text eol=lf
+*.cmd    text eol=crlf
+*.ps1    text eol=crlf

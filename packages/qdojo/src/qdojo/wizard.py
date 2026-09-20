@@ -3,7 +3,9 @@
 Six staged steps. Each one proves something instead of printing a claim:
 the signer is not merely imported but made to reproduce a reference
 transaction byte for byte; the seed conf is not merely written but
-stat'ed for mode 0600; the name is not merely measured but pushed through
+stat'ed for mode 0600 (where the OS has modes -- on Windows the rite says
+what keeps the file private instead, see portable.py); the name is not
+merely measured but pushed through
 `payload.encode(payload.Bow(name))`; the node is not merely named but asked for
 its tick; the model is not merely configured but made to solve one cheap test
 riddle through `solver.run_solver` — the exact code path `bot run` uses; and the
@@ -27,7 +29,7 @@ import sys
 import textwrap
 import time
 
-from . import nodes, onboard, payload, prompts, qubic, term
+from . import nodes, onboard, payload, portable, prompts, qubic, term
 from .chain.base import ChainError, Unknown
 from .chain.native import NativeChain
 from .payload import PayloadError
@@ -265,7 +267,10 @@ def examples_dir() -> str | None:
 
 
 def solver_argv(filename: str) -> list[str]:
-    """`[python3, /abs/path/to/<filename>]`, or WizardError saying where to look."""
+    """`[sys.executable, /abs/path/to/<filename>]`, or WizardError saying where
+    to look. The interpreter is the one qdojo runs on, by path: on Windows
+    there is no `python3` to name, and `bot run` maps a path that has since
+    moved back to its own interpreter (portable.resolve_command)."""
     d = examples_dir()
     path = os.path.join(d, filename) if d else ""
     if not path or not os.path.exists(path):
@@ -356,21 +361,35 @@ def run_command(profile: dict, board: str | None = None, env_prefix: bool = True
         argv += [f"{k}={v}" for k, v in sorted((profile.get("solver_env") or {}).items())]
     argv += ["qdojo", "bot"]
     state = os.path.dirname(profile.get("conf") or "")
-    if state and os.path.abspath(state) != os.path.abspath(DEFAULT_STATE):
+    if state and os.path.normcase(os.path.abspath(state)) != os.path.normcase(os.path.abspath(DEFAULT_STATE)):
         argv += ["--state", state]
-    solver = list(profile.get("solver") or ["python3", "examples/solvers/echo.py"])
+    solver = list(profile.get("solver") or [portable.python_name(), "examples/solvers/echo.py"])
     argv += ["run", "--board", board or DEFAULT_BOARD, "--solver", *solver]
     if profile.get("name"):
         argv += ["--name", profile["name"]]
     return argv
 
 
-def run_command_text(profile: dict, board: str | None = None, wrap: bool = True, env_prefix: bool = True) -> str:
-    """The same command as one shell-safe string.
-    `shlex.split(run_command_text(p, b, wrap=False)) == run_command(p, b)`."""
+def run_command_text(profile: dict, board: str | None = None, wrap: bool = True, env_prefix: bool = True,
+                     shell: str | None = None) -> str:
+    """The same command as one shell-safe string, for `shell`: "sh" or
+    "powershell", defaulting to this OS's.
+
+    For sh, `shlex.split(run_command_text(p, b, wrap=False)) == run_command(p, b)`.
+    PowerShell cannot take `NAME=value` in front of a command, so there each
+    variable is set on a line of its own (`$env:NAME = 'value'`), the
+    continuation is a backtick, and the quoting is PowerShell's."""
+    shell = shell or portable.shell_name()
+    if shell == "powershell":
+        return _run_command_powershell(profile, board, wrap, env_prefix)
     args = [shlex.quote(a) for a in run_command(profile, board, env_prefix)]
     if not wrap:
         return " ".join(args)
+    return " \\\n".join(_wrapped(args))
+
+
+def _wrapped(args: list[str]) -> list[str]:
+    """One line per flag group, the continuation left to the caller."""
     out, line = [], []
     for a in args:
         if line and a in ("--board", "--solver", "--name"):
@@ -378,7 +397,15 @@ def run_command_text(profile: dict, board: str | None = None, wrap: bool = True,
             line = ["   "]
         line.append(a)
     out.append(" ".join(line))
-    return " \\\n".join(out)
+    return out
+
+
+def _run_command_powershell(profile, board, wrap, env_prefix) -> str:
+    env = [f"$env:{k} = {portable.ps_string(v)}" for k, v in sorted((profile.get("solver_env") or {}).items())]
+    args = [portable.ps_quote(a) for a in run_command(profile, board, env_prefix=False)]
+    if not wrap:
+        return "; ".join((env if env_prefix else []) + [" ".join(args)])
+    return "\n".join((env if env_prefix else []) + [" `\n".join(_wrapped(args))])
 
 
 # --------------------------------------------------------------------- steps
@@ -425,11 +452,18 @@ def _step_seed(opts, ctx, n, total):
         seed = sys.stdin.readline().strip() if opts.seed_from_stdin else None
         onboard.create_conf(conf, seed)
         term.ok("new seed created", conf)
-    mode = stat.S_IMODE(os.stat(conf).st_mode)
-    if mode != 0o600:
-        term.fail("the seed conf is not 0600", f"{conf} is {oct(mode)} — fix it before you go on")
-        raise WizardError(f"{conf} is mode {oct(mode)}, must be 0600")
-    term.ok("mode 0600 confirmed", "only you can read it — back this file up")
+    if portable.private_modes_enforced():
+        mode = stat.S_IMODE(os.stat(conf).st_mode)
+        if mode != 0o600:
+            term.fail("the seed conf is not 0600", f"{conf} is {oct(mode)} — fix it before you go on")
+            raise WizardError(f"{conf} is mode {oct(mode)}, must be 0600")
+        term.ok("mode 0600 confirmed", "only you can read it — back this file up")
+    else:
+        # Windows has no 0600 to confirm: os.chmod there toggles read-only and
+        # nothing else. The file is as private as the user profile it sits in,
+        # which is the reason for the rule "one Windows user per fighter".
+        term.ok("private to your Windows user", "no file modes here; the profile's ACL is the lock")
+        term.info("", "one Windows user per fighter — back this file up")
     ctx["conf"] = conf
     ctx["identity"] = onboard.derive_identity("", conf)
     term.ok("identity derived", ctx["identity"][:12] + "…" + ctx["identity"][-6:])
@@ -536,9 +570,9 @@ def _pick_solver(opts, sv) -> list[str]:
         return solver_argv(sv["file"])
     _say("the whole contract: the riddle arrives on stdin as JSON, and the LAST line you print "
          "must be {\"answer\": ...}. Exit non-zero and the dojo records that you did not answer.")
-    cmd = term.ask("the command that runs your fighter", default="python3 ./my_solver.py",
+    cmd = term.ask("the command that runs your fighter", default=f"{portable.python_name()} ./my_solver.py",
                    no_input=opts.yes)
-    argv = shlex.split(cmd)
+    argv = portable.split_command(cmd)          # a Windows path keeps its backslashes
     if not argv:
         raise WizardError("no solver command given")
     return argv
@@ -612,9 +646,11 @@ def _step_model(opts, ctx, n, total):
     term.ok("solver", " ".join(os.path.basename(a) for a in solver))
     if key_env:
         if os.environ.get(key_env):
-            term.ok(f"key in ${key_env}", "present in this shell — qdojo reads it, never writes it")
+            term.ok(f"key in {portable.env_ref(key_env)}", "present in this shell — qdojo reads it, never writes it")
         else:
-            term.warn(f"${key_env} is not set", "export it in your shell before you run; the probe below will say so")
+            term.warn(f"{portable.env_ref(key_env)} is not set",
+                      f"set it in your shell before you run ({portable.export_hint(key_env)}); "
+                      f"the probe below will say so")
     term.info("qdojo stores", f"key_source = {key_source}  (the name of the place, never the key)")
 
     ctx.update(provider=prov["key"], model=model, solver=solver, solver_env=env, key_source=key_source,
@@ -724,7 +760,8 @@ def _card(opts, ctx, prof) -> None:
         term.kv("purse", term.qu(ctx.get("balance")) + term.c(f"   seat {term.qu(ctx.get('seat', DEFAULT_SEAT))}",
                                                              "dim")),
         term.kv("seed", prof.get("conf", "")),
-        term.kv("", term.c("0600 — back this up. Lose it and the purse is gone.", "byellow")),
+        term.kv("", term.c(("0600" if portable.private_modes_enforced() else "yours alone")
+                           + " — back this up. Lose it and the purse is gone.", "byellow")),
         term.kv("node", f"{node.get('ip', '?')}" + term.c(f"   lag {node.get('lag', '?')}", "dim")),
         term.kv("model", model),
         term.kv("reached", _how_reached(ctx)),

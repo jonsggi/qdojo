@@ -23,12 +23,26 @@ import stat
 import sys
 import time
 
+from . import portable
+
 
 def runtime_dir() -> str:
     """`$XDG_RUNTIME_DIR/qdojo`, or `/run/user/<uid>/qdojo` when the variable
-    is unset (a cron job, a systemd unit without a session)."""
-    base = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
-    return os.path.join(base, "qdojo")
+    is unset (a cron job, a systemd unit without a session).
+
+    Windows has neither, nor a tmpfs: there it is `%LOCALAPPDATA%\\qdojo\\run`,
+    a plain directory on disk that survives a reboot. Nothing in qdojo writes
+    a conf there either, so on a fighter's machine it is normally empty; the
+    startup check reads it all the same, because a conf that does land there
+    is not going to vanish on its own.
+    """
+    base = os.environ.get("XDG_RUNTIME_DIR")
+    if base:
+        return os.path.join(base, "qdojo")
+    if portable.is_windows():
+        return os.path.join(portable.local_app_data(), "qdojo", "run")
+    else:
+        return os.path.join(f"/run/user/{os.getuid()}", "qdojo")
 
 
 def leftover_confs(directory: str | None = None, exclude: str | None = None,
@@ -112,6 +126,11 @@ def shred(path: str, passes: int = 3) -> bool:
 
     A symlink is unlinked, not followed: the caller named the link, not
     whatever it points at.
+
+    On Windows a read-only file cannot be opened for writing or unlinked, and
+    `os.chmod(path, 0o400)` is exactly how one is made read-only, so the
+    attribute is cleared first; a conf another process still holds open
+    cannot be unlinked there at all, and that error is left to surface.
     """
     try:
         st = os.lstat(path)
@@ -120,6 +139,11 @@ def shred(path: str, passes: int = 3) -> bool:
     if stat.S_ISLNK(st.st_mode):
         os.unlink(path)
         return True
+    if portable.is_windows():
+        try:
+            os.chmod(path, stat.S_IREAD | stat.S_IWRITE)
+        except OSError:
+            pass
     try:
         with open(path, "rb+") as f:
             for _ in range(passes):
@@ -143,6 +167,12 @@ def ephemeral(path: str | None):
     The handler is installed only for the duration of the block and the one
     that was there before is put back. A second SIGTERM arriving during the
     shred is ignored rather than allowed to interrupt it.
+
+    On Windows `signal.signal` accepts SIGTERM but nothing ever delivers it:
+    `taskkill` without `/F` posts a window message a console program never
+    sees, and `taskkill /F` is SIGKILL. What a console does deliver is
+    ctrl-c (KeyboardInterrupt, covered above) and ctrl-break, which is
+    SIGBREAK and exists only there, so it is handled where it exists.
     """
     if path is None:
         yield None
@@ -151,18 +181,29 @@ def ephemeral(path: str | None):
     def on_term(signum, frame):
         raise SystemExit(128 + signum)
 
-    prev = None
-    try:
-        prev = signal.signal(signal.SIGTERM, on_term)
-    except ValueError:
-        pass    # not the main thread: no handler, but every other exit path is still covered
+    prev = {}
+    for sig in exit_signals():
+        try:
+            prev[sig] = signal.signal(sig, on_term)
+        except ValueError:
+            pass    # not the main thread: no handler, but every other exit path is still covered
     try:
         yield path
     finally:
-        if prev is not None:
-            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        for sig in prev:
+            signal.signal(sig, signal.SIG_IGN)
         try:
             shred(path)
         finally:
-            if prev is not None:
-                signal.signal(signal.SIGTERM, prev)
+            for sig, handler in prev.items():
+                signal.signal(sig, handler)
+
+
+def exit_signals() -> list:
+    """The signals a throwaway conf must survive: SIGTERM everywhere, and
+    ctrl-break where the OS has it."""
+    out = [signal.SIGTERM]
+    sigbreak = getattr(signal, "SIGBREAK", None)
+    if sigbreak is not None:
+        out.append(sigbreak)
+    return out

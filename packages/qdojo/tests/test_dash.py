@@ -83,7 +83,7 @@ def test_the_module_reads_exactly_three_files_out_of_the_state_dir():
             node.body = node.body[1:]
     literals = {n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)}
     named = {x for x in literals if x.endswith(".json")}
-    assert named == {"bot.json", "training.json", "rounds.json", "fighters.json", "/fighters.json"}, named
+    assert named == {"bot.json", "training.json", "rounds.json", "fighters.json"}, named
     # No path-LIKE literal may name a conf. Prose is exempt: the guard's own
     # refusal message has to be able to say the word.
     paths = {x for x in literals if x and " " not in x}

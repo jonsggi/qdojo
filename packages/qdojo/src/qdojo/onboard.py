@@ -45,7 +45,9 @@ def create_conf(path: str, seed: str | None = None) -> str:
     if len(seed) != SEED_LEN or not seed.isalpha() or not seed.islower():
         raise OnboardError("a seed is exactly 55 lowercase letters a-z")
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, "w") as f:
+    # newline="\n" so a conf is the same 61 bytes on Windows as anywhere:
+    # one written there and carried to a Linux box must read as the same file.
+    with os.fdopen(fd, "w", newline="\n") as f:
         f.write(f"seed={seed}\n")
     check_seed_conf(path)
     return path
