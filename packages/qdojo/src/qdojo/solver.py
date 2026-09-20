@@ -2,7 +2,7 @@
 import json
 import subprocess
 
-from . import hashing
+from . import hashing, portable
 
 
 class SolverError(Exception):
@@ -13,10 +13,14 @@ class SolverError(Exception):
 
 
 def run_solver(command: list[str], riddle_public: dict, timeout: float = 60.0):
-    """The canonical answer, or raise SolverError. Never raises anything else."""
+    """The canonical answer, or raise SolverError. Never raises anything else.
+
+    The command is resolved for this machine first (portable.resolve_command):
+    a leading `python3` on a Windows box, or `python` on a Linux one, means
+    the Python qdojo runs on, so one profile works on both."""
     try:
-        p = subprocess.run(command, input=json.dumps(riddle_public).encode("utf-8"), capture_output=True,
-                           timeout=timeout, check=False)
+        p = subprocess.run(portable.resolve_command(command), input=json.dumps(riddle_public).encode("utf-8"),
+                           capture_output=True, timeout=timeout, check=False)
     except subprocess.TimeoutExpired:
         raise SolverError(f"solver timed out after {timeout}s")
     except OSError as e:

@@ -48,16 +48,36 @@ if model:
     args += ["--model", model]
 args.append(prompt)
 # ---- concurrency limit: the box cannot host every fighter's model process at once
-import fcntl as _fcntl
+# One lock file per slot under the system temp directory. flock where the OS
+# has it; on Windows msvcrt.locking on the first byte does the same job. Both
+# are released when the process exits, however it exits.
+try:
+    import fcntl as _fcntl
+
+    def _try_lock(f):
+        _fcntl.flock(f, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+except ImportError:                                     # Windows
+    import msvcrt as _msvcrt
+
+    def _try_lock(f):
+        f.seek(0)
+        _msvcrt.locking(f.fileno(), _msvcrt.LK_NBLCK, 1)
+
+SLOTS = os.path.join(tempfile.gettempdir(), "qdojo-pi-slots")
+
+
 def _slot(max_slots=int(os.environ.get("PI_MAX_CONCURRENT", "4")), wait=float(os.environ.get("PI_SLOT_WAIT", "90"))):
     """Hold one of max_slots file locks; wait up to `wait` seconds for one."""
-    os.makedirs("/tmp/qdojo-pi-slots", exist_ok=True)
+    os.makedirs(SLOTS, exist_ok=True)
     deadline = time.time() + wait
     while True:
         for i in range(max_slots):
-            f = open(f"/tmp/qdojo-pi-slots/{i}", "w")
             try:
-                _fcntl.flock(f, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+                f = open(os.path.join(SLOTS, str(i)), "a")     # never truncate: a locked file cannot be, on Windows
+            except OSError:
+                continue
+            try:
+                _try_lock(f)
                 return f
             except OSError:
                 f.close()

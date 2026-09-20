@@ -19,6 +19,8 @@ import shutil
 import sys
 import threading
 
+from . import portable
+
 MAX_WIDTH = 100
 MIN_WIDTH = 24
 
@@ -61,7 +63,9 @@ def enabled(stream=None) -> bool:
     Off when NO_COLOR is set to any value, when TERM is "dumb", or when the
     stream is not a TTY. FORCE_COLOR=1 overrides all three. `stream` defaults
     to the *current* sys.stdout (not the one bound at import) so that a test
-    harness capturing stdout is honoured.
+    harness capturing stdout is honoured. On Windows the console must also
+    agree to interpret escapes (portable.console_escapes_ok); a legacy
+    cmd.exe window that will not is treated like NO_COLOR.
     """
     if _forced is not None:
         return _forced
@@ -73,9 +77,11 @@ def enabled(stream=None) -> bool:
         return False
     stream = sys.stdout if stream is None else stream
     try:
-        return bool(stream.isatty())
+        if not stream.isatty():
+            return False
     except Exception:
         return False
+    return portable.console_escapes_ok()
 
 
 def stdin_is_tty() -> bool:

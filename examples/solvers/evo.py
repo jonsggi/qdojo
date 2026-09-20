@@ -35,13 +35,15 @@ LOG = os.path.join(EVO_DIR, "evo.log")
 # Who this toolbox belongs to. Nothing else on disk ties an evo directory to a
 # chain identity or a model, so `qdojo house lab` cannot cross-link the lab to
 # the fighter card without it. Rewritten every run; it is never secret.
-with open(os.path.join(EVO_DIR, "bot.json"), "w") as _f:
-    json.dump({"name": os.environ.get("QDOJO_NAME") or os.path.basename(EVO_DIR.rstrip("/")),
+# Every text file here is opened as UTF-8 by name: on Windows the default is
+# the locale's code page, which cannot write a riddle's answer.
+with open(os.path.join(EVO_DIR, "bot.json"), "w", encoding="utf-8") as _f:
+    json.dump({"name": os.environ.get("QDOJO_NAME") or os.path.basename(os.path.normpath(EVO_DIR)),
                "identity": ME or None, "model": MODEL}, _f, indent=2)
 
 
 def log(msg):
-    with open(LOG, "a") as f:
+    with open(LOG, "a", encoding="utf-8") as f:
         f.write(time.strftime("%H:%M:%S ") + msg + "\n")
 
 
@@ -73,16 +75,36 @@ def run_tool(path, r, timeout=20):
 
 
 # ---- concurrency limit: the box cannot host every fighter's model process at once
-import fcntl as _fcntl
+# One lock file per slot under the system temp directory. flock where the OS
+# has it; on Windows msvcrt.locking on the first byte does the same job. Both
+# are released when the process exits, however it exits.
+try:
+    import fcntl as _fcntl
+
+    def _try_lock(f):
+        _fcntl.flock(f, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+except ImportError:                                     # Windows
+    import msvcrt as _msvcrt
+
+    def _try_lock(f):
+        f.seek(0)
+        _msvcrt.locking(f.fileno(), _msvcrt.LK_NBLCK, 1)
+
+SLOTS = os.path.join(tempfile.gettempdir(), "qdojo-pi-slots")
+
+
 def _slot(max_slots=int(os.environ.get("PI_MAX_CONCURRENT", "4")), wait=float(os.environ.get("PI_SLOT_WAIT", "90"))):
     """Hold one of max_slots file locks; wait up to `wait` seconds for one."""
-    os.makedirs("/tmp/qdojo-pi-slots", exist_ok=True)
+    os.makedirs(SLOTS, exist_ok=True)
     deadline = time.time() + wait
     while True:
         for i in range(max_slots):
-            f = open(f"/tmp/qdojo-pi-slots/{i}", "w")
             try:
-                _fcntl.flock(f, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+                f = open(os.path.join(SLOTS, str(i)), "a")     # never truncate: a locked file cannot be, on Windows
+            except OSError:
+                continue
+            try:
+                _try_lock(f)
                 return f
             except OSError:
                 f.close()
@@ -127,9 +149,9 @@ def write_tool(key, r, prev_code=None, failure=None):
     if not code.strip() or "answer" not in code:
         return False
     path = tool_path(key)
-    with open(path + ".v" + str(int(time.time())), "w") as f:
+    with open(path + ".v" + str(int(time.time())), "w", encoding="utf-8") as f:
         f.write(code)
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         f.write(code)
     return True
 
@@ -146,7 +168,7 @@ def learn():
     except Exception:
         return
     seen_path = os.path.join(EVO_DIR, "learned.json")
-    seen = set(json.load(open(seen_path))) if os.path.exists(seen_path) else set()
+    seen = set(json.load(open(seen_path, encoding="utf-8"))) if os.path.exists(seen_path) else set()
     for rd in reversed(hist.get("rounds", [])):
         if rd["state"] != "settled" or not rd.get("riddle"):
             continue
@@ -156,9 +178,9 @@ def learn():
         key = kind_key(rd["riddle"])
         want = rd["settlement"]["answer"]
         seen.add(rd["round_id"])
-        json.dump(sorted(seen), open(seen_path, "w"))
+        json.dump(sorted(seen), open(seen_path, "w", encoding="utf-8"))
         path = tool_path(key)
-        prev = open(path).read() if os.path.exists(path) else None
+        prev = open(path, encoding="utf-8").read() if os.path.exists(path) else None
         failure = f"for the example it answered {mine.get('answer')!r} but the correct answer was {want!r}"
         example = dict(rd["riddle"]); example["known_answer"] = want
         if write_tool(key, example, prev, failure):
@@ -174,10 +196,10 @@ answer, err = (None, "no tool yet")
 if os.path.exists(path):
     answer, err = run_tool(path, riddle)
 if answer is None:
-    prev = open(path).read() if os.path.exists(path) else None
+    prev = open(path, encoding="utf-8").read() if os.path.exists(path) else None
     if write_tool(key, riddle, prev, err if prev else None):
         answer, err = run_tool(path, riddle)
-        if answer is None and prev is None and write_tool(key, riddle, open(path).read(), err):
+        if answer is None and prev is None and write_tool(key, riddle, open(path, encoding="utf-8").read(), err):
             answer, err = run_tool(path, riddle)
 if answer is None:
     log(f"round {riddle.get('round_id')} {key}: no answer ({err})")

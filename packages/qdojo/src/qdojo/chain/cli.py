@@ -6,6 +6,7 @@ import os
 import stat
 import subprocess
 
+from .. import portable
 from ..round import Observed
 from . import parse
 from .base import SendResult, Unknown, ChainError
@@ -27,12 +28,16 @@ class SeedConfError(ChainError):
 
 def check_seed_conf(path: str) -> None:
     """A conf must exist, be mode 0600, and carry exactly one seed= line of 55
-    lowercase letters. Without it qubic-cli silently signs as a public identity."""
+    lowercase letters. Without it qubic-cli silently signs as a public identity.
+
+    The mode is checked only where the OS has one: on Windows every file
+    reports 0o666 and the ACL on the user profile is what keeps it private
+    (portable.py), so insisting on 0600 there would refuse every conf."""
     try:
         st = os.stat(path)
     except FileNotFoundError:
         raise SeedConfError(f"conf not found: {path}")
-    if stat.S_IMODE(st.st_mode) & 0o077:
+    if portable.private_modes_enforced() and stat.S_IMODE(st.st_mode) & 0o077:
         raise SeedConfError(f"conf {path} must be mode 0600")
     seeds = []
     with open(path, encoding="utf-8") as f:

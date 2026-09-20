@@ -98,7 +98,7 @@ def test_the_modules_behind_the_page_name_every_file_they_read_out_of_the_state_
     metrics, the log, rounds.json. settings.py: the two manifests. The seed
     conf is in none of these lists and must never be."""
     literals, named = _file_literals(dash)
-    assert named == {"bot.json", "training.json", "rounds.json", "fighters.json", "/fighters.json"}, named
+    assert named == {"bot.json", "training.json", "rounds.json", "fighters.json"}, named
     # No path-LIKE literal may name a conf. Prose is exempt: the guard's own
     # refusal message has to be able to say the word.
     paths = {x for x in literals if x and " " not in x}

@@ -45,7 +45,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import cockpit, prompts as P, settings as SETTINGS, wizard
+from . import cockpit, portable, prompts as P, settings as SETTINGS, wizard
 
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}\.md$")
 MAX_BODY = 65536
@@ -158,7 +158,7 @@ class Fighter:
         if self._cache[1] is not None and now - self._cache[0] < BOARD_TTL:
             rows = self._cache[1]
         else:
-            url = self.board.rsplit("/", 1)[0] + "/fighters.json" if "/" in self.board else "fighters.json"
+            url = portable.sibling(self.board, "fighters.json")
             try:
                 if url.startswith(("http://", "https://")):
                     with urllib.request.urlopen(url, timeout=10) as r:

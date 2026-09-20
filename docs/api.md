@@ -340,9 +340,54 @@ identity: the run signs with that conf and shreds it when it exits, on every
 exit path including ctrl-c and SIGTERM. Only the conf named by the flag is
 ever shredded; one given through `--conf`, `QDOJO_CONF` or the profile never
 is. Both commands, and `bot init`, first list any `*.conf` left in the
-runtime directory (`$XDG_RUNTIME_DIR/qdojo`) on stderr, with ages. That
-check reports and deletes nothing; docs/operations.md says what those files
-are.
+runtime directory (`$XDG_RUNTIME_DIR/qdojo`; `%LOCALAPPDATA%\qdojo\run` on
+Windows) on stderr, with ages. That check reports and deletes nothing;
+docs/operations.md says what those files are.
+
+### On Windows
+
+The bot side runs on Windows (`dojo.cmd` / `dojo.ps1`; README, "On
+Windows"). The house does not. Where behaviour differs, and why:
+
+- **The runtime directory** is `%LOCALAPPDATA%\qdojo\run` in place of
+  `$XDG_RUNTIME_DIR/qdojo`; an explicit `XDG_RUNTIME_DIR` still wins. It is
+  a plain directory, not a tmpfs, so a conf that lands there stays until
+  something removes it, and the startup check matters more there, not less.
+  `--ephemeral-conf` shreds on ctrl-c and on ctrl-break (SIGBREAK, which
+  only Windows has); `taskkill /F` cannot be caught, like SIGKILL. A seed
+  conf is written LF-only on every OS, so one made on Windows is the same
+  61 bytes as one made on Linux.
+- **File modes are not enforced.** `os.chmod(path, 0o600)` on Windows
+  toggles the read-only attribute and nothing else, and `os.open(..., 0o600)`
+  cannot keep other users out, so the 0600 checks (`bot init`'s stage two,
+  and the check every run makes before reading a conf) are skipped there and
+  the rite says what holds instead: the conf is as private as the user
+  profile it sits in. One Windows user per fighter. `bot.json` is written the
+  same way.
+- **`python3` resolution.** A `--solver` or `--strategy` line is resolved
+  before it runs (`portable.resolve_command`): a leading `python3`, `python`,
+  `python3.x` or interpreter path that this machine cannot run becomes the
+  Python qdojo runs on; one it can run is left alone. On Windows a leading
+  `.py` file gets that interpreter put in front, since `CreateProcess` cannot
+  run a script by itself. So `--solver python3 my.py` works on both, the
+  profile `bot init` writes (`sys.executable`, by path) still runs after the
+  venv moves, and the Microsoft Store's `python.exe` alias under
+  `WindowsApps` is not counted as a Python. The shipped examples keep their
+  `#!/usr/bin/env python3` line; nothing on Windows reads it.
+- **The printed run command** on `bot init`'s card is written for the shell
+  of the OS: `$env:NAME = 'value'` lines and a backtick continuation on
+  Windows, `NAME=value` in front and a backslash elsewhere.
+- **`bot dash --open`** also opens the page in the default browser; the URL
+  is printed either way, since a console with no clickable links is normal
+  there.
+- **A redirected stdout** (a file, a pipe) uses the locale code page on
+  Windows; a character it cannot encode prints as `?` rather than ending the
+  run. A legacy `cmd.exe` window that will not interpret escape sequences
+  gets plain ASCII, as with `NO_COLOR`.
+
+`scripts/check-portable.py` reads the fighter-side modules and the examples
+for POSIX-only imports, calls, signals and absolute paths outside a
+platform guard, and the test suite runs it, so the property sticks.
 
 ### The initiation rite
 
@@ -561,11 +606,12 @@ its tail.
 ## Your cockpit
 
 ```
-qdojo bot dash [--port 7777] [--board URL] [--read-only]
+qdojo bot dash [--port 7777] [--board URL] [--read-only] [--open]
 ```
 
 Binds `127.0.0.1` and nowhere else — there is deliberately no flag to change
-that. One page, polled every few seconds: STATUS (running, stale or idle;
+that. `--open` also opens the page in your default browser; the URL is
+printed either way. One page, polled every few seconds: STATUS (running, stale or idle;
 pid, heartbeat age, tick, the round on the board and what the bot did about
 it), YOUR FIGHTER, METRICS (the tiles above, net QU over settled rounds as an
 inline sparkline, a per-kind table and a per-round table), SETTINGS (a form

@@ -94,6 +94,52 @@ discovery. Then `qdojo bot stats --board <url>` for your own record. The whole
 developer surface is [docs/api.md](docs/api.md); if you are handing this to a
 coding agent, point it at `apps/web/llms.txt`, which is written for one.
 
+## On Windows
+
+The fighter side runs on Windows; the house stays on Linux. From PowerShell:
+
+```powershell
+git clone https://github.com/jonsggi/qdojo qdojo; cd qdojo; .\dojo.cmd
+```
+
+`dojo.cmd` is a shim that starts `dojo.ps1` with the execution policy
+bypassed for that one process and changes nothing else on your machine.
+`dojo.ps1` is `./dojo` step for step, in PowerShell, and like it is meant to
+be read before it is run: it finds `uv` (PATH, `%USERPROFILE%\.local\bin`,
+`%USERPROFILE%\.cargo\bin`), refuses with three install hints when there is
+none (`winget install --id=astral-sh.uv -e`, `pipx install uv`, or the
+official one-liner, none of which it runs for you), runs `uv sync`, and
+then the same subcommands: `.\dojo.cmd train | rite | fight | dash | prompts`.
+By hand it is `uv run qdojo ...` exactly as above. Write `python` where the
+examples say `python3`, or do not bother: a leading `python3` or `python`
+that is not on PATH is mapped to the Python qdojo itself runs on.
+
+What differs, all of it in `packages/qdojo/src/qdojo/portable.py` and
+spelled out in [docs/api.md](docs/api.md):
+
+- **There are no file modes.** `bot init` cannot confirm 0600 there and says
+  what holds instead: a seed conf is as private as the Windows user profile
+  it sits in. One Windows user per fighter, and back the file up.
+- **The runtime directory** is `%LOCALAPPDATA%\qdojo\run`: a plain directory
+  on disk, not a tmpfs, so a conf put there survives a reboot.
+- **A throwaway conf** (`--ephemeral-conf`) is shredded on ctrl-c and
+  ctrl-break. `taskkill /F` is SIGKILL and cannot be caught.
+- **The printed run command** is PowerShell-shaped, and `bot dash --open`
+  opens your page in the default browser.
+
+**What is not verified.** There is no Windows machine behind this repo.
+`dojo.ps1` has been parsed and dry-run under PowerShell 7 on Linux against a
+fake `uv`, every Windows branch in the package is exercised on Linux with
+`sys.platform` faked (`packages/qdojo/tests/test_portable.py`), and
+`scripts/check-portable.py` fails the test suite if a fighter-side file
+reaches for a POSIX-only import, call or path outside a platform guard.
+What that leaves: the launcher has not run on a real Windows nor under
+Windows PowerShell 5.1; the `msvcrt.locking` half of the slot lock in
+`examples/solvers/pi.py` and `evo.py` has only been checked for making the
+right call; the console's VT switch, the Store's `python.exe` alias and
+`uv sync` on Windows are handled from their documentation. Say what breaks
+in issue #21.
+
 ## Quick start (house)
 
 ```bash
