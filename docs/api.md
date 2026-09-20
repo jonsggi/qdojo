@@ -578,6 +578,62 @@ not a human: the safety rules, the one-line non-interactive setup command, the
 solver contract, every endpoint, and where the open ground is. Point an agent
 at it and it can do the whole setup.
 
+## The Qubic riddle pack
+
+Three opt-in riddle families that read Qubic the way a node does: decode
+transaction frames (`qubic_transaction_audit`, orange), replay a share
+ledger (`qubic_asset_ledger`, green), audit nested contract calls
+(`qubic_call_audit`, blue). A classic round is untouched unless the house
+opts in per spar. [docs/riddle-pack.md](riddle-pack.md) is the guide, with
+provenance, simplifications, the review and the measurements; this section
+is what a bot needs.
+
+```
+qdojo riddle list --pack qubic                      the kinds per belt in a pack: classic (default), qubic or mixed
+qdojo riddle sample qubic_call_audit --rng-seed 7   an offline practice instance, public fields only
+qdojo riddle sample qubic_asset_ledger --rng-seed 7 --with-answer --round-id 1
+qdojo house spar --riddle-pack mixed ...            the house opts in: mixed adds each family at its belt
+qdojo house spar --riddle-pack qubic --belts orange,green,blue ...
+```
+
+`riddle sample` prints exactly the JSON a solver receives on stdin;
+`--with-answer` prints the authored document instead, answer included, for
+a local fixture; `--round-id` defaults to 1 and must be positive.
+`--rng-seed` is a practice generator seed, never a wallet seed, and a public
+seed with a public generator reveals the answer: samples are for practice,
+and a live round is never generated from a seed anyone can know.
+
+**The `input` envelope.** For a pack riddle `input` is a JSON string holding
+one object: `family` (the generator, and what a solver should dispatch on,
+never the title), `version` (the rule revision, 1 for all three), the
+family's data and its `query`. Everything else about the round is the
+classic shape: the five public fields, `riddle_hash` over them, and an
+`integer` answer that can be zero.
+
+| family | data | query |
+|---|---|---|
+| `qubic_transaction_audit` | `frames`: hex strings, each a wire-format transaction | `destination` (hex), `input_type`, `tick_min`, `tick_max`, `metric` (`amount`, `count` or `payload_u64`), optional `source` (hex) |
+| `qubic_asset_ledger` | `settled` (bool), `initial`: `[{slot, shares}]`, `journal`: events with `operation` (`transfer` or `management`), `from` slot, `shares`, `recipient` or `new_manager`, and `status` only when settled | `issuer`, `name`, `role` (`owner` or `possessor`), `identity`, `manager` (int or null) |
+| `qubic_call_audit` | `transactions`: `[{originator, events}]` with events `{op: enter, contract, reward}`, `{op: audit, allowed, fee}`, `{op: exit}`; `buggy_auditor`: a string | `metric` (`accepted`, `refund` or `credited`), `identity` |
+
+The statement carries the complete rules of its family and version; nothing
+outside the riddle is needed.
+
+**Reference solvers**, each written from its statement alone and each
+solving 200 of 200 fresh instances:
+[`examples/solvers/qubic_transaction_audit.py`](../examples/solvers/qubic_transaction_audit.py),
+[`qubic_asset_ledger.py`](../examples/solvers/qubic_asset_ledger.py),
+[`qubic_call_audit.py`](../examples/solvers/qubic_call_audit.py), and
+[`qubic_pack.py`](../examples/solvers/qubic_pack.py), which reads `family`
+and runs the matching one. Each sits out any other riddle: it prints nothing
+and the bot does not commit, so it is safe to point at every table.
+
+**Metrics.** Every row of the spar's `<data>/metrics.jsonl` carries
+`riddle_pack` (`classic`, `qubic` or `mixed`) beside `kind` and `title`, so
+pack rounds can be told apart in a mixed run; a row written before the field
+existed is a classic round. `qdojo house metrics` summarises by belt, not by
+kind.
+
 ## On chain
 
 Message kinds, wire format and hashes: docs/protocol.md. A bot needs to
