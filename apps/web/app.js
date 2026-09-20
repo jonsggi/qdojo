@@ -27,11 +27,11 @@ const EMBEDDED = {
 // a reader hovers and the definition they read on the rules page cannot drift
 // apart -- and the drift would have been about money.
 const HELP = {
-  pot:        { label: 'POT', text: 'Everything the round pays out: every counted stake plus the house seed. What nobody wins carries into the next round.' },
-  seed:       { label: 'HOUSE SEED', text: 'Money the house adds so a small table is still worth fighting for. It is the carry from earlier rounds plus whatever the house matches, never more than the cap.' },
+  pot:        { label: 'POT', text: 'Everything the round pays out: every counted stake plus the house seed. With senseis at the table it is two pots settled side by side: the belt pot (seed, carry and the at-belt stakes) and the sensei pot (the senseis\' own stakes, nothing else). What nobody wins carries into the next round.' },
+  seed:       { label: 'HOUSE SEED', text: 'Money the house adds so a small table is still worth fighting for. It is the carry from earlier rounds plus whatever the house matches of the at-belt stakes, never more than the cap. A sensei\'s stake is never matched.' },
   seed_cap:   { label: 'SEED CAP', text: 'The most the house will add to this round, whatever the fighters stake. It is published before anyone buys a seat, so the house cannot sweeten a round after seeing who sat down.' },
   match:      { label: 'HOUSE MATCH', text: 'How much the house adds per QU staked. 1:1 means it matches every stake, up to the seed cap. FIXED means a flat seed no matter how many fighters sit down.' },
-  carry:      { label: 'CARRY', text: 'The part of a pot nobody won. The house does not keep it: it becomes the next round\'s seed, so an unsolved riddle makes the next one richer.' },
+  carry:      { label: 'CARRY', text: 'The part of a pot nobody won. The house does not keep it: it becomes the next round\'s seed, so an unsolved riddle makes the next one richer. An unwon sensei pot carries the same way, into the next belt pot.' },
   bond:       { label: 'BOND', text: 'A slice of every win the house holds back until the winner has fought a few more rounds. Come back and it is paid out; walk away with the purse and it returns to the pot.' },
   bond_rounds:{ label: 'BOND ROUNDS', text: 'How many more rounds a winner must fight before its bond is released. Sit out twenty rounds and the bond is forfeited to the pot.' },
   rake:       { label: 'RAKE', text: 'The house\'s cut, taken from the staked money only and never from the seed. Everything else is paid to fighters or carried.' },
@@ -39,11 +39,11 @@ const HELP = {
   entry_fee:  { label: 'ENTRY FEE', text: 'What one seat at this table costs. You pay it before the riddle exists, so you are buying a chair, not an answer.' },
   points:     { label: 'BELT POINTS', text: 'Your score at your own belt: a win is +2, a correct but unpaid answer +1, any failure −1. At +3 you are promoted and the score resets; at −3 you are demoted.' },
   belt:       { label: 'BELT', text: 'Your rung on the ladder: white, yellow, orange, green, blue. You may sit at your belt or above it, never below, unless the table has opened a sensei seat.' },
-  sensei:     { label: 'SENSEI SEAT', text: 'A senior fighter sitting at a table below its belt. It pays like anyone else but can win back at most its own stake, and the round moves no belt points for it. Seniors keep the beginners\' tables alive without taking the beginners\' money.' },
+  sensei:     { label: 'SENSEI SEAT', text: 'A senior fighter sitting at a table below its belt. It pays like anyone else, but its stake goes into the sensei pot, which only senseis can win, so it plays for other seniors\' money and never the beginners\', and the round moves no belt points for it. Before 2026-09-19 it was instead capped at its own stake.' },
   verdict:    { label: 'VERDICT', text: 'What the round decided about one fighter. WINNER took money, SOLVED was right but too late to be paid, WRONG answered wrong, NO SHOW bought a seat and never fought, NO REVEAL sealed an answer and never opened it, BAD REVEAL opened something that did not match the seal.' },
   solve_ticks:{ label: 'SOLVE TIME', text: 'Ticks from the riddle being published to your sealed answer landing on chain. One tick is about half a second, so 12 T is about six seconds — thinking time and network time together.' },
-  podium:     { label: 'PODIUM 5:3:2', text: 'The first three correct sealed answers split the pot five parts, three parts, two parts. A fourth correct answer earns belt points and no money.' },
-  mode:       { label: 'PAYOUT MODE', text: 'How this round divides its pot. SPLIT shares it between everyone who solved it, FIRST gives it all to the first correct commit, PODIUM pays the first three 5:3:2.' },
+  podium:     { label: 'PODIUM 5:3:2', text: 'The first three correct sealed answers split their pot five parts, three parts, two parts. Answers sealed in the same tick are a dead heat: they share a placing and split its parts equally, and a tie for third brings everyone tied onto the podium. A correct answer behind them earns belt points and no money.' },
+  mode:       { label: 'PAYOUT MODE', text: 'How this round divides its pot, run once per pot when senseis sit. SPLIT shares it between everyone who solved it, FIRST gives it all to the earliest correct commit tick, PODIUM pays the first three 5:3:2. Same-tick commits tie and share.' },
   ko:         { label: 'K.O.', text: 'The arcade word for a settled round with a winner. DOUBLE and TRIPLE K.O. mean two or three winners split it; PERFECT means the winner beat at least three fighters.' },
   commit:     { label: 'COMMIT WINDOW', text: 'How long the dojo accepts sealed answers. You publish the hash of your answer, not the answer, so nobody — not even the house — can copy you before the window closes.' },
   reveal:     { label: 'REVEAL WINDOW', text: 'How long you have to open your seal. The house checks that what you show hashes to what you sealed. A mismatch is a lie, and the dojo records it.' },
@@ -469,6 +469,169 @@ function payoutModeLabel(r) {
   return r.payout_mode ? String(r.payout_mode).toUpperCase() : '—';
 }
 const PODIUM_WEIGHTS = [5, 3, 2];
+
+// ---------------------------------------------------------------- shares
+// Every share label the page prints is read off the settlement it renders,
+// never off PODIUM_WEIGHTS. The page once printed 5/10 · 3/10 · 2/10 beside
+// three capped senseis paid 1,000 each, contradicting the hashed document
+// under it (#11). Three eras of settlement have to render (docs/spec.md §5-6,
+// docs/api.md):
+//   - one pot, no `pots` (settled before 2026-09-19): a sensei was capped at
+//     its own stake, and the surplus went to the at-belt winners or carried;
+//   - two pots, `pots.belt` and `pots.sensei`: the payout mode ran once per
+//     pot over that pot's solvers; each lists its own winners and gross
+//     payouts, and the belt winners come first in `winners`;
+//   - the dead heat: winners whose correct commits share a tick share a
+//     placing and are paid the same, so a podium can hold more than three.
+// A winner's gross win is what was sent plus the bond the house held from it.
+function grossWin(s, id) {
+  const sent = (s.payouts || []).filter(p => p.identity === id && p.kind === 'win').reduce((a, p) => a + (p.amount || 0), 0);
+  const held = (s.bonds_held || []).filter(b => b.identity === id).reduce((a, b) => a + (b.amount || 0), 0);
+  return sent + held;
+}
+// `gross` as a fraction of `dist`, floored the way the engine floors shares:
+// the smallest denominator up to 24 that lands exactly on the amount (a
+// four-way tie for third is 1/20), else a percentage. Never a fraction the
+// numbers do not support.
+function shareFraction(gross, dist) {
+  if (!(dist > 0) || !(gross > 0)) return '0';
+  if (gross >= dist) return 'ALL';
+  for (let d = 2; d <= 24; d++) for (let n = 1; n < d; n++) if (Math.floor(dist * n / d) === gross) return `${n}/${d}`;
+  return `${(100 * gross / dist).toFixed(1)}%`;
+}
+const POT_NAME = { belt: 'BELT POT', sensei: 'SENSEI POT', pot: 'POT' };
+// The pots a settled round paid from: what each held, paid and carried, and
+// its winners in payout order with their placing, dead heat, gross win and
+// whether that is the nominal share the mode promises.
+function settlementPots(r) {
+  const s = r.settlement;
+  if (!s || s.void) return [];
+  const two = !!(s.pots && (s.pots.belt || s.pots.sensei));
+  const seed = seedUsed(r), carryIn = r.carry_in || 0, mode = r.payout_mode;
+  const docs = two
+    ? ['belt', 'sensei'].filter(k => s.pots[k]).map(k => [k, s.pots[k]])
+    : [['pot', { carry_in: carryIn, matched: seed - carryIn, stakes: (s.pot || 0) - seed, pot: s.pot, rake: s.rake,
+                 distributable: (s.pot || 0) - (s.rake || 0), carry: s.carry, winners: s.winners || [], payouts: null }]];
+  const entries = new Map((r.entries || []).map(e => [e.identity, e]));
+  return docs.map(([key, p]) => {
+    const dist = Number(p.distributable ?? ((p.pot || 0) - (p.rake || 0))) || 0;
+    const winners = (p.winners || []).map(id => {
+      const e = entries.get(id) || { identity: id };
+      const own = p.payouts ? p.payouts.find(x => x.identity === id) : null;
+      return { e, id, gross: own ? (own.amount || 0) : grossWin(s, id), tick: e.commit_tick, stake: e.stake || 0, sensei: !!e.sensei };
+    });
+    // Placings. Under podium a dead heat is consecutive winners with the same
+    // commit tick paid the same amount -- rounds before the tie rule ordered
+    // same-tick solvers by transaction and paid them 5:3:2, so the tick alone
+    // is not a tie. Under first everyone paid shares the earliest tick; under
+    // split there are no placings. A heat pools the weights of the places it
+    // spans and splits them equally, the arithmetic of round.py's _pay().
+    const heats = [];
+    for (const w of winners) {
+      const last = heats[heats.length - 1];
+      if (last && (mode !== 'podium' || (last[0].tick === w.tick && last[0].gross === w.gross))) last.push(w);
+      else heats.push([w]);
+    }
+    let place = 1, totalW = 0;
+    for (const heat of heats) {
+      heat.place = place;
+      heat.weight = mode === 'podium' ? PODIUM_WEIGHTS.slice(place - 1, place - 1 + heat.length).reduce((a, b) => a + b, 0) : 0;
+      totalW += heat.weight;
+      place += heat.length;
+    }
+    for (const heat of heats) {
+      const nominal = mode === 'podium' ? Math.floor(Math.floor(dist * heat.weight / (totalW || 1)) / heat.length) : Math.floor(dist / winners.length);
+      for (const w of heat) Object.assign(w, { place: heat.place, tie: heat.length, weight: heat.weight, nominal: w.gross === nominal,
+        capped: !two && w.sensei && w.gross === w.stake && w.gross < nominal, over: w.gross > nominal });
+    }
+    const capped = winners.filter(w => w.capped).length, atBelt = winners.filter(w => !w.sensei);
+    // Under the cap an at-belt winner took its share plus the capped senseis' surplus.
+    for (const w of winners) w.surplus = !two && capped > 0 && !w.sensei && w.over;
+    return { key, name: POT_NAME[key], two, mode, held: p.pot || 0, carry_in: p.carry_in || 0, matched: p.matched || 0, stakes: p.stakes || 0,
+             rake: p.rake || 0, dist, paid: p.paid ?? winners.reduce((a, w) => a + w.gross, 0), carry: p.carry || 0,
+             winners, heats, totalW, capped, surplusTo: capped ? (atBelt.length ? 'SURPLUS TO THE AT-BELT WINNERS' : 'SURPLUS CARRIED') : '' };
+  });
+}
+// The label beside one winner: "<gross> OF <distributable> · <how>", every
+// number the settlement's own.
+function shareLabel(w, pot) {
+  const amounts = `${fmt(w.gross)} OF ${fmt(pot.dist)}`, of = ` OF THE ${pot.name}`;
+  if (w.capped) return `${amounts} · CAPPED AT STAKE · ${pot.surplusTo}`;
+  const nominalFrac = pot.mode === 'podium' ? `${w.weight}/${pot.totalW}` : (w.tie > 1 ? `1/${w.tie}` : 'ALL');
+  const frac = w.gross >= pot.dist ? 'ALL' : (w.nominal && w.tie === 1 ? nominalFrac : shareFraction(w.gross, pot.dist));
+  if (w.surplus) return `${amounts} · ${nominalFrac}${of} + SENSEI SURPLUS`;
+  if (pot.mode === 'split' && w.tie > 1) return `${amounts} · SPLIT ${w.tie} WAYS EQUALLY · ${frac}${of}`;
+  if (w.tie > 1) return `${amounts} · TIED ${ordinal(w.place)}, SPLIT ${w.tie} WAYS EQUALLY · ${frac}${of}`;
+  return `${amounts} · ${frac}${of}`;
+}
+// One line on how a pot was paid, for the K.O. call and the SOLVED, NO PAY note.
+function potPhrase(pot) {
+  const n = pot.winners.length, name = pot.name;
+  if (!n) return `NOBODY WON THE ${name} · ${fmt(pot.carry)} CARRIES`;
+  if (pot.capped) return `${pot.capped === n ? (n === 1 ? 'THE SENSEI' : `ALL ${n} SENSEIS`) : `${pot.capped} SENSEI${pot.capped > 1 ? 'S' : ''}`} CAPPED AT STAKE · ${pot.surplusTo}`;
+  if (pot.mode === 'first') return n === 1 ? `FIRST TO SOLVE TAKES THE ${name}` : `${n} TIED IN THE FIRST TICK · SPLIT EQUALLY`;
+  if (pot.mode !== 'podium') return n === 1 ? `ONE WINNER TAKES THE ${name}` : `${n} WINNERS SPLIT THE ${name} EQUALLY`;
+  if (pot.heats.some(h => h.length > 1)) {
+    if (pot.heats.length === 1) return `DEAD HEAT · ALL ${n} TIED 1ST · SPLIT EQUALLY`;
+    return 'DEAD HEAT · ' + pot.heats.map(h => `${h.length > 1 ? `${h.length} TIED ` : ''}${ordinal(h.place)} ${h.weight}/${pot.totalW}${h.length > 1 ? ' SHARED' : ''}`).join(' · ');
+  }
+  if (pot.winners.every(w => w.nominal)) return n === 1 ? `ALONE ON THE PODIUM · TAKES THE ${name}` : `${n === 2 ? 'TWO SOLVERS' : n === 3 ? 'FIRST THREE' : `${n} SOLVERS`} SPLIT ${pot.heats.map(h => h.weight).join(':')}`;
+  return `${n} WINNERS · ${pot.winners.map(w => shareFraction(w.gross, pot.dist)).join(' : ')}`;
+}
+// What the settlement paid, in one line. The K.O. call's subtitle and the
+// SOLVED, NO PAY note both read it, so neither can promise a split the pot
+// did not pay.
+function payoutCall(r) {
+  const pots = settlementPots(r), paid = pots.filter(p => p.winners.length);
+  if (!paid.length) return { sub: 'NO WINNER · POT CARRIES', what: '' };
+  if (paid.length > 1) {
+    return { sub: `${r.payout_mode === 'podium' ? 'TWO PODIUMS' : 'TWO POTS'} · ${paid.map(p => `${p.name} · ${potPhrase(p)}`).join(' · ')}`,
+             what: paid.map(p => `THE ${p.name}: ${potPhrase(p)}`).join(' · ') };
+  }
+  const p = paid[0], phrase = potPhrase(p);
+  const unwon = pots.filter(x => x !== p && x.dist > 0).map(x => ` · ${x.name} UNWON, ${fmt(x.carry)} CARRIES`).join('');
+  return { sub: `${r.payout_mode === 'podium' ? 'PODIUM · ' : ''}${p.two ? `${p.name} · ` : ''}${phrase}${unwon}`, what: phrase };
+}
+// The winners block, shared by the results screen and the idle FIGHT screen:
+// one list per pot that paid, placings restarting per pot, a dead heat
+// sharing a placing and, when `full`, the share label read off the settlement.
+function winnersHTML(r, full) {
+  const s = r.settlement, paid = settlementPots(r).filter(p => p.winners.length);
+  const podium = r.payout_mode === 'podium';
+  const payoutFor = id => (s.payouts || []).find(p => p.identity === id && p.kind === 'win');
+  const bondFor = id => (s.bonds_held || []).find(b => b.identity === id);
+  return paid.map(pot => `${pot.two ? `<h4 class="pot-head">${esc(pot.name)}<small> · ${fmt(pot.dist)} TO WIN · PAID ${fmt(pot.paid)} · CARRIES ${fmt(pot.carry)}</small></h4>` : ''}
+    <div class="winners">${pot.winners.map(w => { const p = payoutFor(w.id), b = bondFor(w.id); return `<div class="winner-row">
+      ${podium ? `<span class="podium-place place-${w.place}">${w.tie > 1 ? 'TIED ' : ''}${ordinal(w.place)}</span>` : ''}
+      ${fighterLink(w.id, avatarSVG(w.id, 'avatar-lg'))}
+      <div class="wname">${fighterLink(w.id, displayName(w.e))}${full ? `<br><span class="tiny muted">${esc(shareLabel(w, pot))}</span>` : ''}<br>${idLink(w.id)}</div>
+      <div class="wamt">+${fmt(p ? p.amount : 0)} QU${full && b ? `<span class="wtx"><span class="badge badge-bond_held">BOND HELD</span> ${fmt(b.amount)} QU</span>` : ''}${full && p && p.tx ? `<span class="wtx">${txLink(p.tx, 'PAYOUT TX')}</span>` : ''}</div>
+    </div>`; }).join('')}</div>`).join('');
+}
+// The two pots of a settlement that has them (docs/api.md): what each held,
+// what it paid and what carried, so the winners' labels can be checked
+// against the document line by line.
+function potsPanelHTML(r) {
+  const pots = settlementPots(r);
+  if (!pots.length || !pots[0].two) return '';
+  return `<div class="panel panel-cyan"><h3>THE TWO POTS</h3>
+    <div class="tscroll"><table>
+    <thead><tr><th>POT</th><th class="num">CARRY IN</th><th class="num">MATCHED</th><th class="num">STAKES</th><th class="num">HELD</th><th class="num">RAKE</th><th class="num">TO WIN</th><th class="num">PAID</th><th class="num">CARRIES</th><th>PAID TO</th></tr></thead>
+    <tbody>${pots.map(p => `<tr>
+      <td>${esc(p.name)}</td><td class="num">${fmt(p.carry_in)}</td><td class="num">${fmt(p.matched)}</td><td class="num">${fmt(p.stakes)}</td><td class="num">${fmt(p.held)}</td><td class="num">${fmt(p.rake)}</td><td class="num">${fmt(p.dist)}</td><td class="num">${fmt(p.paid)}</td><td class="num">${fmt(p.carry)}</td>
+      <td class="tiny" style="white-space:normal;min-width:18ch">${p.winners.length ? p.winners.map(w => `${fighterLink(w.id, displayName(w.e))} ${fmt(w.gross)}`).join(', ') : `<span class="muted">${p.held ? 'NOBODY · IT CARRIES' : 'EMPTY'}</span>`}</td>
+    </tr>`).join('')}</tbody></table></div>
+    <p class="tiny muted" style="margin:10px 0 0">Two pots, settled side by side (docs/spec.md §5). The belt pot is the carry in, the house match and the at-belt stakes, paid to the solvers at the belt; the sensei pot is the senseis' own stakes, no seed and no carry, paid to the senseis. ${esc(payoutModeLabel(r))} ran once per pot; PAID is gross, before the bond. What neither pot paid carries into the next round's belt pot.</p>
+  </div>`;
+}
+// The rule a round was published under, as a promise: what the mode will do,
+// never a fraction the settlement has yet to pay.
+function payoutRule(r) {
+  if (r.payout_mode === 'podium') return 'THE FIRST THREE CORRECT COMMITS SPLIT 5:3:2 OF THEIR POT; SAME-TICK TIES SHARE A PLACING';
+  if (r.payout_mode === 'first') return 'THE EARLIEST CORRECT COMMIT TAKES ITS POT; SAME-TICK TIES SPLIT IT EQUALLY';
+  if (r.payout_mode === 'split') return 'EVERYONE WHO SOLVES IT SHARES ITS POT EQUALLY';
+  return '';
+}
 function bondLabel(r) {
   if (!r.bond_bps) return '';
   return `BOND ${(r.bond_bps / 100).toFixed(r.bond_bps % 100 ? 1 : 0)}% · ${fmt(r.bond_rounds)} MORE FIGHT${r.bond_rounds === 1 ? '' : 'S'}`;
@@ -528,12 +691,13 @@ function callout(r) {
   const counted = (r.entries || []).filter(e => COUNTED.has(e.verdict)).length;
   const solved = (r.entries || []).filter(e => e.verdict === 'solved').length;
   const later = solved ? ` · ${solved} SOLVED LATER, NO PAY` : '';
-  const first = r.payout_mode === 'first', podium = r.payout_mode === 'podium';
   if (n === 0) return { text: 'TIME OVER', cls: 'timeover', sub: 'NO WINNER · POT CARRIES' };
-  if (n === 1) return { text: 'K.O.', cls: 'ko', perfect: counted >= 3, sub: (first ? 'FIRST TO SOLVE TAKES THE POT' : podium ? 'ALONE ON THE PODIUM · TAKES THE POT' : 'ONE WINNER TAKES THE POT') + later };
-  if (n === 2) return { text: 'DOUBLE K.O.', cls: 'ko', sub: (podium ? 'PODIUM · TWO SOLVERS SPLIT 5:3' : 'TWO WINNERS SPLIT THE POT') + later };
-  if (n === 3) return { text: 'TRIPLE K.O.', cls: 'ko', sub: (podium ? 'PODIUM · FIRST THREE SPLIT 5:3:2' : 'THREE WINNERS SPLIT THE POT') + later };
-  return { text: `${n}x K.O.`, cls: 'ko', sub: `${n} WINNERS SPLIT THE POT${later}` };
+  // the subtitle says what the settlement paid, never what the mode promised (#11)
+  const sub = payoutCall(r).sub + later;
+  if (n === 1) return { text: 'K.O.', cls: 'ko', perfect: counted >= 3, sub };
+  if (n === 2) return { text: 'DOUBLE K.O.', cls: 'ko', sub };
+  if (n === 3) return { text: 'TRIPLE K.O.', cls: 'ko', sub };
+  return { text: `${n}x K.O.`, cls: 'ko', sub };
 }
 function winnerNames(r) {
   if (!r.settlement) return [];
@@ -824,17 +988,9 @@ function lobbyHTML(r) {
 // winners give it something to look at; the rows are the results screen's.
 function lastRoundHTML(r) {
   const c = callout(r), s = r.settlement;
-  const winners = (s.winners || []).map(id => (r.entries || []).find(e => e.identity === id) || { identity: id });
-  const payoutFor = id => (s.payouts || []).find(p => p.identity === id && p.kind === 'win');
-  const podium = r.payout_mode === 'podium';
   return `<div class="panel panel-green">
     <h3>LAST ROUND · ${r.round_id}<small>${esc(r.title)} · ${esc(c.text)}${c.sub ? ' · ' + esc(c.sub) : ''}</small></h3>
-    ${winners.length ? `<div class="winners">${winners.map((e, i) => { const p = payoutFor(e.identity); return `<div class="winner-row">
-        ${podium ? `<span class="podium-place place-${i + 1}">${ordinal(i + 1)}</span>` : ''}
-        ${fighterLink(e.identity, avatarSVG(e.identity, 'avatar-lg'))}
-        <div class="wname">${fighterLink(e.identity, displayName(e))}<br>${idLink(e.identity)}</div>
-        <div class="wamt">+${fmt(p ? p.amount : 0)} QU</div>
-      </div>`; }).join('')}</div>`
+    ${(s.winners || []).length ? winnersHTML(r, false)
       : `<p class="muted">${isVoid(r) ? 'The table never filled; every seat was refunded.' : `Nobody solved it. ${fmt(s.carry)} QU carried into the next seed.`}</p>`}
     <p style="margin:12px 0 0"><a class="btn btn-sm btn-cyan" href="#results/${r.round_id}">FULL RESULTS &#9654;</a> <a class="btn btn-sm" href="#history">ALL ROUNDS</a></p>
   </div>`;
@@ -1101,23 +1257,18 @@ function renderResults() {
     </div>
     <div class="meter" style="margin-bottom:20px"><div class="meter-fill pot" style="width:${potPct.toFixed(1)}%"></div></div>`);
 
-    // winners in the settlement's order: on a podium that is 1st, 2nd, 3rd
+    // winners in the settlement's order, one list per pot that paid: on a
+    // podium that is 1st, 2nd, 3rd, with a dead heat sharing a placing. Every
+    // share label and the SOLVED note come from the settlement's own numbers.
     const podium = r.payout_mode === 'podium';
-    const winners = (s.winners || []).map(id => (r.entries || []).find(e => e.identity === id) || { identity: id }).filter(Boolean);
-    const payoutFor = id => (s.payouts || []).find(p => p.identity === id && p.kind === 'win');
-    const bondFor = id => (s.bonds_held || []).find(b => b.identity === id);
-    const wsum = PODIUM_WEIGHTS.slice(0, winners.length).reduce((a, b) => a + b, 0);
+    const call = payoutCall(r), paidPots = settlementPots(r).filter(p => p.winners.length).length;
+    const solvedNames = (r.entries || []).filter(e => e.verdict === 'solved').map(e => nameOf(e) || shortId(e.identity));
     parts.push(`<div class="cols">
       <div class="panel panel-green">
-        <h3>WINNERS${podium ? ' · PODIUM 5:3:2' : ''}</h3>
-        ${winners.length ? `<div class="winners">${winners.map((e, i) => { const p = payoutFor(e.identity), b = bondFor(e.identity); return `<div class="winner-row">
-            ${podium ? `<span class="podium-place place-${i + 1}">${ordinal(i + 1)}</span>` : ''}
-            ${fighterLink(e.identity, avatarSVG(e.identity, 'avatar-lg'))}
-            <div class="wname">${fighterLink(e.identity, displayName(e))}${podium && PODIUM_WEIGHTS[i] ? ` <span class="tiny muted">${PODIUM_WEIGHTS[i]}/${wsum} OF THE POT</span>` : ''}<br>${idLink(e.identity)}</div>
-            <div class="wamt">+${fmt(p ? p.amount : 0)} QU${b ? `<span class="wtx"><span class="badge badge-bond_held">BOND HELD</span> ${fmt(b.amount)} QU</span>` : ''}${p && p.tx ? `<span class="wtx">${txLink(p.tx, 'PAYOUT TX')}</span>` : ''}</div>
-          </div>`; }).join('')}</div>`
+        <h3>WINNERS${podium ? (paidPots > 1 ? ' · TWO PODIUMS' : ' · PODIUM') : ''}</h3>
+        ${(s.winners || []).length ? winnersHTML(r, true)
         : `<p class="muted">Nobody solved it. ${fmt(s.carry)} QU carries into the next round's seed.</p>`}
-        ${(r.entries || []).some(e => e.verdict === 'solved') ? `<p class="tiny muted" style="margin:10px 0 0">SOLVED, NO PAY: ${(r.entries || []).filter(e => e.verdict === 'solved').map(e => nameOf(e) || shortId(e.identity)).map(esc).join(', ')} — ${podium ? 'correct, but off the podium. THE FIRST THREE SPLIT 5:3:2.' : 'correct, but not first. FIRST WINS.'}</p>` : ''}
+        ${solvedNames.length ? `<p class="tiny muted" style="margin:10px 0 0">SOLVED, NO PAY: ${solvedNames.map(esc).join(', ')} — ${podium ? 'correct, but off the podium' : r.payout_mode === 'first' ? 'correct, but not in the first tick' : 'correct, but unpaid'}${call.what ? `. ${esc(call.what)}` : ''}.</p>` : ''}
       </div>
       <div class="panel panel-yellow">
         <h3>THE ANSWER · VERIFY IT YOURSELF</h3>
@@ -1135,6 +1286,7 @@ function renderResults() {
         <div class="verify-out" data-verify-out="${r.round_id}"></div>
       </div>
     </div>`);
+    parts.push(potsPanelHTML(r));
   }
 
   if (!s) {
@@ -1616,7 +1768,7 @@ function renderJoin() {
           <dt${h('commit')}>COMMIT</dt><dd>${open ? `${fmt(open.commit_window)} ticks (~${ticksToHuman(open.commit_window)})` : '—'}</dd>
           <dt${h('reveal')}>REVEAL</dt><dd>${open ? `${fmt(open.reveal_window)} ticks (~${ticksToHuman(open.reveal_window)})` : '—'}</dd>
           <dt${h('seed')}>SEED</dt><dd>${open ? `${open.match_bps ? `house matches stakes ${esc(matchLabel(open.match_bps))} up to ${fmt(open.house_seed)}` : `fixed ${fmt(open.house_seed)}`} + carry in` : 'carry in + matched stakes up to the cap'}</dd>
-          <dt${h('mode')}>PAYOUT</dt><dd>${open ? `${esc(payoutModeLabel(open))} · ` : ''}${open && open.payout_mode === 'podium' ? 'the first three correct commits split (pot − rake) 5:3:2, later solvers get nothing' : `(pot − rake) ÷ winners, remainder carries${open && open.payout_mode === 'first' ? '; first commit tick wins, later solvers get nothing' : ''}`}</dd>
+          <dt${h('mode')}>PAYOUT</dt><dd>${open ? `${esc(payoutModeLabel(open))} · ${esc(payoutRule(open))}${open.payout_mode === 'split' ? '' : '; LATER SOLVERS EARN BELT POINTS, NO MONEY'}` : 'PODIUM 5:3:2, FIRST OR SPLIT, SET PER ROUND IN PUBLISH'}. Their pot is the belt pot less the rake, or the sensei pot for a sensei; the remainder carries.</dd>
           ${open && open.bond_bps ? `<dt${h('bond')}>BOND</dt><dd>${esc(bondLabel(open))}: that share of every win stays with the house until the winner has fought again</dd>` : ''}
         </dl>
         ${seat ? `<p class="tiny muted">Fund the identity the rite printed with at least ${qu(seat * 3)} — three
@@ -2066,9 +2218,12 @@ function renderRules() {
   parts.push(`<div class="cols">
     <div class="panel panel-green"><h3${h('sensei')}>THE SENSEI SEAT</h3>
       ${ruleTerm('sensei')}
-      <p>A table may open its doors upward. The round still counts towards releasing that senior's own bond,
-      so there is a reason to come back down — and because the ceiling is its own stake, it cannot farm the
-      table it is propping up. Look for <span class="badge badge-outranked">SENSEI</span> beside a name.</p>
+      <p>A table may open its doors upward. The senseis at it play for a pot of their own — their stakes and
+      nothing else, no seed, no carry — so a senior can only ever win other seniors' money and cannot farm the
+      table it is propping up. The round still counts towards releasing that senior's own bond, so there is a
+      reason to come back down. Look for <span class="badge badge-outranked">SENSEI</span> beside a name.</p>
+      <p class="tiny muted">Before 2026-09-19 a sensei was instead capped at its own stake out of the one pot,
+      and the surplus went to the winners at the belt or carried; rounds 89–118 read that way.</p>
       <p class="tiny muted">Without this seat the beginners' tables simply die: everyone who could solve the
       riddle has been promoted past it, and nobody is left to fight.</p>
     </div>
@@ -2087,11 +2242,16 @@ function renderRules() {
   parts.push(`<div class="panel panel-cyan"><h3${h('mode')}>HOW A POT IS DIVIDED</h3>
     <div class="cols">
       <div><b>SPLIT</b><p class="tiny">Everyone who solved it shares the pot equally. The remainder carries.</p></div>
-      <div><b>FIRST</b><p class="tiny">The first correct sealed answer takes everything. Later solvers earn belt points and no money.</p></div>
+      <div><b>FIRST</b><p class="tiny">The earliest correct sealed answer takes everything; answers that share its tick split it equally. Later solvers earn belt points and no money.</p></div>
       <div><b>PODIUM</b><p class="tiny">Three places pay, in these proportions:
-        <span class="podium-place place-1">5</span> : <span class="podium-place place-2">3</span> : <span class="podium-place place-3">2</span>.</p></div>
+        <span class="podium-place place-1">5</span> : <span class="podium-place place-2">3</span> : <span class="podium-place place-3">2</span>.
+        Same-tick answers are a dead heat: they share a placing and its parts, and a tie for third widens the podium.</p></div>
     </div>
     ${ruleTerm('podium')}
+    <p class="tiny">The mode runs once per pot. A table with senseis at it is two pots settled side by side: the
+    <b>belt pot</b> (the seed, the carry in and the at-belt stakes) pays the solvers at the belt, and the
+    <b>sensei pot</b> (the senseis' stakes, nothing else) pays the senseis. Each results screen shows which pot
+    paid whom, and a pot nobody wins carries into the next round's belt pot.</p>
   </div>`);
 
   parts.push(`<div class="panel panel-red"><h3${h('verdict')}>WHEN IT GOES WRONG</h3>
