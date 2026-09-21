@@ -170,6 +170,91 @@ def test_no_winner_carries_into_next_round(world, tmp_path):
     assert meta["house_seed"] == 10_000 and meta["carry_in"] == doc["carry"] and h.state()["carry"] == 0
 
 
+def test_a_dropped_publish_restores_the_carry(world, tmp_path):
+    """Regression: confirm_publish() used to zero the carry on a dropped
+    PUBLISH with no way back (MONEY #1)."""
+    h = make_house(world, tmp_path)
+    publish_and_open(h, world, riddle_file(tmp_path))
+    bob = make_bot(world, tmp_path, BOB, WRONG_SOLVER)
+    h.collect(); h.export(str(tmp_path / "web"))
+    bob.step(json.load(open(tmp_path / "web" / "board.json")))
+    world.core.advance(1005 + 51 - world.core.tick)
+    bob.step(json.load(open(tmp_path / "web" / "board.json")))
+    world.core.advance(1005 + 71 - world.core.tick + 25)
+    h.collect()
+    doc = h.settle(1, apply=True)
+    carry = doc["carry"]
+    assert carry > 0 and h.state()["carry"] == carry
+    world.core.drop_next_send = True                                    # the PUBLISH never lands
+    meta = h.publish(riddle_file(tmp_path, rid=2), 1000, 50, 20)
+    assert meta["carry_in"] == carry and h.state()["carry"] == 0
+    world.core.advance(world.core.schedule_offset)
+    meta = h.confirm_publish(2)
+    assert meta["status"] == "failed"
+    assert h.state()["carry"] == carry                                  # restored, unlike before the fix
+    with pytest.raises(HouseError):
+        h.confirm_publish(2)                                            # a repeat does not re-credit
+    assert h.state()["carry"] == carry
+    meta3 = h.publish(riddle_file(tmp_path, rid=3), 1000, 50, 20)
+    assert meta3["carry_in"] == carry and h.state()["carry"] == 0
+
+
+def test_a_dropped_lobby_open_restores_the_carry(world, tmp_path):
+    """Regression: confirm_lobby() used to zero the carry on a dropped LOBBY
+    announcement with no way back (MONEY #1)."""
+    h = make_house(world, tmp_path)
+    publish_and_open(h, world, riddle_file(tmp_path))
+    bob = make_bot(world, tmp_path, BOB, WRONG_SOLVER)
+    h.collect(); h.export(str(tmp_path / "web"))
+    bob.step(json.load(open(tmp_path / "web" / "board.json")))
+    world.core.advance(1005 + 51 - world.core.tick)
+    bob.step(json.load(open(tmp_path / "web" / "board.json")))
+    world.core.advance(1005 + 71 - world.core.tick + 25)
+    h.collect()
+    doc = h.settle(1, apply=True)
+    carry = doc["carry"]
+    world.core.drop_next_send = True                                    # the LOBBY announcement never lands
+    meta = h.open_lobby(riddle_file(tmp_path, rid=2), 1000, 2, 40, 50, 20)
+    assert meta["carry_in"] == carry and h.state()["carry"] == 0
+    world.core.advance(world.core.schedule_offset)
+    meta = h.confirm_lobby(2)
+    assert meta["status"] == "failed"
+    assert h.state()["carry"] == carry                                  # restored, unlike before the fix
+    meta2 = h.confirm_lobby(2)                                          # a repeat does not re-credit
+    assert meta2["status"] == "failed" and h.state()["carry"] == carry
+    meta3 = h.open_lobby(riddle_file(tmp_path, rid=3), 1000, 2, 40, 50, 20)
+    assert meta3["carry_in"] == carry and h.state()["carry"] == 0
+
+
+def test_a_dropped_publish_from_lobby_returns_to_lobby_for_void_or_retry(world, tmp_path):
+    """Regression: a PUBLISH sent by publish_from_lobby() that never landed
+    used to be burned as 'failed' with entrants' ENTER stakes stranded (no
+    refund path, since void() requires status 'lobby'). It now goes back to
+    'lobby' so it can be re-published or voided with refunds (MONEY #1)."""
+    h = make_house(world, tmp_path, seed=5000)
+    h.open_lobby(riddle_file(tmp_path), 1000, 2, 40, 50, 20)
+    world.core.advance(world.core.schedule_offset); h.confirm_lobby(1)
+    h.collect(); h.export(str(tmp_path / "web"))
+    board = json.load(open(tmp_path / "web" / "board.json"))
+    alice = make_bot(world, tmp_path, ALICE, SUM_SOLVER)
+    bob = make_bot(world, tmp_path, BOB, WRONG_SOLVER)
+    alice.step(board); bob.step(board)
+    world.core.advance(world.core.schedule_offset + 3); h.collect()
+    assert sorted(h.lobby_entrants(1)) == sorted([ALICE, BOB])
+    world.core.drop_next_send = True                                    # the PUBLISH never lands
+    h.publish_from_lobby(1)
+    world.core.advance(world.core.schedule_offset)
+    meta = h.confirm_publish(1)
+    assert meta["status"] == "lobby"                                    # not burned: entrants already paid
+    spec = h.spec(1)
+    world.core.advance(spec.lobby_end + 4 - world.core.tick); h.collect()
+    drive_settle(h, world)
+    doc = h.void(1, apply=True)
+    assert doc["void"]
+    assert sorted((p["identity"], p["amount"]) for p in doc["payouts"]) == sorted([(ALICE, 1000), (BOB, 1000)])
+    assert world.core.balances[ALICE] == 5000 and world.core.balances[BOB] == 5000
+
+
 def test_settle_survives_a_lost_send_without_double_paying(world, tmp_path):
     h = make_house(world, tmp_path)
     publish_and_open(h, world, riddle_file(tmp_path))

@@ -262,6 +262,8 @@ class House:
         ok = self.chain.confirm(meta["lobby_tx"], meta["lobby_scheduled_tick"])
         meta.update(lobby_tick=meta["lobby_scheduled_tick"] if ok else None, status="lobby" if ok else "failed")
         _write(self._rpath(round_id, "meta.json"), meta)
+        if not ok:
+            st = self.state(); st["carry"] += meta.get("carry_in", 0); self._save_state(st)   # the round never opened: the carry rolls on
         return meta
 
     def lobby_entrants(self, round_id: int) -> list:
@@ -329,9 +331,17 @@ class House:
         ok = self.chain.confirm(meta["publish_tx"], meta["scheduled_tick"])  # raises Unknown when too early
         if ok:
             meta.update(publish_tick=meta["scheduled_tick"], status="open")
+            _write(self._rpath(round_id, "meta.json"), meta)
+        elif meta.get("lobby_tick") is not None:
+            # publish_from_lobby()'s PUBLISH never landed: entrants already paid
+            # via ENTER, so the round goes back to "lobby" to be re-published or
+            # voided with refunds, instead of being burned with stakes stranded.
+            meta.update(status="lobby")
+            _write(self._rpath(round_id, "meta.json"), meta)
         else:
             meta.update(status="failed")  # never landed: this round id is burned, author the next one
-        _write(self._rpath(round_id, "meta.json"), meta)
+            _write(self._rpath(round_id, "meta.json"), meta)
+            st = self.state(); st["carry"] += meta.get("carry_in", 0); self._save_state(st)   # the carry rolls on
         return meta
 
     def meta(self, round_id: int) -> dict:
