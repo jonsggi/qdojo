@@ -22,8 +22,8 @@ header   "DOJO" (4 bytes)  version u8 = 0  kind u8
 `payout_mode` is **0 split**, **1 first**, **2 podium** (the first three
 correct commits take 5:3:2). In a lobby round the stake rides on ENTER and
 COMMIT carries no money; without a lobby the stake rides on COMMIT.
-`sensei = 1` opens the table to fighters ranked above its belt, who win back
-at most their own stake and earn no belt points.
+`sensei = 1` opens the table to fighters ranked above its belt, who play for
+a pot of their own stakes only (docs/spec.md §5) and earn no belt points.
 
 **DOC** is the house putting its name to a published document. There is no
 detached-signature primitive in qubic-cli and there does not need to be: a

@@ -27,7 +27,7 @@ ROOT = os.path.join(os.path.dirname(__file__), "..", "..", "..")
 # apps/web/tests/setup.test.cjs, which evaluates the literal in a vm instead --
 # the same trick help.test.cjs uses for HELP. Python reads markdown; node reads
 # JavaScript; neither guesses at the other's escaping.
-SURFACES = ["README.md", "docs/api.md", "docs/protocol.md", "apps/web/llms.txt"]
+SURFACES = ["README.md", "docs/api.md", "docs/protocol.md", "docs/riddle-pack.md", "apps/web/llms.txt"]
 
 # A published line is written for a human and carries placeholders. Each one is
 # spelled out here on purpose: an unrecognised placeholder FAILS rather than
@@ -46,7 +46,7 @@ ANGLE = {
 BARE = {
     "ID": "1", "N": "1", "S": "1", "URL": "https://x", "FILE": "./f.md", "PATH": "./p",
     "NAME": "N", "CMD": "./c", "IP": "1.2.3.4", "ASSET": "A", "COUNT": "1", "AMOUNT": "1",
-    "DIR": "./d", "B": "white", "TICK-TICK": "1-2", "NAME=VALUE": "A=B",
+    "DIR": "./d", "B": "white", "TICK-TICK": "1-2", "NAME=VALUE": "A=B", "KEY": "K",
     "NAME=IDENTITY": "A=B", "NAME=MODEL": "A=B", "VALUE": "v", "flags": "",
 }
 PLACEHOLDER_RE = re.compile(r"<[^>\s][^>]*>")

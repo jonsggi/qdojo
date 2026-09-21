@@ -46,10 +46,29 @@ def fake_cli(tmp_path):
     return str(p)
 
 
+class FakeChain:
+    """Stands in for NativeChain: the wizard only reads a balance and a tick."""
+
+    def __init__(self, ip, port=21841, **kw):
+        self.ip, self.identity = ip, kw.get("identity", "")
+
+    def current_tick(self):
+        return 1000
+
+    def balance(self, identity):
+        return 5000
+
+
 @pytest.fixture
 def dojo(tmp_path, monkeypatch):
-    """A throwaway state dir, a fake signer, and no network."""
-    monkeypatch.setattr(nodes, "cli_probe", lambda binary, timeout=6.0: (lambda ip: (1000, [])))
+    """A throwaway state dir, a fake signer, and no network.
+
+    The signer itself is no longer faked -- qdojo derives and signs in
+    process, so there is nothing to stub. What is stubbed is the network:
+    the prober and the chain.
+    """
+    monkeypatch.setattr(nodes, "native_probe", lambda timeout=6.0: (lambda ip: (1000, [])))
+    monkeypatch.setattr(wizard, "NativeChain", FakeChain)
     return {"cli": fake_cli(tmp_path), "state": str(tmp_path / "state"), "tmp": tmp_path}
 
 

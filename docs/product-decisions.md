@@ -220,6 +220,25 @@ Head-to-head draw rules:
 - At that limit, cup/playoff pairings move to a scheduled replay. Unresolved
   standalone duels expire and refund stakes without a rake. No random winner.
 
+Regular-round ties (2026-09-19):
+
+- Fighters whose correct commits share a tick are a dead heat and share a
+  placing, the way racing settles it. Chain inclusion order inside a tick is
+  not skill, so there is no secondary criterion and no replay. Round 119
+  (five identical bots, one tick, five winners) is the rule working, not a
+  bug.
+- Money under `podium`: the tied fighters pool the podium weights of the
+  placings they span and split them equally. Two tied for first take
+  (5 + 3) / 2 each and third takes 2; three or more tied for first split all
+  ten parts evenly; a tie for the last podium place brings everyone tied
+  onto the podium and splits that place's weight among them, so the podium
+  can grow. Under `first` everyone in the earliest tick already splits the
+  pot equally, unchanged. `split` has no placings.
+- Season points: each tied fighter receives the points of the best placing
+  in the tie (two tied for first both take 3).
+- Recorded as decided on the operator's behalf while closing #18; it can be
+  overturned, and the money half lives in one place (`round.settle`).
+
 Publish cup match windows in advance and support automated bot check-in.
 Missing the check-in deadline forfeits the pairing, with no refund of the
 absent player's cup entry fee; it stays in the prize pool. After play starts,

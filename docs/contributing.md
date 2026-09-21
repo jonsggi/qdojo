@@ -4,10 +4,22 @@
   green before every commit, and the pre-commit hook runs it.
 - **Pure core, thin edges.** Hashing, payloads and round evaluation are pure
   functions with no I/O. Chain access sits behind one interface with a fake
-  for tests and a qubic-cli plus indexer implementation for real.
-- **Markers, not exit codes.** qubic-cli exits 0 on failure. Every wrapper
-  parses stdout for the marker that proves success and treats its absence as
-  failure, with an explicit timeout on every call.
+  for tests, a native Python implementation plus indexer for real, and a
+  qubic-cli one kept as the reference the native signer is checked against.
+- **The signer is proven, not assumed.** `qdojo.qubic` reimplements Qubic's
+  crypto. After touching anything under it, run `scripts/crosscheck-signer.py
+  --node IP`: it signs real transactions both ways and compares every byte.
+  Signing is deterministic, so "it verifies" is not good enough — it must be
+  the same bytes.
+- **A bot needs nothing but Python.** No bot command may look for qubic-cli
+  unless `--chain cli` was asked for; the binary is built only by someone who
+  wants to run the crosscheck. A new chain call gets a native implementation
+  and a frozen `-print-only hex` vector from the reference (test_contracts.py
+  shows how), not a shell-out.
+- **Markers, not exit codes.** qubic-cli exits 0 on failure. Under
+  `--chain cli` every wrapper parses stdout for the marker that proves
+  success and treats its absence as failure, with an explicit timeout on
+  every call.
 - **No seed anywhere but a 0600 conf.** Never argv, never stdout, never a
   log, never git. `.githooks/pre-commit` refuses any commit that stages a
   `seed=` line or a bare 55-character lowercase token, and runs the tests;

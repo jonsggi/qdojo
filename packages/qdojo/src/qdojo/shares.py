@@ -3,16 +3,22 @@ holds it, and pay dividends through QUtil's on-chain pro-rata distribution.
 
 Every fee is read live from the contract, never hard-coded, and every send
 is planned before it is made. The house is never involved in issuing.
+
+Both moves are contract transactions -- a transfer to the contract's
+identity carrying the procedure's input -- so they go through the chain's
+ordinary `send` and are signed wherever the bot's other transactions are.
+`qubic.contracts` builds the inputs; nothing here needs qubic-cli.
 """
 import re
-import subprocess
 from dataclasses import dataclass
 
 from .chain import parse
-from .chain.base import Unknown, ChainError
+from .chain.base import SendResult
+from .chain.parse import owned_assets, qutil_fees, qx_fees          # noqa: F401  (the text parsers, still importable here)
+from .qubic import contracts
 
 ASSET_NAME_RE = re.compile(r"^[A-Z][A-Z0-9]{0,6}$")  # 7 bytes max on chain
-QX_UNIT = "0000000"                                  # unit of measurement: none (7 digits)
+QX_UNIT = contracts.QX_UNIT_NONE                     # unit of measurement: none (7 digits)
 
 
 class SharesError(Exception):
@@ -25,18 +31,6 @@ def check_asset_name(name: str) -> str:
     return name
 
 
-# ------------------------------------------------------------------ parsers
-
-def qx_fees(text: str) -> dict | None:
-    """-qxgetfee -> {issue, transfer, trade_bps_1e9} or None."""
-    d = parse.kv(text)
-    try:
-        return {"issue": int(d["Asset issuance fee"]), "transfer": int(d["Transfer fee"]),
-                "trade_per_1e9": int(d["Trade fee"])}
-    except (KeyError, ValueError):
-        return None
-
-
 @dataclass(frozen=True)
 class Holding:
     owner: str
@@ -45,46 +39,7 @@ class Holding:
 
 def ownerships(text: str) -> list[Holding]:
     """-queryassets ownerships -> holders with a positive share count."""
-    out, cur = [], {}
-    for line in text.splitlines():
-        s = line.strip()
-        if s.startswith("Share ownership"):
-            if cur.get("owner") and cur.get("shares", 0) > 0:
-                out.append(Holding(cur["owner"], cur["shares"]))
-            cur = {}
-        elif s.startswith("owner = "):
-            cur["owner"] = s.split("= ", 1)[1].strip()
-        elif s.startswith("number of shares = "):
-            try:
-                cur["shares"] = int(s.split("= ", 1)[1])
-            except ValueError:
-                cur["shares"] = 0
-    if cur.get("owner") and cur.get("shares", 0) > 0:
-        out.append(Holding(cur["owner"], cur["shares"]))
-    return out
-
-
-def owned_assets(text: str) -> list[dict]:
-    """-getasset <identity> -> [{issuer, name, shares}] from the OWNERSHIP blocks."""
-    out, cur, section = [], {}, None
-    for line in text.splitlines():
-        s = line.strip()
-        if s.startswith("======== "):
-            if cur.get("name") and section == "OWNERSHIP":
-                out.append(cur)
-            cur, section = {}, s.strip("= ").strip()
-        elif s.startswith("Asset issuer: "):
-            cur["issuer"] = s.split(": ", 1)[1]
-        elif s.startswith("Asset name: "):
-            cur["name"] = s.split(": ", 1)[1]
-        elif s.startswith("Number Of Shares: "):
-            try:
-                cur["shares"] = int(s.split(": ", 1)[1])
-            except ValueError:
-                cur["shares"] = 0
-    if cur.get("name") and section == "OWNERSHIP":
-        out.append(cur)
-    return out
+    return [Holding(h["owner"], h["shares"]) for h in (parse.ownerships(text) or [])]
 
 
 def total_shares(text: str) -> int | None:
@@ -95,67 +50,116 @@ def total_shares(text: str) -> int | None:
 # ------------------------------------------------------------------ actions
 
 class Shares:
-    def __init__(self, cli):
-        """`cli` is a QubicCli (signing for issue/pay, read-only is enough for reads)."""
-        self.cli = cli
+    def __init__(self, chain):
+        """`chain` signs for issue/pay (read-only is enough for reads) and
+        answers the fee and asset queries: `qx_fees`, `qutil_fees`,
+        `owned_assets`, `asset_holders`. NativeChain and QubicCli both do."""
+        self.chain = chain
+
+    @property
+    def identity(self) -> str:
+        return self.chain.identity
 
     def fees(self) -> dict:
-        f = qx_fees(self.cli._run(["-qxgetfee"]))
-        if f is None:
-            raise Unknown("no Qx fee lines in -qxgetfee output")
-        return f
+        return self.chain.qx_fees()
 
     def holders(self, issuer: str, name: str) -> list[Holding]:
+        """OWNERSHIP records: who owns the asset, for `bot shares`."""
         check_asset_name(name)
-        return ownerships(self.cli._run(["-queryassets", "ownerships", f"issuer={issuer},name={name}"]))
+        return [Holding(h["owner"], h["shares"]) for h in self.chain.asset_holders(issuer, name)
+                if h["shares"] > 0]
+
+    def possessors(self, issuer: str, name: str) -> list[Holding]:
+        """POSSESSION records: who QUtil's DistributeQuToShareholders pays.
+        For plain Qx holdings that were never transferred separately, owner
+        and possessor are the same identity; they can differ once a
+        possession-only transfer happens, which is why a dividend plan
+        reads this instead of `holders`."""
+        check_asset_name(name)
+        return [Holding(h["possessor"], h["shares"]) for h in self.chain.asset_possessors(issuer, name)
+                if h["shares"] > 0]
 
     def owned(self, identity: str) -> list[dict]:
-        return owned_assets(self.cli._run(["-getasset", identity]))
+        return [{"issuer": a["issuer"], "name": a["name"], "shares": a["shares"]}
+                for a in self.chain.owned_assets(identity)]
 
     def plan_issue(self, name: str, count: int) -> dict:
+        """`already_issued` is decided over EVERY node this chain knows, not
+        just the first that answers: Qx.IssueAsset books its (non-refundable)
+        fee before it finds out the issuance is a duplicate, so a single
+        node's empty answer -- one that never loaded its universe, is
+        lagging, or simply has a different view -- must not be trusted alone
+        to say "not issued yet". `checked_nodes` is how many nodes answered
+        at all; the caller decides what to do with too few."""
         check_asset_name(name)
         if count <= 0:
             raise SharesError("share count must be positive")
         fees = self.fees()
-        bal = self.cli.balance(self.cli.identity)
-        already = [a for a in self.owned(self.cli.identity) if a.get("name") == name and a.get("issuer") == self.cli.identity]
-        return {"issuer": self.cli.identity, "asset": name, "shares": count, "issue_fee": fees["issue"],
-                "balance": bal, "affordable": bal >= fees["issue"] + 1, "already_issued": bool(already)}
+        bal = self.chain.balance(self.identity)
+        answers = self.chain.owned_assets_each(self.identity)
+        checked_nodes = len(answers)
+        already = any(a.get("name") == name and a.get("issuer") == self.identity
+                     for _ip, owned in answers for a in owned)
+        return {"issuer": self.identity, "asset": name, "shares": count, "issue_fee": fees["issue"],
+                "balance": bal, "affordable": bal >= fees["issue"] + 1, "already_issued": bool(already),
+                "checked_nodes": checked_nodes}
 
-    def issue(self, name: str, count: int):
+    def issue(self, name: str, count: int) -> SendResult:
+        """Qx IssueAsset: the issuance fee rides as the amount, the asset as
+        the input. The fee is the one just read, not qubic-cli's constant."""
         plan = self.plan_issue(name, count)
         if plan["already_issued"]:
-            raise SharesError(f"{self.cli.identity[:8]}… already issued {name}")
+            raise SharesError(f"{self.identity[:8]}… already issued {name}")
+        if plan["checked_nodes"] < 2:
+            raise SharesError(
+                f"{name}'s absence was confirmed by only {plan['checked_nodes']} node; "
+                "a duplicate issuance burns the fee and issues nothing -- give a second "
+                "node via QDOJO_FALLBACK_NODES or refresh the node cache (`qdojo nodes`)")
         if not plan["affordable"]:
             raise SharesError(f"balance {plan['balance']} below the issuance fee {plan['issue_fee']}")
-        out = self.cli._run(["-qxissueasset", name, str(count), QX_UNIT, "0"], signed=True)
-        r = parse.send_receipt(out)
-        if r is None:
-            raise ChainError("issue produced no receipt; treat as NOT sent until proven otherwise")
-        from .chain.base import SendResult
-        return SendResult(*r)
+        return self.chain.send(contracts.QX_IDENTITY, plan["issue_fee"],
+                               contracts.issue_asset_input(name, count, QX_UNIT, 0),
+                               contracts.QX_ISSUE_ASSET)
 
     def plan_dividend(self, name: str, amount: int) -> dict:
+        """Mirror QUtil's DistributeQuToShareholders exactly (core
+        src/contracts/QUtil.h): fees = feePerShareholder * shareholders come
+        OUT of the invocation reward (`amount`), not on top of it;
+        amountPerShare = (amount - fees) // totalShares; if that is <= 0 the
+        contract refunds the WHOLE amount and pays nobody. `amount` is what
+        the transaction moves and what leaves the wallet if it distributes;
+        there is no separate "cost" on top of it."""
         check_asset_name(name)
-        hs = self.holders(self.cli.identity, name)
+        hs = self.possessors(self.identity, name)          # QUtil pays possessors, not owners
         n = len(hs)
         total = sum(h.shares for h in hs)
-        fee_per = 5  # QUTIL_DISTRIBUTE_QU_TO_SHAREHOLDER_FEE_PER_SHAREHOLDER in the pinned core
-        per_share = amount // total if total else 0
+        fee_per = self.chain.qutil_fees()["distribute_per_shareholder"]
+        fee = fee_per * n
+        per_share = (amount - fee) // total if total and amount > fee else 0
+        if per_share > 0:
+            distributed = per_share * total
+            refunded = amount - distributed - fee
+        else:
+            fee = 0                # the contract burns nothing on the refund path
+            distributed = 0
+            refunded = amount
         return {"asset": name, "holders": n, "total_shares": total, "amount": amount, "per_share": per_share,
-                "distributed": per_share * total, "remainder_refunded": amount - per_share * total,
-                "fee": fee_per * n, "cost": amount + fee_per * n,
+                "distributed": distributed, "refunded": refunded, "fee": fee,
                 "table": [{"owner": h.owner, "shares": h.shares, "gets": per_share * h.shares} for h in hs]}
 
-    def pay_dividend(self, name: str, amount: int):
+    def pay_dividend(self, name: str, amount: int) -> SendResult:
+        """QUtil DistributeQuToShareholders: the amount rides as the amount,
+        issuer and asset as the input. Refuses up front whenever the
+        contract itself would refund the whole amount and pay nobody --
+        that refund is real chain behaviour, not a bug, but sending into it
+        anyway would just donate `amount` round trip (minus nothing, since
+        the contract burns no fee on that path) for no distribution."""
         plan = self.plan_dividend(name, amount)
-        if plan["holders"] == 0 or plan["per_share"] == 0:
-            raise SharesError("nothing to distribute: no holders or amount below one QU per share")
-        if self.cli.balance(self.cli.identity) < plan["cost"]:
-            raise SharesError("balance below amount plus distribution fee")
-        out = self.cli._run(["-qutildistributequbictoshareholders", self.cli.identity, name, str(amount)], signed=True)
-        r = parse.send_receipt(out)
-        if r is None:
-            raise ChainError("distribution produced no receipt; treat as NOT sent")
-        from .chain.base import SendResult
-        return SendResult(*r)
+        if plan["holders"] == 0 or plan["per_share"] <= 0:
+            raise SharesError("nothing to distribute: no holders, or amount below "
+                              "total shares plus the per-holder fee -- QUtil would refund it in full")
+        if self.chain.balance(self.identity) < amount:
+            raise SharesError("balance below the amount to distribute")
+        return self.chain.send(contracts.QUTIL_IDENTITY, amount,
+                               contracts.distribute_input(self.identity, name),
+                               contracts.QUTIL_DISTRIBUTE_QU_TO_SHAREHOLDERS)

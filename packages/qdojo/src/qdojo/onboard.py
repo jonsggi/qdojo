@@ -7,6 +7,7 @@ import shutil
 import string
 import subprocess
 
+from . import qubic
 from .chain.cli import check_seed_conf
 
 SEED_ALPHABET = string.ascii_lowercase
@@ -18,11 +19,15 @@ class OnboardError(Exception):
 
 
 def find_cli(explicit: str | None = None) -> str:
+    """Locate qubic-cli. Only `--chain cli` and the conformance script need it;
+    no bot command calls this on the default native chain, so a bot never
+    fails for the lack of a binary."""
     for cand in ([explicit] if explicit else []) + [os.environ.get("QUBIC_CLI"), "qubic-cli",
                                                     os.path.expanduser("~/.qdojo/qubic-cli")]:
         if cand and (shutil.which(cand) or os.access(cand, os.X_OK)):
             return shutil.which(cand) or cand
-    raise OnboardError("qubic-cli not found: build it with scripts/build-qubic-cli.sh or pass --cli")
+    raise OnboardError("qubic-cli not found: only --chain cli and scripts/crosscheck-signer.py need it; "
+                       "build it with scripts/build-qubic-cli.sh or pass --cli, or drop --chain cli")
 
 
 def new_seed(rng=secrets) -> str:
@@ -40,25 +45,30 @@ def create_conf(path: str, seed: str | None = None) -> str:
     if len(seed) != SEED_LEN or not seed.isalpha() or not seed.islower():
         raise OnboardError("a seed is exactly 55 lowercase letters a-z")
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, "w") as f:
+    # newline="\n" so a conf is the same 61 bytes on Windows as anywhere:
+    # one written there and carried to a Linux box must read as the same file.
+    with os.fdopen(fd, "w", newline="\n") as f:
         f.write(f"seed={seed}\n")
     check_seed_conf(path)
     return path
 
 
 def derive_identity(cli: str, conf: str, timeout: float = 20.0) -> str:
-    """The identity a conf signs as, from qubic-cli -showkeys. Only the
-    Identity line is read; the private key it also prints is discarded."""
+    """The identity a conf signs as, derived here.
+
+    This used to shell out to `qubic-cli -showkeys`, which meant a bot could
+    not learn its own address without a compiled binary -- and that binary
+    printed the private key to stdout on the way. `cli` and `timeout` are
+    kept so existing callers and tests need no change; neither is used.
+    """
     check_seed_conf(conf)
-    try:
-        out = subprocess.run([cli, "-conf", conf, "-showkeys"], capture_output=True, text=True, timeout=timeout).stdout
-    except (subprocess.TimeoutExpired, OSError) as e:
-        raise OnboardError(f"qubic-cli -showkeys failed: {e}")
-    for line in out.splitlines():
-        if line.startswith("Identity: "):
-            idn = line.split(": ", 1)[1].strip()
-            if len(idn) == 60 and idn.isupper():
-                return idn
+    with open(conf, encoding="utf-8") as f:
+        for line in f:
+            if line.strip().startswith("seed="):
+                try:
+                    return qubic.identity_from_seed(line.strip()[5:])
+                except ValueError as e:
+                    raise OnboardError(f"could not derive an identity from the conf: {e}")
     raise OnboardError("could not derive an identity from the conf")
 
 

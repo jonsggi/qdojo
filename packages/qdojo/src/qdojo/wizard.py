@@ -1,8 +1,11 @@
 """`qdojo bot init` / `qdojo bot setup` as a ceremony that VERIFIES.
 
 Six staged steps. Each one proves something instead of printing a claim:
-qubic-cli is not merely found but run; the seed conf is not merely written but
-stat'ed for mode 0600; the name is not merely measured but pushed through
+the signer is not merely imported but made to reproduce a reference
+transaction byte for byte; the seed conf is not merely written but
+stat'ed for mode 0600 (where the OS has modes -- on Windows the rite says
+what keeps the file private instead, see portable.py); the name is not
+merely measured but pushed through
 `payload.encode(payload.Bow(name))`; the node is not merely named but asked for
 its tick; the model is not merely configured but made to solve one cheap test
 riddle through `solver.run_solver` — the exact code path `bot run` uses; and the
@@ -22,14 +25,13 @@ import re
 import shlex
 import shutil
 import stat
-import subprocess
 import sys
 import textwrap
 import time
 
-from . import nodes, onboard, payload, prompts, term
+from . import nodes, onboard, payload, portable, prompts, qubic, term
 from .chain.base import ChainError, Unknown
-from .chain.cli import QubicCli
+from .chain.native import NativeChain
 from .payload import PayloadError
 from .solver import SolverError, run_solver
 
@@ -42,13 +44,33 @@ class WizardError(RuntimeError):
 DEFAULT_STATE = os.path.expanduser("~/.qdojo/bot")
 DEFAULT_BOARD = "https://klabautermann.tailb4bd0.ts.net/qdojo/data/board.json"
 DEFAULT_SEAT = 1000          # a white-belt seat, when no board says otherwise
-BUILD_CLI = "./scripts/build-qubic-cli.sh"
-CLI_MARKERS = ("qubic", "nodeip", "showkeys", "getbalance", "usage", "sendtoaddress")
+
+# One frozen vector out of qubic-cli, so the signer can be proved here with
+# no binary and no network. The seed is the publicly known 55 'a's -- the
+# identity anyone can spend from, which is why it is safe to write down.
+# This is the only thing the rite wants from qubic-cli, and it wants it
+# from the past: nobody has to build the binary to bow in.
+SIGNER_CHECK_SEED = "a" * 55
+SIGNER_CHECK_IDENTITY = "BZBQFLLBNCXEMGLOBHUVFTLUPLVCPQUASSILFABOFFBCADQSSUPNWLZBQEXK"
+SIGNER_CHECK_PAYLOAD = bytes.fromhex(
+    "1f590d03e613bdded38b4c0820ac44615f91af12435980b3ede3c08c315a2544"
+    "1f590d03e613bdded38b4c0820ac44615f91af12435980b3ede3c08c315a2544"
+    "3930000000000000f0e0cf0400000000"
+    "8d2fa826775df4d167899079219766339c2a7ca28ceb338911a780e45c29502e"
+    "053763bd193d8b4ed9a41dbcba3ec9119b5faa422fae7c0487848f8262080600"
+)
 
 PROFILE_KEYS = ("conf", "identity", "name", "cli", "provider", "model", "solver", "solver_env",
-                "key_source", "setup_at")
-PROFILE_DEFAULTS = {"conf": "", "identity": "", "name": "", "cli": "qubic-cli", "provider": "",
-                    "model": "", "solver": [], "solver_env": {}, "key_source": "none", "setup_at": 0}
+                "secret_env", "key_source", "setup_at")
+# "cli" is a path to qubic-cli and is read only under `--chain cli`. Empty
+# means none is installed and none is needed; the key stays so profiles keep
+# their documented shape.
+PROFILE_DEFAULTS = {"conf": "", "identity": "", "name": "", "cli": "", "provider": "",
+                    "model": "", "solver": [], "solver_env": {}, "secret_env": {}, "key_source": "none",
+                    "setup_at": 0}
+# secret_env: solver variable -> the NAME of the owner's variable holding it
+# (settings.py, type "secret"). Names only; check_no_secrets guards solver_env
+# because that one carries values.
 
 # A name for anything that must never be written down, and a shape for a value
 # that is obviously a live credential even under an innocent name.
@@ -157,7 +179,7 @@ class Opts:
     keyword arguments, which win. `None` on the object means "not given".
     """
     state: str = DEFAULT_STATE          # bot state dir (seed conf, profile, node cache)
-    cli: str | None = None              # path to qubic-cli; "qubic-cli" is read as "not given"
+    cli: str | None = None              # path to qubic-cli, for --chain cli only; "qubic-cli" means "not given"
     conf: str | None = None             # seed conf path; default <state>/bot.conf
     name: str | None = None             # fighter name (<= 32 bytes as a BOW payload)
     node: str | None = None             # IP[:PORT] to use instead of discovery
@@ -249,7 +271,10 @@ def examples_dir() -> str | None:
 
 
 def solver_argv(filename: str) -> list[str]:
-    """`[python3, /abs/path/to/<filename>]`, or WizardError saying where to look."""
+    """`[sys.executable, /abs/path/to/<filename>]`, or WizardError saying where
+    to look. The interpreter is the one qdojo runs on, by path: on Windows
+    there is no `python3` to name, and `bot run` maps a path that has since
+    moved back to its own interpreter (portable.resolve_command)."""
     d = examples_dir()
     path = os.path.join(d, filename) if d else ""
     if not path or not os.path.exists(path):
@@ -315,11 +340,12 @@ def load_profile(state_dir: str) -> dict:
 def _profile(ctx) -> dict:
     prev = ctx.get("prof") or {}
     p = {"conf": ctx["conf"], "identity": ctx["identity"], "name": ctx.get("name") or "",
-         "cli": ctx.get("cli") or prev.get("cli") or "qubic-cli",
+         "cli": ctx.get("cli") or prev.get("cli") or "",
          "provider": ctx.get("provider", prev.get("provider", "")),
          "model": ctx.get("model", prev.get("model", "")),
          "solver": list(ctx.get("solver") or prev.get("solver") or []),
          "solver_env": dict(ctx.get("solver_env", prev.get("solver_env") or {})),
+         "secret_env": dict(prev.get("secret_env") or {}),
          "key_source": ctx.get("key_source", prev.get("key_source", "none")),
          "setup_at": int(time.time())}
     check_no_secrets(p["solver_env"])
@@ -340,21 +366,35 @@ def run_command(profile: dict, board: str | None = None, env_prefix: bool = True
         argv += [f"{k}={v}" for k, v in sorted((profile.get("solver_env") or {}).items())]
     argv += ["qdojo", "bot"]
     state = os.path.dirname(profile.get("conf") or "")
-    if state and os.path.abspath(state) != os.path.abspath(DEFAULT_STATE):
+    if state and os.path.normcase(os.path.abspath(state)) != os.path.normcase(os.path.abspath(DEFAULT_STATE)):
         argv += ["--state", state]
-    solver = list(profile.get("solver") or ["python3", "examples/solvers/echo.py"])
+    solver = list(profile.get("solver") or [portable.python_name(), "examples/solvers/echo.py"])
     argv += ["run", "--board", board or DEFAULT_BOARD, "--solver", *solver]
     if profile.get("name"):
         argv += ["--name", profile["name"]]
     return argv
 
 
-def run_command_text(profile: dict, board: str | None = None, wrap: bool = True, env_prefix: bool = True) -> str:
-    """The same command as one shell-safe string.
-    `shlex.split(run_command_text(p, b, wrap=False)) == run_command(p, b)`."""
+def run_command_text(profile: dict, board: str | None = None, wrap: bool = True, env_prefix: bool = True,
+                     shell: str | None = None) -> str:
+    """The same command as one shell-safe string, for `shell`: "sh" or
+    "powershell", defaulting to this OS's.
+
+    For sh, `shlex.split(run_command_text(p, b, wrap=False)) == run_command(p, b)`.
+    PowerShell cannot take `NAME=value` in front of a command, so there each
+    variable is set on a line of its own (`$env:NAME = 'value'`), the
+    continuation is a backtick, and the quoting is PowerShell's."""
+    shell = shell or portable.shell_name()
+    if shell == "powershell":
+        return _run_command_powershell(profile, board, wrap, env_prefix)
     args = [shlex.quote(a) for a in run_command(profile, board, env_prefix)]
     if not wrap:
         return " ".join(args)
+    return " \\\n".join(_wrapped(args))
+
+
+def _wrapped(args: list[str]) -> list[str]:
+    """One line per flag group, the continuation left to the caller."""
     out, line = [], []
     for a in args:
         if line and a in ("--board", "--solver", "--name"):
@@ -362,7 +402,15 @@ def run_command_text(profile: dict, board: str | None = None, wrap: bool = True,
             line = ["   "]
         line.append(a)
     out.append(" ".join(line))
-    return " \\\n".join(out)
+    return out
+
+
+def _run_command_powershell(profile, board, wrap, env_prefix) -> str:
+    env = [f"$env:{k} = {portable.ps_string(v)}" for k, v in sorted((profile.get("solver_env") or {}).items())]
+    args = [portable.ps_quote(a) for a in run_command(profile, board, env_prefix=False)]
+    if not wrap:
+        return "; ".join((env if env_prefix else []) + [" ".join(args)])
+    return "\n".join((env if env_prefix else []) + [" `\n".join(_wrapped(args))])
 
 
 # --------------------------------------------------------------------- steps
@@ -372,39 +420,32 @@ def _say(text: str) -> None:
         print("    " + term.c(line, "dim"))
 
 
-def _build_hint() -> None:
-    print("    " + term.c("build the reference signer, once:", "dim"))
-    print("    " + term.c(BUILD_CLI, "bold"))
-
-
-def _cli_answers(cli: str) -> str | None:
-    """Run qubic-cli once and look for a marker. Its exit code is worthless:
-    it exits 0 on failure, so the text is the only evidence."""
-    for args in ([cli, "-help"], [cli]):
-        try:
-            p = subprocess.run(args, capture_output=True, text=True, timeout=20)
-        except (OSError, subprocess.TimeoutExpired):
-            continue
-        out = (p.stdout or "") + "\n" + (p.stderr or "")
-        if any(m in out.lower() for m in CLI_MARKERS):
-            return out
-    return None
-
-
 def _step_cli(opts, ctx, n, total):
-    term.step(n, total, "THE SIGNER — qubic-cli, the reference implementation")
+    """Prove the signer, rather than prove a binary is installed.
+
+    This stage used to look for qubic-cli and refuse to go on without it,
+    which made a C++ build the price of entry. qdojo signs for itself now, so
+    what is worth verifying is that the signing code produces the right bytes
+    -- and that can be checked here, offline, in milliseconds, against a
+    vector qubic-cli itself produced.
+    """
+    term.step(n, total, "THE SIGNER — qdojo signs for itself, in Python")
     try:
-        cli = onboard.find_cli(opts.cli)
-    except onboard.OnboardError as e:
-        term.fail("qubic-cli not found", str(e))
-        _build_hint()
-        raise WizardError("qubic-cli not found")
-    if _cli_answers(cli) is None:
-        term.fail("qubic-cli does not answer", f"{cli} ran but printed nothing we recognise")
-        _build_hint()
-        raise WizardError(f"{cli} did not respond to a harmless call")
-    term.ok("qubic-cli responds", cli)
-    ctx["cli"] = cli
+        got = qubic.identity_from_seed(SIGNER_CHECK_SEED)
+        if got != SIGNER_CHECK_IDENTITY:
+            raise WizardError(f"derived {got}, expected {SIGNER_CHECK_IDENTITY}")
+        subseed, _priv, public = qubic.keys_from_seed(SIGNER_CHECK_SEED)
+        signed = qubic.Transaction.to_identity(public, SIGNER_CHECK_IDENTITY,
+                                               12345, 80732400).sign(subseed)
+        if signed.payload() != SIGNER_CHECK_PAYLOAD:
+            raise WizardError("the signature does not match the reference vector")
+    except WizardError:
+        term.fail("the signer is not producing the reference bytes",
+                  "this build is broken; do not fight with it")
+        raise
+    term.ok("signer verified", "a known transaction signs to the exact bytes "
+                               "the reference produced; no binary needed")
+    ctx["cli"] = opts.cli or ""    # recorded for --chain cli only; empty is the normal case
 
 
 def _step_seed(opts, ctx, n, total):
@@ -416,13 +457,20 @@ def _step_seed(opts, ctx, n, total):
         seed = sys.stdin.readline().strip() if opts.seed_from_stdin else None
         onboard.create_conf(conf, seed)
         term.ok("new seed created", conf)
-    mode = stat.S_IMODE(os.stat(conf).st_mode)
-    if mode != 0o600:
-        term.fail("the seed conf is not 0600", f"{conf} is {oct(mode)} — fix it before you go on")
-        raise WizardError(f"{conf} is mode {oct(mode)}, must be 0600")
-    term.ok("mode 0600 confirmed", "only you can read it — back this file up")
+    if portable.private_modes_enforced():
+        mode = stat.S_IMODE(os.stat(conf).st_mode)
+        if mode != 0o600:
+            term.fail("the seed conf is not 0600", f"{conf} is {oct(mode)} — fix it before you go on")
+            raise WizardError(f"{conf} is mode {oct(mode)}, must be 0600")
+        term.ok("mode 0600 confirmed", "only you can read it — back this file up")
+    else:
+        # Windows has no 0600 to confirm: os.chmod there toggles read-only and
+        # nothing else. The file is as private as the user profile it sits in,
+        # which is the reason for the rule "one Windows user per fighter".
+        term.ok("private to your Windows user", "no file modes here; the profile's ACL is the lock")
+        term.info("", "one Windows user per fighter — back this file up")
     ctx["conf"] = conf
-    ctx["identity"] = onboard.derive_identity(ctx["cli"], conf)
+    ctx["identity"] = onboard.derive_identity("", conf)
     term.ok("identity derived", ctx["identity"][:12] + "…" + ctx["identity"][-6:])
 
 
@@ -451,15 +499,16 @@ def _step_name(opts, ctx, n, total):
 
 def _step_nodes(opts, ctx, n, total):
     term.step(n, total, "THE NETWORK — live nodes that agree on the tick")
-    probe = nodes.cli_probe(ctx["cli"])
+    probe = nodes.native_probe()
     if opts.node:
-        ip = opts.node.partition(":")[0]
-        with term.spinner(f"asking {ip} for its tick"):
-            tick, _ = probe(ip)
+        # The whole IP[:PORT] is kept: a node on another port is still that
+        # node, and the purse step and `bot run` both split the port off.
+        with term.spinner(f"asking {opts.node} for its tick"):
+            tick, _ = probe(opts.node)
         if not tick:
             term.fail("that node did not answer", opts.node)
             raise WizardError(f"{opts.node} gave no tick; drop --node to discover one")
-        found = [{"ip": ip, "tick": tick, "lag": 0}]
+        found = [{"ip": opts.node, "tick": tick, "lag": 0}]
     else:
         with term.spinner("probing the bootstrap nodes and every peer they name"):
             found = nodes.discover(probe)
@@ -526,9 +575,9 @@ def _pick_solver(opts, sv) -> list[str]:
         return solver_argv(sv["file"])
     _say("the whole contract: the riddle arrives on stdin as JSON, and the LAST line you print "
          "must be {\"answer\": ...}. Exit non-zero and the dojo records that you did not answer.")
-    cmd = term.ask("the command that runs your fighter", default="python3 ./my_solver.py",
+    cmd = term.ask("the command that runs your fighter", default=f"{portable.python_name()} ./my_solver.py",
                    no_input=opts.yes)
-    argv = shlex.split(cmd)
+    argv = portable.split_command(cmd)          # a Windows path keeps its backslashes
     if not argv:
         raise WizardError("no solver command given")
     return argv
@@ -602,9 +651,11 @@ def _step_model(opts, ctx, n, total):
     term.ok("solver", " ".join(os.path.basename(a) for a in solver))
     if key_env:
         if os.environ.get(key_env):
-            term.ok(f"key in ${key_env}", "present in this shell — qdojo reads it, never writes it")
+            term.ok(f"key in {portable.env_ref(key_env)}", "present in this shell — qdojo reads it, never writes it")
         else:
-            term.warn(f"${key_env} is not set", "export it in your shell before you run; the probe below will say so")
+            term.warn(f"{portable.env_ref(key_env)} is not set",
+                      f"set it in your shell before you run ({portable.export_hint(key_env)}); "
+                      f"the probe below will say so")
     term.info("qdojo stores", f"key_source = {key_source}  (the name of the place, never the key)")
 
     ctx.update(provider=prov["key"], model=model, solver=solver, solver_env=env, key_source=key_source,
@@ -648,21 +699,18 @@ def _seat_fee(opts) -> int:
 
 
 def _ensure_chain(opts, ctx):
-    if not ctx.get("cli"):
-        ctx["cli"] = onboard.find_cli(opts.cli or (ctx.get("prof") or {}).get("cli"))
     if ctx.get("node"):
         return
     if opts.node:
-        ip = opts.node.partition(":")[0]
-        tick, _ = nodes.cli_probe(ctx["cli"])(ip)
-        ctx["node"] = {"ip": ip, "tick": tick or 0, "lag": 0}
+        tick, _ = nodes.native_probe()(opts.node)
+        ctx["node"] = {"ip": opts.node, "tick": tick or 0, "lag": 0}
         return
     cached = nodes.load(opts.state)
     if cached:
         ctx["node"] = cached[0]
         return
     with term.spinner("probing the bootstrap nodes and every peer they name"):
-        found = nodes.discover(nodes.cli_probe(ctx["cli"]))
+        found = nodes.discover(nodes.native_probe())
     if not found:
         raise WizardError("no live Qubic node reachable")
     nodes.save(opts.state, found)
@@ -677,7 +725,7 @@ def _step_purse(opts, ctx, n, total):
     ip, _, port = str(ctx["node"]["ip"]).partition(":")
     bal = None
     try:
-        chain = QubicCli(ctx["cli"], ip, int(port or nodes.PORT), identity=ctx["identity"])
+        chain = NativeChain(ip, int(port or nodes.PORT), identity=ctx["identity"])
         with term.spinner(f"reading the balance of {ctx['identity'][:8]}… from {ip}"):
             bal = chain.balance(ctx["identity"])
     except (Unknown, ChainError, ValueError, OSError) as e:
@@ -717,7 +765,8 @@ def _card(opts, ctx, prof) -> None:
         term.kv("purse", term.qu(ctx.get("balance")) + term.c(f"   seat {term.qu(ctx.get('seat', DEFAULT_SEAT))}",
                                                              "dim")),
         term.kv("seed", prof.get("conf", "")),
-        term.kv("", term.c("0600 — back this up. Lose it and the purse is gone.", "byellow")),
+        term.kv("", term.c(("0600" if portable.private_modes_enforced() else "yours alone")
+                           + " — back this up. Lose it and the purse is gone.", "byellow")),
         term.kv("node", f"{node.get('ip', '?')}" + term.c(f"   lag {node.get('lag', '?')}", "dim")),
         term.kv("model", model),
         term.kv("reached", _how_reached(ctx)),

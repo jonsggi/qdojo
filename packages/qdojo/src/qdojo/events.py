@@ -112,8 +112,8 @@ def _pot_sentences(f) -> str:
         out += (f" {int(f['bond_bps']) / 100:g}% of any win is held back as the winner's bond and released"
                 f" once it has fought {f.get('bond_rounds', 0)} more rounds.")
     if f.get("sensei"):
-        out += (" Fighters ranked above this belt may sit here as senseis: they win back at most their own"
-                " stake and earn no belt points.")
+        out += (" Fighters ranked above this belt may sit here as senseis: they play for a pot of their own"
+                " stakes and earn no belt points.")
     return out
 
 

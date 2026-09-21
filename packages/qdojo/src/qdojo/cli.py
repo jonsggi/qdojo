@@ -6,26 +6,52 @@ import os
 import sys
 import time
 
-from . import __version__, payload, riddle as R, hashing
+from . import __version__, payload, riddle as R, hashing, riddles
 from .chain.cli import QubicCli
+from .chain.native import NativeChain
 from .chain.rpc import Indexer
 from .chain.base import Unknown, ChainError
 from .house import House, HouseError
 from .bot import Bot, BotError, fetch_board
-from . import nodes, onboard, spar, events, lab, wizard, term, training, prompts as P, dash
+from . import nodes, onboard, spar, events, lab, wizard, term, training, prompts as P, dash, fees
+from . import portable, seedconf
+from . import settings, cockpit
 from .shares import Shares, SharesError
 
 
 def _chain(a, signing: bool):
+    """The chain this run talks through.
+
+    Native by default: qdojo signs and speaks the node protocol itself, so a
+    fighter needs nothing but Python. `--chain cli` keeps the old path through
+    a compiled qubic-cli, which is still what `scripts/crosscheck-signer.py`
+    checks the native signer against.
+    """
     idx = Indexer()
     if a.node is None:
         if signing:
             sys.exit("a node is required to sign: --node IP[:PORT]")
         return idx
     ip, _, port = a.node.partition(":")
-    fallbacks = tuple(x for x in (os.environ.get("QDOJO_FALLBACK_NODES", "") or "").split(",") if x)
-    return QubicCli(a.cli, ip, int(port or 21841), identity=a.identity or "", conf=a.conf if signing else None,
-                    schedule_offset=a.schedule_offset, indexer=idx, fallback_nodes=fallbacks)
+    env_fallbacks = os.environ.get("QDOJO_FALLBACK_NODES")
+    if env_fallbacks is not None:
+        fallbacks = tuple(x for x in env_fallbacks.split(",") if x)
+    elif getattr(a, "state", None):
+        # No explicit fallback list, but a bot state dir with a node cache:
+        # use it instead of asking exactly one node. The cache already holds
+        # several tick-agreeing nodes from `qdojo nodes`, so an absence
+        # check (e.g. "is this asset already issued?") gets a genuine second
+        # opinion by default, not just in a hand-configured deployment.
+        fallbacks = tuple(n["ip"] for n in nodes.load(a.state) if n["ip"] != ip)
+    else:
+        fallbacks = ()
+    if getattr(a, "chain", "native") == "cli":
+        return QubicCli(a.cli, ip, int(port or 21841), identity=a.identity or "",
+                        conf=a.conf if signing else None,
+                        schedule_offset=a.schedule_offset, indexer=idx, fallback_nodes=fallbacks)
+    return NativeChain(ip, int(port or 21841), identity=a.identity or "",
+                       conf=a.conf if signing else None,
+                       schedule_offset=a.schedule_offset, indexer=idx, fallback_nodes=fallbacks)
 
 
 def _hex_arg(s: str) -> bytes:
@@ -49,6 +75,18 @@ def cmd_riddle_hash(a):
     with open(a.file, encoding="utf-8") as f:
         r = R.from_public(json.load(f))
     print(r.hash().hex())
+
+
+def cmd_riddle_list(a):
+    print(json.dumps({belt: riddles.kinds(belt, pack=a.pack) for belt in riddles.BELTS}, indent=2))
+
+
+def cmd_riddle_sample(a):
+    import random
+    if a.round_id < 1:
+        raise R.RiddleError("round ID must be positive")
+    doc = riddles.generate_kind(a.kind, random.Random(a.rng_seed), a.round_id)
+    print(json.dumps(doc if a.with_answer else R.from_public(doc).public(), indent=2))
 
 
 def _house(a, signing):
@@ -100,16 +138,84 @@ def cmd_house_settle(a):
         print("\nPLAN ONLY. Nothing was sent. Re-run with --apply to pay.", file=sys.stderr)
 
 
+def _take_ephemeral(a):
+    """`--ephemeral-conf PATH` names the conf AND marks it throwaway, in one
+    flag, so the only conf a run can ever shred is the one this flag named.
+    A conf that arrived through --conf, QDOJO_CONF or the profile is never
+    touched, and naming two different files is refused rather than guessed.
+    Returns the path to shred on exit, or None."""
+    path = getattr(a, "ephemeral_conf", None)
+    if not path:
+        return None
+    path = os.path.expanduser(path)
+    if a.conf and os.path.realpath(os.path.expanduser(a.conf)) != os.path.realpath(path):
+        sys.exit(f"qdojo: --conf {a.conf} and --ephemeral-conf {path} name different files; pass one of them")
+    a.conf = path
+    return path
+
+
+def _fee_arg(text):
+    """--entry-fee takes a whole number of QU, or 'auto' (docs/spec.md §5)."""
+    if text.strip().lower() == "auto":
+        return "auto"
+    try:
+        return int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r}: a whole number of QU, or auto")
+
+
+def _add_fee_flags(d):
+    """--entry-fee and the knobs of its auto mode, shared by spar and model."""
+    d.add_argument("--entry-fee", type=_fee_arg, default=1000,
+                   help="QU per seat, or 'auto': retargeted per belt from the house's own history (docs/spec.md §5)")
+    d.add_argument("--fee-alpha", type=float, default=0.5, help="auto: fee' = fee * (occupancy / target) ** alpha")
+    d.add_argument("--fee-window", type=int, default=8, help="auto: settled or void rounds at the belt that count")
+    d.add_argument("--fee-headroom", type=int, default=2, help="auto: target occupancy = min_players + headroom")
+    d.add_argument("--fee-clamp", type=float, default=1.5, help="auto: one retarget moves the fee by at most this factor")
+    d.add_argument("--fee-floor", default="100", help="auto: the lowest fee in QU; one number, or belt=QU,belt=QU")
+    d.add_argument("--fee-cap", type=int, default=0, help="auto: the highest fee in QU (0 = none); the only ceiling without a rake")
+    d.add_argument("--fee-start", type=int, default=1000, help="auto: the fee at a belt with no history yet")
+    return d
+
+
+def _fee_policy(a):
+    """The controller `--entry-fee auto` asks for, or None for a fixed fee."""
+    if a.entry_fee != "auto":
+        return None
+    floor, floors = fees.parse_floor(a.fee_floor)
+    return fees.FeePolicy(alpha=a.fee_alpha, window=a.fee_window, headroom=a.fee_headroom, clamp=a.fee_clamp,
+                          floor=floor, start=a.fee_start, cap=a.fee_cap, floors=floors)
+
+
 def cmd_house_spar(a):
-    h = _house(a, True)
-    sp = spar.Spar(h, a.belts.split(","), a.entry_fee, a.commit_window, a.reveal_window,
-                   riddle_dir=os.path.join(a.data, "riddles"), web_out=a.out,
-                   metrics_path=os.path.join(a.data, "metrics.jsonl"), seed=a.rng_seed, poll=a.poll,
-                   match_bps=a.match_bps, min_players=a.min_players, lobby_window=a.lobby_window,
-                   npcs=[x for x in (a.npcs or "").split(",") if x], npc_rounds=a.npc_rounds,
-                   bond_bps=a.bond_bps, bond_rounds=a.bond_rounds, skip_dead=not a.dead_tables, sensei=a.sensei)
-    sp.payout_mode = {v: k for k, v in payload.MODE_NAMES.items()}[a.payout_mode]
-    sp.run(a.rounds, stop_below=a.stop_below)
+    policy = _fee_policy(a)
+    if policy:
+        tgt = max(1, int(a.min_players) + int(policy.headroom))
+        fs = fees.f_star(a.seed, tgt, a.rake_bps)
+        if fs is not None:
+            for belt in a.belts.split(","):
+                floor_b = policy.floor_for(belt)
+                if floor_b > fs:
+                    print(f"qdojo: warning: belt {belt!r}'s floor ({floor_b} QU) is above f* ({fs:.1f} QU): "
+                         f"f* is dropped and only --fee-cap bounds the fee from above (docs/spec.md §5)",
+                         file=sys.stderr)
+    npcs = [x for x in (a.npcs or "").split(",") if x]
+    if policy and npcs:
+        sys.exit("qdojo: --entry-fee auto and --npcs do not mix: a house fighter sits at any price, "
+                 "so the fee could only rise (docs/model.md, the entry-fee section)")
+    throwaway = _take_ephemeral(a)
+    seedconf.warn_leftovers(exclude=a.conf)
+    with seedconf.ephemeral(throwaway):
+        h = _house(a, True)
+        sp = spar.Spar(h, a.belts.split(","), a.fee_start if policy else a.entry_fee, a.commit_window, a.reveal_window,
+                       riddle_dir=os.path.join(a.data, "riddles"), web_out=a.out,
+                       metrics_path=os.path.join(a.data, "metrics.jsonl"), seed=a.rng_seed, poll=a.poll,
+                       match_bps=a.match_bps, min_players=a.min_players, lobby_window=a.lobby_window,
+                       npcs=npcs, npc_rounds=a.npc_rounds,
+                       bond_bps=a.bond_bps, bond_rounds=a.bond_rounds, skip_dead=not a.dead_tables, sensei=a.sensei,
+                       riddle_pack=a.riddle_pack, fee_policy=policy)
+        sp.payout_mode = {v: k for k, v in payload.MODE_NAMES.items()}[a.payout_mode]
+        sp.run(a.rounds, stop_below=a.stop_below)
 
 
 def cmd_house_resume(a):
@@ -124,10 +230,41 @@ def cmd_house_metrics(a):
 
 
 def cmd_house_distribute(a):
-    """Pay the accrued shareholder rake pool to the house asset's holders via QUtil."""
+    """Pay the accrued shareholder rake pool to the house asset's holders via
+    QUtil. Booking the pool as paid happens only once the send is CONFIRMED,
+    never on the receipt: a `send()` returning is not a claim the
+    transaction landed, and even a landed one can be a contract-level
+    refund (see shares.plan_dividend). A distribution in flight is kept as
+    a pending record in state so the pool is never drawn down twice and a
+    crash between send and confirm is recoverable by re-running the
+    command."""
     from .shares import Shares
     h = _house(a, a.apply)
-    pool = h.state().get("shareholder_pool", 0)
+    st = h.state()
+    pending = st.get("pending_distribution")
+    if pending:
+        print(f"a distribution of {pending['amount']} QU (tx {pending['tx'][:8]}… "
+              f"scheduled for tick {pending['tick']}) is still pending confirmation.")
+        if not a.apply:
+            print("\nPLAN ONLY. Re-run with --apply to settle it.", file=sys.stderr); return
+        try:
+            ok = h.chain.confirm(pending["tx"], pending["tick"])
+        except Unknown:
+            print("undecidable yet; re-run to settle.", file=sys.stderr); return
+        if ok:
+            st["shareholder_pool"] = max(0, st.get("shareholder_pool", 0)
+                                         - (pending["distributed"] + pending["fee"]))
+            st["shareholder_paid"] = st.get("shareholder_paid", 0) + pending["distributed"]
+            print(f"confirmed: distributed {pending['distributed']} to holders of {a.asset}, "
+                  f"burnt {pending['fee']} in fees; the rest ({pending['amount'] - pending['distributed'] - pending['fee']}) "
+                  "returned to the house.")
+        else:
+            print("NOT included; the pool is unchanged.")
+        del st["pending_distribution"]
+        h._save_state(st)
+        return
+
+    pool = st.get("shareholder_pool", 0)
     print(f"shareholder pool: {pool} QU")
     if pool <= 0:
         print("nothing to distribute"); return
@@ -137,23 +274,42 @@ def cmd_house_distribute(a):
     if not a.apply:
         print("\nPLAN ONLY. Re-run with --apply to distribute.", file=sys.stderr); return
     res = sh.pay_dividend(a.asset, pool)
-    st = h.state(); st["shareholder_pool"] = 0; st["shareholder_paid"] = st.get("shareholder_paid", 0) + pool; h._save_state(st)
-    print(f"distributed {pool} to holders of {a.asset}: {res.tx_id} tick {res.scheduled_tick}")
+    st["pending_distribution"] = {"tx": res.tx_id, "tick": res.scheduled_tick, "amount": pool,
+                                  "distributed": plan["distributed"], "fee": plan["fee"]}
+    h._save_state(st)
+    print(f"distribution {res.tx_id} scheduled for tick {res.scheduled_tick}; "
+          "re-run `house distribute-shareholders --apply` once it has landed to settle the pool.")
+
+
+def _sweep_value(v):
+    for cast in (int, float):
+        try:
+            return cast(v)
+        except ValueError:
+            pass
+    return {"true": True, "false": False}.get(v.lower(), v)
 
 
 def cmd_house_model(a):
     from . import model
-    p = model.Params(rounds=a.rounds, entry_fee=a.entry_fee, seed_cap=a.seed_cap, match_bps=a.match_bps,
+    auto = a.entry_fee == "auto"
+    p = model.Params(rounds=a.rounds, entry_fee=a.fee_start if auto else a.entry_fee, seed_cap=a.seed_cap, match_bps=a.match_bps,
                      rake_bps=a.rake_bps, payout_mode={v: k for k, v in payload.MODE_NAMES.items()}[a.payout_mode],
                      bond_bps=a.bond_bps, bond_rounds=a.bond_rounds, min_players=a.min_players,
                      ladder=not a.no_ladder, start_balance=a.start_balance, gate=a.gate, season=a.season,
-                     rake_house_bps=a.rake_house_bps, rake_dev_bps=a.rake_dev_bps, rake_share_bps=a.rake_share_bps)
+                     rake_house_bps=a.rake_house_bps, rake_dev_bps=a.rake_dev_bps, rake_share_bps=a.rake_share_bps,
+                     fee_mode="auto" if auto else "fixed", fee_alpha=a.fee_alpha, fee_window=a.fee_window,
+                     fee_headroom=a.fee_headroom, fee_clamp=a.fee_clamp, fee_floor=fees.parse_floor(a.fee_floor)[0],
+                     fee_start=a.fee_start, fee_cap=a.fee_cap, demand=a.demand, refill=a.refill,
+                     target_pot=a.target_pot, target_pot_taper=a.target_pot_taper)
     cohort = None
     if a.cohort:
         cohort = json.load(open(a.cohort))
     elif a.calibrate:
         cohort = model.calibrate(json.load(open(a.calibrate)),
                                  npcs=set(x for x in (a.npcs or "").split(",") if x) if a.npcs else None)
+        if a.no_house_fighters:
+            cohort = [c for c in cohort if not c.get("house_funded")]
         if a.clones > 1:
             for c in cohort:
                 c["count"] = a.clones
@@ -161,7 +317,7 @@ def cmd_house_model(a):
         grid = {}
         for item in a.sweep:
             k, vs = item.split("=")
-            grid[k] = [int(v) if v.lstrip("-").isdigit() else v for v in vs.split(",")]
+            grid[k] = [_sweep_value(v) for v in vs.split(",")]
         print(json.dumps(model.sweep(p, grid, cohort, a.replicates, a.seed), indent=2))
     else:
         print(json.dumps(model.run(p, cohort, a.replicates, a.seed), indent=2))
@@ -301,14 +457,22 @@ def cmd_house_events(a):
         print(json.dumps(recs, indent=2))
 
 
+def _cli_chain(a) -> bool:
+    """True under `--chain cli`: the only case in which a bot command may go
+    looking for qubic-cli. The default chain signs and probes in Python."""
+    return getattr(a, "chain", "native") == "cli"
+
+
 def _bot_defaults(a):
-    """Fill --cli/--conf/--identity/--node from the bot profile and node cache
-    when they were not given, so `qdojo bot run` works after `qdojo bot init`."""
+    """Fill --conf/--identity/--node (and --cli, under --chain cli) from the
+    bot profile and node cache when they were not given, so `qdojo bot run`
+    works after `qdojo bot init`."""
     prof = onboard.load_profile(a.state)
-    try:
-        a.cli = onboard.find_cli(a.cli if a.cli != "qubic-cli" else None)
-    except onboard.OnboardError as e:
-        sys.exit(f"qdojo: {e}")
+    if _cli_chain(a):
+        try:
+            a.cli = onboard.find_cli(a.cli if a.cli != "qubic-cli" else (prof.get("cli") or None))
+        except onboard.OnboardError as e:
+            sys.exit(f"qdojo: {e}")
     a.conf = a.conf or prof.get("conf") or os.path.join(a.state, "bot.conf")
     if not os.path.exists(os.path.expanduser(a.conf)):
         sys.exit(f"qdojo: no seed conf at {a.conf}; run `qdojo bot init` first")
@@ -317,21 +481,23 @@ def _bot_defaults(a):
         sys.exit(f"qdojo: --identity {a.identity[:8]}… does not match the conf, which signs as {derived[:8]}…")
     a.identity = derived
     if not a.node:
-        a.node = nodes.best_node(a.state, nodes.cli_probe(a.cli))
+        probe = nodes.cli_probe(a.cli) if _cli_chain(a) else nodes.native_probe()
+        a.node = nodes.best_node(a.state, probe)
         print(f"node: {a.node} (auto-detected)", file=sys.stderr)
     if getattr(a, "solver", None) is None:
         a.solver = prof.get("solver")
         if not a.solver:
             sys.exit("qdojo: no solver: pass --solver, or run `qdojo bot setup` to record one")
     # setdefault, never overwrite: an explicitly exported PI_MODEL=x still wins.
-    for k, v in (prof.get("solver_env") or {}).items():
-        os.environ.setdefault(k, str(v))
+    # A secret setting is copied from the variable it names, here, in-process.
+    a._applied_env = settings.apply_env(prof, {})
 
 
 def cmd_bot_init(a):
     """The bowing-in rite: signer, seed, name, node, mind, purse. Every stage
     verifies rather than printing, and every prompt has a flag, so a
     professional runs the whole thing on one non-interactive line."""
+    seedconf.warn_leftovers(exclude=a.conf)
     wizard.init(a)
 
 
@@ -344,7 +510,7 @@ def _history_url(board: str) -> str:
     """history.json sits beside board.json. The same derivation evo.py makes."""
     if board.endswith("history.json"):
         return board
-    return board.rsplit("/", 1)[0] + "/history.json" if "/" in board else "history.json"
+    return portable.sibling(board, "history.json")
 
 
 def cmd_train(a):
@@ -361,8 +527,7 @@ def cmd_train(a):
     solver = a.solver or (onboard.load_profile(a.state) or {}).get("solver")
     if not solver:
         sys.exit("qdojo: no solver: pass --solver, or run `qdojo bot init` to choose one")
-    for k, v in ((onboard.load_profile(a.state) or {}).get("solver_env") or {}).items():
-        os.environ.setdefault(k, str(v))
+    settings.apply_env(onboard.load_profile(a.state) or {}, {})
 
     pool = training.settled_rounds(history)
     if not pool:
@@ -442,19 +607,95 @@ def _save_training(state_dir, card, attempts):
 
 
 def cmd_bot_dash(a):
-    """Your fighter's page, on 127.0.0.1 and nowhere else."""
+    """Your cockpit, on 127.0.0.1 and nowhere else."""
     try:
         httpd, url = dash.serve(a.state, board=a.board or wizard.DEFAULT_BOARD,
                                 port=a.port, read_only=a.read_only)
     except dash.DashError as e:
         sys.exit(f"qdojo: {e}")
-    print(f"\n  your fighter page is up:\n\n    {url}\n")
+    print(f"\n  your cockpit is up:\n\n    {url}\n")
     print("  it binds 127.0.0.1 only and serves nothing from your state directory.")
-    print("  edit a prompt there and the next round uses it. ctrl-c to stop.\n")
+    print("  status, metrics, settings, training, prompts: a setting saved there is live on")
+    print("  the bot's next poll, a prompt on the next round. ctrl-c to stop.\n")
+    if getattr(a, "open", False):
+        # Opt-in, because a browser opening on its own is a surprise. The
+        # stdlib asks the OS for its default browser (os.startfile on
+        # Windows), and a machine without one is not an error: the URL is
+        # printed above either way.
+        import webbrowser
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+    # With stdout piped (the normal shape for a tool call that relays the
+    # URL) Python block-buffers it, so the banner above would sit unseen for
+    # the life of the server. Flush once, right before we block.
+    sys.stdout.flush()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
         print("  stopped.")
+
+
+def cmd_bot_settings(a):
+    """Your fighter's knobs, as its manifest declares them (docs/api.md,
+    'Settings'). Reads and writes bot.json only; needs no seed, no node."""
+    try:
+        if a.action == "set":
+            row = settings.set_value(a.state, a.key, a.value)
+            shown = f"${row['env_name']}" if row["type"] == "secret" else row["value"]
+            print(f"{a.key} = {shown}  (a running bot picks it up on its next poll)")
+            return
+        if a.action == "unset":
+            settings.unset_value(a.state, a.key)
+            print(f"{a.key} unset")
+            return
+        if a.action == "describe":
+            print(json.dumps(settings.describe(a.state), indent=2))
+            return
+        rows = settings.rows(a.state)
+    except settings.SettingsError as e:
+        sys.exit(f"qdojo: {e}")
+    if a.json:
+        print(json.dumps(rows, indent=2))
+        return
+    if not rows:
+        doc = settings.describe(a.state)
+        print(f"no settings: {doc['shipped'] or 'the solver has no manifest'} and {doc['user']} declare none.")
+        print("declare one in the second file (docs/api.md, 'Settings').")
+        return
+
+    def shown(r):
+        if r["type"] == "secret":
+            name = r.get("env_name")
+            return f"${name} ({'set' if r.get('set_in_env') else 'NOT set'})" if name else "—"
+        return "—" if r.get("value") is None else str(r["value"])
+
+    def default(r):
+        d = r.get("default")
+        if r["type"] == "secret":
+            return f"${d}" if d else "—"
+        return "—" if d is None else str(d)
+
+    table = [(r["key"], shown(r), default(r), r["source"],
+              (r.get("help") or "") + (" (not in the manifest)" if r.get("unknown") else "")) for r in rows]
+    widths = [max(len(t[i]) for t in [("KEY", "VALUE", "DEFAULT", "SOURCE", "")] + table) for i in range(4)]
+    room = term.width() - sum(widths) - 8
+    # Help beside the row when it fits, under it when the terminal is narrow:
+    # a help text cut to thirty characters explains nothing.
+    beside = room >= 48
+    print("  ".join(h.ljust(w) for h, w in zip(("KEY", "VALUE", "DEFAULT", "SOURCE"), widths)) + ("  HELP" if beside else ""))
+    for row in table:
+        line = "  ".join(v.ljust(w) for v, w in zip(row[:4], widths))
+        if beside:
+            print(line + "  " + term.fit(row[4], room))
+        else:
+            print(line)
+            if row[4]:
+                print("    " + term.fit(row[4], term.width() - 4))
+    print(f"\nchange one: qdojo bot settings set KEY VALUE   (a running bot picks it up on its next poll)")
+    doc = settings.describe(a.state)
+    print(f"declared in: {doc['shipped'] or '(no shipped manifest)'}\n         and {doc['user']}")
 
 
 def cmd_prompts(a):
@@ -488,8 +729,11 @@ def cmd_prompts(a):
 
 
 def cmd_nodes(a):
-    cli = onboard.find_cli(a.cli if a.cli != "qubic-cli" else None)
-    found = nodes.discover(nodes.cli_probe(cli))
+    if _cli_chain(a):
+        probe = nodes.cli_probe(onboard.find_cli(a.cli if a.cli != "qubic-cli" else None))
+    else:
+        probe = nodes.native_probe()
+    found = nodes.discover(probe)
     if not found:
         sys.exit("qdojo: no live node found")
     nodes.save(a.state, found)
@@ -507,13 +751,14 @@ def cmd_bot_issue_shares(a):
     plan = sh.plan_issue(a.name, a.count)
     print(json.dumps(plan, indent=2))
     if not a.apply:
-        print("\nPLAN ONLY. The issuance fee above goes to Qx's shareholders and is not refundable. Re-run with --apply.", file=sys.stderr)
+        print(f"\nabsence of {a.name} confirmed by {plan['checked_nodes']} node(s).", file=sys.stderr)
+        print("PLAN ONLY. The issuance fee above goes to Qx's shareholders and is not refundable. Re-run with --apply.", file=sys.stderr)
         return
     res = sh.issue(a.name, a.count)
     print(f"issue {res.tx_id} scheduled for tick {res.scheduled_tick}; confirming…")
     for _ in range(90):
         try:
-            ok = sh.cli.confirm(res.tx_id, res.scheduled_tick); break
+            ok = sh.chain.confirm(res.tx_id, res.scheduled_tick); break
         except Unknown:
             time.sleep(1)
     else:
@@ -549,8 +794,7 @@ def cmd_bot_dividend(a):
 def cmd_bot_stats(a):
     """This bot's published performance, straight from the house's API."""
     _bot_defaults(a)
-    base = a.board.rsplit("/", 1)[0] if "/" in a.board else "."
-    doc = fetch_board(f"{base}/fighters.json")
+    doc = fetch_board(portable.sibling(a.board, "fighters.json"))
     me = next((f for f in doc.get("fighters", []) if f["identity"] == a.identity), None)
     if me is None:
         sys.exit(f"qdojo: {a.identity[:8]}… has not fought at this house yet")
@@ -558,29 +802,154 @@ def cmd_bot_stats(a):
 
 
 def cmd_bot_run(a):
-    _bot_defaults(a)
-    chain = _chain(a, True)
-    bot = Bot(chain, a.state, a.solver, name=a.name, max_stake=a.max_stake, solver_timeout=a.solver_timeout,
-              strategy_cmd=a.strategy)
-    while True:
+    throwaway = _take_ephemeral(a)
+    seedconf.warn_leftovers(exclude=a.conf)
+    with seedconf.ephemeral(throwaway):
+        _bot_defaults(a)
+        chain = _chain(a, True)
+        recorder = cockpit.Recorder(a.state)
+        bot = Bot(chain, a.state, a.solver, name=a.name, max_stake=a.max_stake, solver_timeout=a.solver_timeout,
+                  strategy_cmd=a.strategy, recorder=recorder)
+        log = cockpit.open_log(a.state)
+        beat = cockpit.Heartbeat(a.state, a.interval, board=a.board, solver=a.solver)
+        applied = getattr(a, "_applied_env", {})
+        looked = 0.0
+
+        def say(line, err=False):
+            print(time.strftime("%H:%M:%S"), line, file=sys.stderr if err else sys.stdout, flush=True)
+            log.info(line)
+
         try:
-            board = fetch_board(a.board)
-            if a.name:
-                bot.house = board["house"]
-                bot.bow()
-            for line in bot.step(board):
-                print(time.strftime("%H:%M:%S"), line, flush=True)
-        except (Unknown, ChainError, BotError, OSError, ValueError) as e:
-            print(time.strftime("%H:%M:%S"), f"warning: {e}", file=sys.stderr, flush=True)
-        if a.once:
-            return
-        time.sleep(a.interval)
+            while True:
+                try:
+                    # A setting saved from the cockpit or `bot settings set` is live
+                    # on this poll: the solver is a fresh process and inherits it.
+                    applied = settings.apply_env(wizard.load_profile(a.state), applied)
+                    board = fetch_board(a.board)
+                    if a.name:
+                        bot.house = board["house"]
+                        bot.bow()
+                    acts = bot.step(board)
+                    for line in acts:
+                        say(line)
+                    beat.beat(board=board, actions=acts)
+                    if recorder.pending() and time.time() - looked > cockpit.HISTORY_EVERY:
+                        looked = time.time()
+                        for row in recorder.settle_from_history(fetch_board(_history_url(a.board)), a.identity):
+                            say(f"round {row['round_id']}: settled {row['verdict']}, earned {row['earned']}, net {row['net']}")
+                except (Unknown, ChainError, BotError, OSError, ValueError) as e:
+                    say(f"warning: {e}", err=True)
+                    beat.beat(error=e)
+                if a.once:
+                    return
+                time.sleep(a.interval)
+        finally:
+            beat.close()
+
+
+def _age(seconds) -> str:
+    if seconds is None:
+        return "—"
+    s = int(seconds)
+    if s < 60:
+        return f"{s}s"
+    if s < 3600:
+        return f"{s // 60}m{s % 60:02d}s"
+    return f"{s // 3600}h{(s % 3600) // 60:02d}m"
+
+
+def cmd_bot_status(a):
+    """Is a bot running for this state dir, and what is it doing. Reads the
+    heartbeat, rounds.json and the metrics; needs no seed and no node."""
+    st = cockpit.status(a.state)
+    if a.json:
+        print(json.dumps(st, indent=2))
+        return
+    term.set_enabled(a.color)
+    if st["state"] == "running":
+        head = term.c("RUNNING", "bgreen", "bold") + f"   pid {st['pid']} · heartbeat {_age(st['age'])} ago · "                f"polls every {st['interval']:g}s · up {_age(time.time() - (st['started_at'] or time.time()))}"
+    elif st["state"] == "stale":
+        head = term.c("STALE", "bred", "bold") + f"   pid {st['pid']} last beat {_age(st['age'])} ago: it died "                f"without cleaning up, or the machine slept"
+    else:
+        head = term.c("IDLE", "byellow", "bold") + f"   no bot is running for {a.state}"
+    rows = [term.kv("bot", head)]
+    if st["board"]:
+        rows.append(term.kv("board", st["board"]))
+    if st["solver"]:
+        rows.append(term.kv("solver", " ".join(st["solver"])))
+    if st["tick"] is not None:
+        rows.append(term.kv("tick", str(st["tick"])))
+    for r in st["rounds"]:
+        what = " · ".join(x for x in (r.get("belt"), r.get("kind") or r.get("title"), r.get("state")) if x)
+        rows.append(term.kv(f"R{r['round_id']}", what or "on the board"))
+        rows.append(term.kv("  did", r["did"]))
+    if not st["rounds"]:
+        rows.append(term.kv("rounds", "none seen yet"))
+    for act in st["last_actions"][-3:]:
+        rows.append(term.kv("last", time.strftime("%H:%M:%S", time.localtime(act["at"])) + " " + act["text"]))
+    if st["last_error"]:
+        rows.append(term.kv("warning", time.strftime("%H:%M:%S", time.localtime(st["last_error"]["at"])) + " "
+                            + st["last_error"]["text"]))
+    print(term.box(rows, title="YOUR BOT"))
+
+
+def cmd_bot_metrics(a):
+    """What this machine recorded about every round its bot saw."""
+    m = cockpit.summary(a.state, last=a.last)
+    if a.json:
+        print(json.dumps(m, indent=2))
+        return
+    term.set_enabled(a.color)
+    if not m["rounds_seen"]:
+        print(f"no rounds recorded in {os.path.join(a.state, cockpit.METRICS)} yet; `qdojo bot run` writes it.")
+        return
+    pc = lambda x: "—" if x is None else f"{round(x * 100)}%"
+    rows = [term.kv("rounds", f"{m['rounds_seen']} seen · {m['entered']} entered · {m['skipped']} sat out · "
+                              f"{m['pending']} awaiting settlement"),
+            term.kv("solved", f"{m['solved']} of {m['settled']} settled ({pc(m['solve_rate'])}) · "
+                              f"{m['wins']} paid ({pc(m['win_rate'])})"),
+            term.kv("solve time", "—" if m["avg_solve_seconds"] is None else
+                    f"avg {m['avg_solve_seconds']}s · best {m['best_solve_seconds']}s"),
+            term.kv("purse", f"staked {term.qu(m['staked'])} · earned {term.qu(m['earned'])} · "
+                             f"net {term.qu(m['net'])}" + (f" · bond held {term.qu(m['bond_held'])}" if m["bond_held"] else "")),
+            term.kv("streak", f"{m['streak']:+d} (best {m['best_streak']})"),
+            term.kv("solver", f"failed on {m['solver_failed']} round(s)")]
+    print(term.box(rows, title="THIS MACHINE"))
+    if m["by_kind"]:
+        print()
+        print("KIND" + " " * 38 + "SEEN  ENTERED  SETTLED  SOLVED  RATE")
+        for k, b in sorted(m["by_kind"].items(), key=lambda kv: -kv[1]["seen"]):
+            print(f"{term.fit(k, 40):40}  {b['seen']:4}  {b['entered']:7}  {b['settled']:7}  {b['solved']:6}  {pc(b['solve_rate'])}")
+    if m["last"]:
+        print()
+        print("ROUND  BELT    KIND                          VERDICT     ANSWER        SOLVE   STAKE   NET")
+        for r in m["last"]:
+            state = r.get("verdict") or ("sat out" if r.get("skipped") else ("pending" if r.get("entered") else "seen"))
+            ans = "—" if r.get("answer") is None else str(r["answer"])[:12]
+            took = "—" if r.get("solver_seconds") is None else f"{r['solver_seconds']}s"
+            net = "—" if r.get("net") is None else f"{r['net']:+,}"
+            print(f"R{r['round_id']:<5} {str(r.get('belt') or '—'):7} {term.fit(r.get('kind') or '—', 29):29} "
+                  f"{state:11} {ans:13} {took:7} {str(r.get('stake') or 0):7} {net}")
+
+
+def cmd_bot_log(a):
+    """The tail of bot run's own log."""
+    lines = cockpit.log_tail(a.state, a.n)
+    if not lines:
+        print(f"no log at {os.path.join(a.state, cockpit.LOG)} yet; `qdojo bot run` writes it.")
+        return
+    for line in lines:
+        print(line)
 
 
 def build_parser():
     p = argparse.ArgumentParser(prog="qdojo", description="A dojo where AI bots compete for real QU.")
     p.add_argument("--version", action="version", version=__version__)
-    p.add_argument("--cli", default=os.environ.get("QUBIC_CLI", "qubic-cli"), help="path to qubic-cli")
+    p.add_argument("--chain", choices=("native", "cli"),
+                   default=os.environ.get("QDOJO_CHAIN", "native"),
+                   help="native (default: pure Python, no binary) or cli (via qubic-cli)")
+    p.add_argument("--cli", default=os.environ.get("QUBIC_CLI", "qubic-cli"),
+                   help="path to qubic-cli, read only under --chain cli; a bot never needs the binary")
     p.add_argument("--node", default=os.environ.get("QDOJO_NODE"), help="node IP[:PORT] for reads and signing")
     p.add_argument("--conf", default=os.environ.get("QDOJO_CONF"), help="0600 conf with one seed= line")
     p.add_argument("--identity", default=os.environ.get("QDOJO_IDENTITY"), help="identity the conf signs as")
@@ -605,6 +974,13 @@ def build_parser():
 
     s = sub.add_parser("riddle").add_subparsers(dest="sub", required=True)
     d = s.add_parser("hash"); d.add_argument("file"); d.set_defaults(fn=cmd_riddle_hash)
+    d = s.add_parser("list", help="list available challenge families by belt")
+    d.add_argument("--pack", choices=riddles.PACKS, default="classic"); d.set_defaults(fn=cmd_riddle_list)
+    d = s.add_parser("sample", help="generate an offline practice riddle; public fields by default")
+    d.add_argument("kind"); d.add_argument("--rng-seed", type=int, default=None)
+    d.add_argument("--round-id", type=int, default=1)
+    d.add_argument("--with-answer", action="store_true", help="include the answer for a local authored fixture")
+    d.set_defaults(fn=cmd_riddle_sample)
 
     hp = sub.add_parser("house")
     hp.add_argument("--data", default=os.environ.get("QDOJO_DATA", "private/house"))
@@ -651,8 +1027,10 @@ def build_parser():
     d = s.add_parser("distribute-shareholders", help="pay the accrued shareholder rake pool via QUtil")
     d.add_argument("asset"); d.add_argument("--apply", action="store_true"); d.set_defaults(fn=cmd_house_distribute)
     d = s.add_parser("spar", help="generated riddles, rounds back to back, metrics per round")
+    d.add_argument("--riddle-pack", choices=riddles.PACKS, default="classic",
+                   help="opt-in challenge pool; qubic supports orange,green,blue only")
     d.add_argument("--rounds", type=int, default=10); d.add_argument("--belts", default="white,yellow,orange,green,blue")
-    d.add_argument("--entry-fee", type=int, default=1000); d.add_argument("--commit-window", type=int, default=300)
+    _add_fee_flags(d); d.add_argument("--commit-window", type=int, default=300)
     d.add_argument("--reveal-window", type=int, default=120); d.add_argument("--out", default="apps/web/data")
     d.add_argument("--rng-seed", type=int, default=None); d.add_argument("--poll", type=int, default=15)
     d.add_argument("--stop-below", type=int, default=0); d.add_argument("--match-bps", type=int, default=10000)
@@ -664,7 +1042,9 @@ def build_parser():
     d.add_argument("--bond-bps", type=int, default=0, help="share of each win held as a bond")
     d.add_argument("--bond-rounds", type=int, default=0, help="rounds the winner must fight before release")
     d.add_argument("--dead-tables", action="store_true", help="publish belts even when no outsider may sit there")
-    d.add_argument("--sensei", action="store_true", help="let a fighter sit below its belt, capped to its stake, no belt points")
+    d.add_argument("--sensei", action="store_true", help="let a fighter sit below its belt: it plays for the sensei pot, no belt points")
+    d.add_argument("--ephemeral-conf", metavar="PATH",
+                   help="a throwaway seed conf: sign with it, shred it when this run exits (never a conf you keep)")
     d.set_defaults(fn=cmd_house_spar)
     d = s.add_parser("resume", help="drive a round left open by a dead supervisor to settlement")
     d.add_argument("round", type=int); d.add_argument("--entry-fee", type=int, default=1000)
@@ -673,7 +1053,7 @@ def build_parser():
     d = s.add_parser("metrics"); d.set_defaults(fn=cmd_house_metrics)
     d = s.add_parser("model", help="offline model of the mechanics through the real evaluator and ladder (house-side)")
     d.add_argument("--rounds", type=int, default=200); d.add_argument("--replicates", type=int, default=10); d.add_argument("--seed", type=int, default=1)
-    d.add_argument("--entry-fee", type=int, default=1000); d.add_argument("--seed-cap", type=int, default=5000)
+    _add_fee_flags(d); d.add_argument("--seed-cap", type=int, default=5000)
     d.add_argument("--match-bps", type=int, default=10000); d.add_argument("--rake-bps", type=int, default=0)
     d.add_argument("--payout-mode", choices=sorted(payload.MODE_NAMES.values()), default="podium")
     d.add_argument("--bond-bps", type=int, default=5000); d.add_argument("--bond-rounds", type=int, default=3)
@@ -681,7 +1061,13 @@ def build_parser():
     d.add_argument("--start-balance", type=int, default=20000)
     d.add_argument("--gate", choices=["strict", "soft", "handicap", "sensei"], default="strict")
     d.add_argument("--season", type=int, default=0, help="reset the ladder every N rounds")
+    d.add_argument("--demand", choices=["none", "ev"], default="none",
+                   help="none: every eligible fighter sits at any price; ev: only when its own expected value is >= 0 (what makes --entry-fee auto mean anything)")
+    d.add_argument("--refill", action="store_true", help="owners top a broke fighter back up to --start-balance (their money, not the house's)")
+    d.add_argument("--target-pot", type=int, default=0, help="the corollary: seed_cap = max(0, target_pot - target * fee); 0 = fixed --seed-cap")
+    d.add_argument("--target-pot-taper", type=int, default=0, help="rounds over which --target-pot declines linearly to 0")
     d.add_argument("--cohort", help="JSON list of archetypes"); d.add_argument("--calibrate", help="a fighters.json to derive archetypes from")
+    d.add_argument("--no-house-fighters", action="store_true", help="with --calibrate: leave the house-funded fighters out")
     d.add_argument("--clones", type=int, default=1, help="with --calibrate: copies of each measured fighter")
     d.add_argument("--npcs", help="with --calibrate: comma-separated house-funded identities (names are untrusted)")
     d.add_argument("--sweep", nargs="+", help="param=v1,v2,... (e.g. match_bps=0,5000,10000 bond_bps=0,5000)")
@@ -751,7 +1137,27 @@ def build_parser():
     d.add_argument("--port", type=int, default=7777)
     d.add_argument("--board", help="the house to read your published record from")
     d.add_argument("--read-only", action="store_true", help="show everything, save nothing")
+    d.add_argument("--open", action="store_true", help="also open the page in your default browser")
     d.set_defaults(fn=cmd_bot_dash)
+    d = s.add_parser("settings", help="your fighter's knobs: list, set KEY VALUE, unset KEY, describe")
+    d.add_argument("--json", action="store_true", help="the rows as JSON")
+    ss = d.add_subparsers(dest="action")
+    x = ss.add_parser("set", help="validate against the manifest and write bot.json")
+    x.add_argument("key"); x.add_argument("value")
+    x = ss.add_parser("unset", help="forget a stored value; the default applies again")
+    x.add_argument("key")
+    ss.add_parser("describe", help="the merged manifest as JSON, with current values")
+    d.set_defaults(fn=cmd_bot_settings, action="", key="", value="")
+    d = s.add_parser("status", help="is a bot running for this state dir, and what is it doing")
+    d.add_argument("--json", action="store_true"); d.add_argument("--no-color", dest="color", action="store_false", default=None)
+    d.set_defaults(fn=cmd_bot_status)
+    d = s.add_parser("metrics", help="what this machine recorded about every round its bot saw")
+    d.add_argument("--json", action="store_true"); d.add_argument("--last", type=int, default=20, help="rows to show")
+    d.add_argument("--no-color", dest="color", action="store_false", default=None)
+    d.set_defaults(fn=cmd_bot_metrics)
+    d = s.add_parser("log", help="the tail of bot run's log")
+    d.add_argument("-n", type=int, default=50, help="lines")
+    d.set_defaults(fn=cmd_bot_log)
     d = s.add_parser("nodes", help="discover live nodes and refresh the cache"); d.set_defaults(fn=cmd_nodes)
     d = s.add_parser("stats", help="this bot's performance as the house publishes it"); d.add_argument("--board", required=True)
     d.set_defaults(fn=cmd_bot_stats)
@@ -768,16 +1174,19 @@ def build_parser():
     d.add_argument("--max-stake", type=int); d.add_argument("--solver-timeout", type=float, default=60.0)
     d.add_argument("--interval", type=float, default=5.0); d.add_argument("--once", action="store_true")
     d.add_argument("--strategy", nargs="+", help="program deciding whether to enter a round (docs/api.md)")
+    d.add_argument("--ephemeral-conf", metavar="PATH",
+                   help="a throwaway seed conf: sign with it, shred it when this run exits (never a conf you keep)")
     d.set_defaults(fn=cmd_bot_run)
 
     return p
 
 
 def main(argv=None):
+    portable.tolerant_stdio()      # a redirected Windows stdout must not die on a tick mark
     a = build_parser().parse_args(argv)
     try:
         a.fn(a)
-    except (HouseError, BotError, ChainError, R.RiddleError, payload.PayloadError, onboard.OnboardError, SharesError, term.TermError, RuntimeError) as e:
+    except (HouseError, BotError, ChainError, R.RiddleError, riddles.RiddleGenError, payload.PayloadError, onboard.OnboardError, SharesError, term.TermError, RuntimeError) as e:
         sys.exit(f"qdojo: {e}")
 
 

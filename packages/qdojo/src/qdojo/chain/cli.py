@@ -6,6 +6,7 @@ import os
 import stat
 import subprocess
 
+from .. import portable
 from ..round import Observed
 from . import parse
 from .base import SendResult, Unknown, ChainError
@@ -27,12 +28,16 @@ class SeedConfError(ChainError):
 
 def check_seed_conf(path: str) -> None:
     """A conf must exist, be mode 0600, and carry exactly one seed= line of 55
-    lowercase letters. Without it qubic-cli silently signs as a public identity."""
+    lowercase letters. Without it qubic-cli silently signs as a public identity.
+
+    The mode is checked only where the OS has one: on Windows every file
+    reports 0o666 and the ACL on the user profile is what keeps it private
+    (portable.py), so insisting on 0600 there would refuse every conf."""
     try:
         st = os.stat(path)
     except FileNotFoundError:
         raise SeedConfError(f"conf not found: {path}")
-    if stat.S_IMODE(st.st_mode) & 0o077:
+    if portable.private_modes_enforced() and stat.S_IMODE(st.st_mode) & 0o077:
         raise SeedConfError(f"conf {path} must be mode 0600")
     seeds = []
     with open(path, encoding="utf-8") as f:
@@ -107,6 +112,24 @@ class QubicCli:
                 return v
         raise Unknown(f"no usable {what} from any of {1 + len(self.fallback_nodes)} nodes")
 
+    def _read_each(self, args, parser, what: str) -> list[tuple[str, object]]:
+        """Run a read against EVERY configured node, not just the first that
+        answers usably. Right for checking an ABSENCE (see NativeChain's
+        `_read_each`): one node saying "nothing here" is one opinion, not
+        the answer."""
+        out = []
+        for ip in (self.node_ip,) + self.fallback_nodes:
+            try:
+                text = self._run_on(ip, args, False)
+            except Unknown:
+                continue
+            v = parser(text)
+            if v is not None:
+                out.append((ip, v))
+        if not out:
+            raise Unknown(f"no usable {what} from any of {1 + len(self.fallback_nodes)} nodes")
+        return out
+
     def current_tick(self) -> int:
         return self._read(["-getcurrenttick"], parse.current_tick, "tick")
 
@@ -145,6 +168,32 @@ class QubicCli:
             if cur and init and tick >= init and cur > tick + DEAD_TICK_MARGIN:
                 return False
         raise Unknown(f"tick {tick} not answerable yet for {tx_id[:8]}…")
+
+    # The reads shares.py makes, with the same names NativeChain gives them.
+    # Each parser returns None without its marker, and None is Unknown here:
+    # an empty asset list from a binary that printed garbage is not "nothing
+    # owned".
+    def qx_fees(self) -> dict:
+        return self._read(["-qxgetfee"], parse.qx_fees, "Qx fees")
+
+    def qutil_fees(self) -> dict:
+        return self._read(["-qutilgetfee"], parse.qutil_fees, "QUtil fees")
+
+    def owned_assets(self, identity: str) -> list[dict]:
+        return self._read(["-getasset", identity], parse.owned_assets, f"assets of {identity[:8]}…")
+
+    def owned_assets_each(self, identity: str) -> list[tuple[str, list[dict]]]:
+        return self._read_each(["-getasset", identity], parse.owned_assets, f"assets of {identity[:8]}…")
+
+    def asset_holders(self, issuer: str, name: str) -> list[dict]:
+        return self._read(["-queryassets", "ownerships", f"issuer={issuer},name={name}"],
+                          parse.ownerships, f"holders of {name}")
+
+    def asset_possessors(self, issuer: str, name: str) -> list[dict]:
+        """QUtil pays possessors, not owners; `asset_holders` (ownerships)
+        stays for the `bot shares` listing."""
+        return self._read(["-queryassets", "possessions", f"issuer={issuer},name={name}"],
+                          parse.possessions, f"possessors of {name}")
 
     def indexed_tick(self) -> int:
         if self.indexer is None:

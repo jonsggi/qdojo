@@ -11,7 +11,7 @@ riddle survives `hashing.canonical_answer` unchanged after `str()`.
 import hashlib
 import random
 
-from . import hashing
+from . import hashing, qubic_riddles
 
 BELTS = ("white", "yellow", "orange", "green", "blue")
 
@@ -615,14 +615,19 @@ _KINDS = {
 }
 assert tuple(_KINDS) == BELTS
 
-_KIND_BELT = {kind: belt for belt, table in _KINDS.items() for kind in table}
+PACKS = ("classic", "qubic", "mixed")
+_ALL_KINDS = {belt: {**table, **qubic_riddles.KINDS.get(belt, {})} for belt, table in _KINDS.items()}
+_KIND_BELT = {kind: belt for belt, table in _ALL_KINDS.items() for kind in table}
 
 
-def kinds(belt: str) -> list[str]:
+def kinds(belt: str, *, pack: str = "classic") -> list[str]:
     """The kind names available at `belt`, in a stable order."""
     if belt not in _KINDS:
         raise RiddleGenError(f"unknown belt {belt!r}; expected one of {BELTS}")
-    return list(_KINDS[belt])
+    if pack not in PACKS:
+        raise RiddleGenError(f"unknown riddle pack {pack!r}; expected one of {PACKS}")
+    table = {"classic": _KINDS, "qubic": qubic_riddles.KINDS, "mixed": _ALL_KINDS}[pack]
+    return list(table.get(belt, {}))
 
 
 def generate_kind(kind: str, rng: random.Random, round_id: int) -> dict:
@@ -630,7 +635,7 @@ def generate_kind(kind: str, rng: random.Random, round_id: int) -> dict:
     if kind not in _KIND_BELT:
         raise RiddleGenError(f"unknown riddle kind {kind!r}")
     belt = _KIND_BELT[kind]
-    body = _KINDS[belt][kind](rng)
+    body = _ALL_KINDS[belt][kind](rng)
     title = f"{belt.capitalize()} belt: {body['title']}"
     if len(title) > 120:
         raise RiddleGenError(f"title too long: {title!r}")
@@ -651,11 +656,14 @@ def generate_kind(kind: str, rng: random.Random, round_id: int) -> dict:
     }
 
 
-def generate(belt: str, rng: random.Random, round_id: int) -> dict:
+def generate(belt: str, rng: random.Random, round_id: int, *, pack: str = "classic") -> dict:
     """Generate a riddle for `belt`, picking a kind uniformly with `rng`.
 
     Returns {"round_id", "title", "statement", "input", "answer_format",
     "answer", "belt", "kind"}. Deterministic for a given (belt, rng state,
     round_id)."""
-    kind = rng.choice(kinds(belt))
+    pool = kinds(belt, pack=pack)
+    if not pool:
+        raise RiddleGenError(f"no riddles for belt {belt!r} in pack {pack!r}")
+    kind = rng.choice(pool)
     return generate_kind(kind, rng, round_id)

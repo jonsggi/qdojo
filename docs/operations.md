@@ -22,6 +22,17 @@ starts, or expect to explain why the site says nothing is happening.
     qdojo house export --out apps/web/data
     git add apps/web/data && git commit && git push origin main
 
+## Keeping the public page live during a run
+
+`scripts/publish-export.sh` is the answer to "the site says STALE while a
+round is being fought". Started next to `qdojo house spar` (detached, in the
+checkout the house exports into), it commits `apps/web/data` and pushes
+every time the newest round on the board changes state, so the container
+rebuilds and the public page follows the run a minute or two behind. Kill it
+by PID when the run ends. Without it the deployed page is exactly as fresh as
+the last push, and the HUD's STALE pill (three minutes after `generated_at`)
+is telling the truth.
+
 ## `qdojo-web` serves with the prefix stripped
 
 `qdojo-web --prefix /qdojo` is what the reverse proxy strips, not what the
@@ -86,16 +97,73 @@ payload transactions between fighters — those cannot corrupt the roster.
 
 ## Seed confs on tmpfs outlive the run that made them
 
-`/run/user/1001/qdojo/*.conf` survive until reboot, not until the process
-exits. After the 2026-09-19 session there were **26** of them, 20 dating from
-the 2026-09-15/16 runs. They are `0600`, but they are still keys at rest.
-Shred what a run created when it finishes:
+`/run/user/1001/qdojo/` (`$XDG_RUNTIME_DIR/qdojo`) is tmpfs: a file written
+there lives until reboot, not until the process that used it exits. It holds
+**20** `qdojo_*.conf` files (0600, 61 bytes each, written 2026-09-15/16),
+next to a `cohort2.txt` and a `web/` directory. After the 2026-09-19 session
+there were 26; the extra six were round 119's throwaway bots and are gone.
 
-    shred -u -z -n 3 /run/user/1001/qdojo/<name>.conf
+**What the 20 are.** The sparring cohort's keys: `qdojo_bot1`, `qdojo_bot2`,
+`qdojo_dev`, `qdojo_evo1/2/5`, `qdojo_f03/4/5`, `qdojo_llm1-5`, `qdojo_npc1-5`
+and `qdojo_pi`. The operator keeps those bots; they become the founding
+fighter NFTs. They were written there by the operator's launch scripts and by
+ad-hoc runs, not by qdojo: no code path in this repository writes a conf to
+the runtime directory. `bot init` writes `~/.qdojo/bot/bot.conf`
+(`onboard.py`, `O_EXCL`, 0600), and `bot run` and `house spar` only read the
+conf they are given (`--conf`, `QDOJO_CONF`, or the profile).
 
-Also: count before concluding one is missing. `ls -la <dir> | head -5` on that
-directory shows five of twenty-six files and reads exactly like "it is not
-there".
+**Do not delete or shred them.** Every dojo identity also lives in the
+operator's encrypted `qw` keystore (`~/.qw`, managed from `~/qubic-admin`),
+and each tmpfs conf has a durable copy at `~/.qdojo/<bot>/bot.conf` (0600),
+so a run can find it after a reboot. Five cohort bots have no plaintext conf
+on this host at all: `qdojo_evo3`, `qdojo_evo4`, `qdojo_f01`, `qdojo_f02` and
+`qdojo_f06`. Their seeds are in the encrypted keystore; when one is needed,
+export it from `~/qubic-admin` with `qw identity export <name>`, written to a
+0600 file, never printed.
+
+**The startup check.** `bot run`, `house spar` and `bot init` begin by
+listing every `*.conf` in the runtime directory, on stderr:
+
+    warning: 20 seed confs in /run/user/1001/qdojo from earlier runs (nothing is deleted; see docs/operations.md):
+      qdojo_bot1.conf  4d 20h
+      qdojo_bot2.conf  4d 20h
+      ...
+
+It reports and never deletes. It reads the directory in full with `scandir`,
+oldest first, because "there are none" was once concluded from
+`ls -la <dir> | head -5`, which showed five of twenty-six files and read
+exactly like "it is not there". The conf the run itself was given is not
+counted as a leftover. It prints nothing when the directory does not exist
+or holds no conf. The same check from Python is
+`qdojo.seedconf.leftover_confs()`; from the shell, count with
+`ls /run/user/1001/qdojo | wc -l`, never with `head`.
+
+**Throwaway identities.** For a conf a run should take with it, pass it with
+`--ephemeral-conf PATH` in place of `--conf`. Round 119's five `bare.py`
+fighters were this kind of bot: one-off seeds nobody keeps.
+
+    qdojo bot --state /tmp/t1 run --board <board url> --solver ./bare.py \
+        --ephemeral-conf /run/user/1001/qdojo/qdojo_t1.conf
+
+`house spar` takes the same flag. The conf is shredded (overwritten with
+zeros three times, fsynced, unlinked) when the process exits, on every path:
+a normal return, an exception, a startup failure, ctrl-c, and SIGTERM, which
+the run turns into an exception so the shred still happens. SIGKILL cannot
+be caught; that is what the startup check is for. Only the conf named by the
+flag is ever shredded. A conf that arrived through `--conf`, `QDOJO_CONF` or
+the profile is never touched, and naming two different files with `--conf`
+and `--ephemeral-conf` is refused. On tmpfs the overwrite is belt-and-braces
+and the unlink is what matters. `scripts/crosscheck-signer.py` uses the same
+helper for its temporary conf. Never pass a cohort conf here.
+
+## The spectator page changes screen on its own until it is clicked
+
+Opened at `#title`, the page runs an attract loop: it flips to another screen
+every 6–22 s until a real `pointerdown` lands on it. Hovering, scrolling and
+the ATTRACT and HELP chips do not count. Anyone screen-recording or
+screenshotting it should click the cabinet first, somewhere neutral, or the
+capture races the loop and the screen changes mid-take. A deep link such as
+`#results/118` starts with the loop off.
 
 ## `pkill -f` kills the shell that runs it
 
@@ -106,6 +174,66 @@ trap makes a `while pgrep -f "qdojo house .*spar"` loop immortal: it matches
 itself and never sees the process end.
 
 Kill by PID, or match on something that cannot appear in the invoking command.
+
+## `--entry-fee auto` prices each belt from the house's own history
+
+`qdojo house spar --entry-fee auto` retargets the fee per belt before every
+table from the rounds this house has settled or voided (docs/spec.md §5): a
+belt that fills above target gets dearer, one that voids gets cheaper, and
+never above the fee at which the seed refunds the rake. `--entry-fee 1000`
+is unchanged and remains the override. The knobs are `--fee-alpha`,
+`--fee-window`, `--fee-headroom`, `--fee-clamp`, `--fee-floor`, `--fee-cap`
+and `--fee-start`; the defaults are the ones docs/model.md chose.
+
+Two things to know before turning it on. This house runs no rake, so there
+is no fair-game ceiling: set `--fee-cap`, or the only bound is the fighters'
+purses. And it refuses `--npcs`: a house fighter sits at any price, so the
+fee could only rise. The fee it chose and why are in each round's
+`fee_policy` in history.json and in the metrics row; the log line at each
+table says the same in English.
+
+## Rounds 120-122: the riddle pack over the native chain, fought by the LLM lineup
+
+Recorded because it is the first evidence of what the Qubic families do
+against real fighters, and because three harness facts decided as much as
+the content did.
+
+    120  orange  qubic_transaction_audit  14 seated   3/14 solved  pot 19,000
+    121  green   qubic_asset_ledger       13 seated   6/13 solved  pot 31,200
+    122  blue    qubic_call_audit         13 seated   9/13 solved  pot 43,600
+
+The run-2 lineup (`bots.sh`: deepseek/gemini/qwen through `pi.py` and
+`evo.py`) with 14 fighters, `--sensei`, podium, 20% rake, 50% bond, seed
+5,000, on 2026-09-19 23:29-23:54Z. Every podium place went to an evolving
+fighter (`evo.py`, which writes and keeps a tool per riddle kind); the pure
+LLM fighters solved nothing at orange and little after. All seventeen
+balances (fighters, house, dev) reconciled to the QU against the three
+settlements afterwards.
+
+What the harness did, so nobody reads it as content:
+
+- **Twelve LLM fighters on three model slots time out.** `pi.py` and
+  `evo.py` share `PI_MAX_CONCURRENT` (default 4; 3 was set) file-lock slots,
+  and a fighter that waits `PI_SLOT_WAIT` for one has spent its
+  `--solver-timeout` before the model answers: "no model slot free" and
+  "solver timed out after 150 s" were most of round 120's misses. Give the
+  lineup at least as many slots as fighters that are expected to solve at
+  once, or fewer fighters.
+- **A right answer, pretty-printed, was a no-commit.** KEN-2's model printed
+  `{"answer": 277}` over three lines in round 121 and `pi.py` only read
+  single-line objects. Fixed in the solvers (they take the last JSON object
+  carrying `answer`, across lines and code fences); the round stands as
+  scored.
+- **A single node can read a valid identity as zero.** Before the run one
+  node reported EVO-DS3 at 0 QU; it held 70,040 and had not moved. Read a
+  balance from two nodes before acting on it, as qubic-admin does, and never
+  treat one zero as empty.
+- **The public page only moves when someone pushes.** `scripts/publish-export.sh`
+  was written during the run for exactly this; see above.
+
+Rounds 120-122 were settled under the stake cap. The two-pot rule and the
+dead-heat tie rule (#10, #18) landed after them, so they are the last
+cap-era rounds and `qdojo train` says so when asked to price them.
 
 ## Round 119: the first round fought without qubic-cli
 
@@ -122,8 +250,29 @@ qubic-cli, which shares none of the code under test. All five balances
 reconcile exactly to what the round implies. Five independent bot processes
 signed concurrently and landed in one tick with no collisions.
 
-**Status:** the native chain lives on branch `native-signer` and is **not
-merged**. `scripts/crosscheck-signer.py` is its gate — run it after touching
-anything under `packages/qdojo/src/qdojo/qubic/`, and note that a "reference
-printed no hex" result is qubic-cli failing to reach the node, not a signature
-difference.
+**Status:** merged on 2026-09-19 (#13): the native chain is the default and
+qubic-cli is only what `scripts/crosscheck-signer.py` compares it against.
+Run that check after touching anything under `packages/qdojo/src/qdojo/qubic/`,
+and read a "reference printed no hex" result as qubic-cli failing to reach the
+node, not as a signature difference.
+
+## Measured: the Qubic riddle pack on fresh instances (#17)
+
+Two traps from that run, both easy to fall into when reading spar data:
+
+- **A fighter that prints 0 solves every zero-answer round.** `echo.py` answers
+  0 to any Qubic riddle (the input is one JSON token, so it sums nothing), and
+  0 was the right answer in 36 of 200 fresh green instances and 19 of 200 blue
+  ones; under `payout_mode: first` it also commits before any real solver.
+  The green generator now re-draws most of the manager filters that made a
+  zero (17 of 200 after); blue sits near 9 %. A solve rate read off a spar
+  with such a bot in it measures the zero share, not the content.
+- **There is no `--chain fake`.** `qdojo house spar` signs, so it needs
+  `--node`. To fight a pack round without the live chain, drive
+  `Spar.one_round` on `FakeChain` from Python the way
+  `test_qubic_spar_round_commits_reveals_settles_and_exports` does;
+  `scripts/riddle-pack-measure.py spar` is that harness with staggered and
+  lockstep bots, and it reproduced the round-119 tie on every family: two
+  identical bots on one poll interval both commit 6 ticks after publish and
+  split the pot 1925/1925, while a bot polling 3 ticks later is `solved`
+  and unpaid.

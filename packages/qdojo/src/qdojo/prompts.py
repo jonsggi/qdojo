@@ -66,7 +66,9 @@ def search_path(state_dir: str | None = None) -> list[str]:
 
 
 def find(name: str, state_dir: str | None = None) -> str:
-    if os.sep in name or name.startswith("."):
+    # Either slash: Windows joins a path on both, and `os.sep` there is only
+    # the backslash, so `../x` would have walked out of the directory.
+    if "/" in name or "\\" in name or name.startswith("."):
         raise PromptError(f"a prompt name is a plain file name, not a path: {name!r}")
     for d in search_path(state_dir):
         p = os.path.join(d, name)
