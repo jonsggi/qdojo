@@ -77,6 +77,17 @@ def _obs_from_json(d: dict) -> Observed:
                     input_type=d["input_type"], payload=bytes.fromhex(d["payload"]))
 
 
+REFUSED_VERDICTS = ("late", "underpaid", "outranked")   # never bought a seat: refused and refunded
+
+
+def _seats(entries) -> int:
+    """How many of these entries bought a seat (docs/spec.md §5): a refused
+    ENTER (late, underpaid, outranked) never did, on a settled round or a
+    void one alike. Used by both fee_rows() and export() so the fee
+    controller's occupancy and the published round agree."""
+    return len([e for e in entries if e["verdict"] not in REFUSED_VERDICTS])
+
+
 class House:
     def __init__(self, chain, data_dir: str, identity: str, rake_bps: int = 0, seed_per_round: int = 0,
                  uri_base: str = "", house_fighters: tuple = (), dev_identity: str = "",
@@ -297,7 +308,7 @@ class House:
         if self.state()["scanned_to"] <= spec.lobby_end:
             raise HouseError(f"lobby of round {round_id} runs until tick {spec.lobby_end}; not over yet")
         obs = [o for o in self.observed() if spec.lobby_tick <= o.tick <= spec.lobby_end + 1]
-        ev = void_eval(spec, obs, self.identity)
+        ev = void_eval(spec, obs, self.identity, belts=self._belts_before(round_id))
         self._confirm_entries(ev)
         ledger = _read(self._ledger_path(round_id), [])
         if not ledger:
@@ -377,7 +388,7 @@ class House:
                 continue
             doc = _read(self._rpath(rid, "settlement.json")) or {}
             rows.append({"round_id": rid, "belt": meta.get("belt", ""), "state": meta["status"],
-                         "entrants": len([e for e in doc.get("entries", []) if e["verdict"] not in ("late", "underpaid")]),
+                         "entrants": _seats(doc.get("entries", [])),
                          "entry_fee": meta["entry_fee"]})
         return rows
 
@@ -778,7 +789,7 @@ class House:
                   "state": state, "publish_tick": meta["publish_tick"],
                   "lobby_tick": meta.get("lobby_tick"), "lobby_window": meta.get("lobby_window", 0),
                   "min_players": meta.get("min_players", 0), "belt": meta.get("belt", ""),
-                  "entrants": len([e for e in entries if e["verdict"] not in ("late", "underpaid")]),
+                  "entrants": _seats(entries),
                   "publish_tx": meta["publish_tx"], "commit_window": meta["commit_window"],
                   "reveal_window": meta["reveal_window"], "entry_fee": meta["entry_fee"],
                   "fee_policy": meta.get("fee_policy"),

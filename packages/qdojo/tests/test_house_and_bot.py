@@ -526,6 +526,69 @@ def test_lobby_that_does_not_fill_is_void_and_refunded(world, tmp_path):
     assert json.load(open(tmp_path / "web" / "board.json"))["rounds"] == []
 
 
+def test_void_lobby_publishes_the_seats_the_quorum_saw_not_the_refused_ones(world, tmp_path):
+    """Regression (MONEY #3): round.void() used to overwrite every verdict,
+    including a refused ENTER, with 'void'; fee_rows()/export() counted
+    everything not 'late'/'underpaid' as an entrant, so a void round could
+    publish more entrants than the quorum that failed to fill it ever saw."""
+    h = make_house(world, tmp_path, seed=5000)
+    h.open_lobby(riddle_file(tmp_path), 1000, 3, 40, 50, 20, belt="white")
+    world.core.advance(world.core.schedule_offset); h.confirm_lobby(1)
+    h.collect(); h.export(str(tmp_path / "web"))
+    board = json.load(open(tmp_path / "web" / "board.json"))
+    alice = make_bot(world, tmp_path, ALICE, SUM_SOLVER)
+    bob = make_bot(world, tmp_path, BOB, WRONG_SOLVER)
+    alice.step(board); bob.step(board)
+    carl = make_bot(world, tmp_path, CARL, SUM_SOLVER)
+    h_belts = h.belts(); h_belts[CARL] = {"rank": 2, "points": 0}; h._save_belts(h_belts)   # blue belt
+    board["belts"] = {}                                              # a bot that ignores the ladder
+    carl.step(board)
+    world.core.advance(world.core.schedule_offset + 3); h.collect()
+    n = len(h.lobby_entrants(1))
+    assert n == 2                                                    # the quorum saw only ALICE and BOB
+    spec = h.spec(1)
+    world.core.advance(spec.lobby_end + 4 - world.core.tick); h.collect()
+    drive_settle(h, world)
+    doc = h.void(1, apply=True)
+    assert doc["void"]
+    verdicts = {e["identity"]: e["verdict"] for e in doc["entries"]}
+    assert verdicts[CARL] == "outranked" and verdicts[ALICE] == "void" and verdicts[BOB] == "void"
+    assert world.core.balances[CARL] == 5000                          # refused, but still refunded
+    assert h.fee_rows()[0]["entrants"] == n == 2
+    hist = h.export(str(tmp_path / "web"))
+    assert hist["rounds"][0]["entrants"] == n == 2
+
+
+def test_settled_round_does_not_count_an_outranked_seat_as_an_entrant(world, tmp_path):
+    """Regression (MONEY #3): the settled-round half of the same bug --
+    fee_rows()/export() counted a settled table's refused 'outranked' entries
+    as occupancy, inflating the fee controller's input above what the
+    quorum actually bought."""
+    h = make_house(world, tmp_path, seed=5000, rake_bps=0)
+    h.publish(riddle_file(tmp_path), 1000, 50, 20, match_bps=0, belt="white")
+    world.core.advance(world.core.schedule_offset); h.confirm_publish(1)
+    h.collect(); h.export(str(tmp_path / "web"))
+    board = json.load(open(tmp_path / "web" / "board.json"))
+    alice = make_bot(world, tmp_path, ALICE, SUM_SOLVER)
+    alice.step(board)
+    forced = make_bot(world, tmp_path, "F" * 60, SUM_SOLVER)
+    world.core.balances["F" * 60] = 5000
+    h_belts = h.belts(); h_belts["F" * 60] = {"rank": 2, "points": 0}; h._save_belts(h_belts)
+    board["belts"] = {}
+    forced.step(board)
+    spec = h.spec(1)
+    world.core.advance(spec.commit_end + 1 - world.core.tick); alice.step(board)
+    world.core.advance(spec.reveal_end + 3 - world.core.tick); h.collect()
+    drive_settle(h, world)
+    doc = h.settle(1, apply=True)
+    verdicts = {e["identity"]: e["verdict"] for e in doc["entries"]}
+    assert verdicts["F" * 60] == "outranked" and verdicts[ALICE] == "winner"
+    assert world.core.balances["F" * 60] == 5000                       # refused, still refunded
+    assert h.fee_rows()[0]["entrants"] == 1
+    hist = h.export(str(tmp_path / "web"))
+    assert hist["rounds"][0]["entrants"] == 1
+
+
 def test_broke_bot_does_not_send_doomed_transactions(world, tmp_path):
     h = make_house(world, tmp_path)
     publish_and_open(h, world, riddle_file(tmp_path))
