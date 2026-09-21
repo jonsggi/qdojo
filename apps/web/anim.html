@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QDOJO Sparring</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  /* Sparring ring: a test bench for the fighter clips. Self-styled so it also
+   * runs standalone; the tokens match style.css. */
+  :root { --navy: #0a0f3d; --navy-2: #121a5e; --blue: #1b2cc1; --yellow: #ffd200; --cyan: #24e6ff; --green: #39ff5a;
+          --red: #ff2a2a; --magenta: #ff3cac; --white: #f4f4f4; --grey: #9aa3c7; --black: #000; --mat: #232955; --mat-2: #1a1f45;
+          --font-pixel: 'Press Start 2P', 'Courier New', ui-monospace, Menlo, Consolas, monospace; }
+  html { background: var(--navy); }
+  body { margin: 0; color: var(--white); font-family: var(--font-pixel); font-size: 11px; line-height: 1.7;
+         -webkit-font-smoothing: none;
+         background: linear-gradient(rgba(10,15,61,.92), rgba(10,15,61,.92)),
+                     repeating-linear-gradient(0deg, transparent 0 15px, rgba(36,230,255,.06) 15px 16px),
+                     repeating-linear-gradient(90deg, transparent 0 15px, rgba(36,230,255,.06) 15px 16px), var(--navy); }
+  .crt { pointer-events: none; position: fixed; inset: 0; z-index: 5;
+         background: repeating-linear-gradient(0deg, rgba(0,0,0,.18) 0 2px, transparent 2px 4px); }
+  .ring { padding-block: 28px 48px; padding-inline: clamp(16px, 3vw, 40px); max-width: 960px; margin: 0 auto; }
+  h1 { font-size: clamp(14px, 3vw, 18px); color: var(--yellow); margin: 0 0 6px; letter-spacing: 1px; text-shadow: 3px 3px 0 var(--black); }
+  .lede { color: var(--grey); font-size: 8px; line-height: 2; margin: 0 0 18px; max-width: 70ch; }
+  .mat { position: relative; background: var(--black); border: 4px solid var(--blue);
+         padding: 44px 16px 0; display: flex; justify-content: center; gap: clamp(24px, 10vw, 96px);
+         align-items: flex-end; min-height: 250px; overflow: hidden; }
+  .mat::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 28px;
+                background: repeating-linear-gradient(90deg, var(--mat) 0 14px, var(--mat-2) 14px 28px);
+                border-top: 3px solid var(--cyan); }
+  .fighter { position: relative; z-index: 1; width: clamp(112px, 30vw, 160px); aspect-ratio: 1; max-width: 100%;
+             image-rendering: pixelated; filter: drop-shadow(4px 4px 0 var(--black)); margin-bottom: 20px;
+             cursor: pointer; border: 0; background: none; padding: 0; }
+  .fighter:focus-visible { outline: 3px dashed var(--cyan); outline-offset: 6px; }
+  .fighter .avatar, .fighter .avatar svg { display: block; width: 100%; height: 100%; }
+  .fighter.left { transform: scaleX(-1); }
+  .fighter .tag, .fighter .hp { position: absolute; left: -24px; right: -24px; text-align: center; font-size: 8px;
+                  letter-spacing: 1px; font-family: var(--font-pixel); }
+  .fighter .tag { top: -32px; color: var(--cyan); }
+  .fighter .hp { top: -18px; color: var(--yellow); }
+  .fighter.left .tag, .fighter.left .hp { transform: scaleX(-1); }
+  .fighter.flash { animation: flinch .18s steps(2) 1; }
+  @keyframes flinch { from { filter: drop-shadow(4px 4px 0 var(--black)) brightness(3); } to { filter: drop-shadow(4px 4px 0 var(--black)); } }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 14px 0; font-size: 9px; }
+  .controls .lbl { color: var(--grey); font-size: 8px; }
+  .controls button { font: inherit; font-size: 9px; padding: 9px 12px; background: var(--navy-2); color: var(--white);
+                     border: 3px solid var(--cyan); cursor: pointer; }
+  .controls button:hover, .controls button:focus-visible { background: var(--blue); outline: none; }
+  .controls button[aria-pressed="true"] { background: var(--magenta); border-color: var(--magenta); color: var(--black); }
+  .controls label { color: var(--grey); display: flex; gap: 8px; align-items: center; }
+  .controls input[type=range] { accent-color: var(--cyan); width: 120px; }
+  .hint { font-size: 8px; color: var(--grey); }
+  .sheet { margin-top: 26px; }
+  .sheet h2 { font-size: 10px; color: var(--magenta); margin: 0 0 4px; }
+  .sheet .who { font-size: 8px; color: var(--grey); margin: 12px 0 6px; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; align-items: center; }
+  .row .k { font-size: 8px; color: var(--grey); width: 52px; line-height: 1.5; font-variant-numeric: tabular-nums; }
+  .frame { width: 56px; height: 56px; background: #131838; border: 2px solid var(--mat); image-rendering: pixelated; }
+  .frame svg { width: 100%; height: 100%; display: block; }
+  .note { margin-top: 28px; border-top: 2px solid var(--mat); padding-top: 14px; font-size: 8px; line-height: 2; color: var(--grey); max-width: 72ch; }
+  .note b { color: var(--white); }
+  @media (prefers-reduced-motion: reduce) { .fighter.flash { animation: none; } }
+</style>
+</head>
+<body>
+<div class="crt" aria-hidden="true"></div>
+<main class="ring">
+  <h1>SPARRING</h1>
+  <p class="lede">ONE 32×32 SPRITE PER FIGHTER, DRAWN FROM ITS QUBIC IDENTITY. FRAMES ARE INTEGER PIXEL MOVES; THE FEET STAY PLANTED UNLESS THEY KICK OR JUMP. PICK A MOVE, THEN CLICK A FIGHTER. SPACE THROWS THE MOVE FROM BOTH SIDES.</p>
+  <div class="mat">
+    <button class="fighter left" id="f-left" aria-label="Left fighter"><span class="tag"></span><span class="hp"></span><span class="avatar" data-anim="manual"></span></button>
+    <button class="fighter" id="f-right" aria-label="Right fighter"><span class="tag"></span><span class="hp"></span><span class="avatar" data-anim="manual"></span></button>
+  </div>
+  <div class="controls" id="moves"><span class="lbl">MOVE</span></div>
+  <div class="controls">
+    <button id="spar" type="button" aria-pressed="false">AUTO SPAR</button>
+    <button id="next" type="button">NEXT PAIR</button>
+    <label for="speed">SPEED <input id="speed" type="range" min="25" max="300" value="100"> <b id="speed-v">1.0×</b></label>
+    <span class="hint" id="src"></span>
+  </div>
+  <section class="sheet">
+    <h2>FRAME SHEET</h2>
+    <div id="sheet"></div>
+  </section>
+  <p class="note"><b>WHAT THIS IS.</b> The fighter art from the spectator page, animated. Idle breathes at 4 frames a second with a blink. Jab, kick and the hit reaction run at 12, the bow at 6, the salute and the fall at 8. Frame zero of idle is the static sprite byte for byte. In auto spar each fighter has five hit points; the fall and the salute play at the end, then both bow and reset. On the real page a fighter's card plays the signature move its identity picked: <span id="sigs"></span>.</p>
+</main>
+<script src="avatars.js"></script>
+<script src="anim.js"></script>
+<script>
+(() => {
+  'use strict';
+  const EMBEDDED = null; // the artifact build inlines the roster here
+  const FALLBACK = Array.from({ length: 12 }, (_, i) => ({ identity: 'sample-' + (i * 7 + 3), name: 'SAMPLE ' + i }));
+  const MOVES = ['jab', 'kick', 'hit', 'bow', 'win', 'lose'];
+  const MAX_HP = 5;
+  let roster = FALLBACK, cursor = 0, speed = 1, sparring = false, move = 'jab';
+  const els = [document.getElementById('f-left'), document.getElementById('f-right')];
+  const avatars = els.map(el => el.querySelector('.avatar'));
+  const state = [{ hp: MAX_HP, busy: false }, { hp: MAX_HP, busy: false }];
+  const fighter = k => roster[(cursor + k) % roster.length];
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  function cast() {
+    els.forEach((el, k) => {
+      const f = fighter(k);
+      const av = avatars[k];
+      av.innerHTML = ''; av.dataset.identity = f.identity;
+      av.replaceWith(av.cloneNode(false)); avatars[k] = el.querySelector('.avatar');
+      el.querySelector('.tag').textContent = f.name;
+      state[k] = { hp: MAX_HP, busy: false };
+    });
+    QDojoAnim.mount(document);
+    avatars.forEach(av => QDojoAnim.rate(av, speed));
+    hp(); sheet();
+    document.getElementById('sigs').textContent = els.map((_, k) => `${fighter(k).name} ${QDojoAvatars.signature(fighter(k).identity).toUpperCase()}`).join(', ');
+  }
+  function hp() { els.forEach((el, k) => { el.querySelector('.hp').textContent = '♥'.repeat(state[k].hp) + '·'.repeat(MAX_HP - state[k].hp); }); }
+  function flash(k) { const el = els[k]; el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }
+
+  // A strike lands on its second frame; the target flinches then and loses a heart.
+  function throwMove(k, clip = move) {
+    if (QDojoAnim.clipOf(avatars[k]) !== 'idle') return;
+    QDojoAnim.play(avatars[k], clip);
+    if (clip !== 'jab' && clip !== 'kick') return;
+    const o = 1 - k, landAt = 1000 / QDojoAvatars.clips[clip].fps / speed;
+    setTimeout(() => {
+      if (QDojoAnim.clipOf(avatars[o]) !== 'idle') return;
+      flash(o); state[o].hp = Math.max(0, state[o].hp - 1); hp();
+      if (state[o].hp > 0) { QDojoAnim.play(avatars[o], 'hit'); return; }
+      QDojoAnim.play(avatars[o], 'lose');
+      QDojoAnim.play(avatars[k], 'win', 250 / speed);
+      setTimeout(() => {
+        QDojoAnim.play(avatars[0], 'bow'); QDojoAnim.play(avatars[1], 'bow');
+        state[0].hp = state[1].hp = MAX_HP; hp();
+      }, (QDojoAnim.duration('win', speed) + 1200 / speed));
+    }, landAt);
+  }
+  function sheet() {
+    const out = [];
+    els.forEach((_, k) => {
+      const f = fighter(k), t = QDojoAvatars.traits(f.identity);
+      out.push(`<div class="who">${esc(f.name)} · ${t.archetype.toUpperCase()} · ${t.stance.toUpperCase()} · SIGNATURE ${QDojoAvatars.signature(f.identity).toUpperCase()}</div>`);
+      for (const [clip, spec] of Object.entries(QDojoAvatars.clips)) {
+        out.push(`<div class="row"><span class="k">${clip.toUpperCase()}<br>${spec.fps} FPS</span>${QDojoAvatars.frames(f.identity, clip).map(b =>
+          `<div class="frame"><svg viewBox="0 0 32 32" shape-rendering="crispEdges">${b}</svg></div>`).join('')}</div>`);
+      }
+    });
+    document.getElementById('sheet').innerHTML = out.join('');
+  }
+
+  const movesEl = document.getElementById('moves');
+  for (const m of MOVES) {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = m.toUpperCase();
+    b.setAttribute('aria-pressed', String(m === move));
+    b.addEventListener('click', () => { move = m; movesEl.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); });
+    movesEl.appendChild(b);
+  }
+  els.forEach((el, k) => el.addEventListener('click', () => throwMove(k)));
+  document.getElementById('next').addEventListener('click', () => { cursor += 2; cast(); });
+  document.getElementById('spar').addEventListener('click', e => {
+    sparring = !sparring; e.currentTarget.textContent = sparring ? 'STOP' : 'AUTO SPAR'; e.currentTarget.setAttribute('aria-pressed', String(sparring));
+  });
+  document.getElementById('speed').addEventListener('input', e => {
+    speed = e.target.value / 100; document.getElementById('speed-v').textContent = speed.toFixed(2).replace(/0$/, '') + '×';
+    avatars.forEach(av => QDojoAnim.rate(av, speed));
+  });
+  document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT') return;
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); throwMove(0); setTimeout(() => throwMove(1), 260 / speed); }
+  });
+
+  let nextSpar = 0;
+  (function loop(t) {
+    if (sparring && t > nextSpar) {
+      const k = Math.random() < 0.5 ? 0 : 1, sig = QDojoAvatars.signature(fighter(k).identity);
+      throwMove(k, (sig === 'jab' || sig === 'kick') && Math.random() < 0.7 ? sig : (Math.random() < 0.5 ? 'jab' : 'kick'));
+      nextSpar = t + (500 + Math.random() * 900) / speed;
+    }
+    requestAnimationFrame(loop);
+  })(0);
+
+  const useRoster = list => { const named = list.filter(f => f.name && f.identity); if (named.length >= 2) { roster = named; cursor = 0; } cast(); document.getElementById('src').textContent = 'ROSTER: ' + roster.length + ' FIGHTERS'; };
+  if (EMBEDDED) useRoster(EMBEDDED);
+  else fetch('data/fighters.json').then(r => r.json()).then(d => useRoster(d.fighters)).catch(() => useRoster([]));
+})();
+</script>
+</body>
+</html>

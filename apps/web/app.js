@@ -197,6 +197,7 @@ function setHTML(id, html) {
   if (!el) return false;
   el.innerHTML = html;
   S.cache[id] = html;
+  if (typeof QDojoAnim !== 'undefined') QDojoAnim.mount(el);
   scheduleScrollMarks();
   return true;
 }
@@ -225,8 +226,22 @@ function scheduleScrollMarks() {
 // ---------------------------------------------------------------- avatars
 // Original, identity-stable pixel artwork shared with the standalone SVG export.
 // Published belts stay in the existing rank UI, separate from collectible traits.
-function avatarSVG(identity, cls = '') {
-  return QDojoAvatars.render(identity, cls);
+// `anim` opts the avatar into anim.js playback (see the list there); `round`
+// ties a sparring fighter to its round so the choreography follows the window.
+function avatarSVG(identity, cls = '', anim = '', round = '') {
+  const html = QDojoAvatars.render(identity, cls);
+  if (!anim || !identity) return html;
+  const tie = round === '' ? '' : ` data-round="${esc(String(round))}"`;
+  return html.replace('<span class="avatar', `<span data-anim="${esc(anim)}" data-identity="${esc(identity)}"${tie} class="avatar`);
+}
+// What a fighter's card does on the mat: spar while the round is open, then act
+// out the verdict. Presentation only; the verdict itself is in the badge.
+const LOSE_VERDICTS = new Set(['wrong', 'no_reveal', 'bad_reveal']);
+function cardAnim(e) {
+  if (e.verdict === 'winner') return 'win';
+  if (LOSE_VERDICTS.has(e.verdict)) return 'lose';
+  if (e.verdict === 'solved') return 'bow';
+  return 'fight';
 }
 
 // ---------------------------------------------------------------- audio (opt-in)
@@ -604,7 +619,7 @@ function winnersHTML(r, full) {
   return paid.map(pot => `${pot.two ? `<h4 class="pot-head">${esc(pot.name)}<small> · ${fmt(pot.dist)} TO WIN · PAID ${fmt(pot.paid)} · CARRIES ${fmt(pot.carry)}</small></h4>` : ''}
     <div class="winners">${pot.winners.map(w => { const p = payoutFor(w.id), b = bondFor(w.id); return `<div class="winner-row">
       ${podium ? `<span class="podium-place place-${w.place}">${w.tie > 1 ? 'TIED ' : ''}${ordinal(w.place)}</span>` : ''}
-      ${fighterLink(w.id, avatarSVG(w.id, 'avatar-lg'))}
+      ${fighterLink(w.id, avatarSVG(w.id, 'avatar-lg', 'win'))}
       <div class="wname">${fighterLink(w.id, displayName(w.e))}${full ? `<br><span class="tiny muted">${esc(shareLabel(w, pot))}</span>` : ''}<br>${idLink(w.id)}</div>
       <div class="wamt">+${fmt(p ? p.amount : 0)} QU${full && b ? `<span class="wtx"><span class="badge badge-bond_held">BOND HELD</span> ${fmt(b.amount)} QU</span>` : ''}${full && p && p.tx ? `<span class="wtx">${txLink(p.tx, 'PAYOUT TX')}</span>` : ''}</div>
     </div>`; }).join('')}</div>`).join('');
@@ -860,7 +875,7 @@ function fighterCard(e, r, slot) {
   const cls = e.verdict && e.verdict !== 'pending' ? e.verdict : (e.reveal_tick ? 'revealed' : (e.commit_tx ? 'sealed' : 'seated'));
   return `<div class="fcard ${cls}">
     <span class="fslot">${String(slot).padStart(2, '0')}</span>
-    ${fighterLink(e.identity, avatarSVG(e.identity, 'avatar-lg'))}
+    ${fighterLink(e.identity, avatarSVG(e.identity, 'avatar-lg', cardAnim(e), r.round_id))}
     <div class="fname">${fighterLink(e.identity, displayName(e))}</div>
     <div class="fid">${idLink(e.identity)}</div>
     <div class="fstake">STAKE ${qu(e.stake)}</div>
@@ -901,7 +916,7 @@ function seatCard(e, r, slot) {
   }
   return `<div class="seat seat-taken">
     <span class="seat-no">SEAT ${String(slot).padStart(2, '0')}</span>
-    <div class="seat-chair taken">${chairSVG()}<span class="seat-sit">${fighterLink(e.identity, avatarSVG(e.identity, 'avatar-lg'))}</span></div>
+    <div class="seat-chair taken">${chairSVG()}<span class="seat-sit">${fighterLink(e.identity, avatarSVG(e.identity, 'avatar-lg', 'idle'))}</span></div>
     <div class="fname">${fighterLink(e.identity, displayName(e))}</div>
     <div class="fid">${idLink(e.identity)}</div>
     <div class="fstake">SEAT ${qu(e.stake)}</div>
@@ -1479,7 +1494,7 @@ function renderFighter() {
   parts.push(`<div class="cols profile-cols">
     <div class="panel panel-yellow fcb belt-b-${esc(String(p.belt || 'white').toLowerCase())}">
       <div class="fcb-top">
-        <div class="fcb-avatar">${avatarSVG(p.identity, 'avatar-xl')}</div>
+        <div class="fcb-avatar">${avatarSVG(p.identity, 'avatar-xl', 'profile')}</div>
         <div class="fcb-info">
           <div class="fcb-name">${p.name ? esc(p.name) : 'STRANGER'}</div>
           ${p.name ? '' : '<div class="tiny muted">HAS NOT BOWED · NO NAME ON RECORD</div>'}
@@ -1855,6 +1870,7 @@ function updateTicks() {
     }
     const lobby = p.phase === 'lobby' || p.phase === 'lobby_over';
     const over = p.phase === 'over' || p.phase === 'lobby_over';
+    if (typeof QDojoAnim !== 'undefined') QDojoAnim.arena(id, p.phase, p.total ? 1 - p.remaining / p.total : 0);
     const fill = $(`[data-meter="win-${id}"]`);
     if (fill) {
       const pct = p.total ? 100 * p.remaining / p.total : 0;
@@ -2223,7 +2239,7 @@ function renderRules() {
       nothing else, no seed, no carry — so a senior can only ever win other seniors' money and cannot farm the
       table it is propping up. The round still counts towards releasing that senior's own bond, so there is a
       reason to come back down. Look for <span class="badge badge-outranked">SENSEI</span> beside a name.</p>
-      <p class="tiny muted">In a settlement without `pots` a sensei was instead capped at its own stake out of the one pot,
+      <p class="tiny muted">In a settlement without \`pots\` a sensei was instead capped at its own stake out of the one pot,
       and the surplus went to the winners at the belt or carried; every round through 122 in this house's history reads that way.</p>
       <p class="tiny muted">Without this seat the beginners' tables simply die: everyone who could solve the
       riddle has been promoted past it, and nobody is left to fight.</p>

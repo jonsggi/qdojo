@@ -165,7 +165,7 @@ function whoPanel(p, house) {
   return `<div class="panel panel-yellow">
     <h3>YOUR FIGHTER</h3>
     <div class="fcb-top">
-      <div class="fcb-avatar">${id ? QDojoAvatars.render(id, 'avatar-xl') : ''}</div>
+      <div class="fcb-avatar">${id ? QDojoAvatars.render(id, 'avatar-xl').replace('<span class="avatar', `<span data-anim="profile" data-identity="${esc(id)}" class="avatar`) : ''}</div>
       <div class="fcb-info">
         <div class="fcb-name">${esc(p.name || 'UNNAMED')}</div>
         <div class="fcb-id mono wrap">${esc(id || 'no identity yet — run ./dojo rite')}</div>
@@ -368,7 +368,9 @@ function scaffold() {
 
 function setSlot(name, html) {
   const el = $('#p-' + name);
-  if (el && el.innerHTML !== html) el.innerHTML = html;
+  if (!el || el.innerHTML === html) return;
+  el.innerHTML = html;
+  if (typeof QDojoAnim !== 'undefined') QDojoAnim.mount(el);
 }
 
 function renderFighter() {
