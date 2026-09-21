@@ -376,9 +376,12 @@ Windows"). The house does not. Where behaviour differs, and why:
   Python actually installed from the Store, so it is probed once (run it
   with an argument and check the exit code) rather than assumed: only the
   stub is mapped away, a real Store Python is left alone. Whenever a
-  leading interpreter IS mapped, qdojo says so once on stderr. The shipped
-  examples keep their `#!/usr/bin/env python3` line; nothing on Windows
-  reads it.
+  leading interpreter IS mapped, qdojo says so once on stderr, and if the
+  solver or strategy then fails, `run_solver` and the strategy call name the
+  swap in their own failure text (`"X is not on this machine, ran under
+  Y: ..."`), so a BYO venv that moved or vanished reads as a missing
+  interpreter rather than an unrelated import error. The shipped examples
+  keep their `#!/usr/bin/env python3` line; nothing on Windows reads it.
 - **The printed run command** on `bot init`'s card is written for the shell
   of the OS: `$env:NAME = 'value'` lines and a backtick continuation on
   Windows, `NAME=value` in front and a backslash elsewhere.

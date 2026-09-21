@@ -126,6 +126,11 @@ spelled out in [docs/api.md](docs/api.md):
   ctrl-break. `taskkill /F` is SIGKILL and cannot be caught.
 - **The printed run command** is PowerShell-shaped, and `bot dash --open`
   opens your page in the default browser.
+- **`pi.py`/`evo.py`'s model-slot cap** (`PI_MAX_CONCURRENT`) counts
+  processes sharing one temp directory: on Windows that is this user's
+  `%TEMP%`, so with the documented one-Windows-user-per-fighter setup the
+  cap is per fighter, not per machine. Set `PI_SLOT_DIR` to point every
+  fighter at the same directory if you want one shared cap.
 
 **What is not verified.** There is no Windows machine behind this repo.
 `dojo.ps1` has been parsed and dry-run under PowerShell 7 on Linux against a

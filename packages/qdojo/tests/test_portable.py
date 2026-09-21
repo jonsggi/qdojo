@@ -143,6 +143,19 @@ def test_run_solver_and_the_strategy_resolve_the_interpreter(monkeypatch, tmp_pa
     assert actions == ["round 1: strategy says skip (w)"]
 
 
+def test_a_swapped_strategy_interpreter_is_named_when_it_fails(tmp_path):
+    """A strategy program recorded under a venv that has since vanished is
+    swapped for qdojo's own Python; if it then fails, say so, rather than
+    leaving 'strategy program failed' pointing nowhere."""
+    gone = "/definitely/gone/solver-venv/bin/python3"
+    me = "A" * 60
+    b = bot.Bot(FakeChain(identity=me, balances={me: 5000}), str(tmp_path / "s"), ["true"],
+                strategy_cmd=[gone, "-c", "import sys; sys.exit(1)"])
+    actions = []
+    assert b._strategy_says_enter({"round_id": 1, "entry_fee": 10}, {}, 100, actions, "1") is True
+    assert len(actions) == 1 and gone in actions[0] and "ran under" in actions[0] and sys.executable in actions[0]
+
+
 # -------------------------------------------------------------- the command line
 
 def test_split_command_keeps_backslashes_on_windows(win):
@@ -455,6 +468,14 @@ def test_dojo_ps1_dry_runs_with_a_fake_uv(tmp_path):
     r, ran = reaches("fight", "--board", "http://b")
     assert ran == ["run qdojo bot run --board http://b"]
     assert reaches("dash")[1] == ["run qdojo bot dash"] and reaches("prompts", "list")[1] == ["run qdojo prompts list"]
+    # -h/--help on a subcommand must reach qdojo, not the launcher's own banner
+    r, ran = reaches("train", "--help")
+    assert ran == ["run qdojo train --help"] and "getting ready" in r.stdout
+    r, ran = reaches("fight", "-h")
+    assert ran == ["run qdojo bot run -h"]
+    # a bare help still short-circuits before uv ever runs
+    r, ran = reaches("-h")
+    assert ran == [] and "fight past rounds again" in r.stdout
     r, ran = reaches("nonsense")
     assert r.returncode == 1 and "no such thing as 'nonsense'" in r.stderr and ran == []
     # nothing set up: the free training fight with bare.py, and a leading flag is not a subcommand
@@ -596,6 +617,29 @@ def test_the_slot_lock_is_exclusive_across_processes(tmp_path):
     out, err = first.communicate(timeout=30)
     assert first.returncode == 0 and '"answer": 1' in out, err
     assert sorted(os.listdir(tmp_path / "qdojo-pi-slots")) == ["0"]          # under the temp dir, not /tmp
+
+
+@pytest.mark.parametrize("name", ["pi.py", "evo.py"])
+def test_an_unopenable_slot_surfaces_at_once_instead_of_waiting_out_the_slot_wait(name, tmp_path):
+    """A slot file this process cannot open (another user's, or read-only)
+    is not a busy slot: it must not be swallowed and waited out."""
+    slots = tmp_path / "qdojo-pi-slots"
+    slots.mkdir()
+    (slots / "0").write_text("")
+    os.chmod(slots / "0", 0o444)
+    env = {**os.environ, "PI_SLOT_DIR": str(slots), "PI_MODEL": "m",
+           "PI_MAX_CONCURRENT": "1", "PI_SLOT_WAIT": "5", "PATH": os.environ.get("PATH", "")}
+    if name == "evo.py":
+        env["EVO_MODEL"] = "m"
+        env["EVO_DIR"] = str(tmp_path / "evo_dir")            # never ~/.qdojo
+    script = os.path.join(ROOT, "examples", "solvers", name)
+    started = time.monotonic()
+    r = subprocess.run([sys.executable, script], input=json.dumps(RIDDLE), capture_output=True,
+                       text=True, env=env, timeout=10)
+    took = time.monotonic() - started
+    assert took < 4, f"waited out PI_SLOT_WAIT instead of failing on the open() error ({took:.1f}s)"
+    assert r.returncode != 0
+    assert str(slots / "0") in r.stderr, r.stderr
 
 
 # ------------------------------------------------------------- the checker

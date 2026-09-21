@@ -99,19 +99,21 @@ except ImportError:                                     # Windows
         f.seek(0)
         _msvcrt.locking(f.fileno(), _msvcrt.LK_NBLCK, 1)
 
-SLOTS = os.path.join(tempfile.gettempdir(), "qdojo-pi-slots")
+SLOTS = os.environ.get("PI_SLOT_DIR") or os.path.join(tempfile.gettempdir(), "qdojo-pi-slots")
 
 
 def _slot(max_slots=int(os.environ.get("PI_MAX_CONCURRENT", "4")), wait=float(os.environ.get("PI_SLOT_WAIT", "90"))):
-    """Hold one of max_slots file locks; wait up to `wait` seconds for one."""
+    """Hold one of max_slots file locks; wait up to `wait` seconds for one.
+
+    A slot file this process cannot even open (wrong owner, a read-only or
+    foreign-owned SLOTS directory) is not the same as a busy one: let it
+    raise, with the path in the message, instead of waiting out `wait` and
+    then blaming "no model slot free"."""
     os.makedirs(SLOTS, exist_ok=True)
     deadline = time.time() + wait
     while True:
         for i in range(max_slots):
-            try:
-                f = open(os.path.join(SLOTS, str(i)), "a")     # never truncate: a locked file cannot be, on Windows
-            except OSError:
-                continue
+            f = open(os.path.join(SLOTS, str(i)), "a")     # never truncate: a locked file cannot be, on Windows
             try:
                 _try_lock(f)
                 return f

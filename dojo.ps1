@@ -29,7 +29,7 @@ if ($args.Count -gt 0 -and -not "$($args[0])".StartsWith('-')) {
     $Cmd = "$($args[0])"
     $Rest = @($args | Select-Object -Skip 1)
 }
-if ($Cmd -eq 'help' -or ($Rest.Count -eq 1 -and "$($Rest[0])" -in @('-h', '--help'))) {
+if ($Cmd -eq 'help' -or ($Cmd -eq 'start' -and $Rest.Count -eq 1 -and "$($Rest[0])" -in @('-h', '--help'))) {
     Get-Content -LiteralPath $MyInvocation.MyCommand.Path | Select-Object -First 10 |
         ForEach-Object { $_ -replace '^# ?', '' }
     exit 0
