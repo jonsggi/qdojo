@@ -1,6 +1,6 @@
 import pytest
 
-from qdojo import hashing, payload as P
+from qdojo import hashing, payload as P, belts as B
 from qdojo.round import RoundSpec, evaluate, Observed
 from conftest import ALICE, BOB, CARL, HOUSE, ident
 
@@ -293,8 +293,28 @@ def test_void_refunds_every_seat(txf):
     obs = [txf.tx(ALICE, 60, P.Enter(1), amount=1000), txf.tx(BOB, 95, P.Enter(1), amount=1000)]
     ev = void(s, obs, HOUSE)
     assert sorted((p.identity, p.amount, p.kind) for p in ev.payouts) == [(ALICE, 1000, "refund"), (BOB, 1000, "refund")]
-    assert all(e.verdict == "void" for e in ev.entries)
+    # ALICE bought a seat (was "pending"): void() turns that into "void". BOB's
+    # ENTER at tick 95 is after the lobby window (ends at 90): it was already
+    # refused as "late" and kept that verdict -- it never bought a seat, so it
+    # is refunded but does not count as an occupied one (MONEY #3).
+    assert {e.identity: e.verdict for e in ev.entries} == {ALICE: "void", BOB: "late"}
     assert s.state_at(60) == "lobby" and s.state_at(91) == "lobby_closed"
+
+
+def test_void_keeps_an_outranked_refusal_instead_of_folding_it_into_void(txf):
+    """Regression (MONEY #3): a void round used to overwrite every verdict,
+    including a refused ENTER, with 'void', so the seats a bot published for
+    a voided strict table counted refused fighters as occupancy the quorum
+    never saw. void() now takes the belts the lobby quorum saw and keeps
+    'outranked' as such."""
+    from qdojo.round import void
+    s = lobby_spec(publish_tick=None, belt_rank=B.RANKS["white"])
+    obs = [txf.tx(ALICE, 60, P.Enter(1), amount=1000),
+           txf.tx(BOB, 61, P.Enter(1), amount=1000)]
+    belts = {BOB: {"belt": "blue", "rank": B.RANKS["blue"], "points": 0}}
+    ev = void(s, obs, HOUSE, belts=belts)
+    assert {e.identity: e.verdict for e in ev.entries} == {ALICE: "void", BOB: "outranked"}
+    assert sorted((p.identity, p.amount) for p in ev.payouts) == [(ALICE, 1000), (BOB, 1000)]   # still refunded
 
 
 def test_podium_splits_5_3_2_by_commit_order(txf, salt):

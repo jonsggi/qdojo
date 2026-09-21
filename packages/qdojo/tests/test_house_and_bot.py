@@ -170,6 +170,91 @@ def test_no_winner_carries_into_next_round(world, tmp_path):
     assert meta["house_seed"] == 10_000 and meta["carry_in"] == doc["carry"] and h.state()["carry"] == 0
 
 
+def test_a_dropped_publish_restores_the_carry(world, tmp_path):
+    """Regression: confirm_publish() used to zero the carry on a dropped
+    PUBLISH with no way back (MONEY #1)."""
+    h = make_house(world, tmp_path)
+    publish_and_open(h, world, riddle_file(tmp_path))
+    bob = make_bot(world, tmp_path, BOB, WRONG_SOLVER)
+    h.collect(); h.export(str(tmp_path / "web"))
+    bob.step(json.load(open(tmp_path / "web" / "board.json")))
+    world.core.advance(1005 + 51 - world.core.tick)
+    bob.step(json.load(open(tmp_path / "web" / "board.json")))
+    world.core.advance(1005 + 71 - world.core.tick + 25)
+    h.collect()
+    doc = h.settle(1, apply=True)
+    carry = doc["carry"]
+    assert carry > 0 and h.state()["carry"] == carry
+    world.core.drop_next_send = True                                    # the PUBLISH never lands
+    meta = h.publish(riddle_file(tmp_path, rid=2), 1000, 50, 20)
+    assert meta["carry_in"] == carry and h.state()["carry"] == 0
+    world.core.advance(world.core.schedule_offset)
+    meta = h.confirm_publish(2)
+    assert meta["status"] == "failed"
+    assert h.state()["carry"] == carry                                  # restored, unlike before the fix
+    with pytest.raises(HouseError):
+        h.confirm_publish(2)                                            # a repeat does not re-credit
+    assert h.state()["carry"] == carry
+    meta3 = h.publish(riddle_file(tmp_path, rid=3), 1000, 50, 20)
+    assert meta3["carry_in"] == carry and h.state()["carry"] == 0
+
+
+def test_a_dropped_lobby_open_restores_the_carry(world, tmp_path):
+    """Regression: confirm_lobby() used to zero the carry on a dropped LOBBY
+    announcement with no way back (MONEY #1)."""
+    h = make_house(world, tmp_path)
+    publish_and_open(h, world, riddle_file(tmp_path))
+    bob = make_bot(world, tmp_path, BOB, WRONG_SOLVER)
+    h.collect(); h.export(str(tmp_path / "web"))
+    bob.step(json.load(open(tmp_path / "web" / "board.json")))
+    world.core.advance(1005 + 51 - world.core.tick)
+    bob.step(json.load(open(tmp_path / "web" / "board.json")))
+    world.core.advance(1005 + 71 - world.core.tick + 25)
+    h.collect()
+    doc = h.settle(1, apply=True)
+    carry = doc["carry"]
+    world.core.drop_next_send = True                                    # the LOBBY announcement never lands
+    meta = h.open_lobby(riddle_file(tmp_path, rid=2), 1000, 2, 40, 50, 20)
+    assert meta["carry_in"] == carry and h.state()["carry"] == 0
+    world.core.advance(world.core.schedule_offset)
+    meta = h.confirm_lobby(2)
+    assert meta["status"] == "failed"
+    assert h.state()["carry"] == carry                                  # restored, unlike before the fix
+    meta2 = h.confirm_lobby(2)                                          # a repeat does not re-credit
+    assert meta2["status"] == "failed" and h.state()["carry"] == carry
+    meta3 = h.open_lobby(riddle_file(tmp_path, rid=3), 1000, 2, 40, 50, 20)
+    assert meta3["carry_in"] == carry and h.state()["carry"] == 0
+
+
+def test_a_dropped_publish_from_lobby_returns_to_lobby_for_void_or_retry(world, tmp_path):
+    """Regression: a PUBLISH sent by publish_from_lobby() that never landed
+    used to be burned as 'failed' with entrants' ENTER stakes stranded (no
+    refund path, since void() requires status 'lobby'). It now goes back to
+    'lobby' so it can be re-published or voided with refunds (MONEY #1)."""
+    h = make_house(world, tmp_path, seed=5000)
+    h.open_lobby(riddle_file(tmp_path), 1000, 2, 40, 50, 20)
+    world.core.advance(world.core.schedule_offset); h.confirm_lobby(1)
+    h.collect(); h.export(str(tmp_path / "web"))
+    board = json.load(open(tmp_path / "web" / "board.json"))
+    alice = make_bot(world, tmp_path, ALICE, SUM_SOLVER)
+    bob = make_bot(world, tmp_path, BOB, WRONG_SOLVER)
+    alice.step(board); bob.step(board)
+    world.core.advance(world.core.schedule_offset + 3); h.collect()
+    assert sorted(h.lobby_entrants(1)) == sorted([ALICE, BOB])
+    world.core.drop_next_send = True                                    # the PUBLISH never lands
+    h.publish_from_lobby(1)
+    world.core.advance(world.core.schedule_offset)
+    meta = h.confirm_publish(1)
+    assert meta["status"] == "lobby"                                    # not burned: entrants already paid
+    spec = h.spec(1)
+    world.core.advance(spec.lobby_end + 4 - world.core.tick); h.collect()
+    drive_settle(h, world)
+    doc = h.void(1, apply=True)
+    assert doc["void"]
+    assert sorted((p["identity"], p["amount"]) for p in doc["payouts"]) == sorted([(ALICE, 1000), (BOB, 1000)])
+    assert world.core.balances[ALICE] == 5000 and world.core.balances[BOB] == 5000
+
+
 def test_settle_survives_a_lost_send_without_double_paying(world, tmp_path):
     h = make_house(world, tmp_path)
     publish_and_open(h, world, riddle_file(tmp_path))
@@ -439,6 +524,69 @@ def test_lobby_that_does_not_fill_is_void_and_refunded(world, tmp_path):
     vs = hist["rounds"][0]["settlement"]
     assert hashing.settlement_hash(vs).hex() == vs["hash"] and vs["answer"] is None and vs["carry"] == 0
     assert json.load(open(tmp_path / "web" / "board.json"))["rounds"] == []
+
+
+def test_void_lobby_publishes_the_seats_the_quorum_saw_not_the_refused_ones(world, tmp_path):
+    """Regression (MONEY #3): round.void() used to overwrite every verdict,
+    including a refused ENTER, with 'void'; fee_rows()/export() counted
+    everything not 'late'/'underpaid' as an entrant, so a void round could
+    publish more entrants than the quorum that failed to fill it ever saw."""
+    h = make_house(world, tmp_path, seed=5000)
+    h.open_lobby(riddle_file(tmp_path), 1000, 3, 40, 50, 20, belt="white")
+    world.core.advance(world.core.schedule_offset); h.confirm_lobby(1)
+    h.collect(); h.export(str(tmp_path / "web"))
+    board = json.load(open(tmp_path / "web" / "board.json"))
+    alice = make_bot(world, tmp_path, ALICE, SUM_SOLVER)
+    bob = make_bot(world, tmp_path, BOB, WRONG_SOLVER)
+    alice.step(board); bob.step(board)
+    carl = make_bot(world, tmp_path, CARL, SUM_SOLVER)
+    h_belts = h.belts(); h_belts[CARL] = {"rank": 2, "points": 0}; h._save_belts(h_belts)   # blue belt
+    board["belts"] = {}                                              # a bot that ignores the ladder
+    carl.step(board)
+    world.core.advance(world.core.schedule_offset + 3); h.collect()
+    n = len(h.lobby_entrants(1))
+    assert n == 2                                                    # the quorum saw only ALICE and BOB
+    spec = h.spec(1)
+    world.core.advance(spec.lobby_end + 4 - world.core.tick); h.collect()
+    drive_settle(h, world)
+    doc = h.void(1, apply=True)
+    assert doc["void"]
+    verdicts = {e["identity"]: e["verdict"] for e in doc["entries"]}
+    assert verdicts[CARL] == "outranked" and verdicts[ALICE] == "void" and verdicts[BOB] == "void"
+    assert world.core.balances[CARL] == 5000                          # refused, but still refunded
+    assert h.fee_rows()[0]["entrants"] == n == 2
+    hist = h.export(str(tmp_path / "web"))
+    assert hist["rounds"][0]["entrants"] == n == 2
+
+
+def test_settled_round_does_not_count_an_outranked_seat_as_an_entrant(world, tmp_path):
+    """Regression (MONEY #3): the settled-round half of the same bug --
+    fee_rows()/export() counted a settled table's refused 'outranked' entries
+    as occupancy, inflating the fee controller's input above what the
+    quorum actually bought."""
+    h = make_house(world, tmp_path, seed=5000, rake_bps=0)
+    h.publish(riddle_file(tmp_path), 1000, 50, 20, match_bps=0, belt="white")
+    world.core.advance(world.core.schedule_offset); h.confirm_publish(1)
+    h.collect(); h.export(str(tmp_path / "web"))
+    board = json.load(open(tmp_path / "web" / "board.json"))
+    alice = make_bot(world, tmp_path, ALICE, SUM_SOLVER)
+    alice.step(board)
+    forced = make_bot(world, tmp_path, "F" * 60, SUM_SOLVER)
+    world.core.balances["F" * 60] = 5000
+    h_belts = h.belts(); h_belts["F" * 60] = {"rank": 2, "points": 0}; h._save_belts(h_belts)
+    board["belts"] = {}
+    forced.step(board)
+    spec = h.spec(1)
+    world.core.advance(spec.commit_end + 1 - world.core.tick); alice.step(board)
+    world.core.advance(spec.reveal_end + 3 - world.core.tick); h.collect()
+    drive_settle(h, world)
+    doc = h.settle(1, apply=True)
+    verdicts = {e["identity"]: e["verdict"] for e in doc["entries"]}
+    assert verdicts["F" * 60] == "outranked" and verdicts[ALICE] == "winner"
+    assert world.core.balances["F" * 60] == 5000                       # refused, still refunded
+    assert h.fee_rows()[0]["entrants"] == 1
+    hist = h.export(str(tmp_path / "web"))
+    assert hist["rounds"][0]["entrants"] == 1
 
 
 def test_broke_bot_does_not_send_doomed_transactions(world, tmp_path):

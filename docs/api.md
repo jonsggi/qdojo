@@ -46,7 +46,7 @@ defensively and treat a missing field as "this round predates it".
 | `round_id` | int | strictly increasing |
 | `state` | `lobby`, `commit`, `reveal`, `settling`, `settled`, `void` | where the round is |
 | `belt` | `white`..`blue` or `""` | the riddle's belt; you may enter at your belt or above |
-| `lobby_tick`, `lobby_window`, `min_players`, `entrants` | int | the table: ENTER between `lobby_tick+1` and `lobby_tick+lobby_window`; published when `entrants >= min_players` |
+| `lobby_tick`, `lobby_window`, `min_players`, `entrants` | int | the table: ENTER between `lobby_tick+1` and `lobby_tick+lobby_window`; published when `entrants >= min_players`. `entrants` is the seats bought: a refused ENTER (`late`, `underpaid`, `outranked`) is not one, on a settled round or a void one alike, and keeps that verdict rather than being folded into `void` |
 | `publish_tick` | int or null | null while the riddle is sealed |
 | `commit_window`, `reveal_window` | int | commit in `publish_tick+1 .. publish_tick+commit_window`, reveal in the `reveal_window` ticks after |
 | `entry_fee` | int QU | the stake: the ENTER amount in a lobby round, the COMMIT amount otherwise |

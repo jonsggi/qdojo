@@ -423,12 +423,17 @@ def _commitment_of(observed, e: Entry) -> bytes:
     return b""
 
 
-def void(spec: RoundSpec, observed, house: str) -> Evaluation:
-    """A lobby that did not fill: refund every entrant, nothing else moves."""
-    ev = evaluate(spec, observed, house, None, None, final=False)
+def void(spec: RoundSpec, observed, house: str, belts: dict | None = None) -> Evaluation:
+    """A lobby that did not fill: refund every entrant. A seat that was
+    already refused (late, underpaid, outranked) never bought one, so it
+    keeps that verdict instead of being folded into 'void' with the seats
+    that were actually bought (docs/spec.md §5: void rounds count with the
+    seats that were bought)."""
+    ev = evaluate(spec, observed, house, None, None, final=False, belts=belts)
     ev.payouts = [Payout(e.identity, e.stake, "refund") for e in ev.entries if e.stake > 0]
     for e in ev.entries:
-        e.verdict = "void"
+        if e.verdict == "pending":
+            e.verdict = "void"
     return ev
 
 

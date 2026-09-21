@@ -90,6 +90,36 @@ def test_ceiling_floor_and_cap():
     assert fees.next_fee(rows("white", [0] * 8, fee=3000), "white", per_belt, 3, 5000, 2000)["fee"] == 2000
 
 
+def test_a_floor_above_f_star_drops_f_star_entirely_not_just_the_overshoot():
+    """docs/spec.md §5 and docs/model.md's compressed formula lines used to
+    read `fee = max(floor, min(fee', f*, cap))`, which would pin the fee at
+    the floor whenever floor > f*. The code (and docs/api.md, and the
+    docstring right above `next_fee`) instead drops f* from the bounds
+    entirely once it is below the floor, so only `cap` (if any) still bounds
+    the fee. The regression at test_ceiling_floor_and_cap's fee=4000 case
+    does not discriminate the two readings, because its clamped fee' lands
+    exactly on the floor (6000); this one starts fee' above the floor."""
+    full = rows("white", [20] * 8, fee=6000)
+    d = fees.next_fee(full, "white", fees.FeePolicy(floor=6000), 3, 5000, 2000)
+    assert d["fee"] == 9000 and d["f_star"] == 5000 and d["floor_b"] == 6000   # NOT 6000 (the spec one-liner's answer)
+    # a cap still bounds the fee even though f* does not:
+    assert fees.next_fee(full, "white", fees.FeePolicy(floor=6000, cap=8000), 3, 5000, 2000)["fee"] == 8000
+    # per-belt floor, same corner:
+    per_belt = fees.FeePolicy(floor=100, floors={"blue": 6000})
+    blue = rows("blue", [20] * 8, fee=6000)
+    assert fees.next_fee(blue, "blue", per_belt, 3, 5000, 2000)["fee"] == 9000
+
+
+def test_a_retired_seed_does_not_pin_the_fee_at_the_floor():
+    """f* = 0 once the seed is retired (seed_cap 0) or the rake is 0; that is
+    also "below the belt's floor", and the controller must keep moving
+    (docs/model.md's "Seed 0" paragraph), not freeze at the floor the way
+    the literal spec one-liner would."""
+    full = rows("white", [20] * 8, fee=4000)
+    d = fees.next_fee(full, "white", fees.FeePolicy(), 3, 0, 2000)
+    assert d["f_star"] == 0.0 and d["fee"] == 6000                           # not pinned at floor_b (100)
+
+
 def test_the_same_public_rows_give_the_same_fee_in_any_order():
     r = rows("white", [3, 9, 4, 7, 2, 8, 6, 5, 4, 3], fee=1230) + rows("blue", [1, 2], fee=700, start=50)
     want = fees.next_fee(r, "white", POLICY, 3, 5000, 2000)

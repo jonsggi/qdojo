@@ -92,7 +92,7 @@ def next_fee(rows, belt: str, policy: FeePolicy, min_players: int, seed_cap: int
         occ  = mean entrants over the last K settled or void rounds at the belt
         tgt  = min_players + headroom
         fee' = fee * (occ / tgt) ** alpha, held within fee / clamp .. fee * clamp
-        fee  = max(floor_b, min(fee', f*)), then three significant figures
+        fee  = max(floor_b, min(fee', ceiling)), then three significant figures
 
     With no history at the belt the fee is `start`, bounded the same way.
     The ceiling is the lower of f* and the operator's cap, whichever exist.

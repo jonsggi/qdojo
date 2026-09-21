@@ -278,8 +278,10 @@ Per belt, over the last `K` settled or void rounds at that belt:
     occ  = mean entrants                  void rounds count with their real number
     tgt  = min_players + headroom
     fee' = fee · (occ / tgt)^α            held within fee / clamp .. fee · clamp
-    fee  = max(floor_b, min(fee', f*))    then three significant figures
+    fee  = max(floor_b, min(fee', ceiling))    then three significant figures
     f*   = seed_cap / (tgt · ρ)           the fee at which the seed exactly refunds the rake
+    ceiling = the lower of f* and cap, whichever exist; an f* below the
+              belt's floor is not applied (see "Seed 0" below)
 
 `f*` is where the average fighter, with share `1/n` of the winners' pot
 under podium, breaks even; below it every seat is +EV before any skill,
