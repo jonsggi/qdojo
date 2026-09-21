@@ -133,11 +133,12 @@ settled today.
 
 **How the spectator page reads it.** A winner's gross win is `pots.*.payouts`
 when the document has `pots`, and `payouts[]` (the amount sent) plus its
-`bonds_held[]` entry otherwise. Consecutive winners of one pot with the same
-`commit_tick` *and* the same gross win are a dead heat (`TIED 1ST, SPLIT 2
-WAYS`); the same tick alone is not, because rounds settled before the tie
-rule ordered same-tick solvers by transaction and paid them 5:3:2. In a
-document without `pots`, a sensei whose gross win equals its stake and falls
+`bonds_held[]` entry otherwise. A dead heat is only read from a document
+that carries `pots`: there, consecutive winners of one pot with the same
+`commit_tick` *and* the same gross win share a placing (`TIED 1ST, SPLIT 2
+WAYS`). A document without `pots` never has one, because it ordered
+same-tick solvers by transaction and paid them 5:3:2 even when their gross
+win happened to match. In a document without `pots`, a sensei whose gross win equals its stake and falls
 short of its nominal share was capped (`CAPPED AT STAKE`), and an at-belt
 winner paid more than its nominal share took that surplus. Every share label
 on the page is derived this way, from the numbers, never from the weights.

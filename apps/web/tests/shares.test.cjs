@@ -88,6 +88,18 @@ test('round 72: a capped sensei on the podium, its surplus paid to the at-belt w
   assert.match(api.callout(r).sub, /^PODIUM · 1 SENSEI CAPPED AT STAKE · SURPLUS TO THE AT-BELT WINNERS/);
 });
 
+test('same-tick capped senseis are not a dead heat in a document without pots (rounds 89, 107, 108)', () => {
+  // Under the stake cap every sensei winner's gross is its own 1,000 stake, so
+  // same tick and same gross both hold for same-tick capped senseis -- but a
+  // document without `pots` never has a dead heat (#WEB-1): these settlements
+  // ordered same-tick solvers by transaction, and a same-tick solver can even
+  // be paid nothing while the podium goes to the others in tx order.
+  for (const id of [89, 107, 108]) {
+    const r = byId.get(id);
+    assert.doesNotMatch(api.winnersHTML(r, true), /TIED/, `round ${id}`);
+  }
+});
+
 test('a same tick before the tie rule is not a dead heat: the money says 5:3:2', () => {
   // Round 15's first two commits share a tick; they were ordered by transaction
   // and paid 7,500 / 4,500. The label follows the money.

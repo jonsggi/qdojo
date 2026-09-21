@@ -521,15 +521,16 @@ function settlementPots(r) {
       return { e, id, gross: own ? (own.amount || 0) : grossWin(s, id), tick: e.commit_tick, stake: e.stake || 0, sensei: !!e.sensei };
     });
     // Placings. Under podium a dead heat is consecutive winners with the same
-    // commit tick paid the same amount -- rounds before the tie rule ordered
-    // same-tick solvers by transaction and paid them 5:3:2, so the tick alone
-    // is not a tie. Under first everyone paid shares the earliest tick; under
-    // split there are no placings. A heat pools the weights of the places it
-    // spans and splits them equally, the arithmetic of round.py's _pay().
+    // commit tick paid the same amount, and only read from a document that
+    // carries `pots` -- a document without pots ordered same-tick solvers by
+    // transaction and paid them 5:3:2, so the tick alone is not a tie there.
+    // Under first everyone paid shares the earliest tick; under split there
+    // are no placings. A heat pools the weights of the places it spans and
+    // splits them equally, the arithmetic of round.py's _pay().
     const heats = [];
     for (const w of winners) {
       const last = heats[heats.length - 1];
-      if (last && (mode !== 'podium' || (last[0].tick === w.tick && last[0].gross === w.gross))) last.push(w);
+      if (last && (mode !== 'podium' || (two && last[0].tick === w.tick && last[0].gross === w.gross))) last.push(w);
       else heats.push([w]);
     }
     let place = 1, totalW = 0;
