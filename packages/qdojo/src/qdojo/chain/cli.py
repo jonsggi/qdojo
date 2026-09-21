@@ -189,6 +189,12 @@ class QubicCli:
         return self._read(["-queryassets", "ownerships", f"issuer={issuer},name={name}"],
                           parse.ownerships, f"holders of {name}")
 
+    def asset_possessors(self, issuer: str, name: str) -> list[dict]:
+        """QUtil pays possessors, not owners; `asset_holders` (ownerships)
+        stays for the `bot shares` listing."""
+        return self._read(["-queryassets", "possessions", f"issuer={issuer},name={name}"],
+                          parse.possessions, f"possessors of {name}")
+
     def indexed_tick(self) -> int:
         if self.indexer is None:
             raise ChainError("no indexer configured")

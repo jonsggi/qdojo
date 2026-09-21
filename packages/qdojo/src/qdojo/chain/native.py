@@ -195,6 +195,19 @@ class NativeChain:
         return [{"owner": r["owner"], "shares": r["shares"], "managing_contract": r["managing_contract"]}
                 for r in recs if r.get("type") == contracts.ASSET_OWNERSHIP]
 
+    def asset_possessors(self, issuer: str, name: str) -> list[dict]:
+        """[{possessor, shares, managing_contract}] -- every POSSESSION
+        record of one asset. QUtil's DistributeQuToShareholders pays
+        possessors by numberOfPossessedShares, not owners by their
+        ownership; `asset_holders` (OWNERSHIP records) stays for `bot
+        shares`, which is about who owns the asset, not who is paid."""
+        if not ids.check_identity(issuer):
+            raise ChainError(f"issuer {issuer[:12]}… is not a valid identity (checksum)")
+        req = contracts.possessions_request(issuer, name)
+        recs = self._read(lambda n: n.asset_records(req), f"possessors of {name}")
+        return [{"possessor": r["possessor"], "shares": r["shares"], "managing_contract": r["managing_contract"]}
+                for r in recs if r.get("type") == contracts.ASSET_POSSESSION]
+
     # ---------------------------------------------------------------- sends
     def send(self, dest: str, amount: int, payload: bytes = b"", input_type: int = 0) -> SendResult:
         """Sign here, write to every node we know, return what was scheduled.

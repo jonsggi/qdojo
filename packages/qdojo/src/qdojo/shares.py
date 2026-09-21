@@ -64,8 +64,19 @@ class Shares:
         return self.chain.qx_fees()
 
     def holders(self, issuer: str, name: str) -> list[Holding]:
+        """OWNERSHIP records: who owns the asset, for `bot shares`."""
         check_asset_name(name)
         return [Holding(h["owner"], h["shares"]) for h in self.chain.asset_holders(issuer, name)
+                if h["shares"] > 0]
+
+    def possessors(self, issuer: str, name: str) -> list[Holding]:
+        """POSSESSION records: who QUtil's DistributeQuToShareholders pays.
+        For plain Qx holdings that were never transferred separately, owner
+        and possessor are the same identity; they can differ once a
+        possession-only transfer happens, which is why a dividend plan
+        reads this instead of `holders`."""
+        check_asset_name(name)
+        return [Holding(h["possessor"], h["shares"]) for h in self.chain.asset_possessors(issuer, name)
                 if h["shares"] > 0]
 
     def owned(self, identity: str) -> list[dict]:
@@ -111,25 +122,44 @@ class Shares:
                                contracts.QX_ISSUE_ASSET)
 
     def plan_dividend(self, name: str, amount: int) -> dict:
+        """Mirror QUtil's DistributeQuToShareholders exactly (core
+        src/contracts/QUtil.h): fees = feePerShareholder * shareholders come
+        OUT of the invocation reward (`amount`), not on top of it;
+        amountPerShare = (amount - fees) // totalShares; if that is <= 0 the
+        contract refunds the WHOLE amount and pays nobody. `amount` is what
+        the transaction moves and what leaves the wallet if it distributes;
+        there is no separate "cost" on top of it."""
         check_asset_name(name)
-        hs = self.holders(self.identity, name)
+        hs = self.possessors(self.identity, name)          # QUtil pays possessors, not owners
         n = len(hs)
         total = sum(h.shares for h in hs)
         fee_per = self.chain.qutil_fees()["distribute_per_shareholder"]
-        per_share = amount // total if total else 0
+        fee = fee_per * n
+        per_share = (amount - fee) // total if total and amount > fee else 0
+        if per_share > 0:
+            distributed = per_share * total
+            refunded = amount - distributed - fee
+        else:
+            fee = 0                # the contract burns nothing on the refund path
+            distributed = 0
+            refunded = amount
         return {"asset": name, "holders": n, "total_shares": total, "amount": amount, "per_share": per_share,
-                "distributed": per_share * total, "remainder_refunded": amount - per_share * total,
-                "fee": fee_per * n, "cost": amount + fee_per * n,
+                "distributed": distributed, "refunded": refunded, "fee": fee,
                 "table": [{"owner": h.owner, "shares": h.shares, "gets": per_share * h.shares} for h in hs]}
 
     def pay_dividend(self, name: str, amount: int) -> SendResult:
         """QUtil DistributeQuToShareholders: the amount rides as the amount,
-        issuer and asset as the input."""
+        issuer and asset as the input. Refuses up front whenever the
+        contract itself would refund the whole amount and pay nobody --
+        that refund is real chain behaviour, not a bug, but sending into it
+        anyway would just donate `amount` round trip (minus nothing, since
+        the contract burns no fee on that path) for no distribution."""
         plan = self.plan_dividend(name, amount)
-        if plan["holders"] == 0 or plan["per_share"] == 0:
-            raise SharesError("nothing to distribute: no holders or amount below one QU per share")
-        if self.chain.balance(self.identity) < plan["cost"]:
-            raise SharesError("balance below amount plus distribution fee")
+        if plan["holders"] == 0 or plan["per_share"] <= 0:
+            raise SharesError("nothing to distribute: no holders, or amount below "
+                              "total shares plus the per-holder fee -- QUtil would refund it in full")
+        if self.chain.balance(self.identity) < amount:
+            raise SharesError("balance below the amount to distribute")
         return self.chain.send(contracts.QUTIL_IDENTITY, amount,
                                contracts.distribute_input(self.identity, name),
                                contracts.QUTIL_DISTRIBUTE_QU_TO_SHAREHOLDERS)

@@ -162,7 +162,8 @@ def test_dividend_reaches_the_node_as_a_qutil_transaction():
     with node(balances={ME_KEY: (50_000, 0)}, holders=holders) as f:
         sh = Shares(chain(f))
         plan = sh.plan_dividend("RYUBOT", 10_005)
-        assert plan["holders"] == 2 and plan["fee"] == 10 and plan["cost"] == 10_015
+        assert plan["holders"] == 2 and plan["fee"] == 10 and plan["amount"] == 10_005
+        assert plan["per_share"] == 9 and plan["distributed"] == 9_000 and plan["refunded"] == 995
         r = sh.pay_dividend("RYUBOT", 10_005)
         assert f.wait_for_received(1)
     tx = decode(f.received[0])
@@ -235,7 +236,7 @@ def test_the_rite_and_the_share_commands_need_nothing_but_python(no_binary, tmp_
         main(["bot", "--state", state, "dividend", "TESTBOT", "10000"])
         out, err = capsys.readouterr()
         plan = json.loads(out)
-        assert plan["holders"] == 2 and plan["per_share"] == 10 and plan["fee"] == 10
+        assert plan["holders"] == 2 and plan["per_share"] == 9 and plan["fee"] == 10
         assert "PLAN ONLY" in err and f.received == []
 
         main(["bot", "--state", state, "nodes"])

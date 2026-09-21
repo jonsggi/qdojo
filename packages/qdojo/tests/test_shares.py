@@ -95,6 +95,11 @@ class FakeShareChain:
     def asset_holders(self, issuer, name):
         return [dict(h) for h in self.holder_list]
 
+    def asset_possessors(self, issuer, name):
+        """Plain holdings: possessor == owner, same shares."""
+        return [{"possessor": h["owner"], "shares": h["shares"],
+                "managing_contract": h.get("managing_contract", 1)} for h in self.holder_list]
+
     def balance(self, identity):
         return self.bal
 
@@ -168,11 +173,16 @@ def test_issue_already_issued_wins_even_if_only_one_of_several_nodes_says_so():
 
 
 def test_dividend_plan_is_pro_rata_with_fee_per_holder():
+    """Mirrors QUtil's DistributeQuToShareholders: the fee comes OUT of
+    `amount`, not on top of it. 10_005 over 700+300 shares at fee 5/holder:
+    fee = 10, per_share = (10_005 - 10) // 1000 = 9, distributed = 9000,
+    refunded = 10_005 - 9000 - 10 = 995."""
     sh = S.Shares(FakeShareChain(holders=HOLDERS))
     plan = sh.plan_dividend("RYUBOT", 10_005)
-    assert plan["holders"] == 2 and plan["total_shares"] == 1000 and plan["per_share"] == 10
-    assert plan["distributed"] == 10_000 and plan["remainder_refunded"] == 5 and plan["fee"] == 10
-    assert [(t["owner"][0], t["gets"]) for t in plan["table"]] == [("A", 7000), ("C", 3000)]
+    assert plan["holders"] == 2 and plan["total_shares"] == 1000 and plan["per_share"] == 9
+    assert plan["distributed"] == 9_000 and plan["refunded"] == 995 and plan["fee"] == 10
+    assert plan["amount"] == 10_005
+    assert [(t["owner"][0], t["gets"]) for t in plan["table"]] == [("A", 6300), ("C", 2700)]
     res = sh.pay_dividend("RYUBOT", 10_005)
     assert res.scheduled_tick == 500
     assert sh.chain.sends == [(contracts.QUTIL_IDENTITY, 10_005,
@@ -180,6 +190,21 @@ def test_dividend_plan_is_pro_rata_with_fee_per_holder():
                                contracts.QUTIL_DISTRIBUTE_QU_TO_SHAREHOLDERS)]
     with pytest.raises(S.SharesError):
         sh.pay_dividend("RYUBOT", 999)       # below one QU per share
+
+
+def test_dividend_plan_matches_the_refund_band_the_contract_takes():
+    """Between `total_shares` and `total_shares + fee` the plan's own
+    arithmetic gives per_share <= 0: the contract refunds the whole amount
+    and pays nobody, and pay_dividend must refuse before sending into that,
+    not just when per_share prints exactly 0."""
+    sh = S.Shares(FakeShareChain(holders=HOLDERS))     # total 1000, fee 5/holder * 2 = 10
+    for amount in (1000, 1005, 1009):
+        plan = sh.plan_dividend("RYUBOT", amount)
+        assert plan["per_share"] <= 0 and plan["distributed"] == 0 and plan["fee"] == 0
+        assert plan["refunded"] == amount
+        with pytest.raises(S.SharesError):
+            sh.pay_dividend("RYUBOT", amount)
+    assert sh.chain.sends == []
 
 
 def test_dividend_fee_is_read_live_and_an_unknown_fee_stops_the_plan():

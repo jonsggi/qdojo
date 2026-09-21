@@ -156,6 +156,23 @@ def test_read_requests_match_the_reference_byte_for_byte():
     assert len(C.ownerships_request(ISSUER, "RYUBOT")) == 112
 
 
+def test_possessions_request_is_the_ownerships_request_with_the_possessor_only_flags():
+    """No qubic-cli byte trace for `-queryassets possessions` was captured
+    here (unlike the other requests above), so this pins the request's
+    SHAPE against `ownerships_request` instead of a golden hex string: same
+    112 bytes, same kind field position, same issuer/name/padding, only the
+    request kind and the any-* flag bits differ -- possessor and
+    possession-managing-contract, not owner and ownership-managing-contract."""
+    own = C.ownerships_request(ISSUER, "RYUBOT")
+    poss = C.possessions_request(ISSUER, "RYUBOT")
+    assert len(poss) == 112
+    kind, flags, oc, pc = struct.unpack("<HHHH", poss[:8])
+    assert kind == C.ASSET_REQ_POSSESSIONS and oc == 0 and pc == 0
+    assert flags == C._ANY_POSSESSOR | C._ANY_POSSESSION_CONTRACT
+    assert flags & (C._ANY_OWNER | C._ANY_OWNERSHIP_CONTRACT) == 0
+    assert poss[8:] == own[8:]                      # issuer key, name, and the 64 zero bytes match
+
+
 def test_fee_outputs_decode_and_short_answers_are_refused():
     assert C.parse_qx_fees(struct.pack("<III", 1_000_000_000, 100, 3_000_000)) == \
         {"issue": 1_000_000_000, "transfer": 100, "trade_per_1e9": 3_000_000}
