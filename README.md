@@ -136,9 +136,11 @@ reaches for a POSIX-only import, call or path outside a platform guard.
 What that leaves: the launcher has not run on a real Windows nor under
 Windows PowerShell 5.1; the `msvcrt.locking` half of the slot lock in
 `examples/solvers/pi.py` and `evo.py` has only been checked for making the
-right call; the console's VT switch, the Store's `python.exe` alias and
-`uv sync` on Windows are handled from their documentation. Say what breaks
-in issue #21.
+right call; `pi` itself is started as node plus its package entry file on
+Windows (npm's `.cmd` shim is never run through `cmd.exe`), also only
+exercised with a fake shim; the console's VT switch, the Store's
+`python.exe` alias probe and `uv sync` on Windows are handled from their
+documentation. Say what breaks in issue #21.
 
 ## Quick start (house)
 

@@ -34,6 +34,7 @@ import os
 import re
 import shlex
 import shutil
+import subprocess
 import sys
 
 
@@ -88,13 +89,38 @@ def looks_like_python(token: str) -> bool:
     return bool(_PYTHON_RE.match(base))
 
 
+_alias_probed: dict[str, bool] = {}
+
+
+def _windows_apps_alias_runs(found: str) -> bool:
+    """Whether a `python.exe` found under `%LOCALAPPDATA%\\Microsoft\\
+    WindowsApps` is a real Python rather than the App Installer stub.
+
+    A Python installed FROM the Store is reached through exactly that same
+    alias directory (Windows' own docs: typing `python` there "will be
+    available from any Command Prompt"), so the directory alone cannot tell
+    the two apart. The stub, run with an argument, prints "Python was not
+    found" and exits non-zero instead of opening the Store window; a real
+    one runs the argument like any other Python. Probed once and cached per
+    resolved path, since `resolve_command` re-checks this every round."""
+    if found not in _alias_probed:
+        try:
+            p = subprocess.run([found, "-c", "pass"], capture_output=True, timeout=15)
+            _alias_probed[found] = p.returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            _alias_probed[found] = False
+    return _alias_probed[found]
+
+
 def runnable(token: str) -> bool:
     """Whether `token` names a program this machine can start.
 
     A token with a directory in it must exist there; a bare one must be on
     PATH. On Windows the Store plants a `python.exe` under
-    `%LOCALAPPDATA%\\Microsoft\\WindowsApps` that is not a Python: run it
-    and a shop window opens. That one counts as not on PATH.
+    `%LOCALAPPDATA%\\Microsoft\\WindowsApps`; that alias is a real Store
+    Python for some users and the App Installer's shop-window stub for
+    others, at the same path, so it is settled by running it once (see
+    `_windows_apps_alias_runs`) rather than guessed from the path.
     """
     token = str(token)
     if os.path.dirname(token):
@@ -103,7 +129,7 @@ def runnable(token: str) -> bool:
     if not found:
         return False
     if is_windows() and "\\microsoft\\windowsapps\\" in found.lower().replace("/", "\\"):
-        return False
+        return _windows_apps_alias_runs(found)
     return True
 
 
@@ -124,10 +150,25 @@ def resolve_command(argv) -> list[str]:
         return argv
     head = argv[0]
     if looks_like_python(head) and not runnable(head):
+        _note_swap(head, sys.executable)
         return [sys.executable] + argv[1:]
     if is_windows() and head.lower().endswith(".py"):
         return [sys.executable] + argv
     return argv
+
+
+_noted_swaps: set[str] = set()
+
+
+def _note_swap(head: str, to: str) -> None:
+    """Say once, on stderr, that a solver/strategy line's leading interpreter
+    was mapped to the one qdojo itself runs on -- so the swap is never
+    silent, and a fighter whose recorded interpreter has moved or vanished
+    has something to go on besides an unrelated import error."""
+    if head in _noted_swaps:
+        return
+    _noted_swaps.add(head)
+    print(f"qdojo: {head} is not runnable here; running under {to}", file=sys.stderr)
 
 
 # ------------------------------------------------------- the command line
