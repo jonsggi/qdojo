@@ -641,7 +641,20 @@ class House:
             return plan | {"applied": False}
         r = self.chain.send(self.identity, 0, payload.encode(m), payload.INPUT_TYPE)
         plan |= {"tx": r.tx_id, "scheduled_tick": r.scheduled_tick, "applied": True}
-        if not self.chain.confirm(r.tx_id, r.scheduled_tick):
+        # The tick is 20 ahead when the send returns, so the first answer is
+        # usually "not answerable yet". That is the node being honest, not the
+        # signature failing: wait for the tick the way settlement waits for a
+        # payout, and only a definite "not included" is a failure.
+        for attempt in range(60):
+            try:
+                ok = self.chain.confirm(r.tx_id, r.scheduled_tick)
+                break
+            except Unknown:
+                time.sleep(2)
+        else:
+            raise HouseError(f"the signature tx {r.tx_id[:8]}… is still undecidable at tick {r.scheduled_tick}; "
+                             f"check it on an explorer before signing again")
+        if not ok:
             raise HouseError(f"the signature tx {r.tx_id[:8]}… was not included in tick {r.scheduled_tick}; try again")
         return plan | {"tick": r.scheduled_tick}
 
