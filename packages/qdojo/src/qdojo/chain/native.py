@@ -104,6 +104,24 @@ class NativeChain:
                 continue
         raise Unknown(f"no usable {what} from any of {len(self.nodes)} nodes")
 
+    def _read_each(self, call, what: str) -> list[tuple[str, object]]:
+        """Run `call(node)` against EVERY node, not just the first that
+        answers. `_read`'s first-usable-answer is right for a value you can
+        check (a fee, a balance); it is wrong for an ABSENCE, where a single
+        lagging or freshly-started node saying "nothing here" must not be
+        the whole story. Returns [(ip, answer)] for the nodes that answered
+        usably; raises Unknown only when none did."""
+        out = []
+        for ip in self.nodes:
+            try:
+                with Node(ip, self.node_port, self.timeout) as n:
+                    out.append((ip, call(n)))
+            except (NodeError, ValueError):
+                continue
+        if not out:
+            raise Unknown(f"no usable {what} from any of {len(self.nodes)} nodes")
+        return out
+
     def _signing(self) -> tuple[bytes, bytes]:
         if self._subseed is None or self._public_key is None:
             raise ChainError("no seed: this chain is read-only")
@@ -158,6 +176,15 @@ class NativeChain:
             raise ChainError(f"{identity[:12]}… is not a valid identity (checksum)")
         pub = ids.public_key_from_identity(identity)
         return self._read(lambda n: n.owned_assets(pub), f"assets of {identity[:8]}…")
+
+    def owned_assets_each(self, identity: str) -> list[tuple[str, list[dict]]]:
+        """[(ip, [{issuer, name, shares, managing_contract}])] -- one entry
+        per node that answered, so an absence can be checked against more
+        than one node's opinion (see `_read_each`)."""
+        if not ids.check_identity(identity):
+            raise ChainError(f"{identity[:12]}… is not a valid identity (checksum)")
+        pub = ids.public_key_from_identity(identity)
+        return self._read_each(lambda n: n.owned_assets(pub), f"assets of {identity[:8]}…")
 
     def asset_holders(self, issuer: str, name: str) -> list[dict]:
         """[{owner, shares, managing_contract}] -- every ownership record of one asset."""

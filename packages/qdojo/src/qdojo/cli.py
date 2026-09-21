@@ -33,7 +33,18 @@ def _chain(a, signing: bool):
             sys.exit("a node is required to sign: --node IP[:PORT]")
         return idx
     ip, _, port = a.node.partition(":")
-    fallbacks = tuple(x for x in (os.environ.get("QDOJO_FALLBACK_NODES", "") or "").split(",") if x)
+    env_fallbacks = os.environ.get("QDOJO_FALLBACK_NODES")
+    if env_fallbacks is not None:
+        fallbacks = tuple(x for x in env_fallbacks.split(",") if x)
+    elif getattr(a, "state", None):
+        # No explicit fallback list, but a bot state dir with a node cache:
+        # use it instead of asking exactly one node. The cache already holds
+        # several tick-agreeing nodes from `qdojo nodes`, so an absence
+        # check (e.g. "is this asset already issued?") gets a genuine second
+        # opinion by default, not just in a hand-configured deployment.
+        fallbacks = tuple(n["ip"] for n in nodes.load(a.state) if n["ip"] != ip)
+    else:
+        fallbacks = ()
     if getattr(a, "chain", "native") == "cli":
         return QubicCli(a.cli, ip, int(port or 21841), identity=a.identity or "",
                         conf=a.conf if signing else None,
@@ -692,7 +703,8 @@ def cmd_bot_issue_shares(a):
     plan = sh.plan_issue(a.name, a.count)
     print(json.dumps(plan, indent=2))
     if not a.apply:
-        print("\nPLAN ONLY. The issuance fee above goes to Qx's shareholders and is not refundable. Re-run with --apply.", file=sys.stderr)
+        print(f"\nabsence of {a.name} confirmed by {plan['checked_nodes']} node(s).", file=sys.stderr)
+        print("PLAN ONLY. The issuance fee above goes to Qx's shareholders and is not refundable. Re-run with --apply.", file=sys.stderr)
         return
     res = sh.issue(a.name, a.count)
     print(f"issue {res.tx_id} scheduled for tick {res.scheduled_tick}; confirming…")

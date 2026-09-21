@@ -73,14 +73,25 @@ class Shares:
                 for a in self.chain.owned_assets(identity)]
 
     def plan_issue(self, name: str, count: int) -> dict:
+        """`already_issued` is decided over EVERY node this chain knows, not
+        just the first that answers: Qx.IssueAsset books its (non-refundable)
+        fee before it finds out the issuance is a duplicate, so a single
+        node's empty answer -- one that never loaded its universe, is
+        lagging, or simply has a different view -- must not be trusted alone
+        to say "not issued yet". `checked_nodes` is how many nodes answered
+        at all; the caller decides what to do with too few."""
         check_asset_name(name)
         if count <= 0:
             raise SharesError("share count must be positive")
         fees = self.fees()
         bal = self.chain.balance(self.identity)
-        already = [a for a in self.owned(self.identity) if a.get("name") == name and a.get("issuer") == self.identity]
+        answers = self.chain.owned_assets_each(self.identity)
+        checked_nodes = len(answers)
+        already = any(a.get("name") == name and a.get("issuer") == self.identity
+                     for _ip, owned in answers for a in owned)
         return {"issuer": self.identity, "asset": name, "shares": count, "issue_fee": fees["issue"],
-                "balance": bal, "affordable": bal >= fees["issue"] + 1, "already_issued": bool(already)}
+                "balance": bal, "affordable": bal >= fees["issue"] + 1, "already_issued": bool(already),
+                "checked_nodes": checked_nodes}
 
     def issue(self, name: str, count: int) -> SendResult:
         """Qx IssueAsset: the issuance fee rides as the amount, the asset as
@@ -88,6 +99,11 @@ class Shares:
         plan = self.plan_issue(name, count)
         if plan["already_issued"]:
             raise SharesError(f"{self.identity[:8]}… already issued {name}")
+        if plan["checked_nodes"] < 2:
+            raise SharesError(
+                f"{name}'s absence was confirmed by only {plan['checked_nodes']} node; "
+                "a duplicate issuance burns the fee and issues nothing -- give a second "
+                "node via QDOJO_FALLBACK_NODES or refresh the node cache (`qdojo nodes`)")
         if not plan["affordable"]:
             raise SharesError(f"balance {plan['balance']} below the issuance fee {plan['issue_fee']}")
         return self.chain.send(contracts.QX_IDENTITY, plan["issue_fee"],
