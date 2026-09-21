@@ -327,16 +327,36 @@ def summary(state_dir: str, last: int = 20) -> dict:
 
 # --------------------------------------------------------------------- log
 
+class _PrivateRotatingFileHandler(logging.handlers.RotatingFileHandler):
+    """Created 0600 like the other diary files (heartbeat.json, metrics.jsonl,
+    rounds.json). `_open` is what FileHandler's constructor AND doRollover
+    both call, so the live file and every rotated-in file get the mode; the
+    chmod also tightens a bot.log an earlier, unfixed run already left at
+    whatever the umask gave it."""
+    def _open(self):
+        fd = os.open(self.baseFilename, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        try:
+            os.chmod(self.baseFilename, 0o600)
+        except OSError:
+            pass
+        return os.fdopen(fd, self.mode, encoding=self.encoding, errors=self.errors)
+
+
 def open_log(state_dir: str) -> logging.Logger:
     """A plain-text log in the state dir, rotated at LOG_BYTES. The logger
-    does not propagate, so nothing is printed twice."""
+    does not propagate, so nothing is printed twice.
+
+    bot.log carries every action line, including a failing solver's stderr
+    tail (see bot.py / solver.py) -- the same text metrics.jsonl and
+    heartbeat.json store at 0600. It is created 0600 here too, matching the
+    rest of the diary."""
     os.makedirs(state_dir, mode=0o700, exist_ok=True)
     log = logging.getLogger(f"qdojo.bot.{os.path.abspath(state_dir)}")
     log.setLevel(logging.INFO)
     log.propagate = False
     if not log.handlers:
-        h = logging.handlers.RotatingFileHandler(os.path.join(state_dir, LOG), maxBytes=LOG_BYTES,
-                                                 backupCount=LOG_KEEP, encoding="utf-8")
+        h = _PrivateRotatingFileHandler(os.path.join(state_dir, LOG), maxBytes=LOG_BYTES,
+                                        backupCount=LOG_KEEP, encoding="utf-8")
         h.setFormatter(logging.Formatter("%(asctime)s %(message)s", "%Y-%m-%d %H:%M:%S"))
         log.addHandler(h)
     return log

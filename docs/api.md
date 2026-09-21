@@ -600,8 +600,9 @@ rounds — is one function, `cockpit.summary()`, and the page shows the same
 numbers.
 
 **`bot.log`** is what `bot run` printed, with a timestamp, rotated at 1 MB
-with three kept. It carries a failing solver's stderr tail. `log -n N` is
-its tail.
+with three kept. It carries a failing solver's stderr tail, and like
+`metrics.jsonl` and `heartbeat.json` it is created (and rolled over) at mode
+0600. `log -n N` is its tail.
 
 ## Your cockpit
 
