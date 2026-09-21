@@ -111,6 +111,18 @@ def ownerships_request(issuer: str, name: str) -> bytes:
         + public_key_from_identity(issuer) + asset_name_bytes(name) + bytes(64)
 
 
+def possessions_request(issuer: str, name: str) -> bytes:
+    """RequestAssets for every POSSESSION record of one asset, the way
+    `-queryassets possessions issuer=…,name=…` asks it: any possessor, any
+    managing contract. QUtil's DistributeQuToShareholders pays possessors by
+    numberOfPossessedShares, not owners, so this is what a dividend plan
+    must count -- `ownerships_request` stays for `bot shares`, which shows
+    who owns the asset."""
+    flags = _ANY_POSSESSOR | _ANY_POSSESSION_CONTRACT
+    return struct.pack("<HHHH", ASSET_REQ_POSSESSIONS, flags, 0, 0) \
+        + public_key_from_identity(issuer) + asset_name_bytes(name) + bytes(64)
+
+
 # ------------------------------------------------------------------ decoding
 
 def parse_qx_fees(out: bytes) -> dict:

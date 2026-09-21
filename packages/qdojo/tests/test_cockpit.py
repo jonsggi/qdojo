@@ -9,7 +9,7 @@ import time
 
 import pytest
 
-from qdojo import cockpit, cli
+from qdojo import cockpit, cli, portable
 from qdojo.bot import Bot
 from qdojo.chain import FakeChain
 from qdojo.cli import main
@@ -203,6 +203,24 @@ def test_log_rotates_and_tails(tmp_path, monkeypatch):
     tail = cockpit.log_tail(state, 3)
     assert len(tail) == 3 and tail[-1].endswith("line 199 " + "x" * 40)
     assert cockpit.log_tail(str(tmp_path / "nowhere")) == []
+    if portable.private_modes_enforced():
+        assert oct(os.stat(os.path.join(state, cockpit.LOG)).st_mode & 0o777) == "0o600"
+        assert oct(os.stat(os.path.join(state, f"{cockpit.LOG}.1")).st_mode & 0o777) == "0o600"
+
+
+def test_log_is_private_even_when_umask_would_leave_it_open(tmp_path):
+    """bot.log is one of the diary files: 0600 like metrics.jsonl and
+    heartbeat.json, whatever the process umask says."""
+    if not portable.private_modes_enforced():
+        pytest.skip("file modes are not enforced on this platform")
+    state = str(tmp_path / "s")
+    old_umask = os.umask(0o022)
+    try:
+        log = cockpit.open_log(state)
+        log.info("hello")
+    finally:
+        os.umask(old_umask)
+    assert oct(os.stat(os.path.join(state, cockpit.LOG)).st_mode & 0o777) == "0o600"
 
 
 # ------------------------------------------------------- the bot, end to end

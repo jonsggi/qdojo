@@ -98,6 +98,35 @@ def ownerships(text: str) -> list[dict] | None:
     return out if seen else None
 
 
+def possessions(text: str) -> list[dict] | None:
+    """-queryassets possessions -> [{possessor, shares, managing_contract}],
+    the possession twin of `ownerships`. QUtil pays possessors, not owners,
+    so a dividend plan reads this instead."""
+    out, cur = [], {}
+
+    def flush():
+        if cur.get("possessor") and cur.get("shares", 0) > 0:
+            out.append({"possessor": cur["possessor"], "shares": cur["shares"],
+                        "managing_contract": cur.get("managing_contract", 0)})
+
+    seen = False
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("Share possession"):
+            flush()
+            cur, seen = {}, True
+        elif s.startswith("possessor = "):
+            cur["possessor"] = s.split("= ", 1)[1].strip()
+        elif s.startswith("number of shares = "):
+            cur["shares"] = _int(s.split("= ", 1)[1]) or 0
+        elif s.startswith("managing contract = "):
+            cur["managing_contract"] = _int(s.split("= ", 1)[1]) or 0
+        elif s.startswith("No assets match your query"):
+            seen = True
+    flush()
+    return out if seen else None
+
+
 def owned_assets(text: str) -> list[dict] | None:
     """-getasset <identity> -> [{issuer, name, shares}] from the OWNERSHIP
     blocks, or None when the OWNERSHIP header never appeared."""

@@ -18,7 +18,9 @@ import threading
 from qdojo.qubic.contracts import (
     ASSET_ISSUANCE,
     ASSET_OWNERSHIP,
+    ASSET_POSSESSION,
     ASSET_REQ_OWNERSHIPS,
+    ASSET_REQ_POSSESSIONS,
     asset_name_bytes,
 )
 from qdojo.qubic.node import (
@@ -65,6 +67,11 @@ def ownership_record(owner_key: bytes, shares: int, managing_contract: int = 1, 
     return struct.pack("<32sBxHIq", owner_key, ASSET_OWNERSHIP, managing_contract, index, shares)
 
 
+def possession_record(possessor_key: bytes, shares: int, managing_contract: int = 1, index: int = 0) -> bytes:
+    """A 48-byte AssetRecord of type POSSESSION."""
+    return struct.pack("<32sBxHIq", possessor_key, ASSET_POSSESSION, managing_contract, index, shares)
+
+
 def owned_asset_body(owner_key: bytes, issuer_key: bytes, name: str, shares: int, tick: int) -> bytes:
     """A full RespondOwnedAssets: ownership, issuance, tick, universe index,
     and the 24 sibling hashes a real node appends (872 bytes)."""
@@ -83,7 +90,7 @@ class FakeNode:
     def __init__(self, host="127.0.0.1", port=0, tick=1000, epoch=42, initial_tick=900, balances=None,
                  tick_txs=None, peers=("9.9.9.9", "8.8.8.8"), announce_peers=True,
                  noise_before_answer=0, bad_size=False, hang_up=False, silent=False,
-                 lie_about=None, contract_outputs=None, owned=None, holders=None):
+                 lie_about=None, contract_outputs=None, owned=None, holders=None, possessors=None):
         self.host, self.want_port = host, port
         self.ip, self.port = host, port   # known before start when a port was given
         self.tick, self.epoch, self.initial_tick = tick, epoch, initial_tick
@@ -94,6 +101,13 @@ class FakeNode:
         self.contract_outputs = dict(contract_outputs or {})
         self.owned = dict(owned or {})                # owner key -> [(issuer key, name, shares)]
         self.holders = dict(holders or {})            # (issuer key, name) -> [(owner key, shares)]
+        # (issuer key, name) -> [(possessor key, shares)]; None (the default)
+        # means "same as `holders`, read live" -- owner == possessor is the
+        # common case: plain Qx holdings that were never transferred
+        # separately. A test that mutates `.holders` after construction
+        # (to model a holder set discovered later) sees that mutation here
+        # too, unless `possessors=` was given explicitly.
+        self.possessors = dict(possessors) if possessors is not None else None
         self.contract_calls: list[tuple[int, int, bytes]] = []   # (index, function, input) asked
         self.peers, self.announce_peers = list(peers), announce_peers
         self.noise_before_answer = noise_before_answer
@@ -223,6 +237,11 @@ class FakeNode:
             if kind == ASSET_REQ_OWNERSHIPS:
                 for i, (owner, shares) in enumerate(self.holders.get((issuer, name), [])):
                     sock.sendall(frame(RESPOND_ASSETS, ownership_record(owner, shares, index=i)
+                                       + struct.pack("<II", self.tick, i)))
+            elif kind == ASSET_REQ_POSSESSIONS:
+                table = self.holders if self.possessors is None else self.possessors
+                for i, (possessor, shares) in enumerate(table.get((issuer, name), [])):
+                    sock.sendall(frame(RESPOND_ASSETS, possession_record(possessor, shares, index=i)
                                        + struct.pack("<II", self.tick, i)))
             sock.sendall(frame(END_RESPOND))
 

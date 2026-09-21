@@ -336,6 +336,16 @@ qdojo bot dividend ASSET AMOUNT [--apply]           distribute QU to your shareh
 Every command that moves money prints a plan and does nothing without
 `--apply`. The seed lives in a 0600 conf and is never on argv.
 
+`bot dividend`'s AMOUNT is what the transaction moves, not what it costs on
+top: QUtil takes its per-holder fee OUT of AMOUNT (per_share = (amount -
+holders*fee) // total_shares) and refunds the whole amount, paying nobody,
+if that comes out at zero or less. The plan prints `per_share`,
+`distributed`, `fee` and `refunded` against that arithmetic, and refuses
+before sending whenever the contract itself would refund. `house
+distribute-shareholders` never books its pool as paid on the send receipt;
+a distribution in flight is a pending record, settled by confirmation on
+the next run.
+
 `--ephemeral-conf PATH`, on `bot run` and `house spar`, is for a throwaway
 identity: the run signs with that conf and shreds it when it exits, on every
 exit path including ctrl-c and SIGTERM. Only the conf named by the flag is
@@ -609,8 +619,9 @@ rounds — is one function, `cockpit.summary()`, and the page shows the same
 numbers.
 
 **`bot.log`** is what `bot run` printed, with a timestamp, rotated at 1 MB
-with three kept. It carries a failing solver's stderr tail. `log -n N` is
-its tail.
+with three kept. It carries a failing solver's stderr tail, and like
+`metrics.jsonl` and `heartbeat.json` it is created (and rolled over) at mode
+0600. `log -n N` is its tail.
 
 ## Your cockpit
 

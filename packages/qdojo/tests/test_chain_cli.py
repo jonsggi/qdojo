@@ -172,7 +172,8 @@ def test_share_reads_and_a_contract_send_through_the_binary(tmp_path):
             open({str(log)!r}, "w").write(" ".join(a))
             print("Transaction has been sent!\\nTxHash: {TX}\\nTick: 520")
     """)
-    c = QubicCli(cli, "1.2.3.4", identity=ID, conf=conf(tmp_path), schedule_offset=20)
+    c = QubicCli(cli, "1.2.3.4", identity=ID, conf=conf(tmp_path), schedule_offset=20,
+                fallback_nodes=("5.6.7.8",))    # issue() needs a second node's absence check
     assert c.qx_fees()["issue"] == 1_000_000_000 and c.qutil_fees() == {"distribute_per_shareholder": 5}
     assert c.owned_assets(ID) == [{"issuer": ID, "name": "KEN", "shares": 7}]
     assert c.asset_holders(ID, "KEN") == [{"owner": ID, "shares": 7, "managing_contract": 1}]

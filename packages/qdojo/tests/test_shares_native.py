@@ -7,6 +7,7 @@ proves the bot commands never go looking for the binary: PATH is empty,
 QUBIC_CLI is unset, and `onboard.find_cli` is replaced by something that
 fails the test if called.
 """
+import contextlib
 import json
 import os
 import struct
@@ -20,7 +21,7 @@ from qdojo.qubic import contracts, ids
 from qdojo.qubic.tx import SignedTransaction, Transaction
 from qdojo.shares import Shares, SharesError
 
-from fake_node import FakeNode
+from fake_node import FakeNode, cluster
 
 SEED = "q" * 55
 ME = ids.identity_from_seed(SEED)
@@ -46,6 +47,20 @@ def node(**kw):
 
 def chain(f, seed=SEED):
     return NativeChain(f.ip, f.port, seed=seed, timeout=2.0, schedule_offset=20)
+
+
+def two_nodes(**kw):
+    """Two fake nodes on the same port (see fake_node.cluster), so a chain
+    built against them gets a genuine second opinion for an absence check."""
+    kw.setdefault("tick", 1000)
+    kw.setdefault("initial_tick", 900)
+    kw.setdefault("contract_outputs", {(1, 1): QX_FEES, (4, 7): QUTIL_FEES})
+    return cluster(2, **kw)
+
+
+def chain2(primary, fallback, seed=SEED):
+    return NativeChain(primary.ip, primary.port, seed=seed, timeout=2.0, schedule_offset=20,
+                       fallback_nodes=(fallback.ip,))
 
 
 # ------------------------------------------------------------------- reads
@@ -89,13 +104,15 @@ def test_a_bad_identity_is_refused_before_any_node_is_asked():
 # ------------------------------------------------------------------- sends
 
 def test_issue_reaches_the_node_as_a_qx_transaction():
-    with node(balances={ME_KEY: (2_000_000_000, 0)}) as f:
-        sh = Shares(chain(f))
+    a, b = two_nodes(balances={ME_KEY: (2_000_000_000, 0)})
+    with a, b:
+        sh = Shares(chain2(a, b))
         plan = sh.plan_issue("RYUBOT", 1000)
         assert plan["affordable"] and not plan["already_issued"] and plan["issue_fee"] == 1_000_000_000
+        assert plan["checked_nodes"] == 2
         r = sh.issue("RYUBOT", 1000)
-        assert f.wait_for_received(1)
-    tx = decode(f.received[0])
+        assert a.wait_for_received(1)
+    tx = decode(a.received[0])
     assert tx["src"] == ME_KEY and tx["dst"] == contracts.contract_public_key(contracts.QX_CONTRACT_INDEX)
     assert tx["amount"] == 1_000_000_000 and tx["tick"] == 1020 == r.scheduled_tick
     assert tx["input_type"] == contracts.QX_ISSUE_ASSET
@@ -106,10 +123,37 @@ def test_issue_reaches_the_node_as_a_qx_transaction():
 
 
 def test_issue_is_refused_when_the_node_says_it_is_already_issued():
-    with node(balances={ME_KEY: (2_000_000_000, 0)}, owned={ME_KEY: [(ME_KEY, "RYUBOT", 1)]}) as f:
+    a, b = two_nodes(balances={ME_KEY: (2_000_000_000, 0)}, owned={ME_KEY: [(ME_KEY, "RYUBOT", 1)]})
+    with a, b:
         with pytest.raises(SharesError, match="already issued"):
-            Shares(chain(f)).issue("RYUBOT", 1000)
-    assert f.received == []
+            Shares(chain2(a, b)).issue("RYUBOT", 1000)
+    assert a.received == [] and b.received == []
+
+
+def test_issue_is_refused_when_only_one_node_confirms_the_absence():
+    """A single node with an empty (or lagging, or fresh) universe must not
+    be enough on its own to say "not issued yet": Qx books the issuance fee
+    before finding out it is a duplicate, so a wrong "not issued" burns it
+    for nothing."""
+    with node(balances={ME_KEY: (2_000_000_000, 0)}) as f:
+        sh = Shares(chain(f))
+        plan = sh.plan_issue("RYUBOT", 1000)
+        assert plan["checked_nodes"] == 1 and plan["already_issued"] is False
+        with pytest.raises(SharesError, match="only 1 node"):
+            sh.issue("RYUBOT", 1000)
+        assert f.received == []
+
+
+def test_issue_already_issued_wins_even_when_the_primary_has_an_empty_universe():
+    """Order must not decide the outcome: an up-to-date node saying "issued"
+    must not be outvoted by an empty-universe or lagging primary that is
+    asked first."""
+    a, b = two_nodes(balances={ME_KEY: (2_000_000_000, 0)})
+    b.owned[ME_KEY] = [(ME_KEY, "RYUBOT", 700)]     # only the fallback knows
+    with a, b:
+        with pytest.raises(SharesError, match="already issued"):
+            Shares(chain2(a, b)).issue("RYUBOT", 1000)
+    assert a.received == [] and b.received == []
 
 
 def test_dividend_reaches_the_node_as_a_qutil_transaction():
@@ -118,7 +162,8 @@ def test_dividend_reaches_the_node_as_a_qutil_transaction():
     with node(balances={ME_KEY: (50_000, 0)}, holders=holders) as f:
         sh = Shares(chain(f))
         plan = sh.plan_dividend("RYUBOT", 10_005)
-        assert plan["holders"] == 2 and plan["fee"] == 10 and plan["cost"] == 10_015
+        assert plan["holders"] == 2 and plan["fee"] == 10 and plan["amount"] == 10_005
+        assert plan["per_share"] == 9 and plan["distributed"] == 9_000 and plan["refunded"] == 995
         r = sh.pay_dividend("RYUBOT", 10_005)
         assert f.wait_for_received(1)
     tx = decode(f.received[0])
@@ -191,7 +236,7 @@ def test_the_rite_and_the_share_commands_need_nothing_but_python(no_binary, tmp_
         main(["bot", "--state", state, "dividend", "TESTBOT", "10000"])
         out, err = capsys.readouterr()
         plan = json.loads(out)
-        assert plan["holders"] == 2 and plan["per_share"] == 10 and plan["fee"] == 10
+        assert plan["holders"] == 2 and plan["per_share"] == 9 and plan["fee"] == 10
         assert "PLAN ONLY" in err and f.received == []
 
         main(["bot", "--state", state, "nodes"])

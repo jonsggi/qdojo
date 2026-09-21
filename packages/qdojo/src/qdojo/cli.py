@@ -33,7 +33,18 @@ def _chain(a, signing: bool):
             sys.exit("a node is required to sign: --node IP[:PORT]")
         return idx
     ip, _, port = a.node.partition(":")
-    fallbacks = tuple(x for x in (os.environ.get("QDOJO_FALLBACK_NODES", "") or "").split(",") if x)
+    env_fallbacks = os.environ.get("QDOJO_FALLBACK_NODES")
+    if env_fallbacks is not None:
+        fallbacks = tuple(x for x in env_fallbacks.split(",") if x)
+    elif getattr(a, "state", None):
+        # No explicit fallback list, but a bot state dir with a node cache:
+        # use it instead of asking exactly one node. The cache already holds
+        # several tick-agreeing nodes from `qdojo nodes`, so an absence
+        # check (e.g. "is this asset already issued?") gets a genuine second
+        # opinion by default, not just in a hand-configured deployment.
+        fallbacks = tuple(n["ip"] for n in nodes.load(a.state) if n["ip"] != ip)
+    else:
+        fallbacks = ()
     if getattr(a, "chain", "native") == "cli":
         return QubicCli(a.cli, ip, int(port or 21841), identity=a.identity or "",
                         conf=a.conf if signing else None,
@@ -219,10 +230,41 @@ def cmd_house_metrics(a):
 
 
 def cmd_house_distribute(a):
-    """Pay the accrued shareholder rake pool to the house asset's holders via QUtil."""
+    """Pay the accrued shareholder rake pool to the house asset's holders via
+    QUtil. Booking the pool as paid happens only once the send is CONFIRMED,
+    never on the receipt: a `send()` returning is not a claim the
+    transaction landed, and even a landed one can be a contract-level
+    refund (see shares.plan_dividend). A distribution in flight is kept as
+    a pending record in state so the pool is never drawn down twice and a
+    crash between send and confirm is recoverable by re-running the
+    command."""
     from .shares import Shares
     h = _house(a, a.apply)
-    pool = h.state().get("shareholder_pool", 0)
+    st = h.state()
+    pending = st.get("pending_distribution")
+    if pending:
+        print(f"a distribution of {pending['amount']} QU (tx {pending['tx'][:8]}… "
+              f"scheduled for tick {pending['tick']}) is still pending confirmation.")
+        if not a.apply:
+            print("\nPLAN ONLY. Re-run with --apply to settle it.", file=sys.stderr); return
+        try:
+            ok = h.chain.confirm(pending["tx"], pending["tick"])
+        except Unknown:
+            print("undecidable yet; re-run to settle.", file=sys.stderr); return
+        if ok:
+            st["shareholder_pool"] = max(0, st.get("shareholder_pool", 0)
+                                         - (pending["distributed"] + pending["fee"]))
+            st["shareholder_paid"] = st.get("shareholder_paid", 0) + pending["distributed"]
+            print(f"confirmed: distributed {pending['distributed']} to holders of {a.asset}, "
+                  f"burnt {pending['fee']} in fees; the rest ({pending['amount'] - pending['distributed'] - pending['fee']}) "
+                  "returned to the house.")
+        else:
+            print("NOT included; the pool is unchanged.")
+        del st["pending_distribution"]
+        h._save_state(st)
+        return
+
+    pool = st.get("shareholder_pool", 0)
     print(f"shareholder pool: {pool} QU")
     if pool <= 0:
         print("nothing to distribute"); return
@@ -232,8 +274,11 @@ def cmd_house_distribute(a):
     if not a.apply:
         print("\nPLAN ONLY. Re-run with --apply to distribute.", file=sys.stderr); return
     res = sh.pay_dividend(a.asset, pool)
-    st = h.state(); st["shareholder_pool"] = 0; st["shareholder_paid"] = st.get("shareholder_paid", 0) + pool; h._save_state(st)
-    print(f"distributed {pool} to holders of {a.asset}: {res.tx_id} tick {res.scheduled_tick}")
+    st["pending_distribution"] = {"tx": res.tx_id, "tick": res.scheduled_tick, "amount": pool,
+                                  "distributed": plan["distributed"], "fee": plan["fee"]}
+    h._save_state(st)
+    print(f"distribution {res.tx_id} scheduled for tick {res.scheduled_tick}; "
+          "re-run `house distribute-shareholders --apply` once it has landed to settle the pool.")
 
 
 def _sweep_value(v):
@@ -706,7 +751,8 @@ def cmd_bot_issue_shares(a):
     plan = sh.plan_issue(a.name, a.count)
     print(json.dumps(plan, indent=2))
     if not a.apply:
-        print("\nPLAN ONLY. The issuance fee above goes to Qx's shareholders and is not refundable. Re-run with --apply.", file=sys.stderr)
+        print(f"\nabsence of {a.name} confirmed by {plan['checked_nodes']} node(s).", file=sys.stderr)
+        print("PLAN ONLY. The issuance fee above goes to Qx's shareholders and is not refundable. Re-run with --apply.", file=sys.stderr)
         return
     res = sh.issue(a.name, a.count)
     print(f"issue {res.tx_id} scheduled for tick {res.scheduled_tick}; confirming…")

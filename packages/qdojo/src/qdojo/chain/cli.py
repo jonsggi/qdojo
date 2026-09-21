@@ -112,6 +112,24 @@ class QubicCli:
                 return v
         raise Unknown(f"no usable {what} from any of {1 + len(self.fallback_nodes)} nodes")
 
+    def _read_each(self, args, parser, what: str) -> list[tuple[str, object]]:
+        """Run a read against EVERY configured node, not just the first that
+        answers usably. Right for checking an ABSENCE (see NativeChain's
+        `_read_each`): one node saying "nothing here" is one opinion, not
+        the answer."""
+        out = []
+        for ip in (self.node_ip,) + self.fallback_nodes:
+            try:
+                text = self._run_on(ip, args, False)
+            except Unknown:
+                continue
+            v = parser(text)
+            if v is not None:
+                out.append((ip, v))
+        if not out:
+            raise Unknown(f"no usable {what} from any of {1 + len(self.fallback_nodes)} nodes")
+        return out
+
     def current_tick(self) -> int:
         return self._read(["-getcurrenttick"], parse.current_tick, "tick")
 
@@ -164,9 +182,18 @@ class QubicCli:
     def owned_assets(self, identity: str) -> list[dict]:
         return self._read(["-getasset", identity], parse.owned_assets, f"assets of {identity[:8]}…")
 
+    def owned_assets_each(self, identity: str) -> list[tuple[str, list[dict]]]:
+        return self._read_each(["-getasset", identity], parse.owned_assets, f"assets of {identity[:8]}…")
+
     def asset_holders(self, issuer: str, name: str) -> list[dict]:
         return self._read(["-queryassets", "ownerships", f"issuer={issuer},name={name}"],
                           parse.ownerships, f"holders of {name}")
+
+    def asset_possessors(self, issuer: str, name: str) -> list[dict]:
+        """QUtil pays possessors, not owners; `asset_holders` (ownerships)
+        stays for the `bot shares` listing."""
+        return self._read(["-queryassets", "possessions", f"issuer={issuer},name={name}"],
+                          parse.possessions, f"possessors of {name}")
 
     def indexed_tick(self) -> int:
         if self.indexer is None:
