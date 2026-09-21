@@ -60,6 +60,14 @@ test('a tick still ahead of the clock is IN, not AGO', () => {
   assert.equal(tickWhen(NOW, NOW, FIRST), '0 s AGO');
 });
 
+test('IN scales its units the same way AGO does, not raw seconds (#WEB-6)', () => {
+  const ahead = secs => NOW + Math.round(secs / TICK_S);
+  assert.equal(tickWhen(ahead(12 * 60), NOW, FIRST), 'IN 12 min');
+  assert.equal(tickWhen(ahead(7 * 3600), NOW, FIRST), 'IN 7 h');
+  assert.equal(tickWhen(ahead(3 * 86400), NOW, FIRST), 'IN 3 d');
+  assert.doesNotMatch(tickWhen(99999999999, NOW, FIRST), /\d{5,} s/);
+});
+
 test('a tick older than round 1 says so instead of counting days it cannot know', () => {
   // #tick/80126 is 80 million ticks before the dojo existed. The export has
   // one wall-clock anchor (generated_at) and the tick rate drifts, so a date

@@ -170,7 +170,7 @@ function ageText(secs) {
 // could turn a tick that old into an honest date, so it says what it knows.
 function tickWhen(t, now, first) {
   if (first !== null && first !== undefined && t < first) return 'BEFORE ROUND 1';
-  if (t > now) return `IN ${Math.round((t - now) * TICK_MS / 1000)} s`;
+  if (t > now) return `IN ${ageText((t - now) * TICK_MS / 1000)}`;
   return `${ageText((now - t) * TICK_MS / 1000)} AGO`;
 }
 function ordinal(n) { return n === 1 ? '1ST' : n === 2 ? '2ND' : n === 3 ? '3RD' : `${n}TH`; }

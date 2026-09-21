@@ -17,7 +17,7 @@ const py = readFileSync(path.join(__dirname, '../../../packages/qdojo/src/qdojo/
 const start = src.indexOf('// ---- pure helpers');
 const end = src.indexOf('// ---- end pure helpers');
 assert.ok(start > 0 && end > start, 'the pure-helpers block is not delimited in dash.js');
-const H = runInContext(src.slice(start, end) + '\n({ esc, fmt, pct, signed, ageText, sparkPath, settingControl, sourceBadge, rowState });',
+const H = runInContext(src.slice(start, end) + '\n({ esc, fmt, pct, signed, ageText, upText, sparkPath, settingControl, sourceBadge, rowState });',
   createContext({}));
 
 test('the helpers block touches neither the DOM nor the network', () => {
@@ -33,6 +33,18 @@ test('ageText reads like a human wrote it', () => {
   assert.equal(H.ageText(3725), '1h02m');
   assert.equal(H.ageText(null), '—');
   assert.equal(H.ageText(-4), '0s');
+});
+
+test('upText: a live counter only while running, frozen at the last heartbeat once stale', () => {
+  // A stale bot is dead; showing Date.now() - started_at keeps "UP" growing
+  // for a bot the same panel calls STALE (#WEB-4). RAN is the span it was
+  // actually alive: started_at up to its last heartbeat, and no further.
+  assert.equal(H.upText({ state: 'running', started_at: 100 }, 3725 + 100), '1h02m');
+  assert.equal(H.upText({ state: 'stale', started_at: 100, heartbeat_at: 3825 }, 999999), '1h02m');
+  assert.equal(H.upText({ state: 'stale', started_at: 100, heartbeat_at: 3825 }, 1000999),
+    H.upText({ state: 'stale', started_at: 100, heartbeat_at: 3825 }, 999999), 'stale UP does not grow with now');
+  assert.equal(H.upText({ state: 'idle' }, 1000), '—');
+  assert.equal(H.upText({ state: 'running' }, 1000), '—');
 });
 
 test('sparkPath needs two points and puts zero where zero is', () => {

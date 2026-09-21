@@ -25,6 +25,17 @@ function ageText(seconds) {
   return `${Math.floor(s / 3600)}h${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}m`;
 }
 
+// The STATUS tile's uptime: a live, growing counter only while the bot is
+// actually running. A stale heartbeat means the bot is gone, so its "up"
+// freezes at the span between its start and its last heartbeat instead of
+// counting from `started_at` to now, which would read a dead bot as running.
+function upText(st, now) {
+  if (!st.started_at) return '—';
+  if (st.state === 'running') return ageText(now - st.started_at);
+  if (st.state === 'stale' && st.heartbeat_at) return ageText(st.heartbeat_at - st.started_at);
+  return '—';
+}
+
 // Cumulative net QU per settled round as an SVG polyline. Two points minimum;
 // with one settled round there is nothing to draw a line between.
 function sparkPath(series, w = 600, h = 80) {
@@ -124,7 +135,7 @@ function statusPanel(st) {
   const sub = st.state === 'running' ? 'BOT RUN IS POLLING THE BOARD'
             : st.state === 'stale' ? 'A HEARTBEAT IS THERE BUT OLD: THE BOT DIED, OR THE MACHINE SLEPT'
             : 'NO BOT IS RUNNING FOR THIS STATE DIR';
-  const up = st.started_at ? ageText(Date.now() / 1000 - st.started_at) : '—';
+  const up = upText(st, Date.now() / 1000);
   const rounds = (st.rounds || []).map(r => `<tr>
     <td>R${esc(r.round_id)}</td><td>${esc(r.belt || '—')}</td><td>${esc(r.kind || r.title || '—')}</td>
     <td>${esc(r.state || '—')}</td><td class="wrap" style="white-space:normal">${esc(r.did)}</td></tr>`).join('');
@@ -138,7 +149,7 @@ function statusPanel(st) {
       ${stat('HEARTBEAT', st.age == null ? '—' : `${ageText(st.age)} AGO`, st.state === 'stale' ? 'red' : '')}
       ${stat('POLL', st.interval == null ? '—' : `EVERY ${esc(st.interval)}S`)}
       ${stat('TICK', st.tick == null ? '—' : fmt(st.tick), 'cyan')}
-      ${stat('UP', up)}
+      ${stat(st.state === 'stale' ? 'RAN' : 'UP', up)}
     </div>
     ${rounds ? `<div class="tscroll"><table class="fame-table"><thead><tr>
       <th>ROUND</th><th>BELT</th><th>KIND</th><th>STATE</th><th>WHAT THE BOT DID</th></tr></thead><tbody>${rounds}</tbody></table></div>`

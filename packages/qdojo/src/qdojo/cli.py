@@ -572,6 +572,10 @@ def cmd_bot_dash(a):
             webbrowser.open(url)
         except Exception:
             pass
+    # With stdout piped (the normal shape for a tool call that relays the
+    # URL) Python block-buffers it, so the banner above would sit unseen for
+    # the life of the server. Flush once, right before we block.
+    sys.stdout.flush()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
