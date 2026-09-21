@@ -5,6 +5,12 @@ FROM nginx:1.27-alpine
 
 COPY apps/web/ /usr/share/nginx/html/
 
+# Every build stamps the page's own script and stylesheet URLs with a version,
+# so a CDN in front cannot keep serving last week's app.js beside this week's
+# data: a new URL is a new object. The files themselves are untouched.
+RUN v=$(date +%s) && sed -E -i "s#(src|href)=\"([a-z]+\.(js|css))\"#\1=\"\2?v=$v\"#g" \
+    /usr/share/nginx/html/index.html && grep -c "?v=$v" /usr/share/nginx/html/index.html
+
 # dash.html/dash.js are the LOCAL fighter page, served by `qdojo bot dash` on
 # 127.0.0.1 against an API that exists only on the player's own machine. On the
 # public site they would be a dead page, so they do not ship in this image.
