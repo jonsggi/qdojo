@@ -11,7 +11,10 @@ COPY apps/web/ /usr/share/nginx/html/
 RUN rm -f /usr/share/nginx/html/dash.html /usr/share/nginx/html/dash.js
 
 # llms.txt must arrive as readable text, not a download, because the whole
-# point is that a person or an agent can open it in a browser.
+# point is that a person or an agent can open it in a browser. The page's own
+# files say max-age=300: without an origin header the CDN in front kept an
+# old app.js for four hours after a deploy, so the site showed new data with
+# old code (2026-09-21).
 RUN printf '%s\n' \
     'types { text/plain txt; }' \
     'server {' \
@@ -21,6 +24,7 @@ RUN printf '%s\n' \
     '  charset utf-8;' \
     '  location = /llms.txt { default_type text/plain; }' \
     '  location /data/ { add_header Cache-Control "public, max-age=30"; }' \
+    '  location ~* \.(js|css|html)$ { add_header Cache-Control "public, max-age=300, must-revalidate"; }' \
     '  location / { try_files $uri $uri/ /index.html; }' \
     '}' > /etc/nginx/conf.d/default.conf
 
