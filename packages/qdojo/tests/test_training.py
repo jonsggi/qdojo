@@ -30,7 +30,8 @@ def settled(r):
     """Publish `r` the way the house would: its settlement is what settle() says."""
     ev = training._settled(training.spec_from_round(r), training.entries_from_round(r))
     r["settlement"] = r["settlement"] | {"payouts": [{"identity": p.identity, "amount": p.amount, "kind": p.kind}
-                                                     for p in ev.payouts], "pots": ev.pots}
+                                                     for p in ev.payouts], "pots": ev.pots,
+                                         "pot": ev.pot, "carry": ev.carry, "rake": ev.rake, "seed_used": ev.seed_used}
     return r
 
 
@@ -108,6 +109,37 @@ def test_a_round_nobody_solved_is_flagged():
     """The best hook we have: a correct answer would have taken it uncontested."""
     a = training.grade(rd(), "142", seconds=1.0)
     assert a.unsolved is True and a.rivals == 0 and a.rank == 1
+
+
+def test_a_round_nobody_solved_is_priced_from_the_published_carry():
+    """Regression (MONEY #4): nobody being paid used to make reproduces()
+    return False unconditionally, so a trivially-reproducible no-winner round
+    (the whole distributable carried) was never priced, and the reason given
+    ('the house's seed rules ... are not fully published') was untrue for it."""
+    r = settled(rd(house_seed=5000, entries=[entry("a", 1030, "wrong", answer="1")]))
+    assert training.reproduces(r)
+    a = training.grade(r, "142", seconds=1.0)
+    assert a.unsolved and a.correct and a.rank == 1
+    # the fixed seed + the wrong fighter's stake + my own stake, all to the one winner
+    assert a.would_pay == 5000 + 1000 + 1000 and a.net == a.would_pay - 1000
+
+
+def test_a_round_nobody_solved_with_unpublished_house_fighters_stays_unpriced():
+    """The carry-based check still declines when the published pot/carry do
+    not re-settle -- an unpublished house_fighters stake is exactly the case
+    the seed-rules reason describes, unsolved or not."""
+    r = rd(house_seed=5000, match_bps=10000, rake_bps=2000,
+          settlement={"answer": "142", "void": False, "payouts": [], "pot": 1000, "carry": 1000})
+    a = training.grade(r, "142", seconds=1.0)
+    assert a.unsolved and a.correct
+    assert a.would_pay is None and "not fully published" in a.why_unpriced
+
+
+def test_a_bare_no_winner_round_with_no_published_money_stays_unpriced():
+    """A settlement that publishes neither pot nor carry (the bare test
+    fixture, or an old export) cannot be checked at all."""
+    a = training.grade(rd(), "142", seconds=1.0)
+    assert a.unsolved and a.correct and a.would_pay is None
 
 
 def test_an_unreproducible_round_declines_to_price_rather_than_guess():
@@ -210,6 +242,25 @@ def test_the_real_corpus_is_gradeable():
         if r not in under_todays_rules:
             a = training.grade(r, r["settlement"]["answer"], seconds=1.0)
             assert a.would_pay is None and "stake cap" in a.why_unpriced, r["round_id"]
+
+
+@pytest.mark.skipif(not os.path.exists(REAL), reason="no live export here")
+def test_a_round_nobody_solved_reproduces_exactly_where_the_published_money_agrees():
+    """Regression (MONEY #4): of the 30 real settled rounds nobody solved,
+    exactly 8 re-settle to the pot and carry the house actually published
+    (the other 22 fail because `house_fighters` is not exported, which
+    inflates the matched seed on those NPC tables -- the seed-rules reason
+    stays correct for them)."""
+    h = json.load(open(REAL, encoding="utf-8"))
+    unsolved = [r for r in training.settled_rounds(h)
+               if not any(e.get("verdict") in ("winner", "solved") for e in r.get("entries", []))]
+    assert len(unsolved) == 30
+    priced = sorted(r["round_id"] for r in unsolved if training.reproduces(r))
+    assert priced == [1, 5, 13, 21, 26, 27, 28, 71]
+    for r in unsolved:
+        if r["round_id"] not in priced:
+            a = training.grade(r, r["settlement"]["answer"], seconds=1.0)
+            assert a.would_pay is None and a.unsolved
 
 
 @pytest.mark.skipif(not os.path.exists(REAL), reason="no live export here")

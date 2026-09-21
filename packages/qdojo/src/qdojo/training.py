@@ -111,14 +111,27 @@ def reproduces(rd: dict) -> bool:
     When we cannot reproduce the round we did not understand it, and we
     decline to put a number on the purse rather than inventing one. An unknown
     is not a zero.
+
+    Nobody solving the round is not the same as "no payouts to check": the
+    whole distributable carried, and the round is still verified, just
+    against the published `pot`/`carry` (docs/api.md, settlement.pot/carry)
+    instead of a win payout. A settlement that publishes neither cannot be
+    checked at all; a cap-era sensei table is declined as before, since
+    today's engine would price a trainee out of the belt pot alone, not the
+    single pot that round was fought for.
     """
     doc = rd.get("settlement") or {}
+    ev = _settled(spec_from_round(rd), entries_from_round(rd))
     want = sorted((p["identity"], p["amount"]) for p in doc.get("payouts", []) if p["kind"] == "win")
-    if not want:
+    if want:
+        got = sorted((p.identity, p.amount) for p in ev.payouts if p.kind == "win")
+        return got == want
+    if "pot" not in doc or "carry" not in doc:
         return False
-    got = sorted((p.identity, p.amount) for p in _settled(spec_from_round(rd), entries_from_round(rd)).payouts
-                 if p.kind == "win")
-    return got == want
+    if "pots" not in doc and any(e.sensei for e in ev.entries):
+        return False
+    return (ev.pot == doc["pot"] and ev.carry == doc["carry"]
+            and ev.rake == doc.get("rake", ev.rake) and ev.seed_used == doc.get("seed_used", ev.seed_used))
 
 
 # ---------------------------------------------------------------- the grading
@@ -170,8 +183,9 @@ def grade(rd: dict, answer: str | None, seconds: float, error: str = "") -> Atte
 
 def unreproducible_because(rd: dict) -> str:
     """The most likely reason a published round does not re-settle to what was
-    paid. A settlement without `pots` predates 2026-09-19: a sensei table was
-    then settled under the stake cap, and a podium with same-tick winners was
+    paid or, when nobody solved it, to the published pot and carry. A
+    settlement without `pots` predates 2026-09-19: a sensei table was then
+    settled under the stake cap, and a podium with same-tick winners was
     ordered by transaction id. Everything else is the unpublished
     house-fighter list."""
     doc = rd.get("settlement") or {}
