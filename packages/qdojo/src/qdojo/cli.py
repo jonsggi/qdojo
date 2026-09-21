@@ -178,6 +178,16 @@ def _fee_policy(a):
 
 def cmd_house_spar(a):
     policy = _fee_policy(a)
+    if policy:
+        tgt = max(1, int(a.min_players) + int(policy.headroom))
+        fs = fees.f_star(a.seed, tgt, a.rake_bps)
+        if fs is not None:
+            for belt in a.belts.split(","):
+                floor_b = policy.floor_for(belt)
+                if floor_b > fs:
+                    print(f"qdojo: warning: belt {belt!r}'s floor ({floor_b} QU) is above f* ({fs:.1f} QU): "
+                         f"f* is dropped and only --fee-cap bounds the fee from above (docs/spec.md §5)",
+                         file=sys.stderr)
     npcs = [x for x in (a.npcs or "").split(",") if x]
     if policy and npcs:
         sys.exit("qdojo: --entry-fee auto and --npcs do not mix: a house fighter sits at any price, "

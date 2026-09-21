@@ -105,11 +105,16 @@ identity counts.
   over the last `K` settled or void rounds at that belt (`K = 8`): `occ` is
   the mean `entrants`, `tgt = min_players + headroom` (headroom 2),
   `fee' = fee · (occ / tgt)^α` (α = 0.5) held within `fee / 1.5 .. fee · 1.5`,
-  then `fee = max(floor, min(fee', f*, cap))` rounded to three significant
-  figures. `f* = seed_cap / (tgt · rake_bps / 10000)` is the fee at which
-  the seed exactly refunds the rake, so while the house seeds, the average
-  fighter is never worse than break-even; without a rake there is no `f*`
-  and the operator's `cap` is the only ceiling. A belt with no history
+  then, with `ceiling` the lower of `f*` and `cap` (whichever exist, and an
+  `f*` below the belt's floor is not applied): `fee = max(floor, min(fee',
+  ceiling))`, rounded to three significant figures. `f* = seed_cap / (tgt ·
+  rake_bps / 10000)` is the fee at which the seed exactly refunds the rake,
+  so while the house seeds enough that `f*` is at or above the belt's
+  floor, the average fighter is never worse than break-even; an operator
+  who sets a floor above `f*` (or a seed that has been retired to 0) has
+  chosen a table that is not break-even, and only the `cap` then bounds
+  the fee; without a rake there is no `f*` either, and the operator's
+  `cap` is the only ceiling. A belt with no history
   charges the start fee. Void rounds count, with the seats that were
   bought. A round priced this way publishes the derivation as `fee_policy`
   so anyone can replay it; docs/api.md has the exact inputs and
