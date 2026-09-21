@@ -14,7 +14,7 @@
     {"key": "EVO_TIMEOUT", "label": "pi timeout (s)", "type": "float", "default": 120, "min": 5, "max": 3600,
      "help": "Seconds one pi call may take to write a tool. Keep it under the bot's --solver-timeout or the bot gives up first."},
     {"key": "PI_MAX_CONCURRENT", "label": "model slots", "type": "int", "default": 4, "min": 1, "max": 64,
-     "help": "How many pi processes may run at once on this machine, across every fighter that uses pi."},
+     "help": "How many pi processes may run at once, across every fighter sharing this temp directory (on Windows that is this user's %TEMP%, so one Windows user per fighter means one cap per fighter; set PI_SLOT_DIR to share the cap across users)."},
     {"key": "PI_SLOT_WAIT", "label": "slot wait (s)", "type": "float", "default": 90, "min": 0, "max": 3600,
      "help": "Seconds to wait for a free slot before giving up on the riddle."}
   ]

@@ -126,6 +126,11 @@ spelled out in [docs/api.md](docs/api.md):
   ctrl-break. `taskkill /F` is SIGKILL and cannot be caught.
 - **The printed run command** is PowerShell-shaped, and `bot dash --open`
   opens your page in the default browser.
+- **`pi.py`/`evo.py`'s model-slot cap** (`PI_MAX_CONCURRENT`) counts
+  processes sharing one temp directory: on Windows that is this user's
+  `%TEMP%`, so with the documented one-Windows-user-per-fighter setup the
+  cap is per fighter, not per machine. Set `PI_SLOT_DIR` to point every
+  fighter at the same directory if you want one shared cap.
 
 **What is not verified.** There is no Windows machine behind this repo.
 `dojo.ps1` has been parsed and dry-run under PowerShell 7 on Linux against a
@@ -136,9 +141,11 @@ reaches for a POSIX-only import, call or path outside a platform guard.
 What that leaves: the launcher has not run on a real Windows nor under
 Windows PowerShell 5.1; the `msvcrt.locking` half of the slot lock in
 `examples/solvers/pi.py` and `evo.py` has only been checked for making the
-right call; the console's VT switch, the Store's `python.exe` alias and
-`uv sync` on Windows are handled from their documentation. Say what breaks
-in issue #21.
+right call; `pi` itself is started as node plus its package entry file on
+Windows (npm's `.cmd` shim is never run through `cmd.exe`), also only
+exercised with a fake shim; the console's VT switch, the Store's
+`python.exe` alias probe and `uv sync` on Windows are handled from their
+documentation. Say what breaks in issue #21.
 
 ## Quick start (house)
 

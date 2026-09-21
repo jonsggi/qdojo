@@ -1,14 +1,50 @@
 #!/usr/bin/env python3
 """An LLM-driven solver using the `pi` coding agent (default model from pi's
 settings). Env: PI_TOOLS ("" = pure LLM, "bash" = agent with a shell),
-PI_THINKING (off/low/medium/high), PI_TIMEOUT seconds, PI_MODEL optional."""
+PI_THINKING (off/low/medium/high), PI_TIMEOUT seconds, PI_MODEL optional,
+QDOJO_PI to point at a `pi` that is not the one on PATH."""
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
+
+
+def pi_command():
+    """argv head for the pi coding agent, startable by CreateProcess directly.
+
+    npm installs the agent as a `pi.cmd`/`pi.ps1` shim on Windows (never a
+    `pi.exe`), and `subprocess.run(["pi", ...])` can only find `pi.exe` on
+    PATH, so it raises FileNotFoundError there. Running the resolved `.cmd`
+    path instead would work, but CreateProcess starts a batch file through
+    `cmd.exe`, which re-parses the argv: a multi-line riddle prompt gets
+    truncated at the first newline and `& | < > ^ %` in riddle text become
+    shell operators. So the shim is never run -- its last line always runs
+    node on the package's real entry file, and that is what this runs."""
+    found = shutil.which(os.environ.get("QDOJO_PI") or "pi")
+    if not found:
+        print("pi.py: pi not found on PATH (install it, or set QDOJO_PI)", file=sys.stderr)
+        sys.exit(4)
+    if found.lower().endswith((".cmd", ".bat")):
+        here = os.path.dirname(found)
+        try:
+            with open(found, encoding="utf-8", errors="replace") as f:
+                shim = f.read()
+        except OSError:
+            shim = ""
+        m = re.search(r'"%dp0%\\([^"]+\.js)"', shim)
+        entry = os.path.join(here, *m.group(1).split("\\")) if m else os.path.join(
+            here, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js")
+        node = os.path.join(here, "node.exe")
+        node = node if os.path.isfile(node) else shutil.which("node")
+        if not (node and os.path.isfile(entry)):
+            print(f"pi.py: pi at {found} is an npm shim and node/{entry} is missing", file=sys.stderr)
+            sys.exit(4)
+        return [node, entry]
+    return [found]
 
 riddle = json.load(sys.stdin)
 tools = os.environ.get("PI_TOOLS", "")
@@ -42,7 +78,7 @@ system = ("You are a fighter in a riddle dojo. Solve the riddle exactly as state
           "for integer format, a JSON string for string or hex format. Nothing after that line.")
 prompt = (f"Title: {riddle['title']}\nAnswer format: {riddle['answer_format']}\n\n"
           f"Statement:\n{riddle['statement']}\n\nInput:\n{riddle['input']}\n")
-args = ["pi", "-p", "--no-session", "--thinking", thinking, "--system-prompt", system]
+args = pi_command() + ["-p", "--no-session", "--thinking", thinking, "--system-prompt", system]
 args += ["--tools", tools] if tools else ["--no-tools"]
 if model:
     args += ["--model", model]
@@ -63,19 +99,21 @@ except ImportError:                                     # Windows
         f.seek(0)
         _msvcrt.locking(f.fileno(), _msvcrt.LK_NBLCK, 1)
 
-SLOTS = os.path.join(tempfile.gettempdir(), "qdojo-pi-slots")
+SLOTS = os.environ.get("PI_SLOT_DIR") or os.path.join(tempfile.gettempdir(), "qdojo-pi-slots")
 
 
 def _slot(max_slots=int(os.environ.get("PI_MAX_CONCURRENT", "4")), wait=float(os.environ.get("PI_SLOT_WAIT", "90"))):
-    """Hold one of max_slots file locks; wait up to `wait` seconds for one."""
+    """Hold one of max_slots file locks; wait up to `wait` seconds for one.
+
+    A slot file this process cannot even open (wrong owner, a read-only or
+    foreign-owned SLOTS directory) is not the same as a busy one: let it
+    raise, with the path in the message, instead of waiting out `wait` and
+    then blaming "no model slot free"."""
     os.makedirs(SLOTS, exist_ok=True)
     deadline = time.time() + wait
     while True:
         for i in range(max_slots):
-            try:
-                f = open(os.path.join(SLOTS, str(i)), "a")     # never truncate: a locked file cannot be, on Windows
-            except OSError:
-                continue
+            f = open(os.path.join(SLOTS, str(i)), "a")     # never truncate: a locked file cannot be, on Windows
             try:
                 _try_lock(f)
                 return f
@@ -92,6 +130,8 @@ with tempfile.TemporaryDirectory() as cwd:
         p = subprocess.run(args, capture_output=True, text=True, timeout=timeout, cwd=cwd)
     except subprocess.TimeoutExpired:
         print("pi timed out", file=sys.stderr); sys.exit(2)
+    except OSError as e:
+        print(f"pi.py: cannot start pi: {e}", file=sys.stderr); sys.exit(4)
 answer = answer_from(p.stdout)
 if answer is not None:
     print(json.dumps({"answer": answer})); sys.exit(0)

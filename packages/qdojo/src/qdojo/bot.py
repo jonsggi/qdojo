@@ -81,15 +81,17 @@ class Bot:
             ctx["me"]["balance"] = bal
         except Unknown:
             ctx["me"]["balance"] = None
+        resolved = portable.resolve_command(self.strategy_cmd)
+        swap = f"{self.strategy_cmd[0]} is not on this machine, ran under {resolved[0]}: " \
+            if resolved and self.strategy_cmd and resolved[0] != self.strategy_cmd[0] else ""
         try:
-            p = subprocess.run(portable.resolve_command(self.strategy_cmd), input=json.dumps(ctx).encode(),
-                               capture_output=True, timeout=20)
+            p = subprocess.run(resolved, input=json.dumps(ctx).encode(), capture_output=True, timeout=20)
             d = json.loads(p.stdout.decode("utf-8", "replace").strip().splitlines()[-1])
             if d.get("enter") is False:
                 actions.append(f"round {rid}: strategy says skip" + (f" ({d.get('why')})" if d.get("why") else ""))
                 return False
         except Exception as e:  # a strategy bug must not stop the bot from fighting
-            actions.append(f"round {rid}: strategy program failed ({e}); entering anyway")
+            actions.append(f"round {rid}: strategy program failed ({swap}{e}); entering anyway")
         return True
 
     def _can_pay(self, stake: int, actions: list, rid: str) -> bool:

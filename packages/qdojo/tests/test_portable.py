@@ -13,6 +13,7 @@ import ast
 import io
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -93,10 +94,34 @@ def test_a_python_that_is_there_is_left_alone(monkeypatch):
 
 def test_the_store_alias_does_not_count_as_a_python(win, monkeypatch):
     stub = r"C:\Users\me\AppData\Local\Microsoft\WindowsApps\python.exe"
+    monkeypatch.setattr(portable, "_alias_probed", {})
     monkeypatch.setattr(portable.shutil, "which", lambda cmd, **kw: stub)
+    monkeypatch.setattr(portable.subprocess, "run",
+                        lambda *a, **kw: types.SimpleNamespace(returncode=9009))    # App Installer stub
     assert portable.resolve_command(["python", "s.py"]) == [sys.executable, "s.py"]
     monkeypatch.setattr(portable.shutil, "which", lambda cmd, **kw: r"C:\Python312\python.exe")
     assert portable.resolve_command(["python", "s.py"]) == ["python", "s.py"]
+
+
+def test_a_real_store_python_at_the_same_alias_path_is_left_alone(win, monkeypatch):
+    """A Python installed FROM the Store is reached through the identical
+    WindowsApps alias path as the App Installer stub; only running it tells
+    them apart (issue: the path-only check swapped this out for good)."""
+    real = r"C:\Users\me\AppData\Local\Microsoft\WindowsApps\python.exe"
+    probed = []
+    monkeypatch.setattr(portable, "_alias_probed", {})
+    monkeypatch.setattr(portable.shutil, "which", lambda cmd, **kw: real)
+
+    def fake_run(argv, **kw):
+        probed.append(argv)
+        return types.SimpleNamespace(returncode=0)                             # a real Store Python
+
+    monkeypatch.setattr(portable.subprocess, "run", fake_run)
+    assert portable.resolve_command(["python", "s.py"]) == ["python", "s.py"]
+    assert probed == [[real, "-c", "pass"]]
+    # cached: a second resolution does not probe again
+    assert portable.resolve_command(["python", "s.py"]) == ["python", "s.py"]
+    assert probed == [[real, "-c", "pass"]]
 
 
 def test_a_bare_script_gets_an_interpreter_on_windows_only(monkeypatch):
@@ -116,6 +141,19 @@ def test_run_solver_and_the_strategy_resolve_the_interpreter(monkeypatch, tmp_pa
     actions = []
     assert b._strategy_says_enter({"round_id": 1, "entry_fee": 10}, {}, 100, actions, "1") is False
     assert actions == ["round 1: strategy says skip (w)"]
+
+
+def test_a_swapped_strategy_interpreter_is_named_when_it_fails(tmp_path):
+    """A strategy program recorded under a venv that has since vanished is
+    swapped for qdojo's own Python; if it then fails, say so, rather than
+    leaving 'strategy program failed' pointing nowhere."""
+    gone = "/definitely/gone/solver-venv/bin/python3"
+    me = "A" * 60
+    b = bot.Bot(FakeChain(identity=me, balances={me: 5000}), str(tmp_path / "s"), ["true"],
+                strategy_cmd=[gone, "-c", "import sys; sys.exit(1)"])
+    actions = []
+    assert b._strategy_says_enter({"round_id": 1, "entry_fee": 10}, {}, 100, actions, "1") is True
+    assert len(actions) == 1 and gone in actions[0] and "ran under" in actions[0] and sys.executable in actions[0]
 
 
 # -------------------------------------------------------------- the command line
@@ -430,6 +468,14 @@ def test_dojo_ps1_dry_runs_with_a_fake_uv(tmp_path):
     r, ran = reaches("fight", "--board", "http://b")
     assert ran == ["run qdojo bot run --board http://b"]
     assert reaches("dash")[1] == ["run qdojo bot dash"] and reaches("prompts", "list")[1] == ["run qdojo prompts list"]
+    # -h/--help on a subcommand must reach qdojo, not the launcher's own banner
+    r, ran = reaches("train", "--help")
+    assert ran == ["run qdojo train --help"] and "getting ready" in r.stdout
+    r, ran = reaches("fight", "-h")
+    assert ran == ["run qdojo bot run -h"]
+    # a bare help still short-circuits before uv ever runs
+    r, ran = reaches("-h")
+    assert ran == [] and "fight past rounds again" in r.stdout
     r, ran = reaches("nonsense")
     assert r.returncode == 1 and "no such thing as 'nonsense'" in r.stderr and ran == []
     # nothing set up: the free training fight with bare.py, and a leading flag is not a subcommand
@@ -459,6 +505,70 @@ def _lock_block(src: str) -> str:
 def _solver(name):
     with open(os.path.join(ROOT, "examples", "solvers", name), encoding="utf-8") as f:
         return f.read()
+
+
+# --------------------------------------------------------------- starting pi
+
+def _pi_command_block(src: str) -> str:
+    tree = ast.parse(src)
+    keep = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "pi_command"]
+    assert len(keep) == 1
+    return ast.unparse(keep[0])
+
+
+def _load_pi_command(src: str, monkeypatch):
+    ns = {"os": os, "sys": sys, "re": re, "shutil": shutil}
+    exec(_pi_command_block(src), ns)
+    return ns["pi_command"]
+
+
+@pytest.mark.parametrize("name", ["pi.py", "evo.py"])
+def test_pi_command_dereferences_an_npm_cmd_shim_instead_of_running_it(name, tmp_path, monkeypatch):
+    """npm never writes a pi.exe; running the .cmd it does write would go
+    through cmd.exe, which mangles a multi-line prompt. The shim's own last
+    line runs node on the package's entry file directly -- do that instead."""
+    bin_ = tmp_path / "bin"
+    bin_.mkdir()
+    shim = bin_ / "pi.cmd"
+    entry_dir = bin_ / "node_modules" / "@earendil-works" / "pi-coding-agent" / "dist"
+    entry_dir.mkdir(parents=True)
+    entry = entry_dir / "cli.js"
+    entry.write_text("// pretend cli\n")
+    shim.write_text('@ECHO off\r\n"%_prog%"  "%dp0%\\node_modules\\@earendil-works\\pi-coding-agent\\dist\\cli.js" %*\r\n')
+    node = bin_ / "node"
+    node.write_text("#!/bin/sh\n")
+
+    def fake_which(cmd, **kw):
+        return str(shim) if cmd == "pi" else (str(node) if cmd == "node" else None)
+
+    monkeypatch.setattr(shutil, "which", fake_which)
+    pi_command = _load_pi_command(_solver(name), monkeypatch)
+    assert pi_command() == [str(node), str(entry)]
+
+
+@pytest.mark.parametrize("name", ["pi.py", "evo.py"])
+def test_pi_command_runs_a_real_executable_directly(name, monkeypatch):
+    monkeypatch.setattr(shutil, "which", lambda cmd, **kw: "/usr/bin/pi" if cmd == "pi" else None)
+    pi_command = _load_pi_command(_solver(name), monkeypatch)
+    assert pi_command() == ["/usr/bin/pi"]
+
+
+@pytest.mark.parametrize("name", ["pi.py", "evo.py"])
+def test_pi_command_honours_qdojo_pi(name, monkeypatch):
+    monkeypatch.setenv("QDOJO_PI", "/opt/pi/pi")
+    monkeypatch.setattr(shutil, "which", lambda cmd, **kw: cmd if cmd == "/opt/pi/pi" else None)
+    pi_command = _load_pi_command(_solver(name), monkeypatch)
+    assert pi_command() == ["/opt/pi/pi"]
+
+
+@pytest.mark.parametrize("name", ["pi.py", "evo.py"])
+def test_pi_command_exits_clearly_when_pi_is_not_on_path(name, monkeypatch, capsys):
+    monkeypatch.setattr(shutil, "which", lambda cmd, **kw: None)
+    pi_command = _load_pi_command(_solver(name), monkeypatch)
+    with pytest.raises(SystemExit) as e:
+        pi_command()
+    assert e.value.code == 4
+    assert "not found on PATH" in capsys.readouterr().err
 
 
 def test_both_llm_solvers_carry_the_same_portable_lock():
@@ -507,6 +617,29 @@ def test_the_slot_lock_is_exclusive_across_processes(tmp_path):
     out, err = first.communicate(timeout=30)
     assert first.returncode == 0 and '"answer": 1' in out, err
     assert sorted(os.listdir(tmp_path / "qdojo-pi-slots")) == ["0"]          # under the temp dir, not /tmp
+
+
+@pytest.mark.parametrize("name", ["pi.py", "evo.py"])
+def test_an_unopenable_slot_surfaces_at_once_instead_of_waiting_out_the_slot_wait(name, tmp_path):
+    """A slot file this process cannot open (another user's, or read-only)
+    is not a busy slot: it must not be swallowed and waited out."""
+    slots = tmp_path / "qdojo-pi-slots"
+    slots.mkdir()
+    (slots / "0").write_text("")
+    os.chmod(slots / "0", 0o444)
+    env = {**os.environ, "PI_SLOT_DIR": str(slots), "PI_MODEL": "m",
+           "PI_MAX_CONCURRENT": "1", "PI_SLOT_WAIT": "5", "PATH": os.environ.get("PATH", "")}
+    if name == "evo.py":
+        env["EVO_MODEL"] = "m"
+        env["EVO_DIR"] = str(tmp_path / "evo_dir")            # never ~/.qdojo
+    script = os.path.join(ROOT, "examples", "solvers", name)
+    started = time.monotonic()
+    r = subprocess.run([sys.executable, script], input=json.dumps(RIDDLE), capture_output=True,
+                       text=True, env=env, timeout=10)
+    took = time.monotonic() - started
+    assert took < 4, f"waited out PI_SLOT_WAIT instead of failing on the open() error ({took:.1f}s)"
+    assert r.returncode != 0
+    assert str(slots / "0") in r.stderr, r.stderr
 
 
 # ------------------------------------------------------------- the checker
