@@ -6,7 +6,7 @@
 #   ./dojo train    fight past rounds again (no seed, no QU, no signer)
 #   ./dojo rite     create a seed and an identity, for when you want a real seat
 #   ./dojo fight    fight for real (needs a funded identity)
-#   ./dojo dash     your own page, on your own machine
+#   ./dojo dash     your cockpit, on your own machine
 #
 # It writes nothing outside this folder and ~/.qdojo.
 set -eu
@@ -72,9 +72,10 @@ esac
 
 # ------------------------------------------------- the first-run experience
 # Training needs no seed, no QU, no node and no signer, so it comes FIRST.
-# Building the signer takes minutes and needs a C++ toolchain; making a
-# newcomer wait through that before they have seen a single riddle is how you
-# lose them. The build happens in the rite, which is where money starts.
+# A seed is a purse, and making a newcomer create one before they have seen
+# a single riddle is how you lose them. The rite is where money starts, and
+# even then nothing is built: qdojo signs in Python, and the only binary in
+# this repo's story is the reference the crosscheck compares it against.
 if [ ! -f "$HOME/.qdojo/bot/bot.json" ]; then
     printf '\n  nothing is set up yet, so we start with a fight that costs nothing.\n'
     printf '  no seed, no account, no QU: your solver against rounds that really happened.\n\n'

@@ -1,0 +1,21 @@
+{
+  "solver": "evo.py",
+  "settings": [
+    {"key": "EVO_MODEL", "label": "model", "type": "string", "default": null,
+     "help": "The model pi writes and repairs tools with, as the provider lists it. Required: evo.py refuses to run without one rather than fall back to pi's default. The suggestions are the openrouter lineup this dojo's own fighters run.",
+     "suggestions": ["deepseek/deepseek-v4-flash", "qwen/qwen3-235b-a22b-2507", "google/gemini-3.1-flash-lite"]},
+    {"key": "EVO_THINKING", "label": "thinking", "type": "enum", "default": "low",
+     "choices": ["off", "low", "medium", "high"],
+     "help": "How hard pi thinks before it writes a tool. Higher is slower and dearer; a tool is written once per riddle kind, so medium is often worth it."},
+    {"key": "EVO_DIR", "label": "toolbox directory", "type": "string", "default": "~/.qdojo/evo",
+     "help": "Where the toolbox and its memory live. One directory per fighter; two fighters sharing one would overwrite each other's tools."},
+    {"key": "EVO_BOARD", "label": "board URL", "type": "string", "default": null,
+     "help": "The board this fighter plays at, so it can read history.json beside it and repair a tool from every round it got wrong. Empty means it never learns."},
+    {"key": "EVO_TIMEOUT", "label": "pi timeout (s)", "type": "float", "default": 120, "min": 5, "max": 3600,
+     "help": "Seconds one pi call may take to write a tool. Keep it under the bot's --solver-timeout or the bot gives up first."},
+    {"key": "PI_MAX_CONCURRENT", "label": "model slots", "type": "int", "default": 4, "min": 1, "max": 64,
+     "help": "How many pi processes may run at once, across every fighter sharing this temp directory (on Windows that is this user's %TEMP%, so one Windows user per fighter means one cap per fighter; set PI_SLOT_DIR to share the cap across users)."},
+    {"key": "PI_SLOT_WAIT", "label": "slot wait (s)", "type": "float", "default": 90, "min": 0, "max": 3600,
+     "help": "Seconds to wait for a free slot before giving up on the riddle."}
+  ]
+}

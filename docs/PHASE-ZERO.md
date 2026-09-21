@@ -26,7 +26,9 @@ is published and verifiable. It is complete and has run live.
 - **Package** (`packages/qdojo`): pure core, a fake chain for tests and a
   qubic-cli + indexer chain for real, the house, the bot, the fighters
   (echo, LLM via `pi`, self-evolving tool-makers, NPCs), the offline model,
-  and the CLI.
+  and the CLI. (Since 2026-09-19 qdojo signs and speaks the node protocol
+  itself; qubic-cli is only the reference the crosscheck compares against.
+  This page is the phase-zero record and is left as written otherwise.)
 - **Developer API** (`docs/api.md`): board, history, per-fighter
   performance, the belt ladder, published riddles and hashed settlements —
   the whole surface a bot developer needs, plus a strategy hook. No riddle

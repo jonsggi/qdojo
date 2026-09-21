@@ -4,8 +4,9 @@ Status: draft 0, 2026-09-14. Governs the off-chain phase. The contract phase
 gets its own spec once this one has run real rounds.
 
 Sections 1–10 describe the current rules. Section 11 records the planned
-fighter-registration rules (2026-09-18); NFT ownership is not enforced by
-the current implementation.
+fighter-registration rules (updated 2026-09-19); NFT ownership is not enforced
+by the current implementation. [Launch product decisions](product-decisions.md)
+records the agreed future seasons, cups, duels, challenges and author rewards.
 
 ## 1. Actors
 
@@ -65,6 +66,21 @@ Answers are canonicalised before hashing (`hashing.canonical_answer`):
 integers to their decimal string, strings to NFC with surrounding whitespace
 stripped, hex lower-cased without a `0x` prefix.
 
+**Riddle packs.** A sparring riddle is drawn uniformly from a pool of kinds
+per belt, and the pool is chosen once per spar by `--riddle-pack`. `classic`,
+the default, is the original kinds and its draw is unchanged. `mixed` adds
+each Qubic family to the pool of its belt beside the classic kinds. `qubic`
+holds only the three Qubic families, at orange, green and blue. A belt whose
+pool is empty under the chosen pack (white or yellow under `qubic`) is
+refused when the spar starts, before a round opens or a riddle directory is
+created; there is no fallback to classic. The pack is recorded in every
+metrics row. The round object, the hash and the answer formats are the same
+for every pack; a pack riddle's `input` carries its family name and rule
+version, so the hash binds both. `qdojo riddle sample` generates a practice
+instance offline from a public seed; a public seed and a public generator
+reveal the answer, so a live instance is never generated from a seed anyone
+can know. [docs/riddle-pack.md](riddle-pack.md) is the guide.
+
 ## 4. Commit and reveal
 
 A bot never sends its answer in the clear during the commit window.
@@ -83,24 +99,57 @@ identity counts.
 
 - **Stake.** In a lobby round the ENTER amount; without a lobby the COMMIT
   amount. It must be at least the round's `entry_fee`.
+- **Fee.** `entry_fee` is announced in LOBBY (or PUBLISH, without a lobby)
+  and is either the operator's number, the same at every table, or
+  retargeted per belt from the house's own published history. Per belt,
+  over the last `K` settled or void rounds at that belt (`K = 8`): `occ` is
+  the mean `entrants`, `tgt = min_players + headroom` (headroom 2),
+  `fee' = fee · (occ / tgt)^α` (α = 0.5) held within `fee / 1.5 .. fee · 1.5`,
+  then, with `ceiling` the lower of `f*` and `cap` (whichever exist, and an
+  `f*` below the belt's floor is not applied): `fee = max(floor, min(fee',
+  ceiling))`, rounded to three significant figures. `f* = seed_cap / (tgt ·
+  rake_bps / 10000)` is the fee at which the seed exactly refunds the rake,
+  so while the house seeds enough that `f*` is at or above the belt's
+  floor, the average fighter is never worse than break-even; an operator
+  who sets a floor above `f*` (or a seed that has been retired to 0) has
+  chosen a table that is not break-even, and only the `cap` then bounds
+  the fee; without a rake there is no `f*` either, and the operator's
+  `cap` is the only ceiling. A belt with no history
+  charges the start fee. Void rounds count, with the seats that were
+  bought. A round priced this way publishes the derivation as `fee_policy`
+  so anyone can replay it; docs/api.md has the exact inputs and
+  docs/model.md the measurements behind the numbers. The house must not
+  fund fighters at a table priced this way: they sit at any price.
 - **Seed.** PUBLISH announces a `seed_cap` and a `match_bps`. The house adds
   `min(seed_cap, counted stakes × match_bps / 10000)` to the pot, plus any
   carry from earlier rounds. With `match_bps = 10000` the house matches the
   fighters one to one: an empty round costs nothing, and one fighter alone
   can never take out more than a multiple of what they put in. With
   `match_bps = 0` the seed is fixed at `seed_cap` (the round-one behaviour).
-  Stakes of the house's own fighters join the pot but are never matched:
-  the house does not match its own money, so a table with only house
-  fighters at it adds no seed and simply carries.
-- **Pot** = seed actually added + carry in + every counted stake.
-- **Rake** = `rake_bps / 10000` of the counted stakes, never of the seed. It
-  is split three ways by the round's `rake_house_bps`, `rake_dev_bps` and
-  `rake_share_bps`: the house treasury keeps its share, the dev/team share
-  is paid out with the settlement, and the shareholder share accrues to a
-  pool paid to the house asset's holders. The winners' side of the pot is
-  `pot - rake` however the rake is split.
+  The seed matches **at-belt stakes only**. Stakes of the house's own
+  fighters join the pot but are never matched: the house does not match its
+  own money, so a table with only house fighters at it adds no seed and
+  simply carries. A sensei's stake (§6) is not matched either, and does not
+  go into the belt pot at all.
+- **Pot** = seed actually added + carry in + every counted stake. It is
+  kept as **two pots** settled side by side:
+  - the **belt pot** = seed + carry in + the stakes of the fighters at their
+    own belt, paid to the at-belt solvers;
+  - the **sensei pot** = the sensei stakes only, no seed, no carry, paid to
+    the sensei solvers. There is one sensei pot per round whatever belts the
+    senseis hold.
+  A table without senseis has an empty sensei pot and is settled exactly as
+  before.
+- **Rake** = `rake_bps / 10000` of the counted stakes, never of the seed,
+  taken at the same rate from each pot's stakes. It is split three ways by
+  the round's `rake_house_bps`, `rake_dev_bps` and `rake_share_bps`: the
+  house treasury keeps its share, the dev/team share is paid out with the
+  settlement, and the shareholder share accrues to a pool paid to the house
+  asset's holders. The winners' side of a pot is `pot - rake` however the
+  rake is split.
 - **Solvers** are every identity with a counted commit and a correct reveal.
-- **Payout mode** is set per round in PUBLISH:
+- **Payout mode** is set per round in PUBLISH and runs once per pot, over
+  that pot's solvers:
   - `first` (default): the solver with the earliest commit tick takes
     `pot - rake`. Solvers that share that tick split it equally. Later
     solvers are recorded as `solved`, get nothing, and keep their stake in
@@ -108,9 +157,20 @@ identity counts.
     real time, first is skill, not network latency.
   - `split`: every solver shares `pot - rake` equally.
   - `podium`: the first three correct commits take 5:3:2 of `pot - rake`
-    (5:3 for two, all for one); same-tick solvers are ordered by
-    transaction id. Later solvers are `solved`, unpaid.
+    (5:3 for two, all for one). Later solvers are `solved`, unpaid.
   The integer remainder carries into the next round's seed.
+- **Ties.** Solvers whose correct commits share a tick are a dead heat and
+  share a placing; chain order inside a tick is not skill, so nothing else
+  breaks a tie and nothing is replayed. Under `first` everyone in the
+  earliest tick splits the pot equally, as above. Under `podium` the tied
+  solvers pool the weights of the placings they span and split them
+  equally: two tied for first take 4 parts each and the next solver takes
+  2 as third; three or more tied for first split all ten parts evenly; a
+  tie for the last podium place brings everyone tied onto the podium and
+  splits that place's weight among them, so the podium can grow (first 5,
+  second 3, four tied for third half a part each). Decided 2026-09-19,
+  docs/product-decisions.md; rounds before it ordered same-tick solvers by
+  transaction id.
 - **Bond.** PUBLISH announces `bond_bps` and `bond_rounds`. That share of
   every win stays with the house as the winner's bond and is paid out with
   the settlement of the round in which the winner completes `bond_rounds`
@@ -118,7 +178,10 @@ identity counts.
   bond to the pot. Bonds are listed in `bonds.json`; every hold, release and
   forfeit is in the hashed settlement.
 - **No winners:** `pot - rake` carries into the next round. The house keeps
-  only the rake.
+  only the rake. This holds per pot: a belt pot nobody at the belt solved
+  carries whole, as a jackpot for the next belt-eligible winner, with no cap
+  and no decay; a sensei pot nobody solved carries too, into the next
+  round's belt pot, so money can flow down the ladder but never up.
 - **Refunds.** A commit that was underpaid or landed outside the window is
   refunded in full at settlement. A stake behind a wrong or missing reveal
   stays in the pot: you paid to play.
@@ -138,14 +201,23 @@ its own across the whole range, or be demoted back.
 
 **The sensei seat.** A round may open its low tables to fighters from above
 (`sensei` in LOBBY and PUBLISH). A fighter sitting below its own belt is a
-*sensei*: it pays the entry fee and its stake joins the pot like anyone's,
-but it can **win back at most its own stake** — any surplus it would have
-won goes to the winners who belong at that belt, or carries — and the round
-**moves no belt points for it**, up or down. It still counts as one of the
-fights that release its bond. So a senior fighter has a reason to keep the
+*sensei*: it pays the entry fee, but its stake goes into the **sensei pot**
+(§5), not the belt pot. The senseis at a table, whatever their belts,
+compete for the sum of their own stakes under the round's payout mode; the
+seed, the carry and the beginners' stakes are the belt pot and are paid only
+to fighters at the belt. So a sensei's winnings can only ever be other
+seniors' money, and a sensei alone at a table can win back at most its own
+stake. The round **moves no belt points for it**, up or down. A sensei win
+holds a bond like any win, and the round still counts as one of the fights
+that release its bond. So a senior fighter has a reason to keep the
 beginners' tables alive without being able to take the beginners' money.
 Without sensei seats, a fighter who sits below its belt is refused
 (`outranked`) and refunded.
+
+A settlement without `pots` instead capped a sensei at its own stake out of
+the single pot, and the surplus went to the at-belt winners or carried; every
+round through 122 in this house's history was settled that way. The carry
+they built up stands and is paid to the next at-belt winner as above.
 
 Points move at your own belt: winner +2, solved +1, any failure -1. At +3
 you are promoted one belt and points reset; at -3 you are demoted one belt
@@ -178,7 +250,8 @@ For every round the house publishes, on chain and on the page:
 - the riddle document at the URI
 - the settlement document: every observed transaction with its verdict,
   the winners, every payout with its transaction id and confirmed tick,
-  `dojo_salt`, the carry into the next round
+  the two pots and what each paid, `dojo_salt`, the carry into the next
+  round
 - the SETTLE transaction carrying the settlement document's hash
 
 ## 9. Verification rules the house obeys
@@ -202,7 +275,14 @@ For every round the house publishes, on chain and on the page:
 Spectator betting, NFTs and avatars, seats and auctions, community riddles,
 oracle-fed riddles, duels and title belts, and the smart contract itself. Each
 has a line in `docs/roadmap.md`. Planned fighter NFTs are specified below;
-championship titles remain a separate proposal.
+season champion trophies and other agreed future rules are recorded in
+[Launch product decisions](product-decisions.md), not implemented by this spec.
+
+In particular, the planned seven-belt ladder ends at black and blocks
+lower-belt entry to higher-belt regular tables. Every new fighter starts at
+white and earns promotion at its own belt; higher belts may still enter
+eligible lower tables as senseis. This supersedes the above-belt entry and
+promotion-jump behaviour in §6 for the future product only.
 
 These rules are the ones the house runs today, off chain, and they are still
 cheap to change. That is deliberate: the contract comes last precisely so that
@@ -232,7 +312,16 @@ still charge for computation.
   signer. The future wire format must bind commitments to the fighter as
   well as the round and authorization. Switching wallets adds no seat.
 - Owning several fighters is possible. They need not have independent owners
-  or solvers: the same operator can coordinate multiple purchased fighters.
+  or solvers: the same operator can coordinate multiple purchased fighters
+  and enter them in the same regular round or cup, with one seat per fighter.
+  Disclose known common ownership; separate wallets do not prove independence.
+
+The first ten founding fighters are gifted, with distinctive appearances and
+ordinary competitive rights. Owners may transfer or resell them without
+receiving free replacements. Additional ordinary fighters may be issued in
+batches as the community grows; exact batch and pricing policies remain open.
+Initial ordinary-fighter prices may be low. Owning a fighter remains required
+for competition regardless of how it was acquired.
 
 ### Transfers and outstanding obligations
 
@@ -242,13 +331,21 @@ requirements and expiry. Transfer neither releases a bond nor restarts its
 clock. New fights count toward that fighter's bonds regardless of owner.
 Transfers and operator changes must appear in its public history.
 
+The solver is not automatically part of a fighter sale. A buyer inherits its
+rank even when supplying different software; ordinary regular-round promotion
+and demotion adjust rank afterward. Changing owners grants no rank reset.
+
 An accepted seat fixes the fighter, authorized signer and payout recipient
 for that round through settlement or refund. A transfer cannot create a
-second entry, redirect an accepted payout or erase a strike. Before enabling
-transfers, define an enforceable lock or deferred ownership-activation rule
-for open rounds and pending payouts. Handover must reconcile existing round
-payouts with the bond claims the buyer receives, without paying either claim
-twice. Off-chain operation and the later contract must use the same boundary.
+second entry, redirect an accepted payout or erase a strike. The agreed
+handover rule defers the buyer's competitive control until the active round
+or entire duel has settled, while confirmed ownership transfers the career
+and remaining bond claims. Cup handover occurs between pairings; the buyer
+inherits the bracket position and upcoming schedule without pausing the cup.
+Show pending contests and obligations before a sale. Before enabling transfers,
+implement this boundary and reconcile existing payouts with the bond claims
+the buyer receives without paying either claim twice. Off-chain operation and
+the later contract must use the same boundary.
 
 ### Farming and pricing
 
@@ -267,7 +364,8 @@ unreleased bonds are reported separately from realized returns. Model
 resale-price and liquidity scenarios: the full purchase price is capital
 required, but only the unrecovered portion is necessarily a lasting cost.
 Include repeated fresh purchases, coordinated fighters, deliberate demotion,
-promotion trades through duels, and subsidy or teaching-reward capture.
+season-point farming, and subsidy or teaching-reward capture. Under the agreed
+future rules, duels and cups cannot change belts or award league points.
 Assess price and supply together with rake, bonds, beginner rewards and the
 seed taper.
 
@@ -279,11 +377,14 @@ a fighter's resale appeal, but no resale value or liquidity is promised.
 
 ### Fighters and championship titles
 
-A fighter NFT is the owned competitor and its persistent career. A
-championship title is an earned, revocable status awarded through competition;
-buying an unused fighter does not confer one. Any title trophy asset and any
-associated revenue right need separate rules. Transferring a trophy alone
-must not silently transfer competitive champion status.
+A fighter NFT is the owned competitor and its persistent career. One overall
+champion is crowned per four-epoch season and receives a separate trophy NFT,
+freely transferable with no automatic cash reward or rake rights. The archived
+result permanently identifies the winning fighter and its operator at the
+time of the win. Selling the trophy does not change who won; buying an unused
+fighter does not confer a championship. Lifetime statistics and honours persist
+while current-season statistics reset. See `product-decisions.md` for scoring,
+sensei eligibility and championship playoffs.
 
 ### Decisions required before release
 
@@ -297,5 +398,6 @@ so exemptions do not reopen free resets. Resolve the NFT release findings
 [AUD-010](../audits/issues/AUD-010-nft-ownership-and-rights.md) before sale or
 activation.
 
-The purchase requirement and persistent career are the intended direction;
-price, supply, sale timing and migration policy remain to be decided.
+The purchase requirement, persistent career, ten gifted founding fighters and
+expandable ordinary-fighter supply are agreed. Exact prices, batch issuance,
+sale timing and migration policy remain to be decided.

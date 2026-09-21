@@ -4,12 +4,34 @@
 GQMPROP is a problem — it is not. Because every rule we change before the
 contract is free, and every rule we change after it costs a governance
 round-trip. The off-chain house is the cheapest place in this project to be
-wrong, so the order of work is: settle the rules by playing them, make the game
-worth playing, and only then set it in a contract whose parameters are numbers
-we measured rather than guessed.
+wrong, so implement and check the complete game there before porting its rules
+to the contract. Engineering tests and simulations inform that work; they do
+not establish external demand or sustainable economics.
 
-Everything below phase zero is therefore about nailing the game down. The
-contract is the last phase, and its brief is whatever the earlier phases prove.
+**Release decision, 2026-09-19:** finish the full intended product before
+onboarding the ten external fighter owners. Duels, cups, seasons, trophy NFTs
+and community challenges belong in that product. There is no intermediate
+external pilot gate. The contract remains last in implementation order; the
+working interpretation includes it before onboarding, with deployment scope
+still to be confirmed explicitly.
+
+The current agreed rules and remaining specification questions are recorded in
+[Launch product decisions](product-decisions.md). They supersede the historical
+sketches below wherever they address the same mechanic.
+
+**Verification decision, 2026-09-19:** use challenges settled through hash
+commitments for now. Defer open-ended quality scoring, oracle/EVM judging,
+custom verifier runtimes and execution proofs. Hash-based partial-credit
+formats remain proposals. Preserve [EVM oracle research](verification-research.md)
+as a deferred option; its integration, cost, latency and trust boundaries have
+not been validated end to end.
+
+**Content direction:** prioritise an extensive, frequently extended
+[riddle catalogue](riddle-catalogue.md). New families, explicit rule variants
+and combined tasks should reward improvements to fighter scripts and procedures.
+The catalogue records 16 current kinds and 40 candidates; it is a design backlog,
+not a claim that the new generators exist. Content releases should preserve a
+stable solver interface and hash-based settlement.
 
 ---
 
@@ -21,7 +43,15 @@ cohort.
 
 - [x] spec, wire protocol, lore, developer API (docs/api.md), modelling notes (docs/model.md)
 - [x] pure core: hashing, payloads, round evaluation, settlement
-- [x] chain layer: fake for tests, qubic-cli + indexer for real, indexer-lag safe
+- [x] chain layer: fake for tests, native Python + indexer for real, indexer-lag
+      safe; qubic-cli kept behind `--chain cli` as the reference only
+- [x] pure-Python signing, so a bot needs no qubic-cli: K12, FourQ, SchnorrQ,
+      identities, transactions and the node protocol in `qdojo.qubic`, the
+      default chain since 2026-09-19, checked byte-for-byte against the
+      reference by `scripts/crosscheck-signer.py`
+- [x] the bot tool is binary-free end to end: the rite, node discovery, share
+      issuance (Qx) and dividends (QUtil) all run natively, and no bot command
+      looks for qubic-cli unless `--chain cli` is asked for
 - [x] house CLI: lobby / publish / collect / settle / void / export / metrics / model / distribute-shareholders
 - [x] bot CLI: init, bow, run with any solver, stats, shares, dividend, strategy hook
 - [x] spectator page: lobby table, rounds, results, void, fighter profiles, halls of fame, hash verify
@@ -62,24 +92,43 @@ the public package before the repo opens.
 
 ## Phase two, the game deepens — NEXT
 
-The rules are cheap to change right now. This is where we spend that, and the
-Sketches below are the candidates. Fighter NFT registration is the agreed
-direction, with pricing and implementation still open; the other mechanics
-remain proposals.
+The rules are cheap to change right now. Build the full scope below before
+external onboarding, using [the agreed product rules](product-decisions.md).
+Open parameters and implementation details remain to be resolved; these
+features are not marked implemented merely because their direction is agreed.
 
 - **fighter avatar NFTs as paid registration**: a persistent competitive
   identity whose belt, record and outstanding bonds survive a sale or wallet
   change; one seat per fighter per round. Training stays free. See
   `docs/spec.md` §11 and the implementation sequence below.
-- belts beyond blue: at present blue holds, progression stops, and own-belt
-  points are pure downside for a fighter who cannot be promoted
-- riddle classes that are not arithmetic — the lore's promise is code that is
-  broken and must be fixed
-- the face-off (duels), title belts as earned 1-of-1 assets, gauntlet seasons
-- make the sensei seat worth taking; on today's numbers it is strictly negative
-  and only a bonded, cash-rich senior has a reason
-- community riddles with an author stake and cut
-- whether a second cohort, run by someone who is not us, behaves the same way
+- ten gifted founding fighters with distinctive appearances and ordinary
+  competitive rights; low initial ordinary-fighter prices and further batches
+  as the community grows
+- meaningful challenge families with canonical answers settled through hashes,
+  free training and actionable explanations of losses; debugging can be part
+  of solving, but arbitrary patch verification and open-ended quality scoring
+  are deferred; partial-credit scoring through hashes remains to be specified
+- a versioned catalogue and authoring/release workflow for frequent family,
+  rule-variant and composition additions, with reference answers, practice
+  specimens, difficulty checks and explicit generation/settlement cost bounds
+- always-open regular lobbies that wait for quorum, autonomous participation
+  limits, and modest fixed seeds within a finite subsidy budget
+- four-epoch seasons: every regular round counts toward one overall champion;
+  3/2/1/0 scoring also rewards senseis at lower tables; lifetime records persist
+- a freely transferable season champion trophy NFT, with no automatic cash
+  reward or rake rights; archived championship results remain with the winner
+- standalone duels in single-round, best-of-three and best-of-five formats,
+  full purse less rake regardless of belt, with no league or belt points
+- scheduled knockout cups and championship playoffs: best-of-three early
+  matches and best-of-five finals; cup winner takes the entire prize pool
+- reviewed community generators and verifiers, random selection after entries
+  lock, no author deposit, and authors paid 10% of the house's rake portion on
+  regular rounds using their families
+- extend the finite belt ladder through brown to black, with meaningfully
+  harder challenges across families; every new fighter starts at white and
+  earns promotion at its own belt, with no upward regular-table entry or rank
+  jumps; seniors may still enter lower tables as senseis; seasons and cups
+  provide continuing competition without resetting career rank
 
 ### Fighter registration: implementation sequence
 
@@ -87,8 +136,9 @@ remain proposals.
    and coordinated operators: shared solvers, podium capture, deliberate
    demotion, subsidies and resale. Acquisition price is not all sunk cost if
    the fighter can be resold. Compare prices and issuance policies against
-   farming returns and newcomer willingness to buy after training. Record
-   registration revenue separately from recurring rake revenue.
+   farming returns, including the low-price launch policy and gifted fighters.
+   Record registration revenue separately from recurring rake revenue.
+   Newcomer willingness to buy remains an observation for after launch.
 2. **Specify the persistent career.** Key rank, history, strikes, teaching
    credit and bonds by fighter asset ID. Define owner/operator authorization,
    ownership handover for open rounds, fixed round payout recipients, bond
@@ -101,15 +151,20 @@ remain proposals.
    the existing financial/public-operation audit gates and NFT release
    findings (AUD-009–010) before activation or sale. Validate transfer,
    delegation, duplicate-entry and recovery behavior.
-4. **Run an external cohort through train → buy → compete.** Keep training
-   available without a wallet or purchase. Measure conversion, repeat
-   training, improvement, return after losses, table fill and acquisition/
-   resale behavior. Choose launch price, supply policy and subsidy limits
-   from these results before freezing the contract rules.
+4. **Integrate registration with the complete game.** Exercise ownership and
+   handover across regular rounds, seasons, duels, cups and trophy issuance.
+   Keep training available without a wallet or purchase. Set explicit launch
+   prices, batch policy and subsidy limits; tests and simulations precede
+   onboarding, while real conversion and retention evidence follows launch.
 
 The economics to settle here, because they are the contract's parameters: the
 seed taper, rake split, bond, fighter acquisition cost and supply, and whether
-rounds sustain the house without subsidy or continuing NFT sales. `house model` and `house metrics`
+rounds sustain the house without subsidy or continuing NFT sales. Include
+contract execution/state costs, oracle queries and retries, and any EVM/proof/
+relay costs against the house's retained rake after all allocations. The
+dated execution-cost brief in `docs/model.md` is part of the architecture
+decision; existing off-chain margin estimates omit these expenses.
+`house model` and `house metrics`
 are the starting tools; acquisition, resale and
 coordinated-fighter strategies need to be added. Correct the model's sensei
 cap to run before bonds, matching settlement, and model entry decisions from
@@ -124,15 +179,17 @@ blocked on phase two being *decided*, not merely attempted.
 - seats, auctions, inactivity eviction, NPC seats acting at tick boundaries
 - commit and reveal inside the contract, pot and rake in state
 - on-contract bond custody and shareholder claims
-- the sensei seat and the chosen gate, belt seasons
+- the sensei seat and the chosen gate; four-epoch league standings separate
+  from persistent belt progression
 - fighter NFT ownership and operator authorization, persistent career and
   bond state keyed by asset ID, one seat per fighter per round, and safe
   ownership handover across pending rounds and payouts
 - **assets, not only QU** — ownership checks for registered fighters and
-  whatever custody or transfer mechanism the tested rules require; title
-  assets remain conditional on the title experiment
+  whatever custody or transfer mechanism the specified rules require,
+  including season champion trophy issuance and ownership
+- duels, cup brackets, match series, bounded draws/replays, prize accounting,
+  challenge selection and author payments under the agreed product rules
 - IPO of 676 shares, fees to shareholders
-- pure-Python signing, so a bot needs no qubic-cli
 - proposal through GQMPROP
 
 ## Later, unscheduled
@@ -140,7 +197,17 @@ blocked on phase two being *decided*, not merely attempted.
 - any marketplace integration for fighter resale; basic ownership and
   transfer rules belong in phase two, independent of a marketplace
 - parimutuel spectator pools (Quottery's model), after legal review
-- oracle-fed riddles once a second oracle interface exists
+- external-data riddles; EVM-oracle settlement is a separate architecture
+  candidate described in [verification research](verification-research.md)
+
+## After the complete release: onboard the first ten
+
+Gift the distinctive founding fighters to independent builders recruited
+through Qubic Discord. They use the finished product; this is not an earlier
+phase-two pilot. Observe solver improvements, return after losses, waiting
+times, purchased registrations beyond the gifted cohort, recurring costs and
+coordinated-fighter behaviour to inform subsequent releases. Gifted entry does
+not itself demonstrate willingness to buy a fighter.
 
 ---
 
@@ -184,7 +251,15 @@ naming the seed tick in `LOBBY` or `PUBLISH` is the natural place.
 Not decided, not costed. It belongs with phase two, because it is cheap to
 change now and a governance round-trip later.
 
-## Sketches — recorded, not scheduled (2026-09-17)
+## Historical sketches — superseded where decided (2026-09-17)
+
+**Historical reasoning only.** The 2026-09-18–19 discussion settled several
+of these questions differently. Use [Launch product decisions](product-decisions.md)
+for current intended behaviour: in particular, duels have full-purse payouts
+without belt progression, unresolved duels refund without rake, championships
+use four-epoch seasons and freely transferable trophies, and community authors
+need no deposit. The proposals below are retained as context, not as a second
+active ruleset or an implementation sequence.
 
 Updated 2026-09-18 with fighter registration as the agreed direction.
 Duels, sensei incentives

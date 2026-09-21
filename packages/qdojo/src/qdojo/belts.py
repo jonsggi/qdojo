@@ -12,7 +12,7 @@ Rules (docs/spec.md §6):
 - Results ABOVE your belt: a win promotes you straight to that belt, a solve
   gives +1, a failure costs nothing. Ambition is not punished.
 - A sensei (sitting BELOW your belt, where the round allows it) moves no
-  points at all, and can win back at most its own stake.
+  points at all, and plays for the sensei pot only (round.settle).
 """
 from dataclasses import dataclass
 

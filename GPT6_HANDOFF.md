@@ -337,3 +337,78 @@ which your own note already warns against.
    the two pieces of work have not met.
 3. `encode()`'s `x.real == 0` branch is structurally unexercised (~2^-127 to
    reach); it mirrors the reference's own branch.
+
+---
+
+# Claude, 2026-09-19 ~21:50Z: the riddle pack is committed and green
+
+- **The RISK section above is resolved.** `feature/qubic-riddle-pack` now
+  holds the work as one commit, rebased onto main (`960a001`): `54b1d97`.
+  Nothing in that worktree is untracked or uncommitted any more.
+- **The failing full-round test was the harness, not the content.** The
+  test replaced `time.sleep` globally with "advance one tick and step both
+  bots". `subprocess.run(timeout=…)` polls the solver child through
+  `time.sleep` inside CPython's `Popen._wait`, so every poll re-entered the
+  harness *during* the bot's solve, before the bot had recorded its commit.
+  The bot then committed once per nesting level (BOB 24 times in one tick
+  until his balance ran out), and the reveal matched none of them:
+  `duplicate_commit`, `bad_reveal`, `no_reveal`, and the right answer sitting
+  in `rounds.json`. It only bit under pytest because the pipe timing there
+  makes the poll fire; the same code run standalone passed, which is why it
+  looked flaky. The patch is now confined to `spar`'s view of `time`. The
+  generated answers were never wrong.
+- After the fix: `make test` 360 passed, 1 skipped, Node 24/24; `make lint`
+  and `git diff --check` clean; the riddle test files green on three
+  consecutive runs.
+- **Not done, in order of value:** the docs step (pack guide, `docs/api.md`,
+  `docs/spec.md`, and adding the three families to `riddle-catalogue.md`,
+  which is still uncommitted on main); a round of the pack over the native
+  chain; and the merge-order decision between this branch and
+  `native-signer`, which is Joel's.
+- The 26 seed confs on `/run/user/1001/qdojo` are still there. Not touched.
+
+---
+
+# Claude, 2026-09-20 ~03:00Z: the open issues are closed and the pack has been fought
+
+Everything above is history now. What landed, in one batch on `main`:
+
+- **#12, #13** the riddle pack and the native signer are merged, in that
+  order; the crosscheck ran green on the merged tree (20 seeds, 300
+  signatures byte-identical against qubic-cli).
+- **#23** every bot command signs in Python; the Qx and QUtil contract calls
+  are native too (`qdojo.qubic.contracts`, frozen against the reference).
+  Nobody builds qubic-cli any more except to run the crosscheck.
+- **#10, #18** the sensei cap is gone: a sensei table pays two pots, and
+  same-tick winners are a dead heat. Modelled first (`docs/model.md`), then
+  built; the settlement document gained `pots`. Rounds 89-118 were settled
+  under the cap and `qdojo train` says so rather than re-pricing them.
+- **#9** the per-belt entry-fee controller, opt-in (`--entry-fee auto`),
+  modelled first; `fee_policy` is published so a bot can replay it.
+- **#16, #17, #14** the three Qubic families were reviewed candidly, made to
+  hinge on their Qubic facts, measured on fresh instances with deterministic
+  reference solvers (`examples/solvers/qubic_*.py`, `qubic_pack.py`), and
+  documented in `docs/riddle-pack.md`.
+- **#15** rounds 120-122, one per family, over the native chain with the
+  OpenRouter lineup; every balance reconciled. `docs/operations.md` has the
+  findings, most of them about the harness (model slots, pretty-printed
+  answers, a node reading a live identity as zero).
+- **#19** nothing was shredded: the tmpfs confs are the cohort's keys (Joel
+  keeps those bots; they become founding fighter NFTs). Every dojo identity
+  is in the encrypted qw keystore in `~/qubic-admin`; the confs also live at
+  `~/.qdojo/<bot>/bot.conf`. `--ephemeral-conf` and a leftover check exist
+  for throwaway identities.
+- **#1-#8, #11** the spectator page: phone layout, scroll cues, honest tick
+  screen, 9px floor, name routes, and every share label now derived from the
+  settlement it renders.
+- **#22** the fighter cockpit (`bot dash`, `bot settings/status/metrics/log`,
+  a settings manifest beside each solver); **#21** the fighter runs on Windows
+  (`dojo.ps1`, portable locks, documented limits; not verified on a real
+  Windows box).
+- **#20** the design drafts are committed. `scripts/publish-export.sh` keeps
+  the public page following a run.
+
+The simulation is paused at Joel's request after round 122; the standing
+lineup (`private/sparring/bots-run3.sh` plus `house spar --riddle-pack
+mixed`) restarts when he says so. The house conf on tmpfs was shredded when
+this batch shipped; export it again from the keystore when needed.

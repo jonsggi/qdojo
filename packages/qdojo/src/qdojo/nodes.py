@@ -25,8 +25,32 @@ def parse_node_list(text: str) -> list[str]:
     return [l.strip() for l in text.splitlines() if IP_RE.match(l.strip())]
 
 
+def native_probe(timeout: float = 6.0):
+    """A prober that speaks the node protocol: ip[:port] -> (tick or None, peers).
+
+    The peer list costs nothing extra: a node volunteers it the moment the
+    socket opens, which is the same list `qubic-cli -getnodeiplist` asks for.
+    So one connection answers both halves, and discovery needs no binary.
+    Peers come back as bare IPs; an explicit `--node IP:PORT` keeps its port.
+    """
+    from .qubic.node import Node, NodeError
+
+    def probe(ip: str):
+        host, _, port = ip.partition(":")
+        try:
+            with Node(host, int(port or PORT), timeout) as n:
+                peers = n.public_peers()
+                return n.tick_info()["tick"], [p for p in peers if IP_RE.match(p)]
+        except (NodeError, ValueError, OSError):
+            return None, []
+    return probe
+
+
 def cli_probe(binary: str, timeout: float = 6.0):
-    """A prober built on qubic-cli: ip -> (tick or None, peer list)."""
+    """A prober built on qubic-cli: ip -> (tick or None, peer list).
+
+    Kept for `--chain cli`. `native_probe` is the default and needs no binary.
+    """
     def probe(ip: str):
         base = [binary, "-nodeip", ip, "-nodeport", str(PORT)]
         try:

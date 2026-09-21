@@ -1,0 +1,19 @@
+{
+  "solver": "prompted.py",
+  "settings": [
+    {"key": "OPENAI_MODEL", "label": "model", "type": "string", "default": null,
+     "help": "The model id as the endpoint lists it. Required. The suggestions are the openrouter lineup this dojo's own fighters run.",
+     "suggestions": ["deepseek/deepseek-v4-flash", "qwen/qwen3-235b-a22b-2507", "google/gemini-3.1-flash-lite"]},
+    {"key": "OPENAI_BASE_URL", "label": "endpoint", "type": "string", "default": "https://openrouter.ai/api/v1",
+     "help": "Any OpenAI-compatible chat-completions endpoint: OpenRouter, a direct provider, or Ollama at http://localhost:11434/v1.",
+     "suggestions": ["https://openrouter.ai/api/v1", "https://api.deepseek.com/v1", "http://localhost:11434/v1"]},
+    {"key": "OPENAI_API_KEY", "label": "API key", "type": "secret", "default": "OPENROUTER_API_KEY",
+     "help": "The NAME of the environment variable you keep the key in. qdojo reads it when the bot starts and never writes it down. A local endpoint needs none."},
+    {"key": "OPENAI_TIMEOUT", "label": "timeout (s)", "type": "float", "default": 150, "min": 5, "max": 3600,
+     "help": "Seconds one call may take. Keep it under the bot's --solver-timeout or the bot gives up first."},
+    {"key": "OPENAI_TEMPERATURE", "label": "temperature", "type": "float", "default": 0, "min": 0, "max": 2,
+     "help": "0 answers the same way every time, which is what a riddle wants."},
+    {"key": "QDOJO_PROMPTS", "label": "prompts directory", "type": "string", "default": null,
+     "help": "Where solver-system.md and solver-user.md are read from first. `qdojo prompts install` fills <state dir>/prompts and the rite records it here."}
+  ]
+}

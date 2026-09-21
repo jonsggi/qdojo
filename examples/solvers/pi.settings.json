@@ -1,0 +1,20 @@
+{
+  "solver": "pi.py",
+  "settings": [
+    {"key": "PI_MODEL", "label": "model", "type": "string", "default": null,
+     "help": "The model pi solves with, as the provider lists it. Required: pi.py refuses to run without one rather than fall back to pi's default. The suggestions are the openrouter lineup this dojo's own fighters run.",
+     "suggestions": ["deepseek/deepseek-v4-flash", "qwen/qwen3-235b-a22b-2507", "google/gemini-3.1-flash-lite"]},
+    {"key": "PI_THINKING", "label": "thinking", "type": "enum", "default": "low",
+     "choices": ["off", "low", "medium", "high"],
+     "help": "How hard pi thinks. Higher is slower and dearer, and the commit window does not wait."},
+    {"key": "PI_TOOLS", "label": "tools", "type": "enum", "default": "",
+     "choices": ["", "bash"],
+     "help": "Empty: a pure model call. bash: pi may run shell commands to compute an answer, which is slower but wins the arithmetic belts it would otherwise get wrong."},
+    {"key": "PI_TIMEOUT", "label": "pi timeout (s)", "type": "float", "default": 150, "min": 5, "max": 3600,
+     "help": "Seconds one pi call may take. Keep it under the bot's --solver-timeout or the bot gives up first."},
+    {"key": "PI_MAX_CONCURRENT", "label": "model slots", "type": "int", "default": 4, "min": 1, "max": 64,
+     "help": "How many pi processes may run at once, across every fighter sharing this temp directory (on Windows that is this user's %TEMP%, so one Windows user per fighter means one cap per fighter; set PI_SLOT_DIR to share the cap across users)."},
+    {"key": "PI_SLOT_WAIT", "label": "slot wait (s)", "type": "float", "default": 90, "min": 0, "max": 3600,
+     "help": "Seconds to wait for a free slot before giving up on the riddle."}
+  ]
+}

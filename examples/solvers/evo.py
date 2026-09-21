@@ -6,17 +6,53 @@ The LLM is only consulted to write or fix a tool; solving is done by the
 tools, so the mechanical belts cost nothing once learned.
 
 Env: EVO_DIR (toolbox + memory), EVO_MODEL (pi model id), EVO_THINKING,
-EVO_BOARD (board URL, to learn from history.json), EVO_TIMEOUT.
+EVO_BOARD (board URL, to learn from history.json), EVO_TIMEOUT, QDOJO_PI to
+point at a `pi` that is not the one on PATH.
 """
 import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
 import urllib.request
+
+
+def pi_command():
+    """argv head for the pi coding agent, startable by CreateProcess directly.
+
+    npm installs the agent as a `pi.cmd`/`pi.ps1` shim on Windows (never a
+    `pi.exe`), and `subprocess.run(["pi", ...])` can only find `pi.exe` on
+    PATH, so it raises FileNotFoundError there. Running the resolved `.cmd`
+    path instead would work, but CreateProcess starts a batch file through
+    `cmd.exe`, which re-parses the argv: a multi-line prompt gets truncated
+    at the first newline and `& | < > ^ %` in riddle text become shell
+    operators. So the shim is never run -- its last line always runs node on
+    the package's real entry file, and that is what this runs."""
+    found = shutil.which(os.environ.get("QDOJO_PI") or "pi")
+    if not found:
+        print("evo.py: pi not found on PATH (install it, or set QDOJO_PI)", file=sys.stderr)
+        sys.exit(4)
+    if found.lower().endswith((".cmd", ".bat")):
+        here = os.path.dirname(found)
+        try:
+            with open(found, encoding="utf-8", errors="replace") as f:
+                shim = f.read()
+        except OSError:
+            shim = ""
+        m = re.search(r'"%dp0%\\([^"]+\.js)"', shim)
+        entry = os.path.join(here, *m.group(1).split("\\")) if m else os.path.join(
+            here, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js")
+        node = os.path.join(here, "node.exe")
+        node = node if os.path.isfile(node) else shutil.which("node")
+        if not (node and os.path.isfile(entry)):
+            print(f"evo.py: pi at {found} is an npm shim and node/{entry} is missing", file=sys.stderr)
+            sys.exit(4)
+        return [node, entry]
+    return [found]
 
 riddle = json.load(sys.stdin)
 EVO_DIR = os.path.expanduser(os.environ.get("EVO_DIR", "~/.qdojo/evo"))
@@ -35,13 +71,15 @@ LOG = os.path.join(EVO_DIR, "evo.log")
 # Who this toolbox belongs to. Nothing else on disk ties an evo directory to a
 # chain identity or a model, so `qdojo house lab` cannot cross-link the lab to
 # the fighter card without it. Rewritten every run; it is never secret.
-with open(os.path.join(EVO_DIR, "bot.json"), "w") as _f:
-    json.dump({"name": os.environ.get("QDOJO_NAME") or os.path.basename(EVO_DIR.rstrip("/")),
+# Every text file here is opened as UTF-8 by name: on Windows the default is
+# the locale's code page, which cannot write a riddle's answer.
+with open(os.path.join(EVO_DIR, "bot.json"), "w", encoding="utf-8") as _f:
+    json.dump({"name": os.environ.get("QDOJO_NAME") or os.path.basename(os.path.normpath(EVO_DIR)),
                "identity": ME or None, "model": MODEL}, _f, indent=2)
 
 
 def log(msg):
-    with open(LOG, "a") as f:
+    with open(LOG, "a", encoding="utf-8") as f:
         f.write(time.strftime("%H:%M:%S ") + msg + "\n")
 
 
@@ -73,16 +111,38 @@ def run_tool(path, r, timeout=20):
 
 
 # ---- concurrency limit: the box cannot host every fighter's model process at once
-import fcntl as _fcntl
+# One lock file per slot under the system temp directory. flock where the OS
+# has it; on Windows msvcrt.locking on the first byte does the same job. Both
+# are released when the process exits, however it exits.
+try:
+    import fcntl as _fcntl
+
+    def _try_lock(f):
+        _fcntl.flock(f, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+except ImportError:                                     # Windows
+    import msvcrt as _msvcrt
+
+    def _try_lock(f):
+        f.seek(0)
+        _msvcrt.locking(f.fileno(), _msvcrt.LK_NBLCK, 1)
+
+SLOTS = os.environ.get("PI_SLOT_DIR") or os.path.join(tempfile.gettempdir(), "qdojo-pi-slots")
+
+
 def _slot(max_slots=int(os.environ.get("PI_MAX_CONCURRENT", "4")), wait=float(os.environ.get("PI_SLOT_WAIT", "90"))):
-    """Hold one of max_slots file locks; wait up to `wait` seconds for one."""
-    os.makedirs("/tmp/qdojo-pi-slots", exist_ok=True)
+    """Hold one of max_slots file locks; wait up to `wait` seconds for one.
+
+    A slot file this process cannot even open (wrong owner, a read-only or
+    foreign-owned SLOTS directory) is not the same as a busy one: let it
+    raise, with the path in the message, instead of waiting out `wait` and
+    then blaming "no model slot free"."""
+    os.makedirs(SLOTS, exist_ok=True)
     deadline = time.time() + wait
     while True:
         for i in range(max_slots):
-            f = open(f"/tmp/qdojo-pi-slots/{i}", "w")
+            f = open(os.path.join(SLOTS, str(i)), "a")     # never truncate: a locked file cannot be, on Windows
             try:
-                _fcntl.flock(f, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+                _try_lock(f)
                 return f
             except OSError:
                 f.close()
@@ -92,7 +152,7 @@ def _slot(max_slots=int(os.environ.get("PI_MAX_CONCURRENT", "4")), wait=float(os
 
 
 def ask_llm(prompt, system):
-    args = ["pi", "-p", "--no-session", "--no-tools", "--thinking", THINKING, "--system-prompt", system]
+    args = pi_command() + ["-p", "--no-session", "--no-tools", "--thinking", THINKING, "--system-prompt", system]
     if MODEL:
         args += ["--model", MODEL]
     args.append(prompt)
@@ -101,6 +161,9 @@ def ask_llm(prompt, system):
         try:
             p = subprocess.run(args, capture_output=True, text=True, timeout=TIMEOUT, cwd=cwd)
         except subprocess.TimeoutExpired:
+            return ""
+        except OSError as e:
+            log(f"pi could not start: {e}")
             return ""
     return p.stdout
 
@@ -127,9 +190,9 @@ def write_tool(key, r, prev_code=None, failure=None):
     if not code.strip() or "answer" not in code:
         return False
     path = tool_path(key)
-    with open(path + ".v" + str(int(time.time())), "w") as f:
+    with open(path + ".v" + str(int(time.time())), "w", encoding="utf-8") as f:
         f.write(code)
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         f.write(code)
     return True
 
@@ -146,7 +209,7 @@ def learn():
     except Exception:
         return
     seen_path = os.path.join(EVO_DIR, "learned.json")
-    seen = set(json.load(open(seen_path))) if os.path.exists(seen_path) else set()
+    seen = set(json.load(open(seen_path, encoding="utf-8"))) if os.path.exists(seen_path) else set()
     for rd in reversed(hist.get("rounds", [])):
         if rd["state"] != "settled" or not rd.get("riddle"):
             continue
@@ -156,9 +219,9 @@ def learn():
         key = kind_key(rd["riddle"])
         want = rd["settlement"]["answer"]
         seen.add(rd["round_id"])
-        json.dump(sorted(seen), open(seen_path, "w"))
+        json.dump(sorted(seen), open(seen_path, "w", encoding="utf-8"))
         path = tool_path(key)
-        prev = open(path).read() if os.path.exists(path) else None
+        prev = open(path, encoding="utf-8").read() if os.path.exists(path) else None
         failure = f"for the example it answered {mine.get('answer')!r} but the correct answer was {want!r}"
         example = dict(rd["riddle"]); example["known_answer"] = want
         if write_tool(key, example, prev, failure):
@@ -174,10 +237,10 @@ answer, err = (None, "no tool yet")
 if os.path.exists(path):
     answer, err = run_tool(path, riddle)
 if answer is None:
-    prev = open(path).read() if os.path.exists(path) else None
+    prev = open(path, encoding="utf-8").read() if os.path.exists(path) else None
     if write_tool(key, riddle, prev, err if prev else None):
         answer, err = run_tool(path, riddle)
-        if answer is None and prev is None and write_tool(key, riddle, open(path).read(), err):
+        if answer is None and prev is None and write_tool(key, riddle, open(path, encoding="utf-8").read(), err):
             answer, err = run_tool(path, riddle)
 if answer is None:
     log(f"round {riddle.get('round_id')} {key}: no answer ({err})")

@@ -27,11 +27,11 @@ const EMBEDDED = {
 // a reader hovers and the definition they read on the rules page cannot drift
 // apart -- and the drift would have been about money.
 const HELP = {
-  pot:        { label: 'POT', text: 'Everything the round pays out: every counted stake plus the house seed. What nobody wins carries into the next round.' },
-  seed:       { label: 'HOUSE SEED', text: 'Money the house adds so a small table is still worth fighting for. It is the carry from earlier rounds plus whatever the house matches, never more than the cap.' },
+  pot:        { label: 'POT', text: 'Everything the round pays out: every counted stake plus the house seed. With senseis at the table it is two pots settled side by side: the belt pot (seed, carry and the at-belt stakes) and the sensei pot (the senseis\' own stakes, nothing else). What nobody wins carries into the next round.' },
+  seed:       { label: 'HOUSE SEED', text: 'Money the house adds so a small table is still worth fighting for. It is the carry from earlier rounds plus whatever the house matches of the at-belt stakes, never more than the cap. A sensei\'s stake is never matched.' },
   seed_cap:   { label: 'SEED CAP', text: 'The most the house will add to this round, whatever the fighters stake. It is published before anyone buys a seat, so the house cannot sweeten a round after seeing who sat down.' },
   match:      { label: 'HOUSE MATCH', text: 'How much the house adds per QU staked. 1:1 means it matches every stake, up to the seed cap. FIXED means a flat seed no matter how many fighters sit down.' },
-  carry:      { label: 'CARRY', text: 'The part of a pot nobody won. The house does not keep it: it becomes the next round\'s seed, so an unsolved riddle makes the next one richer.' },
+  carry:      { label: 'CARRY', text: 'The part of a pot nobody won. The house does not keep it: it becomes the next round\'s seed, so an unsolved riddle makes the next one richer. An unwon sensei pot carries the same way, into the next belt pot.' },
   bond:       { label: 'BOND', text: 'A slice of every win the house holds back until the winner has fought a few more rounds. Come back and it is paid out; walk away with the purse and it returns to the pot.' },
   bond_rounds:{ label: 'BOND ROUNDS', text: 'How many more rounds a winner must fight before its bond is released. Sit out twenty rounds and the bond is forfeited to the pot.' },
   rake:       { label: 'RAKE', text: 'The house\'s cut, taken from the staked money only and never from the seed. Everything else is paid to fighters or carried.' },
@@ -39,11 +39,11 @@ const HELP = {
   entry_fee:  { label: 'ENTRY FEE', text: 'What one seat at this table costs. You pay it before the riddle exists, so you are buying a chair, not an answer.' },
   points:     { label: 'BELT POINTS', text: 'Your score at your own belt: a win is +2, a correct but unpaid answer +1, any failure −1. At +3 you are promoted and the score resets; at −3 you are demoted.' },
   belt:       { label: 'BELT', text: 'Your rung on the ladder: white, yellow, orange, green, blue. You may sit at your belt or above it, never below, unless the table has opened a sensei seat.' },
-  sensei:     { label: 'SENSEI SEAT', text: 'A senior fighter sitting at a table below its belt. It pays like anyone else but can win back at most its own stake, and the round moves no belt points for it. Seniors keep the beginners\' tables alive without taking the beginners\' money.' },
+  sensei:     { label: 'SENSEI SEAT', text: 'A senior fighter sitting at a table below its belt. It pays like anyone else, but its stake goes into the sensei pot, which only senseis can win, so it plays for other seniors\' money and never the beginners\', and the round moves no belt points for it. In a settlement without `pots` it was instead capped at its own stake.' },
   verdict:    { label: 'VERDICT', text: 'What the round decided about one fighter. WINNER took money, SOLVED was right but too late to be paid, WRONG answered wrong, NO SHOW bought a seat and never fought, NO REVEAL sealed an answer and never opened it, BAD REVEAL opened something that did not match the seal.' },
   solve_ticks:{ label: 'SOLVE TIME', text: 'Ticks from the riddle being published to your sealed answer landing on chain. One tick is about half a second, so 12 T is about six seconds — thinking time and network time together.' },
-  podium:     { label: 'PODIUM 5:3:2', text: 'The first three correct sealed answers split the pot five parts, three parts, two parts. A fourth correct answer earns belt points and no money.' },
-  mode:       { label: 'PAYOUT MODE', text: 'How this round divides its pot. SPLIT shares it between everyone who solved it, FIRST gives it all to the first correct commit, PODIUM pays the first three 5:3:2.' },
+  podium:     { label: 'PODIUM 5:3:2', text: 'The first three correct sealed answers split their pot five parts, three parts, two parts. Answers sealed in the same tick are a dead heat: they share a placing and split its parts equally, and a tie for third brings everyone tied onto the podium. A correct answer behind them earns belt points and no money.' },
+  mode:       { label: 'PAYOUT MODE', text: 'How this round divides its pot, run once per pot when senseis sit. SPLIT shares it between everyone who solved it, FIRST gives it all to the earliest correct commit tick, PODIUM pays the first three 5:3:2. Same-tick commits tie and share.' },
   ko:         { label: 'K.O.', text: 'The arcade word for a settled round with a winner. DOUBLE and TRIPLE K.O. mean two or three winners split it; PERFECT means the winner beat at least three fighters.' },
   commit:     { label: 'COMMIT WINDOW', text: 'How long the dojo accepts sealed answers. You publish the hash of your answer, not the answer, so nobody — not even the house — can copy you before the window closes.' },
   reveal:     { label: 'REVEAL WINDOW', text: 'How long you have to open your seal. The house checks that what you show hashes to what you sealed. A mismatch is a lie, and the dojo records it.' },
@@ -96,6 +96,7 @@ const S = {
   liveSeen: false,     // a live history.json was loaded at least once
   lastLiveOk: 0,       // ms timestamp of the last successful live fetch
   fetchedAt: 0,        // ms timestamp when generated_tick was observed
+  polledAt: 0,         // ms timestamp of the last poll attempt (drives the idle meter)
   screen: 'title',
   round: null,         // selected round on the results screen
   fighter: null,       // selected identity on the fighter card screen
@@ -151,6 +152,27 @@ function ticksToHuman(t) {
   const m = Math.floor(s / 60), r = s % 60;
   return r ? `${m}m${String(r).padStart(2, '0')}s` : `${m}m`;
 }
+// "45 s", "12 min", "5 h", "467 d": one unit, no decimals. Seconds under 90 s,
+// minutes under 90 min, hours under 48 h, days from there. The tick screen
+// ("467 d AGO") and the STALE pill ("STALE 12 min") both use it, so they agree.
+function ageText(secs) {
+  secs = Math.max(0, Number(secs) || 0);
+  if (secs < 90) return `${Math.round(secs)} s`;
+  if (secs < 90 * 60) return `${Math.round(secs / 60)} min`;
+  if (secs < 48 * 3600) return `${Math.round(secs / 3600)} h`;
+  return `${Math.round(secs / 86400)} d`;
+}
+// What the tick screen says under TICK N. Every input is a tick number, so
+// apps/web/tests/when.test.cjs runs it in a bare VM: `t` is the tick shown,
+// `now` the tick the page believes it is, `first` the earliest tick of any
+// round (null when there is none). Before the first round a day count is a
+// sum, not information -- and the export carries no wall-clock anchor that
+// could turn a tick that old into an honest date, so it says what it knows.
+function tickWhen(t, now, first) {
+  if (first !== null && first !== undefined && t < first) return 'BEFORE ROUND 1';
+  if (t > now) return `IN ${ageText((t - now) * TICK_MS / 1000)}`;
+  return `${ageText((now - t) * TICK_MS / 1000)} AGO`;
+}
 function ordinal(n) { return n === 1 ? '1ST' : n === 2 ? '2ND' : n === 3 ? '3RD' : `${n}TH`; }
 function signed(n) {
   if (n === null || n === undefined || Number.isNaN(Number(n))) return '—';
@@ -176,7 +198,29 @@ function setHTML(id, html) {
   el.innerHTML = html;
   S.cache[id] = html;
   if (typeof QDojoAnim !== 'undefined') QDojoAnim.mount(el);
+  scheduleScrollMarks();
   return true;
+}
+
+// A table wider than its panel scrolls sideways, and nothing said so: the
+// VERDICT column of a hex round sat off the right edge behind an invisible
+// scroll. Mark the .tscroll containers that really overflow, so the CSS can
+// show its fade and SCROLL → hint only where there is something to scroll
+// to, and drop them again once the reader has scrolled to the end. Only the
+// active screen can be measured: a display:none section has no width.
+function markScrollables() {
+  for (const el of $$('.screen.active .tscroll')) {
+    const more = el.scrollWidth > el.clientWidth + 1;
+    el.classList.toggle('can-scroll', more);
+    el.classList.toggle('at-end', more && el.scrollLeft + el.clientWidth >= el.scrollWidth - 1);
+  }
+}
+// Every render funnels through setHTML, so measure once per frame, after
+// layout, rather than once per container.
+let scrollMarkFrame = 0;
+function scheduleScrollMarks() {
+  cancelAnimationFrame(scrollMarkFrame);
+  scrollMarkFrame = requestAnimationFrame(markScrollables);
 }
 
 // ---------------------------------------------------------------- avatars
@@ -440,6 +484,170 @@ function payoutModeLabel(r) {
   return r.payout_mode ? String(r.payout_mode).toUpperCase() : '—';
 }
 const PODIUM_WEIGHTS = [5, 3, 2];
+
+// ---------------------------------------------------------------- shares
+// Every share label the page prints is read off the settlement it renders,
+// never off PODIUM_WEIGHTS. The page once printed 5/10 · 3/10 · 2/10 beside
+// three capped senseis paid 1,000 each, contradicting the hashed document
+// under it (#11). Three eras of settlement have to render (docs/spec.md §5-6,
+// docs/api.md):
+//   - one pot, no `pots` (every round through 122 in this house's history): a sensei was capped at
+//     its own stake, and the surplus went to the at-belt winners or carried;
+//   - two pots, `pots.belt` and `pots.sensei`: the payout mode ran once per
+//     pot over that pot's solvers; each lists its own winners and gross
+//     payouts, and the belt winners come first in `winners`;
+//   - the dead heat: winners whose correct commits share a tick share a
+//     placing and are paid the same, so a podium can hold more than three.
+// A winner's gross win is what was sent plus the bond the house held from it.
+function grossWin(s, id) {
+  const sent = (s.payouts || []).filter(p => p.identity === id && p.kind === 'win').reduce((a, p) => a + (p.amount || 0), 0);
+  const held = (s.bonds_held || []).filter(b => b.identity === id).reduce((a, b) => a + (b.amount || 0), 0);
+  return sent + held;
+}
+// `gross` as a fraction of `dist`, floored the way the engine floors shares:
+// the smallest denominator up to 24 that lands exactly on the amount (a
+// four-way tie for third is 1/20), else a percentage. Never a fraction the
+// numbers do not support.
+function shareFraction(gross, dist) {
+  if (!(dist > 0) || !(gross > 0)) return '0';
+  if (gross >= dist) return 'ALL';
+  for (let d = 2; d <= 24; d++) for (let n = 1; n < d; n++) if (Math.floor(dist * n / d) === gross) return `${n}/${d}`;
+  return `${(100 * gross / dist).toFixed(1)}%`;
+}
+const POT_NAME = { belt: 'BELT POT', sensei: 'SENSEI POT', pot: 'POT' };
+// The pots a settled round paid from: what each held, paid and carried, and
+// its winners in payout order with their placing, dead heat, gross win and
+// whether that is the nominal share the mode promises.
+function settlementPots(r) {
+  const s = r.settlement;
+  if (!s || s.void) return [];
+  const two = !!(s.pots && (s.pots.belt || s.pots.sensei));
+  const seed = seedUsed(r), carryIn = r.carry_in || 0, mode = r.payout_mode;
+  const docs = two
+    ? ['belt', 'sensei'].filter(k => s.pots[k]).map(k => [k, s.pots[k]])
+    : [['pot', { carry_in: carryIn, matched: seed - carryIn, stakes: (s.pot || 0) - seed, pot: s.pot, rake: s.rake,
+                 distributable: (s.pot || 0) - (s.rake || 0), carry: s.carry, winners: s.winners || [], payouts: null }]];
+  const entries = new Map((r.entries || []).map(e => [e.identity, e]));
+  return docs.map(([key, p]) => {
+    const dist = Number(p.distributable ?? ((p.pot || 0) - (p.rake || 0))) || 0;
+    const winners = (p.winners || []).map(id => {
+      const e = entries.get(id) || { identity: id };
+      const own = p.payouts ? p.payouts.find(x => x.identity === id) : null;
+      return { e, id, gross: own ? (own.amount || 0) : grossWin(s, id), tick: e.commit_tick, stake: e.stake || 0, sensei: !!e.sensei };
+    });
+    // Placings. Under podium a dead heat is consecutive winners with the same
+    // commit tick paid the same amount, and only read from a document that
+    // carries `pots` -- a document without pots ordered same-tick solvers by
+    // transaction and paid them 5:3:2, so the tick alone is not a tie there.
+    // Under first everyone paid shares the earliest tick; under split there
+    // are no placings. A heat pools the weights of the places it spans and
+    // splits them equally, the arithmetic of round.py's _pay().
+    const heats = [];
+    for (const w of winners) {
+      const last = heats[heats.length - 1];
+      if (last && (mode !== 'podium' || (two && last[0].tick === w.tick && last[0].gross === w.gross))) last.push(w);
+      else heats.push([w]);
+    }
+    let place = 1, totalW = 0;
+    for (const heat of heats) {
+      heat.place = place;
+      heat.weight = mode === 'podium' ? PODIUM_WEIGHTS.slice(place - 1, place - 1 + heat.length).reduce((a, b) => a + b, 0) : 0;
+      totalW += heat.weight;
+      place += heat.length;
+    }
+    for (const heat of heats) {
+      const nominal = mode === 'podium' ? Math.floor(Math.floor(dist * heat.weight / (totalW || 1)) / heat.length) : Math.floor(dist / winners.length);
+      for (const w of heat) Object.assign(w, { place: heat.place, tie: heat.length, weight: heat.weight, nominal: w.gross === nominal,
+        capped: !two && w.sensei && w.gross === w.stake && w.gross < nominal, over: w.gross > nominal });
+    }
+    const capped = winners.filter(w => w.capped).length, atBelt = winners.filter(w => !w.sensei);
+    // Under the cap an at-belt winner took its share plus the capped senseis' surplus.
+    for (const w of winners) w.surplus = !two && capped > 0 && !w.sensei && w.over;
+    return { key, name: POT_NAME[key], two, mode, held: p.pot || 0, carry_in: p.carry_in || 0, matched: p.matched || 0, stakes: p.stakes || 0,
+             rake: p.rake || 0, dist, paid: p.paid ?? winners.reduce((a, w) => a + w.gross, 0), carry: p.carry || 0,
+             winners, heats, totalW, capped, surplusTo: capped ? (atBelt.length ? 'SURPLUS TO THE AT-BELT WINNERS' : 'SURPLUS CARRIED') : '' };
+  });
+}
+// The label beside one winner: "<gross> OF <distributable> · <how>", every
+// number the settlement's own.
+function shareLabel(w, pot) {
+  const amounts = `${fmt(w.gross)} OF ${fmt(pot.dist)}`, of = ` OF THE ${pot.name}`;
+  if (w.capped) return `${amounts} · CAPPED AT STAKE · ${pot.surplusTo}`;
+  const nominalFrac = pot.mode === 'podium' ? `${w.weight}/${pot.totalW}` : (w.tie > 1 ? `1/${w.tie}` : 'ALL');
+  const frac = w.gross >= pot.dist ? 'ALL' : (w.nominal && w.tie === 1 ? nominalFrac : shareFraction(w.gross, pot.dist));
+  if (w.surplus) return `${amounts} · ${nominalFrac}${of} + SENSEI SURPLUS`;
+  if (pot.mode === 'split' && w.tie > 1) return `${amounts} · SPLIT ${w.tie} WAYS EQUALLY · ${frac}${of}`;
+  if (w.tie > 1) return `${amounts} · TIED ${ordinal(w.place)}, SPLIT ${w.tie} WAYS EQUALLY · ${frac}${of}`;
+  return `${amounts} · ${frac}${of}`;
+}
+// One line on how a pot was paid, for the K.O. call and the SOLVED, NO PAY note.
+function potPhrase(pot) {
+  const n = pot.winners.length, name = pot.name;
+  if (!n) return `NOBODY WON THE ${name} · ${fmt(pot.carry)} CARRIES`;
+  if (pot.capped) return `${pot.capped === n ? (n === 1 ? 'THE SENSEI' : `ALL ${n} SENSEIS`) : `${pot.capped} SENSEI${pot.capped > 1 ? 'S' : ''}`} CAPPED AT STAKE · ${pot.surplusTo}`;
+  if (pot.mode === 'first') return n === 1 ? `FIRST TO SOLVE TAKES THE ${name}` : `${n} TIED IN THE FIRST TICK · SPLIT EQUALLY`;
+  if (pot.mode !== 'podium') return n === 1 ? `ONE WINNER TAKES THE ${name}` : `${n} WINNERS SPLIT THE ${name} EQUALLY`;
+  if (pot.heats.some(h => h.length > 1)) {
+    if (pot.heats.length === 1) return `DEAD HEAT · ALL ${n} TIED 1ST · SPLIT EQUALLY`;
+    return 'DEAD HEAT · ' + pot.heats.map(h => `${h.length > 1 ? `${h.length} TIED ` : ''}${ordinal(h.place)} ${h.weight}/${pot.totalW}${h.length > 1 ? ' SHARED' : ''}`).join(' · ');
+  }
+  if (pot.winners.every(w => w.nominal)) return n === 1 ? `ALONE ON THE PODIUM · TAKES THE ${name}` : `${n === 2 ? 'TWO SOLVERS' : n === 3 ? 'FIRST THREE' : `${n} SOLVERS`} SPLIT ${pot.heats.map(h => h.weight).join(':')}`;
+  return `${n} WINNERS · ${pot.winners.map(w => shareFraction(w.gross, pot.dist)).join(' : ')}`;
+}
+// What the settlement paid, in one line. The K.O. call's subtitle and the
+// SOLVED, NO PAY note both read it, so neither can promise a split the pot
+// did not pay.
+function payoutCall(r) {
+  const pots = settlementPots(r), paid = pots.filter(p => p.winners.length);
+  if (!paid.length) return { sub: 'NO WINNER · POT CARRIES', what: '' };
+  if (paid.length > 1) {
+    return { sub: `${r.payout_mode === 'podium' ? 'TWO PODIUMS' : 'TWO POTS'} · ${paid.map(p => `${p.name} · ${potPhrase(p)}`).join(' · ')}`,
+             what: paid.map(p => `THE ${p.name}: ${potPhrase(p)}`).join(' · ') };
+  }
+  const p = paid[0], phrase = potPhrase(p);
+  const unwon = pots.filter(x => x !== p && x.dist > 0).map(x => ` · ${x.name} UNWON, ${fmt(x.carry)} CARRIES`).join('');
+  return { sub: `${r.payout_mode === 'podium' ? 'PODIUM · ' : ''}${p.two ? `${p.name} · ` : ''}${phrase}${unwon}`, what: phrase };
+}
+// The winners block, shared by the results screen and the idle FIGHT screen:
+// one list per pot that paid, placings restarting per pot, a dead heat
+// sharing a placing and, when `full`, the share label read off the settlement.
+function winnersHTML(r, full) {
+  const s = r.settlement, paid = settlementPots(r).filter(p => p.winners.length);
+  const podium = r.payout_mode === 'podium';
+  const payoutFor = id => (s.payouts || []).find(p => p.identity === id && p.kind === 'win');
+  const bondFor = id => (s.bonds_held || []).find(b => b.identity === id);
+  return paid.map(pot => `${pot.two ? `<h4 class="pot-head">${esc(pot.name)}<small> · ${fmt(pot.dist)} TO WIN · PAID ${fmt(pot.paid)} · CARRIES ${fmt(pot.carry)}</small></h4>` : ''}
+    <div class="winners">${pot.winners.map(w => { const p = payoutFor(w.id), b = bondFor(w.id); return `<div class="winner-row">
+      ${podium ? `<span class="podium-place place-${w.place}">${w.tie > 1 ? 'TIED ' : ''}${ordinal(w.place)}</span>` : ''}
+      ${fighterLink(w.id, avatarSVG(w.id, 'avatar-lg', 'win'))}
+      <div class="wname">${fighterLink(w.id, displayName(w.e))}${full ? `<br><span class="tiny muted">${esc(shareLabel(w, pot))}</span>` : ''}<br>${idLink(w.id)}</div>
+      <div class="wamt">+${fmt(p ? p.amount : 0)} QU${full && b ? `<span class="wtx"><span class="badge badge-bond_held">BOND HELD</span> ${fmt(b.amount)} QU</span>` : ''}${full && p && p.tx ? `<span class="wtx">${txLink(p.tx, 'PAYOUT TX')}</span>` : ''}</div>
+    </div>`; }).join('')}</div>`).join('');
+}
+// The two pots of a settlement that has them (docs/api.md): what each held,
+// what it paid and what carried, so the winners' labels can be checked
+// against the document line by line.
+function potsPanelHTML(r) {
+  const pots = settlementPots(r);
+  if (!pots.length || !pots[0].two) return '';
+  return `<div class="panel panel-cyan"><h3>THE TWO POTS</h3>
+    <div class="tscroll"><table>
+    <thead><tr><th>POT</th><th class="num">CARRY IN</th><th class="num">MATCHED</th><th class="num">STAKES</th><th class="num">HELD</th><th class="num">RAKE</th><th class="num">TO WIN</th><th class="num">PAID</th><th class="num">CARRIES</th><th>PAID TO</th></tr></thead>
+    <tbody>${pots.map(p => `<tr>
+      <td>${esc(p.name)}</td><td class="num">${fmt(p.carry_in)}</td><td class="num">${fmt(p.matched)}</td><td class="num">${fmt(p.stakes)}</td><td class="num">${fmt(p.held)}</td><td class="num">${fmt(p.rake)}</td><td class="num">${fmt(p.dist)}</td><td class="num">${fmt(p.paid)}</td><td class="num">${fmt(p.carry)}</td>
+      <td class="tiny" style="white-space:normal;min-width:18ch">${p.winners.length ? p.winners.map(w => `${fighterLink(w.id, displayName(w.e))} ${fmt(w.gross)}`).join(', ') : `<span class="muted">${p.held ? 'NOBODY · IT CARRIES' : 'EMPTY'}</span>`}</td>
+    </tr>`).join('')}</tbody></table></div>
+    <p class="tiny muted" style="margin:10px 0 0">Two pots, settled side by side (docs/spec.md §5). The belt pot is the carry in, the house match and the at-belt stakes, paid to the solvers at the belt; the sensei pot is the senseis' own stakes, no seed and no carry, paid to the senseis. ${esc(payoutModeLabel(r))} ran once per pot; PAID is gross, before the bond. What neither pot paid carries into the next round's belt pot.</p>
+  </div>`;
+}
+// The rule a round was published under, as a promise: what the mode will do,
+// never a fraction the settlement has yet to pay.
+function payoutRule(r) {
+  if (r.payout_mode === 'podium') return 'THE FIRST THREE CORRECT COMMITS SPLIT 5:3:2 OF THEIR POT; SAME-TICK TIES SHARE A PLACING';
+  if (r.payout_mode === 'first') return 'THE EARLIEST CORRECT COMMIT TAKES ITS POT; SAME-TICK TIES SPLIT IT EQUALLY';
+  if (r.payout_mode === 'split') return 'EVERYONE WHO SOLVES IT SHARES ITS POT EQUALLY';
+  return '';
+}
 function bondLabel(r) {
   if (!r.bond_bps) return '';
   return `BOND ${(r.bond_bps / 100).toFixed(r.bond_bps % 100 ? 1 : 0)}% · ${fmt(r.bond_rounds)} MORE FIGHT${r.bond_rounds === 1 ? '' : 'S'}`;
@@ -499,12 +707,13 @@ function callout(r) {
   const counted = (r.entries || []).filter(e => COUNTED.has(e.verdict)).length;
   const solved = (r.entries || []).filter(e => e.verdict === 'solved').length;
   const later = solved ? ` · ${solved} SOLVED LATER, NO PAY` : '';
-  const first = r.payout_mode === 'first', podium = r.payout_mode === 'podium';
   if (n === 0) return { text: 'TIME OVER', cls: 'timeover', sub: 'NO WINNER · POT CARRIES' };
-  if (n === 1) return { text: 'K.O.', cls: 'ko', perfect: counted >= 3, sub: (first ? 'FIRST TO SOLVE TAKES THE POT' : podium ? 'ALONE ON THE PODIUM · TAKES THE POT' : 'ONE WINNER TAKES THE POT') + later };
-  if (n === 2) return { text: 'DOUBLE K.O.', cls: 'ko', sub: (podium ? 'PODIUM · TWO SOLVERS SPLIT 5:3' : 'TWO WINNERS SPLIT THE POT') + later };
-  if (n === 3) return { text: 'TRIPLE K.O.', cls: 'ko', sub: (podium ? 'PODIUM · FIRST THREE SPLIT 5:3:2' : 'THREE WINNERS SPLIT THE POT') + later };
-  return { text: `${n}x K.O.`, cls: 'ko', sub: `${n} WINNERS SPLIT THE POT${later}` };
+  // the subtitle says what the settlement paid, never what the mode promised (#11)
+  const sub = payoutCall(r).sub + later;
+  if (n === 1) return { text: 'K.O.', cls: 'ko', perfect: counted >= 3, sub };
+  if (n === 2) return { text: 'DOUBLE K.O.', cls: 'ko', sub };
+  if (n === 3) return { text: 'TRIPLE K.O.', cls: 'ko', sub };
+  return { text: `${n}x K.O.`, cls: 'ko', sub };
 }
 function winnerNames(r) {
   if (!r.settlement) return [];
@@ -790,6 +999,19 @@ function lobbyHTML(r) {
   `;
 }
 
+// Between rounds the FIGHT screen was one cyan box over half a page, and it
+// is the screen a recording opens on. The last settled round's call and its
+// winners give it something to look at; the rows are the results screen's.
+function lastRoundHTML(r) {
+  const c = callout(r), s = r.settlement;
+  return `<div class="panel panel-green">
+    <h3>LAST ROUND · ${r.round_id}<small>${esc(r.title)} · ${esc(c.text)}${c.sub ? ' · ' + esc(c.sub) : ''}</small></h3>
+    ${(s.winners || []).length ? winnersHTML(r, false)
+      : `<p class="muted">${isVoid(r) ? 'The table never filled; every seat was refunded.' : `Nobody solved it. ${fmt(s.carry)} QU carried into the next seed.`}</p>`}
+    <p style="margin:12px 0 0"><a class="btn btn-sm btn-cyan" href="#results/${r.round_id}">FULL RESULTS &#9654;</a> <a class="btn btn-sm" href="#history">ALL ROUNDS</a></p>
+  </div>`;
+}
+
 function renderFight() {
   const d = S.data;
   const parts = [];
@@ -797,13 +1019,19 @@ function renderFight() {
     const settled = d.rounds.filter(r => r.settlement);
     const last = settled[settled.length - 1];
     const settling = d.rounds.filter(r => r.state === 'settling');
-    parts.push(`<h2 class="screen-title">NOW FIGHTING<small>${settling.length ? 'THE HOUSE IS SETTLING ROUND ' + settling.map(r => r.round_id).join(', ') : 'WAITING FOR THE BELL'}</small></h2>`);
-    parts.push(`<div class="panel panel-cyan"><div class="waiting">
-      <div class="big blink">${settling.length ? 'SETTLING…' : 'WAITING FOR THE BELL'}</div>
-      <p class="muted">The house publishes the next riddle on chain. This page polls every 10 seconds.</p>
-      ${last ? `<p>LAST ROUND: <a href="#results/${last.round_id}">ROUND ${last.round_id} · ${esc(last.title)} · ${esc(callout(last).text)}</a></p>` : ''}
-      ${settling.map(r => `<p><a href="#results/${r.round_id}">ROUND ${r.round_id} · ${esc(r.title)} · SETTLING</a></p>`).join('')}
-    </div></div>`);
+    const secs = POLL_MS / 1000;
+    parts.push(`<h2 class="screen-title">NOW FIGHTING<small>${settling.length ? 'THE HOUSE IS SETTLING ROUND ' + settling.map(r => r.round_id).join(', ') : 'BETWEEN ROUNDS · THE NEXT TABLE OPENS ON CHAIN'}</small></h2>`);
+    parts.push(`<div class="cols">
+      <div class="panel panel-cyan idle"><div class="waiting">
+        <div class="big blink">${settling.length ? 'SETTLING…' : 'WAITING FOR THE BELL'}</div>
+        <p class="muted">The house publishes the next riddle on chain. This page asks for the export every ${secs} seconds and rings the moment a table opens.</p>
+        ${settling.map(r => `<p><a href="#results/${r.round_id}">ROUND ${r.round_id} · ${esc(r.title)} · SETTLING</a></p>`).join('')}
+      </div>
+      <div class="meter-label"><span>POLLING EVERY ${secs} S</span><b>NEXT IN <span data-poll-left>—</span> S</b></div>
+      ${meterHTML('poll', 'seed')}
+      </div>
+      ${last ? lastRoundHTML(last) : ''}
+    </div>`);
     setHTML('fight-body', parts.join(''));
     return;
   }
@@ -879,6 +1107,15 @@ function renderFight() {
   setHTML('fight-body', parts.join(''));
 }
 
+// A 64-character digest as an answer pushed VERDICT, the column a spectator
+// most wants, off the edge of the ENTRIES table. Past 24 characters the cell
+// shows head and tail and carries the whole value in its title.
+function shortAnswer(a) {
+  const s = String(a);
+  if (s.length <= 24) return esc(s);
+  return `<span title="${esc(s)}">${esc(s.slice(0, 4))}…${esc(s.slice(-4))}</span>`;
+}
+
 function entriesTable(r) {
   const entries = (r.entries || []).slice().sort((a, b) => entryTick(a) - entryTick(b));
   if (!entries.length) return '<p class="muted">No entries were observed in this round.</p>';
@@ -892,7 +1129,7 @@ function entriesTable(r) {
       ${lobby ? `<td>${e.enter_tx ? txAt(e.enter_tx, e.enter_tick) : '<span class="muted">—</span>'}</td>` : ''}
       <td>${e.commit_tx ? txAt(e.commit_tx, e.commit_tick) : '<span class="muted">—</span>'}</td>
       <td>${e.reveal_tx ? txAt(e.reveal_tx, e.reveal_tick) : '<span class="muted">—</span>'}</td>
-      <td class="mono">${e.answer === null || e.answer === undefined ? '<span class="muted">—</span>' : esc(e.answer)}</td>
+      <td class="mono">${e.answer === null || e.answer === undefined ? '<span class="muted">—</span>' : shortAnswer(e.answer)}</td>
       <td>${entryStatus(e, r)}</td>
     </tr>`).join('')}</tbody></table></div>`;
 }
@@ -926,7 +1163,7 @@ function payoutsTable(s, r) {
     <tbody>${rows.map(p => {
       const rel = p.kind === 'bond_release' ? released.find(b => b.identity === p.identity && b.amount === p.amount) : null;
       return `<tr>
-      <td>${fighterLink(p.identity, `${avatarSVG(p.identity, 'avatar-sm')} ${displayName({ identity: p.identity })}`, 'tname')} ${idLink(p.identity)}</td>
+      <td>${rakeLabel(p.kind) || fighterLink(p.identity, `${avatarSVG(p.identity, 'avatar-sm')} ${displayName({ identity: p.identity })}`, 'tname')} ${idLink(p.identity)}</td>
       <td>${payoutBadge(p.kind)}${rel && rel.bond_round ? ` <a class="tiny" href="#results/${rel.bond_round}">FROM R${rel.bond_round}</a>` : ''}</td>
       <td class="num">${fmt(p.amount)}</td>
       <td>${txLink(p.tx)}</td>
@@ -1036,23 +1273,18 @@ function renderResults() {
     </div>
     <div class="meter" style="margin-bottom:20px"><div class="meter-fill pot" style="width:${potPct.toFixed(1)}%"></div></div>`);
 
-    // winners in the settlement's order: on a podium that is 1st, 2nd, 3rd
+    // winners in the settlement's order, one list per pot that paid: on a
+    // podium that is 1st, 2nd, 3rd, with a dead heat sharing a placing. Every
+    // share label and the SOLVED note come from the settlement's own numbers.
     const podium = r.payout_mode === 'podium';
-    const winners = (s.winners || []).map(id => (r.entries || []).find(e => e.identity === id) || { identity: id }).filter(Boolean);
-    const payoutFor = id => (s.payouts || []).find(p => p.identity === id && p.kind === 'win');
-    const bondFor = id => (s.bonds_held || []).find(b => b.identity === id);
-    const wsum = PODIUM_WEIGHTS.slice(0, winners.length).reduce((a, b) => a + b, 0);
+    const call = payoutCall(r), paidPots = settlementPots(r).filter(p => p.winners.length).length;
+    const solvedNames = (r.entries || []).filter(e => e.verdict === 'solved').map(e => nameOf(e) || shortId(e.identity));
     parts.push(`<div class="cols">
       <div class="panel panel-green">
-        <h3>WINNERS${podium ? ' · PODIUM 5:3:2' : ''}</h3>
-        ${winners.length ? `<div class="winners">${winners.map((e, i) => { const p = payoutFor(e.identity), b = bondFor(e.identity); return `<div class="winner-row">
-            ${podium ? `<span class="podium-place place-${i + 1}">${ordinal(i + 1)}</span>` : ''}
-            ${fighterLink(e.identity, avatarSVG(e.identity, 'avatar-lg', 'win'))}
-            <div class="wname">${fighterLink(e.identity, displayName(e))}${podium && PODIUM_WEIGHTS[i] ? ` <span class="tiny muted">${PODIUM_WEIGHTS[i]}/${wsum} OF THE POT</span>` : ''}<br>${idLink(e.identity)}</div>
-            <div class="wamt">+${fmt(p ? p.amount : 0)} QU${b ? `<span class="wtx"><span class="badge badge-bond_held">BOND HELD</span> ${fmt(b.amount)} QU</span>` : ''}${p && p.tx ? `<span class="wtx">${txLink(p.tx, 'PAYOUT TX')}</span>` : ''}</div>
-          </div>`; }).join('')}</div>`
+        <h3>WINNERS${podium ? (paidPots > 1 ? ' · TWO PODIUMS' : ' · PODIUM') : ''}</h3>
+        ${(s.winners || []).length ? winnersHTML(r, true)
         : `<p class="muted">Nobody solved it. ${fmt(s.carry)} QU carries into the next round's seed.</p>`}
-        ${(r.entries || []).some(e => e.verdict === 'solved') ? `<p class="tiny muted" style="margin:10px 0 0">SOLVED, NO PAY: ${(r.entries || []).filter(e => e.verdict === 'solved').map(e => nameOf(e) || shortId(e.identity)).map(esc).join(', ')} — ${podium ? 'correct, but off the podium. THE FIRST THREE SPLIT 5:3:2.' : 'correct, but not first. FIRST WINS.'}</p>` : ''}
+        ${solvedNames.length ? `<p class="tiny muted" style="margin:10px 0 0">SOLVED, NO PAY: ${solvedNames.map(esc).join(', ')} — ${podium ? 'correct, but off the podium' : r.payout_mode === 'first' ? 'correct, but not in the first tick' : 'correct, but unpaid'}${call.what ? `. ${esc(call.what)}` : ''}.</p>` : ''}
       </div>
       <div class="panel panel-yellow">
         <h3>THE ANSWER · VERIFY IT YOURSELF</h3>
@@ -1070,6 +1302,7 @@ function renderResults() {
         <div class="verify-out" data-verify-out="${r.round_id}"></div>
       </div>
     </div>`);
+    parts.push(potsPanelHTML(r));
   }
 
   if (!s) {
@@ -1219,13 +1452,29 @@ function fightsOf(identity) {
   return out.sort((a, b) => (b.r.round_id - a.r.round_id) || (entryTick(b.e) - entryTick(a.e)));
 }
 
+// The name a fighter bowed with, matched without regard to case: names are
+// what people type into a URL and paste into chat, identities are what the
+// page's own links carry.
+function fighterByName(name) {
+  const want = String(name || '').toUpperCase();
+  if (!want) return null;
+  for (const f of S.data.profiles.values()) if (f.name && String(f.name).toUpperCase() === want) return f;
+  return null;
+}
+
 function renderFighter() {
   const d = S.data;
   const id = S.fighter;
   const p = id ? profileOf(id) : null;
   if (!p) {
+    // #fighter/EVO-DS3 is a name. Send it to the identity form, so one URL is
+    // the card -- but only while this screen is showing: renderAll calls this
+    // for a hidden screen too, and must not drag the reader off wherever they are.
+    const named = S.screen === 'fighter' ? fighterByName(id) : null;
+    if (named) { go('fighter', named.identity); return; }
+    const identity = /^[A-Z]{60}$/.test(id || '');
     setHTML('fighter-body', `<h2 class="screen-title">FIGHTER CARD<small>${id ? 'UNKNOWN FIGHTER' : 'PICK A FIGHTER'}</small></h2>
-      <div class="panel"><p class="muted">${id ? `${esc(shortId(id))} has not fought here. ${idLink(id)}` : 'Nobody selected.'}</p>
+      <div class="panel"><p class="muted">${!id ? 'Nobody selected.' : identity ? `${esc(shortId(id))} has not fought here. ${idLink(id)}` : `No fighter here is called ${esc(id)}.`}</p>
       <a class="btn btn-sm btn-cyan" href="#fighters">FIGHTER SELECT</a></div>`);
     return;
   }
@@ -1535,7 +1784,7 @@ function renderJoin() {
           <dt${h('commit')}>COMMIT</dt><dd>${open ? `${fmt(open.commit_window)} ticks (~${ticksToHuman(open.commit_window)})` : '—'}</dd>
           <dt${h('reveal')}>REVEAL</dt><dd>${open ? `${fmt(open.reveal_window)} ticks (~${ticksToHuman(open.reveal_window)})` : '—'}</dd>
           <dt${h('seed')}>SEED</dt><dd>${open ? `${open.match_bps ? `house matches stakes ${esc(matchLabel(open.match_bps))} up to ${fmt(open.house_seed)}` : `fixed ${fmt(open.house_seed)}`} + carry in` : 'carry in + matched stakes up to the cap'}</dd>
-          <dt${h('mode')}>PAYOUT</dt><dd>${open ? `${esc(payoutModeLabel(open))} · ` : ''}${open && open.payout_mode === 'podium' ? 'the first three correct commits split (pot − rake) 5:3:2, later solvers get nothing' : `(pot − rake) ÷ winners, remainder carries${open && open.payout_mode === 'first' ? '; first commit tick wins, later solvers get nothing' : ''}`}</dd>
+          <dt${h('mode')}>PAYOUT</dt><dd>${open ? `${esc(payoutModeLabel(open))} · ${esc(payoutRule(open))}${open.payout_mode === 'split' ? '' : '; LATER SOLVERS EARN BELT POINTS, NO MONEY'}` : 'PODIUM 5:3:2, FIRST OR SPLIT, SET PER ROUND IN PUBLISH'}. Their pot is the belt pot less the rake, or the sensei pot for a sensei; the remainder carries.</dd>
           ${open && open.bond_bps ? `<dt${h('bond')}>BOND</dt><dd>${esc(bondLabel(open))}: that share of every win stays with the house until the winner has fought again</dd>` : ''}
         </dl>
         ${seat ? `<p class="tiny muted">Fund the identity the rite printed with at least ${qu(seat * 3)} — three
@@ -1559,24 +1808,36 @@ function renderJoin() {
   `);
 }
 
-function renderFooter() {
-  const d = S.data;
-  const src = S.source === 'live' ? 'LIVE EXPORT' : S.source === 'sample' ? 'SAMPLE DATA (no house running)' : 'EMBEDDED (nothing could be fetched)';
-  setHTML('foot-data', `DATA: ${src} · GENERATED ${esc(d.generated_at || '—')} @ TICK ${fmt(d.generated_tick)} · HOUSE ${idLink(d.house)} · <a href="https://explorer.qubic.org" target="_blank" rel="noopener">QUBIC EXPLORER</a> · 1 TICK ≈ 0.5 s`);
+// The HUD pill and the footer describe the same export, so they are decided
+// in one place: a STALE pill beside a footer saying LIVE EXPORT read as a
+// contradiction. `pill` is the HUD word, `src` what the footer calls the
+// data, `flag` what it appends after the GENERATED stamp.
+function exportState() {
+  if (S.source === 'sample') return { cls: 'pill-demo', pill: 'DEMO', src: 'SAMPLE DATA (no house running)', flag: '' };
+  if (S.source === 'embedded') return { cls: 'pill-demo', pill: 'NO SIGNAL', src: 'EMBEDDED (nothing could be fetched)', flag: '' };
+  if (S.source !== 'live') return { cls: 'pill-demo', pill: 'DEMO', src: '—', flag: '' };
+  const gap = Date.now() - S.lastLiveOk;
+  const gen = S.data && S.data.generated_at ? Date.parse(S.data.generated_at) : NaN;
+  const age = Number.isNaN(gen) ? 0 : Date.now() - gen;
+  if (gap > POLL_MS * 3) return { cls: 'pill-lost', pill: 'SIGNAL LOST', src: 'EXPORT', flag: ` (SIGNAL LOST · LAST FETCHED ${ageText(gap / 1000)} AGO)` };
+  if (age > STALE_AFTER_MS) return { cls: 'pill-lost', pill: `STALE ${ageText(age / 1000)}`, src: 'EXPORT', flag: ` (STALE · ${ageText(age / 1000)} OLD)` };
+  return { cls: 'pill-live', pill: 'LIVE', src: 'LIVE EXPORT', flag: '' };
 }
 
+function renderFooter() {
+  const d = S.data, st = exportState();
+  setHTML('foot-data', `DATA: <span id="foot-source">${esc(st.src)}</span> · GENERATED ${esc(d.generated_at || '—')} @ TICK ${fmt(d.generated_tick)}<span id="foot-flag">${esc(st.flag)}</span> · HOUSE ${idLink(d.house)} · <a href="https://explorer.qubic.org" target="_blank" rel="noopener">QUBIC EXPLORER</a> · 1 TICK ≈ 0.5 s`);
+}
+
+// Every poll, not only on a data change: the export ages while nothing else moves.
 function renderStatus() {
+  const st = exportState();
   const el = $('#hud-source');
-  let cls = 'pill-demo', txt = 'DEMO';
-  if (S.source === 'live') {
-    const age = Date.now() - S.lastLiveOk;
-    const gen = S.data.generated_at ? Date.parse(S.data.generated_at) : NaN;
-    if (age > POLL_MS * 3) { cls = 'pill-lost'; txt = 'SIGNAL LOST'; }
-    else if (!Number.isNaN(gen) && Date.now() - gen > STALE_AFTER_MS) { cls = 'pill-lost'; txt = 'STALE'; }
-    else { cls = 'pill-live'; txt = 'LIVE'; }
-  } else if (S.source === 'embedded') { txt = 'NO SIGNAL'; }
-  if (el.textContent !== txt) el.textContent = txt;
-  el.className = `pill ${cls}`;
+  if (el.textContent !== st.pill) el.textContent = st.pill;
+  el.className = `pill ${st.cls}`;
+  const src = $('#foot-source'), flag = $('#foot-flag');
+  if (src && src.textContent !== st.src) src.textContent = st.src;
+  if (flag && flag.textContent !== st.flag) flag.textContent = st.flag;
 }
 
 function renderAll() {
@@ -1592,6 +1853,13 @@ function updateTicks() {
   const t = nowTick();
   const tickEl = $('#hud-tick');
   if (tickEl) { tickEl.textContent = fmt(t); tickEl.setAttribute('href', tickHref(t)); }
+  // the idle FIGHT screen's meter: drains between polls, refills on each
+  const pollFill = $('[data-meter="poll"]');
+  if (pollFill) {
+    const left = Math.max(0, POLL_MS - (Date.now() - S.polledAt));
+    pollFill.style.width = `${(100 * left / POLL_MS).toFixed(1)}%`;
+    const pl = $('[data-poll-left]'); if (pl) pl.textContent = String(Math.ceil(left / 1000));
+  }
   for (const r of S.data.open) {
     const id = r.round_id;
     let p = phaseAt(r, t);
@@ -1683,6 +1951,7 @@ function diffCallouts(data) {
 
 // ---------------------------------------------------------------- polling
 async function poll() {
+  S.polledAt = Date.now();
   try {
     const { history, board, fighters, belts, source } = await loadData();
     const data = normalise(history, board, fighters, belts);
@@ -1747,6 +2016,15 @@ function nearestTick(t) {
   if (!ts.length) return null;
   return ts.reduce((best, x) => (Math.abs(x - t) < Math.abs(best - t) ? x : best), ts[0]);
 }
+// The earliest tick any round touched: the lobby of round 1, or its PUBLISH
+// when it had no lobby. Null until a round exists.
+function firstRoundTick() {
+  let first = null;
+  for (const r of S.data.rounds) for (const t of [r.lobby_tick, r.publish_tick]) {
+    if (t !== null && t !== undefined && (first === null || t < first)) first = t;
+  }
+  return first;
+}
 
 function tickShard(tick) {
   return lazyJSON(`./data/ticks/${Math.floor(tick / TICK_BUCKET)}.json`, 0, () => { if (S.screen === 'tick') renderTick(); });
@@ -1768,10 +2046,26 @@ function counterparty(e) {
   const id = e.dir === 'out' ? (e.to || e.identity) : (e.from || e.identity);
   return id && id !== S.data.house ? id : null;
 }
-function tickEventRow(e, decoded) {
+// The rake's developer share goes to an identity that never bowed or fought,
+// so there is no fighter card behind it: label it DEV instead of a stranger's
+// avatar and "???". Null for every ordinary payee.
+function rakeLabel(kind) {
+  const m = /^rake_([a-z]+)$/.exec(String(kind || ''));
+  return m ? `<span class="badge" title="THE ${esc(m[1].toUpperCase())} SHARE OF THE RAKE">${esc(m[1].toUpperCase())}</span>` : null;
+}
+function payoutKind(e) { return e.payout_kind || (e.fields && e.fields.payout_kind); }
+
+// `status` is the shard's: the English sentence is only "loading" while its
+// request is in flight. Once it has failed, or the shard came back without
+// this event, the sentence is not coming, and the row must say so instead of
+// promising one under a footnote that says the payloads are not published.
+function tickEventRow(e, decoded, status) {
   const id = counterparty(e);
   const nm = id ? (S.data.names.get(id) || shortId(id)) : 'THE HOUSE';
-  const who = id ? fighterLink(id, `${avatarSVG(id, 'avatar-sm')} ${esc(nm)}`) : `<b>${esc(nm)}</b>`;
+  const who = (e.kind === 'PAYOUT' && rakeLabel(payoutKind(e))) || (id ? fighterLink(id, `${avatarSVG(id, 'avatar-sm')} ${esc(nm)}`) : `<b>${esc(nm)}</b>`);
+  const sentence = decoded && decoded.text ? esc(decoded.text)
+    : status === 'loading' ? '<span class="muted">Loading the decoded message…</span>'
+    : '<span class="muted">Payload not published yet</span>';
   const amount = e.amount ? `<span class="qu">${e.dir === 'out' ? '−' : '+'}${fmt(e.amount)} QU</span>` : '';
   const rnd = e.round_id != null ? `<a href="#results/${e.round_id}">ROUND ${e.round_id}</a>` : '';
   const raw = decoded && decoded.payload
@@ -1784,7 +2078,7 @@ function tickEventRow(e, decoded) {
     <div class="hr-num">${esc(e.kind)}</div>
     <div>
       <div class="hr-title">${who} ${rnd} ${legacy} ${e.verdict && e.verdict !== 'pending' ? entryStatus({ verdict: e.verdict }) : ''}</div>
-      <div class="hr-sub">${decoded && decoded.text ? esc(decoded.text) : '<span class="muted">Loading the decoded message…</span>'}</div>
+      <div class="hr-sub">${sentence}</div>
       ${raw}
     </div>
     <div class="hr-call">${amount}<br><small>${e.tx ? txLink(e.tx, 'TX') : ''}</small></div>
@@ -1803,9 +2097,7 @@ function renderTick() {
   const byTx = new Map((sh.events || []).map(e => [e.tx, e]));
   const parts = [];
 
-  const ago = (now - t) * TICK_MS / 1000;
-  const when = t > now ? `IN ${Math.round((t - now) * TICK_MS / 1000)} s` :
-    (ago < 90 ? `${Math.round(ago)} s AGO` : ago < 5400 ? `${Math.round(ago / 60)} min AGO` : `${(ago / 3600).toFixed(1)} h AGO`);
+  const when = tickWhen(t, now, firstRoundTick());
   const prev = neighbourTick(t, -1), next = neighbourTick(t, 1);
   parts.push(`<h2 class="screen-title">TICK ${fmt(t)}<small${h('tick')}>${when} · ONE TICK IS ABOUT HALF A SECOND</small></h2>`);
   parts.push(`<div class="res-nav">
@@ -1831,7 +2123,7 @@ function renderTick() {
     </div>`);
   } else {
     parts.push(`<div class="panel panel-yellow"><h3>WHAT HAPPENED${sh.summary ? ` · ${esc(sh.summary.toUpperCase())}` : ''}</h3>
-      <div class="hist-list">${rows.map(e => tickEventRow(e, byTx.get(e.tx) || (sh.events ? e : null))).join('')}</div>
+      <div class="hist-list">${rows.map(e => tickEventRow(e, byTx.get(e.tx) || (sh.events ? e : null), sh.status)).join('')}</div>
       ${sh.foreign && sh.foreign.count ? `<p class="tiny muted" style="margin:10px 0 0">${sh.foreign.count} transfer${sh.foreign.count === 1 ? '' : 's'}
         totalling ${fmt(sh.foreign.amount)} QU also reached the house in this tick carrying no dojo message. They are not part of any round.</p>` : ''}
       ${sh.status === 'missing' ? '<p class="tiny muted" style="margin:10px 0 0">The decoded payloads for this stretch of chain are not published yet, so these are shown as structure only.</p>' : ''}
@@ -1863,8 +2155,8 @@ function renderTick() {
       <p class="ko-text win">THE HOUSE PAID ${fmt(total)} QU IN THIS TICK</p>
       <div class="tscroll"><table class="fame-table"><thead><tr><th>TO</th><th>KIND</th><th class="num">AMOUNT</th><th>ROUND</th><th>TX</th></tr></thead>
       <tbody>${paid.map(e => `<tr>
-        <td>${(x => x ? fighterLink(x, esc(S.data.names.get(x) || shortId(x))) : '<span class="muted">the house</span>')(counterparty(e))}</td>
-        <td>${payoutBadge(e.payout_kind || (e.fields && e.fields.payout_kind))}</td>
+        <td>${rakeLabel(payoutKind(e)) || (x => x ? fighterLink(x, esc(S.data.names.get(x) || shortId(x))) : '<span class="muted">the house</span>')(counterparty(e))}</td>
+        <td>${payoutBadge(payoutKind(e))}</td>
         <td class="num qu">${fmt(e.amount)}</td>
         <td><a href="#results/${e.round_id}">R${e.round_id}</a></td>
         <td>${txLink(e.tx)}</td></tr>`).join('')}</tbody></table></div></div>`);
@@ -1943,9 +2235,12 @@ function renderRules() {
   parts.push(`<div class="cols">
     <div class="panel panel-green"><h3${h('sensei')}>THE SENSEI SEAT</h3>
       ${ruleTerm('sensei')}
-      <p>A table may open its doors upward. The round still counts towards releasing that senior's own bond,
-      so there is a reason to come back down — and because the ceiling is its own stake, it cannot farm the
-      table it is propping up. Look for <span class="badge badge-outranked">SENSEI</span> beside a name.</p>
+      <p>A table may open its doors upward. The senseis at it play for a pot of their own — their stakes and
+      nothing else, no seed, no carry — so a senior can only ever win other seniors' money and cannot farm the
+      table it is propping up. The round still counts towards releasing that senior's own bond, so there is a
+      reason to come back down. Look for <span class="badge badge-outranked">SENSEI</span> beside a name.</p>
+      <p class="tiny muted">In a settlement without \`pots\` a sensei was instead capped at its own stake out of the one pot,
+      and the surplus went to the winners at the belt or carried; every round through 122 in this house's history reads that way.</p>
       <p class="tiny muted">Without this seat the beginners' tables simply die: everyone who could solve the
       riddle has been promoted past it, and nobody is left to fight.</p>
     </div>
@@ -1964,11 +2259,16 @@ function renderRules() {
   parts.push(`<div class="panel panel-cyan"><h3${h('mode')}>HOW A POT IS DIVIDED</h3>
     <div class="cols">
       <div><b>SPLIT</b><p class="tiny">Everyone who solved it shares the pot equally. The remainder carries.</p></div>
-      <div><b>FIRST</b><p class="tiny">The first correct sealed answer takes everything. Later solvers earn belt points and no money.</p></div>
+      <div><b>FIRST</b><p class="tiny">The earliest correct sealed answer takes everything; answers that share its tick split it equally. Later solvers earn belt points and no money.</p></div>
       <div><b>PODIUM</b><p class="tiny">Three places pay, in these proportions:
-        <span class="podium-place place-1">5</span> : <span class="podium-place place-2">3</span> : <span class="podium-place place-3">2</span>.</p></div>
+        <span class="podium-place place-1">5</span> : <span class="podium-place place-2">3</span> : <span class="podium-place place-3">2</span>.
+        Same-tick answers are a dead heat: they share a placing and its parts, and a tie for third widens the podium.</p></div>
     </div>
     ${ruleTerm('podium')}
+    <p class="tiny">The mode runs once per pot. A table with senseis at it is two pots settled side by side: the
+    <b>belt pot</b> (the seed, the carry in and the at-belt stakes) pays the solvers at the belt, and the
+    <b>sensei pot</b> (the senseis' stakes, nothing else) pays the senseis. Each results screen shows which pot
+    paid whom, and a pot nobody wins carries into the next round's belt pot.</p>
   </div>`);
 
   parts.push(`<div class="panel panel-red"><h3${h('verdict')}>WHEN IT GOES WRONG</h3>
@@ -2056,6 +2356,7 @@ function applyHash() {
   $$('.screen').forEach(s => s.classList.toggle('active', s.dataset.screen === name));
   $$('.hud-nav a').forEach(a => a.classList.toggle('on', a.dataset.screen === name || (name === 'fighter' && a.dataset.screen === 'fighters')));
   window.scrollTo({ top: 0 });
+  scheduleScrollMarks();   // the screen just shown was unmeasurable while hidden
 }
 function go(name, arg) {
   const target = `#${name}${arg !== undefined ? '/' + arg : ''}`;
@@ -2131,6 +2432,13 @@ function wire() {
   document.addEventListener('focusout', hideTip);
   window.addEventListener('scroll', hideTip, { passive: true });
   window.addEventListener('resize', hideTip);
+  window.addEventListener('resize', scheduleScrollMarks);
+  // An element's scroll event does not bubble; capture it to keep .at-end honest.
+  document.addEventListener('scroll', e => {
+    if (e.target && e.target.classList && e.target.classList.contains('tscroll')) markScrollables();
+  }, { capture: true, passive: true });
+  // The pixel font arrives late and is wider than its fallback: re-measure then.
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(scheduleScrollMarks);
   $('#btn-crt').addEventListener('click', e => {
     const on = !document.body.classList.contains('crt-on');
     document.body.classList.toggle('crt-on', on);

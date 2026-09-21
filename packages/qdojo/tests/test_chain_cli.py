@@ -152,3 +152,43 @@ def test_a_node_that_answers_badly_moves_the_read_to_the_next_node(tmp_path):
     assert c.balance(ID) == 77 and c.current_tick() == 500
     with pytest.raises(Unknown):
         QubicCli(cli, "1.1.1.1").balance(ID)        # no fallback: still Unknown
+
+
+def test_share_reads_and_a_contract_send_through_the_binary(tmp_path):
+    """`--chain cli` answers the same four reads as the native chain, out of
+    qubic-cli's text, and a contract call goes out as -sendcustomtransaction
+    with the very bytes the native builder makes."""
+    from qdojo.qubic import contracts
+    from qdojo.shares import Shares
+    log = tmp_path / "argv.log"
+    cli = fake_cli(tmp_path, f"""
+        a = sys.argv
+        if "-qxgetfee" in a: print("Asset issuance fee: 1000000000\\nTransfer fee: 100\\nTrade fee: 3000000")
+        if "-qutilgetfee" in a: print("DistributeQuToShareholders fee (var 3): 5 per shareholder")
+        if "-getasset" in a: print("======== OWNERSHIP ========\\nAsset issuer: {ID}\\nAsset name: KEN\\nNumber Of Shares: 7\\nTick: 5")
+        if "-queryassets" in a: print("Share ownership\\n\\towner = {ID}\\n\\tnumber of shares = 7\\n\\tmanaging contract = 1")
+        if "-getbalance" in a: print("Identity: {ID}\\nBalance: 2000000000\\nTick: 500")
+        if "-sendcustomtransaction" in a:
+            open({str(log)!r}, "w").write(" ".join(a))
+            print("Transaction has been sent!\\nTxHash: {TX}\\nTick: 520")
+    """)
+    c = QubicCli(cli, "1.2.3.4", identity=ID, conf=conf(tmp_path), schedule_offset=20,
+                fallback_nodes=("5.6.7.8",))    # issue() needs a second node's absence check
+    assert c.qx_fees()["issue"] == 1_000_000_000 and c.qutil_fees() == {"distribute_per_shareholder": 5}
+    assert c.owned_assets(ID) == [{"issuer": ID, "name": "KEN", "shares": 7}]
+    assert c.asset_holders(ID, "KEN") == [{"owner": ID, "shares": 7, "managing_contract": 1}]
+    r = Shares(c).issue("RYUBOT", 1000)
+    assert r.tx_id == TX
+    argv = log.read_text().split()
+    i = argv.index("-sendcustomtransaction")
+    assert argv[i + 1:i + 6] == [contracts.QX_IDENTITY, "1", "1000000000", "32",
+                                 contracts.issue_asset_input("RYUBOT", 1000).hex()]
+    assert SEED not in log.read_text()
+
+
+def test_share_reads_without_their_marker_are_unknown(tmp_path):
+    cli = fake_cli(tmp_path, 'print("Failed to connect 1.2.3.4")')
+    c = QubicCli(cli, "1.2.3.4")
+    for call in (c.qx_fees, c.qutil_fees, lambda: c.owned_assets(ID), lambda: c.asset_holders(ID, "KEN")):
+        with pytest.raises(Unknown):
+            call()
