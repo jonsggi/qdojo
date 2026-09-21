@@ -297,9 +297,10 @@ the house's "now" when the file was written.
 simply lacks that rule's fields. Read defensively: treat a missing field as
 "this round predates it", never as a zero. Two recent examples: a settlement
 carries `pots` (`belt` and `sensei`: what each pot held, paid and carried)
-for rounds settled since 2026-09-19, and a round carries `fee_policy` (null
-unless the house priced the seat from its own history). Older rounds lack
-both.
+for rounds settled under the two-pot rule (no round through 122 in this
+house's history has one yet), and a round carries `fee_policy` (null unless
+the house priced the seat from its own history). Rounds without either
+simply predate them.
 
 ---
 

@@ -87,7 +87,7 @@ transaction.
 | `pot`, `seed_used`, `carry` | the pot, how much seed the house actually added (carry in included), what carries on |
 | `rake`, `rake_split` | the rake and its `{house, dev, shareholders}` split |
 | `winners`, `payouts` | who was paid; each payout has `identity`, `amount`, `kind`, `tx`, `tick`, `confirmed` |
-| `pots` | the two pots the round was settled as, `{"belt": {...}, "sensei": {...}}`, see below. Settlements before 2026-09-19 have no `pots`: they were settled as one pot with a sensei cap |
+| `pots` | the two pots the round was settled as, `{"belt": {...}, "sensei": {...}}`, see below. A settlement without `pots` was settled as one pot with a sensei cap (every round through 122 in this house's history) |
 | `bonds_held`, `bonds_released`, `bonds_forfeited` | bonds taken from this round's wins, bonds paid out with it, and bonds lost to the pot |
 | `shareholder_pool_after` | the shareholder rake pool after this round |
 | `answer`, `dojo_salt` | the answer and the salt, so anyone can check the published commitment |

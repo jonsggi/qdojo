@@ -209,10 +209,10 @@ beginners' tables alive without being able to take the beginners' money.
 Without sensei seats, a fighter who sits below its belt is refused
 (`outranked`) and refunded.
 
-Before 2026-09-19 a sensei was instead capped at its own stake out of the
-single pot and the surplus went to the at-belt winners or carried. Rounds
-89-118 were settled that way; the carry they built up stands and is paid to
-the next at-belt winner as above.
+A settlement without `pots` instead capped a sensei at its own stake out of
+the single pot, and the surplus went to the at-belt winners or carried; every
+round through 122 in this house's history was settled that way. The carry
+they built up stands and is paid to the next at-belt winner as above.
 
 Points move at your own belt: winner +2, solved +1, any failure -1. At +3
 you are promoted one belt and points reset; at -3 you are demoted one belt

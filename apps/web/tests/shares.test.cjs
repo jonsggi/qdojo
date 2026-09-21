@@ -1,7 +1,7 @@
 // The results screen printed 5/10 · 3/10 · 2/10 OF THE POT from a constant,
 // whatever the settlement beside it had paid (#11). These pin the labels to
 // the settlement's own numbers across the three shapes the document has had:
-// the one-pot cap era (rounds 89-118 in the export), the two pots of #10
+// the one-pot cap era (every round in the export lacks `pots`), the two pots of #10
 // (no live round yet, so round 89 is re-settled here the way docs/api.md and
 // packages/qdojo/tests/test_round.py say it would be today), and the dead
 // heat of #18 (round 119's five-way tie, and podium ties built here).

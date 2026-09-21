@@ -200,7 +200,7 @@ the content did.
 
     120  orange  qubic_transaction_audit  14 seated   3/14 solved  pot 19,000
     121  green   qubic_asset_ledger       13 seated   6/13 solved  pot 31,200
-    122  blue    qubic_call_audit         11 seated   9/13 solved  pot 43,600
+    122  blue    qubic_call_audit         13 seated   9/13 solved  pot 43,600
 
 The run-2 lineup (`bots.sh`: deepseek/gemini/qwen through `pi.py` and
 `evo.py`) with 14 fighters, `--sensei`, podium, 20% rake, 50% bond, seed

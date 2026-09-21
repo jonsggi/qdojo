@@ -39,7 +39,7 @@ const HELP = {
   entry_fee:  { label: 'ENTRY FEE', text: 'What one seat at this table costs. You pay it before the riddle exists, so you are buying a chair, not an answer.' },
   points:     { label: 'BELT POINTS', text: 'Your score at your own belt: a win is +2, a correct but unpaid answer +1, any failure −1. At +3 you are promoted and the score resets; at −3 you are demoted.' },
   belt:       { label: 'BELT', text: 'Your rung on the ladder: white, yellow, orange, green, blue. You may sit at your belt or above it, never below, unless the table has opened a sensei seat.' },
-  sensei:     { label: 'SENSEI SEAT', text: 'A senior fighter sitting at a table below its belt. It pays like anyone else, but its stake goes into the sensei pot, which only senseis can win, so it plays for other seniors\' money and never the beginners\', and the round moves no belt points for it. Before 2026-09-19 it was instead capped at its own stake.' },
+  sensei:     { label: 'SENSEI SEAT', text: 'A senior fighter sitting at a table below its belt. It pays like anyone else, but its stake goes into the sensei pot, which only senseis can win, so it plays for other seniors\' money and never the beginners\', and the round moves no belt points for it. In a settlement without `pots` it was instead capped at its own stake.' },
   verdict:    { label: 'VERDICT', text: 'What the round decided about one fighter. WINNER took money, SOLVED was right but too late to be paid, WRONG answered wrong, NO SHOW bought a seat and never fought, NO REVEAL sealed an answer and never opened it, BAD REVEAL opened something that did not match the seal.' },
   solve_ticks:{ label: 'SOLVE TIME', text: 'Ticks from the riddle being published to your sealed answer landing on chain. One tick is about half a second, so 12 T is about six seconds — thinking time and network time together.' },
   podium:     { label: 'PODIUM 5:3:2', text: 'The first three correct sealed answers split their pot five parts, three parts, two parts. Answers sealed in the same tick are a dead heat: they share a placing and split its parts equally, and a tie for third brings everyone tied onto the podium. A correct answer behind them earns belt points and no money.' },
@@ -476,7 +476,7 @@ const PODIUM_WEIGHTS = [5, 3, 2];
 // three capped senseis paid 1,000 each, contradicting the hashed document
 // under it (#11). Three eras of settlement have to render (docs/spec.md §5-6,
 // docs/api.md):
-//   - one pot, no `pots` (settled before 2026-09-19): a sensei was capped at
+//   - one pot, no `pots` (every round through 122 in this house's history): a sensei was capped at
 //     its own stake, and the surplus went to the at-belt winners or carried;
 //   - two pots, `pots.belt` and `pots.sensei`: the payout mode ran once per
 //     pot over that pot's solvers; each lists its own winners and gross
@@ -2223,8 +2223,8 @@ function renderRules() {
       nothing else, no seed, no carry — so a senior can only ever win other seniors' money and cannot farm the
       table it is propping up. The round still counts towards releasing that senior's own bond, so there is a
       reason to come back down. Look for <span class="badge badge-outranked">SENSEI</span> beside a name.</p>
-      <p class="tiny muted">Before 2026-09-19 a sensei was instead capped at its own stake out of the one pot,
-      and the surplus went to the winners at the belt or carried; rounds 89–118 read that way.</p>
+      <p class="tiny muted">In a settlement without `pots` a sensei was instead capped at its own stake out of the one pot,
+      and the surplus went to the winners at the belt or carried; every round through 122 in this house's history reads that way.</p>
       <p class="tiny muted">Without this seat the beginners' tables simply die: everyone who could solve the
       riddle has been promoted past it, and nobody is left to fight.</p>
     </div>
