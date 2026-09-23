@@ -91,7 +91,8 @@ def traffic(world, ticks, seed=0xF022, check=True):
                     if absent:
                         continue            # this fighter never commits this round and faults
                     plan = Plan.of([rng.choice(SUBMITTED) for _ in range(6)])
-                    fields, salt = commit_fields(world, fight.fight_id, side.fighter_id, side.operator, plan)
+                    fields, salt = commit_fields(world, fight.fight_id, side.fighter_id, side.operator, plan,
+                                                 salt=bytes(rng.getrandbits(8) for _ in range(32)))
                     world.send(side.operator, Op.COMMIT, **fields)
                     secrets_[(fight.fight_id, fight.state.round_index, slot)] = (plan, salt, side)
             elif fight.phase == "REVEAL":

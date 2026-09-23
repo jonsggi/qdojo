@@ -250,7 +250,7 @@ EVENT_TYPES = {name: i + 1 for i, name in enumerate((
     "DUEL_ACCEPTED", "FIGHT_CREATED", "COMMITTED", "REVEALED", "ROUND_RESOLVED", "FIGHT_ENDED",
     "CONTEST_SETTLED", "RATING", "FAULT", "WITHDRAWN", "WITHDRAW_FAILED", "CUP_CREATED",
     "CUP_ENTRY", "CUP_BRACKET", "CUP_LEVEL", "CUP_PAIRING", "CUP_FINISHED", "ASSET_REGISTERED",
-    "RULESET_RETIRED", "REFUND_CREDIT"))}
+    "RULESET_RETIRED", "REFUND_CREDIT", "CUP_WITHDRAWN", "CUP_CHECKED_IN", "CUP_REPLAY_SCHEDULED"))}
 
 
 # ---- the contract ----------------------------------------------------------
@@ -272,6 +272,10 @@ class CombatContract:
         self.pair_starts: dict[tuple[bytes, bytes, int], int] = {}
         self.pair_last: dict[tuple[bytes, bytes], int] = {}
         self.retired: set[bytes] = set()
+        # Identities holding an account slot (nonce and credit). The admin and the
+        # fee recipients hold theirs from construction, so rake always has a home.
+        self.accounts: set[bytes] = {manifest.admin} | {x for f in manifest.fees.values()
+                                                       for x in (f.house, f.dev, f.share)}
         self.next_id = {"offer": 1, "contest": 1, "fight": 1, "cup": 1}
         self.events: list[tuple] = []
         self.event_seq = 0
@@ -320,7 +324,17 @@ class CombatContract:
         except codec.CodecError as exc:
             return self._reject(invocator, amount, Code[exc.code], 0, 0, str(exc))
         digest = sha256(frame)
+        if req.op is Op.ADVANCE and req.nonce != 0:
+            return self._reject(invocator, amount, Code.BAD_BODY, req.op, 0, "Advance uses nonce 0")
         if req.op is not Op.ADVANCE:
+            # Only registry-backed users and existing account holders get state slots
+            # (protocol.md §3); a stranger cannot fill nonce or credit storage.
+            if not self._eligible(invocator, req):
+                return self._reject(invocator, amount, Code.NOT_OWNER, req.op, 0, "no account slot for this identity")
+            try:
+                self._claim(invocator)
+            except Reject as r:
+                return self._reject(invocator, amount, r.code, req.op, 0, r.detail)
             prev = self.nonces.get(invocator)
             if prev is not None:
                 last_nonce, last_digest, last_result = prev
@@ -350,17 +364,31 @@ class CombatContract:
         self.ledger.check()
         return CallResult(code, int(op), target, refunded, detail)
 
-    def _has_slot(self, who: bytes) -> bool:
-        if who in self.ledger.credits or who in self.nonces:
+    def _eligible(self, who: bytes, req) -> bool:
+        if who in self.accounts:
             return True
-        return any(f.owner == who or f.operator == who for f in self.fighters.values())
+        if any(f.owner == who or f.operator == who for f in self.fighters.values()):
+            return True
+        if req.op is Op.REGISTER_FIGHTER:
+            fid = req.fields["fighter_id"]
+            return fid in self.assets and self.owner_of(fid) == who
+        return False
+
+    def _claim(self, *who: bytes):
+        """Reserve account slots (nonce + credit) before accepting funds for them."""
+        new = [w for w in dict.fromkeys(who) if w not in self.accounts]
+        if len(self.accounts) + len(new) > self.m.max_accounts:
+            raise Reject(Code.FULL, "account capacity")
+        self.accounts.update(new)
 
     def _refund(self, who: bytes, amount: int) -> int:
-        """Rejected attachments become withdrawal credit; an unknown invocator
-        with no account slot is paid straight back instead of taking a slot."""
+        """Rejected attachments become withdrawal credit for account holders. An
+        identity without a slot is paid straight back instead of taking one; if
+        that transfer fails the amount is still owed, as credit, never kept."""
         if not amount:
             return 0
-        if self._has_slot(who) or len(self.ledger.credits) < self.m.max_accounts:
+        if who in self.accounts or len(self.accounts) < self.m.max_accounts:
+            self.accounts.add(who)
             self.ledger.refund_attachment(who, amount)
             self._emit("REFUND_CREDIT", who, amount)
             return amount
@@ -368,6 +396,7 @@ class CombatContract:
         if not self.transfer(who, amount):
             self.ledger.balance += amount
             self.ledger.refund_attachment(who, amount)
+            self._emit("REFUND_CREDIT", who, amount)
         return amount
 
     def _need_zero(self, amount):
@@ -512,6 +541,7 @@ class CombatContract:
         self._ranked_admissible(ftr, t)
         if sum(1 for o in self.offers.values() if o.status == "OPEN") >= self.m.max_offers:
             raise Reject(Code.FULL)
+        self._claim(ftr.owner)                  # the payout recipient needs a credit slot
         oid = self._new_id("offer")
         offer = mm.Offer(oid, ftr.fighter_id, ftr.owner, ftr.operator, ftr.auth_version, inv, ftr.owner,
                          f["ruleset_digest"], f["timing_profile_id"], f["fee_profile_id"], f["tier_id"],
@@ -534,13 +564,13 @@ class CombatContract:
         o = self.offers.get(offer_id)
         if o is None or o.kind != kind:
             raise Reject(Code.NOT_FOUND)
+        live_owner = self.owner_of(o.fighter_id)
+        if inv not in (o.owner, o.operator) and not (live_owner is not None and inv == live_owner):
+            raise Reject(Code.NOT_OWNER)
         if o.status == "MATCHED":
             raise Reject(Code.ALREADY_MATCHED)
         if o.status != "OPEN":
             return CallResult(Code.DUPLICATE, target=offer_id, detail=o.status)
-        live_owner = self.owner_of(o.fighter_id)
-        if inv not in (o.owner, o.operator) and not (live_owner is not None and inv == live_owner):
-            raise Reject(Code.NOT_OWNER)
         self._close_offer(o, "CANCELLED")
         return CallResult(Code.OK, target=offer_id)
 
@@ -645,6 +675,7 @@ class CombatContract:
             raise Reject(Code.COOLDOWN)
         if sum(1 for o in self.offers.values() if o.status == "OPEN") >= self.m.max_offers:
             raise Reject(Code.FULL)
+        self._claim(ftr.owner)
         oid = self._new_id("offer")
         o = mm.Offer(oid, ftr.fighter_id, ftr.owner, ftr.operator, ftr.auth_version, inv, ftr.owner,
                      f["ruleset_digest"], f["timing_profile_id"], f["fee_profile_id"], 0, amount,
@@ -686,6 +717,7 @@ class CombatContract:
             raise Reject(Code.BAD_AMOUNT, "attach exactly the challenger's stake")
         if self.fights_in_use() >= self.m.max_fights:
             raise Reject(Code.FULL)
+        self._claim(d.owner)
         mine = self._new_id("offer")
         accept = mm.Offer(mine, d.fighter_id, d.owner, d.operator, d.auth_version, inv, d.owner,
                           o.ruleset_digest, o.timing_profile_id, o.fee_profile_id, 0, amount,
@@ -1003,6 +1035,10 @@ class CombatContract:
             raise Reject(Code.BAD_BODY, "entrants 4..16")
         if not 0 < f["entry_fee"] <= MAX_STAKE or f["registration_close"] <= t:
             raise Reject(Code.BAD_BODY)
+        # Every scheduled boundary must fall on a tick END_TICK examines: check-in
+        # ends at level_start+checkin-1, a postponed level retries at level_start-1.
+        if f["checkin_ticks"] < 1 or f["first_level_delay"] < 2 or f["replay_delay"] < 1:
+            raise Reject(Code.BAD_BODY)
         commit, reveal = self.m.timing[f["timing_profile_id"]]
         worst = f["checkin_ticks"] + 7 * 3 * (commit + reveal) + f["replay_delay"] + 3 * 3 * (commit + reveal) + 2
         if worst > f["level_ticks"]:
@@ -1053,6 +1089,7 @@ class CombatContract:
             raise Reject(Code.FULL)
         if self._represented(cup, ftr.owner, ftr.operator):
             raise Reject(Code.INCOMPATIBLE, "one fighter per owner/operator")
+        self._claim(ftr.owner)
         cup.entries[ftr.fighter_id] = CupEntry(ftr.fighter_id, inv, ftr.owner, ftr.operator, amount)
         self.ledger.reserve_cup(cup.cup_id, inv, amount)
         ftr.lock, ftr.lock_ref = TOURNAMENT, cup.cup_id
@@ -1073,6 +1110,7 @@ class CombatContract:
         del cup.entries[e.fighter_id]
         self.ledger.release_cup_entry(cup.cup_id, e.payer, e.amount)
         ftr.lock, ftr.lock_ref = IDLE, 0
+        self._emit("CUP_WITHDRAWN", cup.cup_id, e.fighter_id, e.payer, e.amount)
         return CallResult(Code.OK, target=cup.cup_id)
 
     def _between_pairings(self, cup: Cup, fid: bytes) -> bool:
@@ -1102,7 +1140,11 @@ class CombatContract:
             raise Reject(Code.INCOMPATIBLE, "owner/operator already represented in this cup")
         if fid in p.checked:
             return CallResult(Code.DUPLICATE, target=p.pairing_id)
+        if t < ftr.cooldown_until:
+            raise Reject(Code.COOLDOWN, "cup check-in observes the fault cooldown")
+        self._claim(ftr.owner)                  # a transferred finalist's owner may be new
         p.checked.add(fid)
+        self._emit("CUP_CHECKED_IN", cup.cup_id, p.pairing_id, fid)
         return CallResult(Code.OK, target=p.pairing_id)
 
     def _cup_tick(self, cup: Cup, t: int):
@@ -1225,6 +1267,7 @@ class CombatContract:
         elif kind == "COMBAT" and not c.replay:
             p.status = "REPLAY_WAIT"
             p.replay_at = t + cup.descriptor["replay_delay"]
+            self._emit("CUP_REPLAY_SCHEDULED", cup.cup_id, p.pairing_id, p.replay_at)
             return
         else:
             p.status = "UNRESOLVED"
