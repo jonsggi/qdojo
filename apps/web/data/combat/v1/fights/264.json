@@ -2,34 +2,34 @@
  "schema": "qdojo.combat.fight.v1",
  "network_id": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
  "contract_id": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
- "generated_tick": "2497",
+ "generated_tick": "10657",
  "source": "reference-contract-state",
- "fight_id": "59",
- "contest_id": "59",
+ "fight_id": "264",
+ "contest_id": "264",
  "phase": "COMMIT",
- "round_index": 2,
+ "round_index": 1,
  "state": {
-  "round_index": 2,
+  "round_index": 1,
   "A": {
-   "hp": 32,
-   "stamina": 28,
-   "opening": 0,
+   "hp": 86,
+   "stamina": 54,
+   "opening": 1,
    "guard_streak": 0,
    "power_available": 1
   },
   "B": {
-   "hp": 14,
-   "stamina": 20,
+   "hp": 84,
+   "stamina": 44,
    "opening": 0,
    "guard_streak": 0,
    "power_available": 1
   },
   "outcome": null
  },
- "context_digest": "fc7165dfb7f6ff5669f0dc9f15f4ec59ab81dc07278d5815558295422ca7bc73",
- "round_state_digest": "fdd8bb0ffd92561155434ae2cd7ffb6b71e8bcb4c7f370baf2e66806b1d2484f",
- "commit_last": "2502",
- "reveal_last": "2514",
+ "context_digest": "aa5aa2a35296f815611ae400c869b42bdb87661bfe14025c4d6fdd54379fa27e",
+ "round_state_digest": "cb43002ffc9dcc33491ad6ffd8781c2df786a11c45debaab2eeb1ea976cd5c58",
+ "commit_last": "10665",
+ "reveal_last": "10677",
  "committed": [
   "A",
   "B"
@@ -43,8 +43,8 @@
    "operator": "03fd7fcb2e654d48713927e156c897b0d631d61b84e75262cf224638d943019d",
    "auth_version": 1,
    "payout_recipient": "03fd7fcb2e654d48713927e156c897b0d631d61b84e75262cf224638d943019d",
-   "lifetime_rating": 1122,
-   "season_rating": 1122
+   "lifetime_rating": 1098,
+   "season_rating": 1098
   },
   "B": {
    "fighter_id": "ff99f52a50ec6df930adbfb68ad5e65f4d16ef523a82ef1a688d12e16f5a82b5",
@@ -52,8 +52,8 @@
    "operator": "4aa1b18483f94b5c8acd7fca0260d8dad835e8bc4d3ee2319b94e5307068d0de",
    "auth_version": 1,
    "payout_recipient": "4aa1b18483f94b5c8acd7fca0260d8dad835e8bc4d3ee2319b94e5307068d0de",
-   "lifetime_rating": 1000,
-   "season_rating": 1000
+   "lifetime_rating": 1179,
+   "season_rating": 1179
   }
  },
  "mode": "ranked"
