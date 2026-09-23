@@ -2,19 +2,41 @@
  "schema": "qdojo.combat.book.v1",
  "network_id": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
  "contract_id": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
- "generated_tick": "601",
+ "generated_tick": "721",
  "source": "reference-contract-state",
- "offers": [],
+ "offers": [
+  {
+   "offer_id": "73",
+   "kind": "RANKED",
+   "fighter_id": "c0745b0e546d6f3bd4f605570e9012b0f716c9e21376ef2fdbecf3dad43af7f4",
+   "rating": 1115,
+   "stake": "1000",
+   "window": 200,
+   "max_gap": 200,
+   "expires_tick": "871",
+   "opponent_id": null
+  },
+  {
+   "offer_id": "82",
+   "kind": "RANKED",
+   "fighter_id": "82a8e7e488c616a769ba6d810379ac024498218904c3c4a40f3b47739756d58c",
+   "rating": 942,
+   "stake": "1000",
+   "window": 100,
+   "max_gap": 200,
+   "expires_tick": "956",
+   "opponent_id": null
+  }
+ ],
  "capacity": {
   "offers": 64,
   "fights": 16,
-  "fights_in_use": 4
+  "fights_in_use": 3
  },
  "active_fights": [
-  "32",
-  "33",
-  "34",
-  "35"
+  "38",
+  "39",
+  "40"
  ],
- "next_matching_tick": "604"
+ "next_matching_tick": "724"
 }
