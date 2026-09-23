@@ -9,7 +9,7 @@ const path = require('node:path');
 const { createContext, runInContext } = require('node:vm');
 
 const src = readFileSync(path.join(__dirname, '../app.js'), 'utf8');
-const html = readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+const html = readFileSync(path.join(__dirname, '../legacy.html'), 'utf8');
 
 // Lift the HELP literal out of the browser file and evaluate just that.
 const block = src.match(/const HELP = \{[\s\S]*?\n\};/);

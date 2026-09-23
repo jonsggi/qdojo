@@ -1,7 +1,9 @@
 /* QDOJO combat spectator and owner page (combat.html).
  *
- * Views, by hash: #book, #fights, #fight/<id>, #fighter/<hex>, #practice,
- * #practice/<npc>/<seed>, #rules.
+ * Views, by hash: #arena (default), #title, #book, #results (#fights is an
+ * alias), #leaderboard, #fight/<id>, #fighter/<hex>, #practice,
+ * #practice/<npc>/<seed>, #join, #rules, #help. The site polls the export
+ * every 30 s and repaints live views in place, without a reload.
  *
  * Every replay is re-derived here from the revealed plan bytes with
  * combat/engine.js (via combat/logic.js); the exported traces are only checked
@@ -40,42 +42,100 @@
   let motionOn = !sysReduced && store.get('qdojo.combat.motion') !== '0';
   const motion = () => motionOn && !sysReduced && !!ANIM && !ANIM.reduced;
 
-  const D = { base: null, sample: false, manifest: null, error: null, cache: new Map() };
+  const D = { base: null, sample: false, manifest: null, error: null, cache: new Map(), meta: new Map(), done: new Set(), wallMs: NaN, tick: null, polls: 0 };
   let viewToken = 0;
-  let player = null;
+  let players = [];
+  let timers = [];
   let practice = null;
+  // What the arena has already shown: fight ID -> resolved rounds, and the
+  // fights that were live during this visit (so a finish shows its card).
+  const seenRounds = new Map();
+  const seenLive = new Set();
+  const POLL_MS = 30000;
 
   // ---- data --------------------------------------------------------------------
 
+  /* Cached per export path. Finished fights never change, so their files stay
+   * cached; the poll drops everything that can (see poll). */
   function fetchJson(rel) {
     const key = D.base + rel;
     if (!D.cache.has(key)) {
       D.cache.set(key, fetch(key, { cache: 'no-cache' }).then(r => {
         if (!r.ok) throw new Error(rel + ': HTTP ' + r.status);
+        const lm = Date.parse(r.headers.get('Last-Modified') || '');
+        D.meta.set(rel, { lastModified: lm });
         return r.json();
+      }).then(j => {
+        const m = /^fights\/(\d+)\.json$/.exec(rel);
+        if (m && j && j.phase === 'DONE') D.done.add(m[1]);
+        return j;
       }));
       D.cache.get(key).catch(() => D.cache.delete(key));
     }
     return D.cache.get(key);
   }
 
+  async function trySource(src) {
+    const r = await fetch(src.base + 'manifest.json', { cache: 'no-cache' });
+    if (!r.ok) return null;
+    const m = await r.json();
+    // Unknown major schema versions fail closed.
+    if (m.schema !== 'qdojo.combat.manifest.v1') { D.error = src.base + 'manifest.json has unknown schema ' + m.schema; return null; }
+    return m;
+  }
+
+  // Live export first; the sample only when live is missing.
   async function loadSource() {
     for (const src of SOURCES) {
       try {
-        const r = await fetch(src.base + 'manifest.json', { cache: 'no-cache' });
-        if (!r.ok) continue;
-        const m = await r.json();
-        // Unknown major schema versions fail closed.
-        if (m.schema !== 'qdojo.combat.manifest.v1') { D.error = src.base + 'manifest.json has unknown schema ' + m.schema; continue; }
-        D.base = src.base; D.sample = src.sample; D.manifest = m;
+        const m = await trySource(src);
+        if (!m) continue;
+        D.base = src.base; D.sample = src.sample; D.manifest = m; D.cache.clear(); D.meta.clear(); D.done.clear();
         const art = HEX64.test(m.ruleset_digest || '') ? await fetchJson('rulesets/' + m.ruleset_digest + '.json').catch(() => null) : null;
         const pick = await L.chooseRuleset({ exported: art, embedded: window.QDojoRuleset, manifestDigest: m.ruleset_digest, sha256: SHA });
         R = pick.rules;
         RULES_INFO = pick;
+        await noteFreshness();
         return;
       } catch (e) { /* try the next source */ }
     }
     D.error = D.error || 'No combat export could be fetched (tried ' + SOURCES.map(s => s.base).join(', ') + ').';
+  }
+
+  // The snapshot tick and wall time come from index.json: it is rewritten on
+  // every export. generated_at wins if the exporter provides it.
+  async function noteFreshness() {
+    const idx = await fetchJson('index.json').catch(() => null);
+    if (idx && idx.names) FIGHTER_NAMES = idx.names;
+    const tick = idx ? idx.generated_tick : D.manifest.generated_tick;
+    D.tick = tick;
+    const at = idx && idx.generated_at != null ? Date.parse(idx.generated_at) || Number(idx.generated_at) : NaN;
+    D.wallMs = Number.isFinite(at) ? at : (D.meta.get('index.json') || {}).lastModified;
+  }
+
+  /* Every 30 s: drop what can change (index, book, events, fighters, and any
+   * fight not known to be finished), then repaint the view if it shows live
+   * data. Nothing reloads the page; a playing replay is not interrupted. */
+  async function poll() {
+    D.polls++;
+    if (D.sample || !D.manifest) {
+      // A live export that appears later takes over from the sample.
+      const live = await trySource(SOURCES[0]).catch(() => null);
+      if (live) { await loadSource(); paintSource(); route(); return; }
+      if (!D.manifest) return;
+    }
+    const done = D.done;
+    for (const key of Array.from(D.cache.keys())) {
+      const rel = key.slice(D.base.length);
+      const fm = /^fights\/(\d+)(\.json|\/replay\.json)$/.exec(rel);
+      const volatile = /^(index|book|manifest)\.json$/.test(rel) || /^events\//.test(rel) || /^fighters\//.test(rel) || (fm && !done.has(fm[1]));
+      if (volatile) D.cache.delete(key);
+    }
+    const before = D.tick;
+    await noteFreshness().catch(() => {});
+    paintSource();
+    const name = currentRoute()[0];
+    if (['arena', 'title', 'book', 'results', 'leaderboard'].includes(name) || (name === 'fight' && D.tick !== before)) repaint();
   }
 
   function paintSource() {
@@ -83,28 +143,36 @@
     if (D.manifest && D.sample) {
       pill.className = 'pill pill-sample';
       pill.textContent = 'SAMPLE';
-      pill.title = 'Sample export from a local devnet: fake QU, synthetic fighters, NPC-driven bots. Not a deployment.';
+      pill.title = 'No live export found, so this is the sample from a local devnet: fake QU, synthetic fighters, NPC-driven bots. Not a deployment.';
     } else if (D.manifest) {
       pill.className = 'pill pill-live';
-      pill.textContent = 'EXPORT';
+      pill.textContent = 'LIVE EXPORT';
       pill.title = 'Combat export at ' + D.base + '. Same-source data: chain inclusion is not proven by this page.';
     } else {
       pill.className = 'pill pill-lost';
       pill.textContent = 'NO DATA';
       pill.title = D.error || '';
     }
-    $('#hud-tick').textContent = D.manifest ? D.manifest.generated_tick : '—';
+    $('#hud-tick').textContent = D.tick || (D.manifest ? D.manifest.generated_tick : '—');
+    const fr = L.freshness(D.wallMs, Date.now());
+    const fresh = $('#hud-fresh');
+    fresh.textContent = fr.known ? new Date(D.wallMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' (' + L.ageText(fr.ageMs) + ')' : '';
+    fresh.title = fr.known ? 'Export written ' + new Date(D.wallMs).toString() : 'Export time unknown';
+    // The sample is old by design; STALE is for a live export that stopped.
+    $('#hud-stale').hidden = !(D.manifest && !D.sample && fr.stale);
     $('#hud-rules').textContent = (R.semantic_version || 'combat-v1').toUpperCase();
     $('#foot-data').innerHTML = D.manifest
       ? 'DATA ' + esc(D.base) + (D.sample ? ' <b class="sample-note">SAMPLE: fake QU, synthetic fighters</b>' : '') +
         ' &middot; NETWORK <span class="id">' + esc(short(D.manifest.network_id)) + '</span> &middot; CONTRACT <span class="id">' + esc(short(D.manifest.contract_id)) + '</span>' +
-        ' &middot; Every replay is re-derived in your browser; rendering never changes a result.'
+        ' &middot; refreshed every ' + (POLL_MS / 1000) + ' s &middot; Every replay is re-derived in your browser; rendering never changes a result.'
       : esc(D.error || 'No data. PRACTICE and RULES still work offline.');
   }
 
   // ---- small renderers -----------------------------------------------------------
 
-  const short = hex => String(hex || '').slice(0, 8);
+  // Display names come from the export's index (a devnet lineup labels its demo bots); IDs otherwise.
+  let FIGHTER_NAMES = {};
+  const short = hex => FIGHTER_NAMES[hex] || String(hex || '').slice(0, 8);
   const avatar = (hex, cls) => (A ? A.render(hex, cls) : '');
   function fighterLink(hex, label) {
     if (!HEX64.test(hex || '')) return '<span class="muted">?</span>';
@@ -146,7 +214,7 @@
     });
   }
   function notFound(what) {
-    setView(screen('NOT FOUND') + '<section class="panel panel-red"><h3>NO RECORD</h3><p>' + esc(what) + '</p><p><a href="#fights">BACK TO FIGHTS</a></p></section>');
+    setView(screen('NOT FOUND') + '<section class="panel panel-red"><h3>NO RECORD</h3><p>' + esc(what) + '</p><p><a href="#results">BACK TO RESULTS</a></p></section>');
   }
   function needData() {
     if (D.manifest) return false;
@@ -185,7 +253,7 @@
       '<p class="tiny muted">Offers are paired on matching ticks' + (D.manifest.match_interval_ticks ? ', every ' + esc(D.manifest.match_interval_ticks) + ' ticks' : '') + '; the next is ' + esc(book.next_matching_tick) + '. A tick countdown is time, never health.</p></section>' +
       '<section class="panel panel-cyan"><h3>ACTIVE FIGHTS</h3>' +
       ((book.active_fights || []).length ? '<ul class="plain">' + book.active_fights.map(id => '<li><a href="#fight/' + esc(id) + '">FIGHT #' + esc(id) + ' &#9654;</a></li>').join('') + '</ul>'
-        : '<p class="muted">No fight in progress at this snapshot. <a href="#fights">Completed fights &#9654;</a></p>') +
+        : '<p class="muted">No fight in progress at this snapshot. <a href="#results">Results &#9654;</a></p>') +
       '</section></div>' +
       '<section class="panel"><h3>OPEN OFFERS (' + offers.length + ')</h3>' +
       (offers.length ? '<div class="tscroll"><table><thead><tr><th class="num">#</th><th>KIND</th><th>FIGHTER</th><th class="num">RATING</th><th class="num">STAKE</th><th class="num">WINDOW</th><th class="num">MAX GAP</th><th class="num">EXPIRES</th><th>OPPONENT</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
@@ -214,33 +282,268 @@
     return hex ? fighterLink(hex) : '<span class="muted">' + esc(f.slice(0, 2).join(' ')) + '</span>';
   }
 
-  // ---- FIGHTS ----------------------------------------------------------------------
+  // ---- shared loaders ----------------------------------------------------------
 
-  async function viewFights(tok) {
+  // Older fights may have been pruned from a live export: a missing file is
+  // skipped (null), never guessed.
+  const summaryOf = id => (DEC.test(String(id)) ? fetchJson('fights/' + id + '.json').catch(() => null) : Promise.resolve(null));
+  const replayOf = id => (DEC.test(String(id)) ? fetchJson('fights/' + id + '/replay.json').catch(() => null) : Promise.resolve(null));
+  async function activeIds() {
+    const book = await fetchJson('book.json').catch(() => null);
+    return ((book && book.active_fights) || []).filter(id => DEC.test(id));
+  }
+  async function latestDone(n) {
+    const index = await fetchJson('index.json');
+    if (index && index.names) FIGHTER_NAMES = index.names;
+    const ids = (index.fights || []).filter(id => DEC.test(id)).slice().sort((a, b) => Number(b) - Number(a));
+    const out = [];
+    for (let i = 0; i < ids.length && out.length < n; i += 8) {
+      const chunk = await Promise.all(ids.slice(i, i + 8).map(summaryOf));
+      chunk.forEach(s => { if (s && s.phase === 'DONE' && out.length < n) out.push(s); });
+    }
+    return out;
+  }
+  const stateAB = s => (s && s.state ? { a: s.state.A, b: s.state.B } : null);
+  function miniBars(st) {
+    if (!st) return '';
+    const bar = (label, v, max, cls) => '<div class="mbar mbar-' + cls + '"><span>' + label + ' ' + v + '</span><i style="width:' + Math.round(100 * v / max) + '%"></i></div>';
+    return '<div class="mini">' + ['a', 'b'].map(k => '<div class="mini-side">' + bar('HP', st[k].hp, R.limits.hp, 'hp') + bar('ST', st[k].stamina, R.limits.stamina, 'st') + '</div>').join('') + '</div>';
+  }
+  function phaseBadge(s) {
+    const lp = L.livePhase(s, D.tick);
+    if (lp.phase === 'DONE') return '';
+    const left = lp.left == null ? '' : lp.overdue ? 'DEADLINE PASSED, AWAITING ADVANCE' : lp.left + ' TICK' + (lp.left === 1 ? '' : 'S') + ' LEFT';
+    return '<span class="phase phase-' + esc(lp.phase) + '">' + esc(lp.phase || '?') + '</span> <span class="ticks">' + esc(left) + '</span>' +
+      (lp.deadline ? ' <span class="tiny muted">(deadline tick ' + esc(lp.deadline) + ', snapshot ' + esc(D.tick) + ')</span>' : '');
+  }
+  function actedHtml(s) {
+    const f = L.actedFlags(s);
+    return ['A', 'B'].map(x => '<span class="acted acted-' + f[x].toLowerCase() + '">' + x + ' ' + short(s.fighters[x].fighter_id) + ': ' + f[x] + '</span>').join(' ');
+  }
+  function howText(s) {
+    const r = s.result || {};
+    if (r.kind && r.kind !== 'COMBAT') return L.outcomeLabel(summaryOutcome(s)).short;
+    const rnd = s.state ? ' R' + (s.state.round_index + 1) : '';
+    return (r.result === 'KO' ? 'KO' : r.result === 'DOUBLE_KO' ? 'DOUBLE KO' : r.result === 'HP' ? 'DECISION' : r.result === 'HP_TIE' ? 'DRAW' : String(r.result || '?')) + rnd;
+  }
+
+  // ---- TITLE / attract -----------------------------------------------------------
+
+  async function viewTitle(tok) {
+    setView('<section class="attract"><h1 class="title-logo"><span class="title-q">Q</span>DOJO</h1>' +
+      '<p class="title-sub">AUTONOMOUS BOTS &middot; SEALED PLANS &middot; THREE ROUNDS</p>' +
+      '<div id="attract" class="attract-stage" aria-live="polite"><p class="muted">LOADING FIGHTS&hellip;</p></div>' +
+      '<p><a class="btn btn-start" href="#arena">PRESS START</a></p><p class="insert-coin blink">INSERT COIN</p>' +
+      '<p class="title-links"><a href="#practice">FREE PRACTICE</a> &middot; <a href="#join">BUILD A BOT</a> &middot; <a href="#leaderboard">LEADERBOARD</a></p></section>');
+    if (!D.manifest) { $('#attract').innerHTML = '<p class="muted">No export yet. Practice works offline.</p>'; return; }
+    const live = (await Promise.all((await activeIds()).map(summaryOf))).filter(Boolean);
+    const list = live.length ? live : await latestDone(6);
+    if (tok !== viewToken) return;
+    const box = $('#attract');
+    if (!list.length) { box.innerHTML = '<p class="muted">No fights yet.</p>'; return; }
+    let i = 0;
+    const show = () => {
+      const s = list[i % list.length];
+      const out = summaryOutcome(s);
+      box.innerHTML = '<a class="attract-card" href="#fight/' + esc(s.fight_id) + '">' +
+        '<span class="attract-kicker">' + (s.phase === 'DONE' ? 'RESULT' : '<b class="live-dot">LIVE</b>') + ' &middot; FIGHT #' + esc(s.fight_id) + ' &middot; ' + esc(String(s.mode || '').toUpperCase()) + '</span>' +
+        '<span class="attract-vs">' + avatar(s.fighters.A.fighter_id, 'avatar-lg') + '<span class="vs">VS</span>' + avatar(s.fighters.B.fighter_id, 'avatar-lg') + '</span>' +
+        '<span class="attract-names">' + esc(short(s.fighters.A.fighter_id)) + ' &middot; ' + esc(short(s.fighters.B.fighter_id)) + '</span>' +
+        miniBars(stateAB(s)) +
+        '<span class="attract-state">' + (s.phase === 'DONE' ? resultBadge(out) + ' ' + esc(L.outcomeLabel(out).text) : 'ROUND ' + (s.round_index + 1) + '/' + R.rounds + ' &middot; ' + phaseBadge(s)) + '</span></a>' +
+        '<p class="attract-nav"><button class="chip" data-att="-1" aria-label="Previous fight">&#9664;</button> ' + ((i % list.length) + 1) + '/' + list.length + ' <button class="chip" data-att="1" aria-label="Next fight">&#9654;</button></p>';
+    };
+    box.addEventListener('click', e => { const b = e.target.closest('[data-att]'); if (b) { i = (i + list.length + Number(b.dataset.att)) % list.length; show(); } });
+    show();
+    // Cycling is the attract mode; with motion off it waits for the buttons.
+    if (motion() && list.length > 1) timers.push(setInterval(() => { i++; show(); }, 4500));
+  }
+
+  // ---- LIVE ARENA --------------------------------------------------------------------
+
+  async function viewArena(tok) {
+    if (needData()) return;
+    const [book, ids] = await Promise.all([fetchJson('book.json').catch(() => null), activeIds()]);
+    const liveIds = ids.slice();
+    liveIds.forEach(id => seenLive.add(id));
+    // Fights that were live during this visit and have finished since: result cards.
+    const finishedIds = Array.from(seenLive).filter(id => !liveIds.includes(id));
+    const [live, finished] = await Promise.all([
+      Promise.all(liveIds.map(async id => ({ s: await summaryOf(id), rp: await replayOf(id) }))),
+      Promise.all(finishedIds.map(summaryOf)),
+    ]);
+    const recent = !live.length && !finished.filter(Boolean).length ? await latestDone(3) : [];
+    if (tok !== viewToken) return;
+    const cards = live.filter(x => x.s).map(({ s }) => '<section class="panel panel-cyan arena-card" data-fight="' + esc(s.fight_id) + '">' +
+      '<h3>FIGHT #' + esc(s.fight_id) + ' &middot; ' + esc(String(s.mode || '').toUpperCase()) + ' &middot; ROUND ' + (s.round_index + 1) + '/' + R.rounds + '</h3>' +
+      '<div class="arena-status"><p>' + phaseBadge(s) + '</p><p class="acted-row">' + actedHtml(s) + '</p></div>' +
+      '<div class="arena-player"></div>' +
+      '<p class="tiny muted">HP and stamina are the confirmed state after the last resolved round; plans stay sealed until revealed. <a href="#fight/' + esc(s.fight_id) + '">FULL REPLAY AND VERIFICATION &#9654;</a></p></section>').join('');
+    const resultCard = (s, label) => {
+      const out = summaryOutcome(s);
+      return '<section class="panel panel-yellow result-card"><h3>' + label + ' &middot; FIGHT #' + esc(s.fight_id) + '</h3>' +
+        '<div class="rc-vs">' + fighterLink(s.fighters.A.fighter_id, 'A ' + short(s.fighters.A.fighter_id)) + ' <span class="vs">VS</span> ' + fighterLink(s.fighters.B.fighter_id, 'B ' + short(s.fighters.B.fighter_id)) + '</div>' +
+        '<p>' + resultBadge(out) + ' ' + esc(L.outcomeLabel(out).text) + '</p>' + miniBars(stateAB(s)) +
+        '<p><a class="btn btn-sm" href="#fight/' + esc(s.fight_id) + '">REPLAY &#9654;</a></p></section>';
+    };
+    const wait = book ? BigInt(book.next_matching_tick) - BigInt(book.generated_tick) : null;
+    setView(screen('LIVE ARENA', live.length + ' LIVE FIGHT' + (live.length === 1 ? '' : 'S') + ' &middot; SNAPSHOT TICK ' + esc(D.tick) +
+      (book ? ' &middot; NEXT MATCHING ' + esc(book.next_matching_tick) + (wait > 0n ? ' (IN ' + wait + ')' : '') : '') + ' &middot; REFRESHES EVERY ' + (POLL_MS / 1000) + ' S') +
+      (cards || '<section class="panel"><h3>NO LIVE FIGHT</h3><p>Nobody is fighting at this snapshot. ' +
+        (book && book.offers && book.offers.length ? book.offers.length + ' offer(s) wait in the <a href="#book">book</a>.' : 'The <a href="#book">book</a> is empty.') +
+        ' This page checks again every ' + (POLL_MS / 1000) + ' s. Meanwhile: <a href="#practice">free practice</a>.</p></section>') +
+      finished.filter(Boolean).map(s => resultCard(s, 'FINISHED')).join('') +
+      (recent.length ? '<h3 class="sub-h">LATEST RESULTS</h3><div class="cols">' + recent.map(s => resultCard(s, 'RESULT')).join('') + '</div>' : ''));
+    // One compact player per live fight: the newest resolved round plays as
+    // soon as it lands; otherwise it rests on the current confirmed state.
+    for (const { s, rp } of live) {
+      if (!s) continue;
+      const host = $('.arena-card[data-fight="' + s.fight_id + '"] .arena-player');
+      let frames, startAt = 0, rounds = 0;
+      const d = rp && rp.rounds && rp.rounds.length ? L.deriveReplay(R, rp) : null;
+      if (d && d.rounds.length && !d.error) {
+        frames = L.timeline(rp, d);
+        rounds = d.rounds.length;
+        const last = d.rounds[rounds - 1].round_index;
+        startAt = Math.max(0, frames.findIndex(f => f.round === last && (f.kind === 'round' || f.kind === 'start')));
+      } else {
+        const st = stateAB(s);
+        frames = [{ kind: 'start', round: s.round_index, a: st.a, b: st.b }];
+      }
+      const fresh = seenRounds.get(s.fight_id) !== rounds;
+      seenRounds.set(s.fight_id, rounds);
+      const names = { A: 'A ' + short(s.fighters.A.fighter_id), B: 'B ' + short(s.fighters.B.fighter_id) };
+      const p = track(createPlayer(host, { frames, ids: { A: s.fighters.A.fighter_id, B: s.fighters.B.fighter_id }, names, links: true, replay: rp || {}, compact: true, startAt: fresh ? startAt : frames.length - 1, autoplay: fresh && rounds > 0 }));
+      if (!fresh) p.seek(frames.length - 1, false);
+    }
+  }
+
+  // ---- RESULTS -----------------------------------------------------------------------
+
+  async function viewResults(tok) {
     if (needData()) return;
     const index = await fetchJson('index.json');
+    if (index && index.names) FIGHTER_NAMES = index.names;
     const ids = (index.fights || []).filter(id => DEC.test(id));
-    const sums = await Promise.all(ids.map(id => fetchJson('fights/' + id + '.json').catch(() => null)));
+    const sums = await Promise.all(ids.map(summaryOf));
     if (tok !== viewToken) return;
+    const missing = sums.filter(x => !x).length;
     const all = sums.filter(Boolean).sort((a, b) => Number(b.fight_id) - Number(a.fight_id));
     const active = all.filter(s => s.phase !== 'DONE'), done = all.filter(s => s.phase === 'DONE');
-    const row = s => {
-      const out = summaryOutcome(s);
-      return '<tr>' +
-        '<td class="num"><a href="#fight/' + esc(s.fight_id) + '">#' + esc(s.fight_id) + '</a></td>' +
-        '<td>' + esc(String(s.mode || '').toUpperCase()) + '</td>' +
-        '<td>' + fighterLink(s.fighters.A.fighter_id) + '</td><td class="vs">VS</td><td>' + fighterLink(s.fighters.B.fighter_id) + '</td>' +
-        (s.phase === 'DONE'
-          ? '<td>' + resultBadge(out) + '</td><td>' + (out.outcome && out.outcome.winner ? esc(out.outcome.winner) : '<span class="muted">none</span>') + '</td><td class="num">' + esc(s.result && s.result.tick) + '</td>'
-          : '<td><span class="rbadge rbadge-open">' + esc(s.phase) + '</span></td><td>R' + (s.round_index + 1) + '</td><td class="num">commit &le; ' + esc(s.commit_last) + '<br>reveal &le; ' + esc(s.reveal_last) + '</td>') +
-        '<td><a class="btn btn-sm" href="#fight/' + esc(s.fight_id) + '">' + (s.phase === 'DONE' ? 'REPLAY' : 'WATCH') + '</a></td></tr>';
-    };
-    const table = (list, head) => '<div class="tscroll"><table class="fights-table"><thead><tr><th class="num">FIGHT</th><th>MODE</th><th>A</th><th></th><th>B</th>' + head + '<th></th></tr></thead><tbody>' + list.map(row).join('') + '</tbody></table></div>';
-    setView(screen('FIGHTS', esc(all.length) + ' FIGHTS IN THIS EXPORT &middot; SNAPSHOT TICK ' + esc(index.generated_tick)) +
-      '<section class="panel panel-cyan"><h3>ACTIVE (' + active.length + ')</h3>' +
-      (active.length ? table(active, '<th>PHASE</th><th>ROUND</th><th class="num">DEADLINE TICKS</th>') + '<p class="tiny muted">Deadlines are ticks, not health. Live plans stay sealed until their reveal.</p>'
-        : '<p class="muted">No fight in progress at this snapshot.</p>') + '</section>' +
-      '<section class="panel"><h3>COMPLETED (' + done.length + ')</h3>' + (done.length ? table(done, '<th>RESULT</th><th>WINNER</th><th class="num">END TICK</th>') : '<p class="muted">None yet.</p>') + '</section>');
+    const feed = done.map(s => {
+      const out = summaryOutcome(s), w = out.outcome ? out.outcome.winner : null;
+      const A_ = s.fighters.A.fighter_id, B_ = s.fighters.B.fighter_id;
+      const line = w === 'A' || w === 'B'
+        ? fighterLink(w === 'A' ? A_ : B_) + ' <span class="beat">BEAT</span> ' + fighterLink(w === 'A' ? B_ : A_)
+        : fighterLink(A_) + ' <span class="beat">&middot;</span> ' + fighterLink(B_);
+      return '<li class="feed-row"><a class="feed-id" href="#fight/' + esc(s.fight_id) + '">#' + esc(s.fight_id) + '</a>' +
+        '<span class="feed-mode">' + esc(String(s.mode || '').toUpperCase()) + '</span>' +
+        '<span class="feed-line">' + line + '</span>' + resultBadge(out) + ' <span class="feed-how">' + esc(howText(s)) + '</span>' +
+        '<span class="feed-tick tiny muted">TICK ' + esc(s.result && s.result.tick) + '</span>' +
+        '<a class="btn btn-sm" href="#fight/' + esc(s.fight_id) + '">REPLAY</a></li>';
+    }).join('');
+    setView(screen('RESULTS', esc(done.length) + ' FINISHED &middot; ' + esc(active.length) + ' LIVE &middot; SNAPSHOT TICK ' + esc(index.generated_tick)) +
+      (active.length ? '<section class="panel panel-cyan"><h3>LIVE NOW (' + active.length + ')</h3><p>' + active.map(s => '<a href="#fight/' + esc(s.fight_id) + '">#' + esc(s.fight_id) + '</a> ' + phaseBadge(s)).join('<br>') + '</p><p><a href="#arena">WATCH IN THE ARENA &#9654;</a></p></section>' : '') +
+      '<section class="panel"><h3>HISTORY</h3>' + (feed ? '<ol class="feed">' + feed + '</ol>' : '<p class="muted">No finished fight yet.</p>') +
+      (missing || ids.length >= 200 ? '<p class="tiny muted">The export keeps the most recent fights only' + (missing ? '; ' + missing + ' listed file(s) were not available' : '') + '.</p>' : '') + '</section>');
+  }
+
+  // ---- LEADERBOARD -------------------------------------------------------------------
+
+  async function viewLeaderboard(tok) {
+    if (needData()) return;
+    const index = await fetchJson('index.json');
+    if (index && index.names) FIGHTER_NAMES = index.names;
+    const hexes = (index.fighters || []).filter(h => HEX64.test(h));
+    const fighters = (await Promise.all(hexes.map(h => fetchJson('fighters/' + h + '.json').catch(() => null)))).filter(Boolean);
+    const rows = L.leaderboard(fighters);
+    const forms = await Promise.all(rows.map(async ({ f }) => L.recentForm(f.fighter_id, await Promise.all((f.fights || []).slice(-8).map(summaryOf)), 5)));
+    if (tok !== viewToken) return;
+    const beltCell = f => f.provisional
+      ? '<span class="belt belt-sm belt-white" title="Provisional: ' + esc(f.placement_fights) + ' of 10 placement fights">PROVISIONAL ' + esc(f.placement_fights) + '/10</span>'
+      : '<span class="belt belt-sm belt-' + esc(f.belt || 'other') + '">' + esc(String(f.belt || '?').toUpperCase()) + '</span>';
+    const formCell = form => form.length ? form.map(x => '<a class="form form-' + x.mark + '" href="#fight/' + esc(x.fight_id) + '" title="#' + esc(x.fight_id) + ' ' + esc(x.how) + '">' + (x.forfeit ? x.mark.toLowerCase() : x.mark) + '</a>').join('') : '<span class="muted">—</span>';
+    const body = rows.map(({ f, faults }, i) => {
+      const r = f.record || {};
+      return '<tr><td class="num rank">' + (i + 1) + '</td><td>' + fighterLink(f.fighter_id) + (f.house_npc ? ' <span class="pill tiny">HOUSE NPC</span>' : '') + '</td>' +
+        '<td class="num"><b>' + esc(f.lifetime_rating) + '</b></td><td>' + beltCell(f) + '</td>' +
+        '<td class="num">' + esc(r.W || 0) + '</td><td class="num">' + esc(r.D || 0) + '</td><td class="num">' + esc(r.L || 0) + '</td>' +
+        '<td class="num">' + esc(r.FW || 0) + '/' + esc(r.FL || 0) + '</td><td class="num' + (faults ? ' neg' : '') + '">' + faults + '</td>' +
+        '<td class="form-cell">' + formCell(forms[i]) + '</td></tr>';
+    }).join('');
+    setView(screen('LEADERBOARD', 'LIFETIME COMBAT RATING &middot; ' + esc(rows.length) + ' FIGHTERS &middot; SNAPSHOT TICK ' + esc(index.generated_tick)) +
+      '<section class="panel panel-yellow"><h3>RANKED</h3>' + (rows.length ? '<div class="tscroll"><table class="board"><thead><tr><th class="num">#</th><th>FIGHTER</th><th class="num">RATING</th><th>BELT</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num">FORFEITS W/L</th><th class="num">FAULTS</th><th>FORM (NEWEST FIRST)</th></tr></thead><tbody>' + body + '</tbody></table></div>' : '<p class="muted">No fighters yet.</p>') +
+      '<p class="tiny muted">Ratings start at 1000 and move by the integer formula in RULES; W/D/L are ranked contract records, forfeits separate. The first 10 ranked fights are placement: shown white and PROVISIONAL. ' +
+      'FORM: W win, L loss, D draw, N no result (double fault or void); lower case is a forfeit. Belts are display only: they change no stats.</p></section>');
+  }
+
+  // ---- JOIN / HOW TO BUILD A BOT -----------------------------------------------------
+
+  const OBS_EXAMPLE = '{\n  "schema": "qdojo.combat.observation.v1",\n  "mode": "ranked",\n  "fight_id": "42",\n  "round_index": 1,\n  "self_slot": "A",\n  "self":     {"fighter_id": "...", "hp": 72, "stamina": 40, "opening": 0, "guard_streak": 0, "power_available": true},\n  "opponent": {"fighter_id": "...", "hp": 64, "stamina": 26, "opening": 1, "guard_streak": 0, "power_available": true},\n  "deadlines": {"commit_last_tick": "1234", "reveal_first_tick": "1235", "reveal_last_tick": "1246"},\n  "prior_rounds": [ ...accepted plans and executed traces of this fight... ],\n  "history_manifest": {"opponent_fight_ids": [], "as_of_tick": "1210"},\n  "decision_budget_ms": 1500\n}';
+  const PLAN_EXAMPLE = '{"schema": "qdojo.combat.plan.v1", "actions": ["JAB", "DUCK", "KICK", "RECOVER", "BLOCK", "THROW"], "power_slot": 2}';
+  const COMMANDS = [
+    ['uv run qdojo combat npcs', 'the disclosed practice opponents'],
+    ['uv run qdojo combat train --npc jabber-v1 --planner "python3 examples/combat/planner_minimal.py"', 'one free local fight; prints its seed so you can rerun it'],
+    ['uv run qdojo combat evaluate --policy mixed-v1 --seeds 20', 'side-swapped benchmark over many seeds'],
+    ['uv run qdojo combat replay fight.json', 're-derive a recorded fight from its plans'],
+    ['uv run qdojo combat doctor --planner "python3 my_bot.py"', 'non-spending readiness check'],
+    ['uv run qdojo combat devnet status', 'the local devnet: fake QU, synthetic identities'],
+    ['uv run qdojo combat bot run --fighter alice --planner "python3 my_bot.py"', 'queue, commit and reveal on the devnet within a budget'],
+  ];
+
+  async function viewJoin(tok) {
+    setView(screen('JOIN', 'HOW TO BUILD A COMBAT BOT') +
+      '<section class="panel panel-red"><h3>STATUS: PRACTICE AND DEVNET ONLY</h3><p><b>On-chain paid play is not live yet.</b> Nothing on this page asks for a wallet, a seed or QU. ' +
+      'You can build, practise and benchmark a bot today, free and offline; ranked fights on this site come from ' + (D.sample ? 'a SAMPLE devnet export' : 'the house export') + '. ' +
+      'When paid play opens it will be announced here and in <a href="llms.txt">llms.txt</a>.</p></section>' +
+      '<section class="panel panel-green"><h3>1. PRACTISE FIRST</h3><p>Fight the disclosed NPCs in your browser: <a class="btn btn-sm" href="#practice">PRACTICE &#9654;</a> ' +
+      'Six actions a round, both sides sealed, three rounds. Learn the matrix (<a href="#rules">RULES</a>) before you write code.</p></section>' +
+      '<section class="panel"><h3>2. THE PLANNER CONTRACT</h3>' +
+      '<p>A planner is a program you run. Each round it gets <b>one JSON object on stdin</b> (stdin then closes) and must print <b>exactly one JSON object on stdout</b> and exit. ' +
+      'Diagnostics go to stderr. Default budget 1500 ms; the chain deadline is authoritative and a slow planner gets no extra time.</p>' +
+      '<h4>STDIN: qdojo.combat.observation.v1 (abridged)</h4><pre class="code">' + esc(OBS_EXAMPLE) + '</pre>' +
+      '<h4>STDOUT: qdojo.combat.plan.v1</h4><pre class="code">' + esc(PLAN_EXAMPLE) + '</pre>' +
+      '<ul class="plain rules-list"><li>Exactly six actions from JAB, KICK, BLOCK, DUCK, THROW, RECOVER; <b>power_slot</b> is -1 or the index of a JAB, KICK or THROW, once per fight.</li>' +
+      '<li>Exactly these keys. Unknown fields, wrong case, floats, extra output, a nonzero exit, more than 4096 bytes or a timeout are rejected.</li>' +
+      '<li>IDs, ticks and QU are decimal strings; HP, stamina and indexes are integers.</li>' +
+      '<li>The planner never sees a key, a salt or the opponent\'s live plan, and holds no signing authority. If it fails mid-fight the bot falls back to six RECOVERs.</li></ul></section>' +
+      '<section class="panel"><h3>3. A COMPLETE BOT, NO DEPENDENCIES</h3><p>examples/combat/planner_minimal.py from the repository: counts what the opponent did earlier in this fight and answers it. ' +
+      '<a href="combat/planner_minimal.py" download>DOWNLOAD</a></p><pre class="code" id="planner-src">Loading&hellip;</pre></section>' +
+      '<section class="panel"><h3>4. THE COMMANDS</h3><div class="tscroll"><table><tbody>' +
+      COMMANDS.map(([c, what]) => '<tr><td class="mono wrap">' + esc(c) + '</td><td class="wraptd">' + esc(what) + '</td></tr>').join('') + '</tbody></table></div>' +
+      '<p class="tiny muted">Practice and evaluation need no wallet. Keep spending decisions (a separate scheduler) apart from plan selection; never put a seed or API key on a command line.</p></section>' +
+      '<section class="panel panel-cyan"><h3>HAVE A CODING AGENT?</h3><p>Point it at <a href="llms.txt">llms.txt</a>: the rules summary, this contract, the commands and where the data lives, written for agents.</p></section>');
+    const src = await fetch('combat/planner_minimal.py', { cache: 'no-cache' }).then(r => (r.ok ? r.text() : null)).catch(() => null);
+    if (tok !== viewToken) return;
+    $('#planner-src').textContent = src || 'Not available here: see examples/combat/planner_minimal.py in the repository.';
+  }
+
+  // ---- HELP --------------------------------------------------------------------------
+
+  const helpEntries = () => [
+    ['HP', 'Health, 0 to ' + R.limits.hp + '. It never resets between rounds. Zero is a knockout.'],
+    ['STAMINA', 'Pays for moves, 0 to ' + R.limits.stamina + '. An unaffordable move becomes EXHAUSTED: it pays nothing and leaves you exposed. RECOVER, and the break between rounds, refill it.'],
+    ['OPENING', 'Earned by ducking a jab or throw, or by landing a clean jab. +' + R.opening_damage + ' damage on the very next beat if that beat lands; otherwise it expires.'],
+    ['GUARD', 'Consecutive BLOCKs. Each one costs ' + R.block_streak_cost + ' more stamina than the last (up to ' + R.limits.guard_streak + ' in a row). Blocking a KICK also costs strain stamina, never HP.'],
+    ['POWER', 'One per fight: mark a JAB, KICK or THROW for +' + R.power_damage + ' damage at +' + R.power_cost + ' cost. Spent even if it misses.'],
+    ['ROUND / BEAT', R.rounds + ' rounds of ' + R.beats_per_round + ' beats. Both plans for a round are sealed, then both resolve beat by beat, simultaneously.'],
+    ['COMMIT / REVEAL', 'Each round a bot first commits a hash of its plan and a secret salt, then reveals both. Nobody can change a plan after seeing the other one.'],
+    ['TICK', 'The chain\'s clock. Deadlines are ticks. A countdown on this site is time left to act, never health.'],
+    ['TIMEOUT / FORFEIT', 'Missing a commit or reveal deadline forfeits the fight. It is shown as TIMEOUT, never as a knockout, and no beats are invented.'],
+    ['DOUBLE FAULT / VOID', 'Both sides missed a deadline, or the service could not finish: no winner, stakes refunded, no rating change.'],
+    ['UNEXECUTED', 'Actions revealed after a knockout. They are shown for completeness and never counted as play.'],
+    ['REPLAY_MATCH', 'Your browser recomputed the commitments and replayed every beat from the revealed plans, and everything matched. Chain inclusion is not proven by this site.'],
+    ['COMBAT_VERIFIED', 'Every check passed, including confirmation on chain. A same-source export cannot earn it.'],
+    ['HASH_MATCH_ONLY / UNVERIFIED / FAILED', 'Only hashes could be checked / nothing could be checked / something did not match: do not trust that record.'],
+    ['RATING / BELT', 'Integer rating from 1000; the first 10 ranked fights are placement (PROVISIONAL, white). Belts are display only.'],
+    ['SAMPLE', 'No live export was found, so the site shows a devnet sample: fake QU, synthetic fighters.'],
+    ['STALE', 'The live export has not been rewritten for over ' + Math.round(L.STALE_MS / 60000) + ' minutes: the house exporter may be down, and what you see may be old.'],
+    ['LEGACY', 'The retired riddle arcade, kept read-only so its history stays reachable.'],
+  ];
+  function viewHelp() {
+    setView(screen('HELP', 'EVERY WORD ON THIS SITE') + '<section class="panel"><h3>GLOSSARY</h3><dl class="kv help-kv">' +
+      helpEntries().map(([k, v]) => '<dt>' + esc(k) + '</dt><dd>' + esc(v) + '</dd>').join('') + '</dl></section>' +
+      '<section class="panel"><h3>KEYS</h3><p>Replays: LEFT/RIGHT step, SPACE play/pause, HOME/END, or pick a row in the beat table. Practice: 1-6 pick actions, P power, BACKSPACE clear, ENTER fight. MOTION: OFF shows the same information with nothing moving.</p></section>');
   }
 
   // ---- the replay player -------------------------------------------------------------
@@ -327,7 +630,7 @@
       return '<tr class="' + cls + '" data-i="' + i + '" tabindex="-1"><td>' + (f.round + 1) + '</td><td></td><td colspan="7" class="note">' + esc(text) + '</td></tr>';
     }).join('');
     root.innerHTML =
-      '<div class="stage" aria-describedby="stage-help">' + corner('A') +
+      '<div class="stage">' + corner('A') +
       '<div class="center"><div class="round-no"></div><div class="beat-no"></div><div class="center-note"></div></div>' + corner('B') + '</div>' +
       '<div class="controls" role="group" aria-label="Replay controls">' +
       '<button class="chip" data-act="first" title="First (Home)">|&#9664;</button>' +
@@ -337,11 +640,12 @@
       '<button class="chip" data-act="last" title="Last (End)">&#9654;|</button>' +
       '<label class="speed">SPEED <select data-act="speed">' + SPEEDS.map(s => '<option value="' + s + '"' + (s === speed ? ' selected' : '') + '>' + s + 'x</option>').join('') + '</select></label>' +
       '<span class="beat-ms tiny muted"></span><span class="pos tiny"></span></div>' +
-      '<p id="stage-help" class="tiny muted">Keys: LEFT/RIGHT step, SPACE play/pause, HOME/END. Motion is decoration only: every number above comes from the independent replay.</p>' +
+      '<p class="tiny muted stage-help">Keys: LEFT/RIGHT step, SPACE play/pause, HOME/END. Motion is decoration only: every number above comes from the independent replay.</p>' +
       '<div class="caption cols"><div class="cap cap-A"></div><div class="cap cap-B"></div></div>' +
       '<details class="beat-details" open><summary>BEAT TABLE (' + frames.filter(f => f.kind === 'beat').length + ' executed beats)</summary>' +
       '<div class="tscroll"><table class="beats"><thead><tr><th>RND</th><th>BEAT</th><th>' + esc(names.A) + '</th><th class="num">HP</th><th class="num">ST</th><th>' + esc(names.B) + '</th><th class="num">HP</th><th class="num">ST</th><th>REASONS A / B</th></tr></thead><tbody>' + rows + '</tbody></table></div></details>';
 
+    root.classList.toggle('compact', !!opts.compact);
     const els = {};
     for (const s of ['A', 'B']) {
       const c = $('.corner-' + s, root);
@@ -502,12 +806,19 @@
       }
     });
     $$('tr[data-i]', table).forEach(tr => { tr.tabIndex = 0; });
-    seek(0, false);
+    seek(opts.startAt != null ? opts.startAt : 0, false);
     if (opts.autoplay && motion()) start();
+    else if (opts.autoplay) seek(frames.length - 1, false);
     return { stop, seek, start, pause, get index() { return idx; }, frames };
   }
 
-  function stopPlayer() { if (player) { player.stop(); player = null; } }
+  function stopPlayer() {
+    players.forEach(p => p.stop());
+    players = [];
+    timers.forEach(t => clearInterval(t));
+    timers = [];
+  }
+  function track(p) { players.push(p); return p; }
 
   // ---- REPLAY ------------------------------------------------------------------------
 
@@ -545,7 +856,7 @@
       '<section class="panel player-panel"><h3>REPLAY &middot; RE-DERIVED FROM REVEALED PLANS</h3><div id="player"></div></section>' +
       '<section class="panel verify-panel" id="verify"><h3>VERIFICATION</h3><p class="muted">Recomputing digests and commitments&hellip;</p></section>' +
       plansPanel(replay));
-    player = createPlayer($('#player'), { frames, ids: { A: fighters.A.fighter_id, B: fighters.B.fighter_id }, names, links: true, replay, autoplay: true });
+    track(createPlayer($('#player'), { frames, ids: { A: fighters.A.fighter_id, B: fighters.B.fighter_id }, names, links: true, replay, autoplay: true }));
     markScrollers($('#view'));
     const v = await L.verifyReplay(replay, { rules: R, manifest: D.manifest, sha256: SHA }).catch(e => ({ checks: [{ id: 'error', label: 'Verification', status: 'FAIL', evidence: e.message, details: [] }], level: 'FAILED' }));
     if (tok !== viewToken) return;
@@ -700,7 +1011,7 @@
       '<section class="panel player-panel"><h3>' + (s.rounds.length ? 'ROUNDS SO FAR' : 'THE MAT') + '</h3><div id="player"></div></section>' +
       (s.rounds.length ? '<section class="panel"><h3>REVEALED NPC PLANS</h3><ul class="plain">' + s.rounds.map(r => '<li>ROUND ' + (r.round_index + 1) + ': ' + r.plans.B.actions.map((a, i) => NAMES[a] + (i === r.plans.B.power_slot ? '&#9733;' : '')).join(' ') + '</li>').join('') + '</ul></section>' : ''));
     const frames = practiceFrames(s);
-    player = createPlayer($('#player'), { frames, ids: { A: 'practice:you', B: 'npc:' + s.npc }, names: { A: 'YOU', B: npc.name }, links: false, replay: {}, mySide: 'A', autoplay: false });
+    const player = track(createPlayer($('#player'), { frames, ids: { A: 'practice:you', B: 'npc:' + s.npc }, names: { A: 'YOU', B: npc.name }, links: false, replay: {}, mySide: 'A', autoplay: false }));
     if (playFrom != null) {
       player.seek(playFrom, false);
       if (motion()) player.start(); else player.seek(frames.length - 1, false);
@@ -827,6 +1138,13 @@
       '<section class="panel"><h3>MOVES</h3><div class="tscroll"><table><thead><tr><th class="num">ID</th><th>ACTION</th><th class="num">COST</th><th>PURPOSE</th></tr></thead><tbody>' + moves + '</tbody></table></div></section>' +
       '<section class="panel"><h3>DAMAGE MATRIX</h3><p class="tiny">Damage dealt BY the row action TO the column action, before opening/power. Both sides read the same pre-beat snapshot. Bonuses never turn a zero into damage.</p>' +
       '<div class="tscroll"><table class="matrix">' + matrix + '</table></div></section>' +
+      '<section class="panel"><h3>SIMULTANEOUS RESOLUTION</h3><p class="tiny">Each beat both actions are read from the same pre-beat snapshot: costs, both damages, strain, recovery, opening and guard are computed for both sides before either state changes. ' +
+      'A jab and a kick trade: both land, even if one of them knocks out. There is no initiative, no random roll, no critical hit, and slot A/B order never matters.</p></section>' +
+      '<section class="panel"><h3>VERIFICATION LEVELS</h3><p class="tiny">Every replay page recomputes the fight in your browser and shows each check as PASS, FAIL or UNAVAILABLE:</p><ol class="rules-list">' +
+      '<li>The ruleset digest matches the manifest.</li><li>The input transactions are confirmed on chain (a same-source export cannot prove this: UNAVAILABLE).</li>' +
+      '<li>Every revealed plan and salt hashes to its commitment and round-start digest.</li><li>An independent integer replay reproduces every state and the outcome.</li>' +
+      '<li>Credits and ratings follow the outcome and the committed fee terms.</li></ol><dl class="kv">' +
+      Object.entries(L.LEVELS).map(([k, v]) => '<dt>' + levelBadge(k) + '</dt><dd>' + esc(v) + '</dd>').join('') + '</dl></section>' +
       '<section class="panel"><h3>REASON CODES</h3><p class="tiny">Replays label each beat with these codes. They explain; they are never hidden logic.</p><p class="codes">' + REASONS.map(r => '<span class="code">' + r + '</span>').join(' ') + '</p></section>');
     const d = await L.rulesetDigest(R, SHA);
     if (tok !== viewToken) return;
@@ -838,24 +1156,47 @@
 
   // ---- router and chrome -------------------------------------------------------------
 
-  async function route() {
-    const h = decodeURIComponent(location.hash.replace(/^#/, '')) || 'book';
-    const [name, ...rest] = h.split('/');
+  function currentRoute() {
+    const h = decodeURIComponent(location.hash.replace(/^#/, '')) || 'arena';
+    return h.split('/');
+  }
+
+  // A poll repaints a live view in place. A finished fight's replay never
+  // changes, so it is not interrupted.
+  function repaint() {
+    const [name, id] = currentRoute();
+    if (name === 'fight' && D.done.has(id)) return;
+    if (name === 'fighter' || name === 'practice') return;
+    render(false);
+  }
+
+  function route() { return render(true); }
+
+  async function render(navigated) {
+    const [name, ...rest] = currentRoute();
     const tok = ++viewToken;
+    const y = window.scrollY;
     stopPlayer();
-    $$('.hud-nav a[data-view]').forEach(a => a.classList.toggle('on', a.dataset.view === name || (name === 'fight' && a.dataset.view === 'fights') || (name === 'fighter' && a.dataset.view === 'fights')));
+    $$('.hud-nav a[data-view]').forEach(a => a.classList.toggle('on', a.dataset.view === name || ((name === 'fight' || name === 'fights') && a.dataset.view === 'results') || (name === 'fighter' && a.dataset.view === 'leaderboard')));
     try {
-      if (name === 'book') await viewBook(tok);
-      else if (name === 'fights') await viewFights(tok);
+      if (name === 'arena') await viewArena(tok);
+      else if (name === 'title') await viewTitle(tok);
+      else if (name === 'book') await viewBook(tok);
+      else if (name === 'results' || name === 'fights') await viewResults(tok);
+      else if (name === 'leaderboard') await viewLeaderboard(tok);
+      else if (name === 'join') await viewJoin(tok);
+      else if (name === 'help') viewHelp();
       else if (name === 'fight') await viewFight(tok, rest[0]);
       else if (name === 'fighter') await viewFighter(tok, rest[0]);
       else if (name === 'practice') viewPractice(tok, rest);
       else if (name === 'rules') await viewRules(tok);
-      else { location.replace('#book'); return; }
+      else { location.replace('#arena'); return; }
     } catch (e) {
       if (tok === viewToken) setView(screen('ERROR') + '<section class="panel panel-red"><h3>COULD NOT RENDER</h3><p>' + esc(e.message) + '</p></section>');
     }
-    if (tok === viewToken && name !== 'practice') $('#view').focus({ preventScroll: true });
+    if (tok !== viewToken) return;
+    if (navigated && name !== 'practice') $('#view').focus({ preventScroll: true });
+    if (!navigated) window.scrollTo(0, y);
   }
 
   function paintMotion() {
@@ -885,6 +1226,8 @@
     paintSource();
     window.addEventListener('hashchange', route);
     route();
+    // Poll without reloading; a hidden tab waits for the next visible tick.
+    setInterval(() => { if (!document.hidden) poll().catch(() => {}); }, POLL_MS);
   }
 
   boot();

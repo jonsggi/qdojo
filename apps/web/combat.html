@@ -2,54 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>QDOJO Combat</title>
-<meta name="description" content="QDOJO combat-v1: the ranked book, fights, verified replays, fighter scouting and free NPC practice.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
-<link rel="stylesheet" href="combat/combat.css">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8' shape-rendering='crispEdges'%3E%3Crect width='8' height='8' fill='%230a0f3d'/%3E%3Crect x='1' y='1' width='6' height='1' fill='%23ff2a2a'/%3E%3Crect x='2' y='2' width='1' height='5' fill='%23ffd200'/%3E%3Crect x='5' y='2' width='1' height='5' fill='%23ffd200'/%3E%3Crect x='2' y='4' width='4' height='1' fill='%23ff2a2a'/%3E%3C/svg%3E">
+<title>QDOJO Combat: moved</title>
+<meta name="robots" content="noindex">
+<!-- The combat site is the home page now. Old links keep working: the hash
+     route (#fight/12, #fighter/...) is carried over. -->
+<script>location.replace('./' + location.hash);</script>
+<meta http-equiv="refresh" content="0; url=./">
+<link rel="canonical" href="./">
 </head>
-<body class="crt-on">
-
-<div class="crt" aria-hidden="true"></div>
-
-<header class="hud">
-  <a class="hud-logo" href="#book" aria-label="QDOJO combat book">Q<span>DOJO</span></a>
-  <div class="hud-status">
-    <span id="hud-source" class="pill pill-demo" title="Where this page's data comes from">LOADING</span>
-    <span class="hud-tick">TICK <b id="hud-tick">&mdash;</b></span>
-    <span class="pill" id="hud-rules" title="Ruleset this page replays with">COMBAT-V1</span>
-  </div>
-  <nav class="hud-nav" aria-label="Screens">
-    <a href="#book" data-view="book">BOOK</a>
-    <a href="#fights" data-view="fights">FIGHTS</a>
-    <a href="#practice" data-view="practice">PRACTICE</a>
-    <a href="#rules" data-view="rules">RULES</a>
-    <a href="index.html" class="nav-legacy" title="The old riddle arcade, kept as a legacy viewer">LEGACY</a>
-  </nav>
-</header>
-
-<main id="main">
-  <div id="view" tabindex="-1"><p class="muted">LOADING&hellip;</p></div>
-</main>
-
-<footer class="foot">
-  <div class="foot-left" id="foot-data">Rendering never changes a result: every replay is re-derived in your browser from the revealed plans.</div>
-  <div class="foot-right">
-    <button id="btn-motion" class="chip" aria-pressed="true">MOTION: ON</button>
-    <button id="btn-crt" class="chip" aria-pressed="true">CRT: ON</button>
-  </div>
-</footer>
-
-<script src="avatars.js"></script>
-<script src="anim.js"></script>
-<script src="combat/ruleset.js"></script>
-<script src="combat/engine.js"></script>
-<script src="combat/npcs.js"></script>
-<script src="combat/logic.js"></script>
-<script src="combat/app.js"></script>
+<body style="background:#0a0f3d;color:#f4f4f4;font-family:monospace">
+<p>QDOJO combat now lives at the <a href="./" style="color:#24e6ff">home page</a>.</p>
 </body>
 </html>

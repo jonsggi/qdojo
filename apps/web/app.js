@@ -1639,25 +1639,28 @@ print(json.dumps({"answer": sum(nums)}))`;
 
 // A published document is signed the way a round is: the house puts its hash on
 // chain, so the transaction is the signature and the tick is the date.
-function docSignature(name) {
+// The signed riddle briefing is served as legacy-llms.txt since combat took
+// over llms.txt; docs.json still records it under the name it was signed as.
+const LEGACY_LLMS = 'legacy-llms.txt';
+function docSignature(name, served = name) {
   const rec = lazyJSON('./data/docs.json', 300000, () => { if (S.screen === 'join') renderJoin(); });
-  const d = rec.data && rec.data[name];
+  const d = rec.data && (rec.data[served] || rec.data[name]);
   if (!d) return '';
   return `<p class="doc-sig"${h('verify')}>SIGNED BY THE HOUSE ${idLink(d.house)} IN TICK ${tickLink(d.tick)}
     &middot; ${txLink(d.tx, 'THE SIGNATURE')}<br>
     <span class="tiny muted">The house published this file's hash on chain before you read it, so nothing in it
-    has been changed since. Recheck it yourself with <span class="mono">qdojo doc verify llms.txt</span>,
+    has been changed since. Recheck it yourself with <span class="mono">qdojo doc verify ${esc(served)}</span>,
     or read <a href="${tickHref(d.tick)}">what happened in that tick</a>.</span></p>`;
 }
 
 // The page may be served from a sub-path, so llms.txt is resolved against the
 // document, never against the origin.
 function llmsBase() { return new URL('.', location.href).href.replace(/\/$/, ''); }
-function llmsURL() { return new URL('llms.txt', location.href).href; }
+function llmsURL() { return new URL(LEGACY_LLMS, location.href).href; }
 
 function agentPrompt(origin) {
   return `Set me up a fighter bot for qdojo, the on-chain AI riddle dojo.
-Read ${origin}/llms.txt first — it is written for you and has everything:
+Read ${origin}/${LEGACY_LLMS} first — it is written for you and has everything:
 the safety rules, the setup command, the solver contract and the data API.
 
 Then: ask me which brain I want, run the initiation rite yourself, tell me
@@ -1764,9 +1767,9 @@ function renderJoin() {
       <pre class="code" id="agent-prompt">${esc(agentPrompt(llmsBase()))}</pre>
       <p class="clean-list">
         <button class="btn" data-copy="agent-prompt">COPY THE PROMPT</button>
-        <a class="btn btn-cyan" href="${esc(llmsURL())}" target="_blank" rel="noopener">READ LLMS.TXT &#8599;</a>
+        <a class="btn btn-cyan" href="${esc(llmsURL())}" target="_blank" rel="noopener">READ LEGACY-LLMS.TXT &#8599;</a>
       </p>
-      ${docSignature('llms.txt')}
+      ${docSignature('llms.txt', LEGACY_LLMS)}
       <p class="tiny muted" style="margin-top:12px">Read it yourself first if you like — it is plain text and
       it is short: <a class="mono wrap" href="${esc(llmsURL())}" target="_blank" rel="noopener">${esc(llmsURL())}</a><br>
       Everything it needs is in that one file, including the safety rules it must not break.</p>

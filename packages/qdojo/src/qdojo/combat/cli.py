@@ -170,6 +170,7 @@ def add_parser(sub):
     d.add_argument("--json", action="store_true")
     d.set_defaults(fn=cmd_evaluate)
 
-    from . import chain_cli
+    from . import chain_cli, live
     chain_cli.add_parsers(s)
+    live.add_parser(s)
     return s

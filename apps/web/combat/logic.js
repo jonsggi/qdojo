@@ -678,6 +678,67 @@
     return s;
   }
 
+  // ---- live site helpers (arena, leaderboard, freshness) ----------------------
+
+  /* Phase and ticks left for an active fight, against the export's snapshot
+   * tick. Ticks are time, never health. */
+  function livePhase(summary, tick) {
+    const phase = String(summary.phase || '');
+    const last = phase === 'COMMIT' ? summary.commit_last : phase === 'REVEAL' ? summary.reveal_last : null;
+    if (last == null || tick == null) return { phase, deadline: last == null ? null : String(last), left: null, overdue: false };
+    const left = BigInt(last) - BigInt(tick);
+    return { phase, deadline: String(last), left: left < 0n ? 0 : Number(left), overdue: left < 0n };
+  }
+
+  /* Who has acted in the current window: flags only, never a sealed plan. */
+  function actedFlags(summary) {
+    const c = new Set(summary.committed || []), r = new Set(summary.revealed || []);
+    return Object.fromEntries(SIDES.map(s => [s, r.has(s) ? 'REVEALED' : c.has(s) ? 'COMMITTED' : 'WAITING']));
+  }
+
+  /* A fighter's last n finished fights, newest first, from fight summaries.
+   * Missing (pruned) summaries are skipped, not guessed. */
+  function recentForm(fid, summaries, n) {
+    const out = [];
+    const done = summaries.filter(s => s && s.phase === 'DONE' && s.result && s.fighters)
+      .sort((a, b) => Number(b.fight_id) - Number(a.fight_id));
+    for (const s of done) {
+      const side = s.fighters.A.fighter_id === fid ? 'A' : s.fighters.B.fighter_id === fid ? 'B' : null;
+      if (!side) continue;
+      const r = s.result, kind = r.kind || 'COMBAT';
+      const how = kind === 'COMBAT' ? (r.result || '') : kind;
+      const mark = r.winner == null ? (kind === 'COMBAT' ? 'D' : 'N') : r.winner === side ? 'W' : 'L';
+      out.push({ fight_id: String(s.fight_id), mark, how, forfeit: kind === 'FORFEIT' });
+      if (out.length >= (n || 5)) break;
+    }
+    return out;
+  }
+
+  /* Ranked order: rating, then wins, then fewer faults, then ID (stable). */
+  function leaderboard(fighters) {
+    const faults = f => Object.values(f.faults_by_epoch || {}).reduce((a, b) => a + (Number(b) || 0), 0);
+    return fighters.filter(Boolean).map(f => ({ f, faults: faults(f) })).sort((x, y) =>
+      (y.f.lifetime_rating - x.f.lifetime_rating) || (((y.f.record || {}).W || 0) - ((x.f.record || {}).W || 0)) ||
+      (x.faults - y.faults) || (x.f.fighter_id < y.f.fighter_id ? -1 : 1));
+  }
+
+  /* How old the export is. wallMs is when it was written (generated_at, or
+   * the HTTP Last-Modified of index.json); unknown age is not called fresh. */
+  const STALE_MS = 5 * 60 * 1000;
+  function freshness(wallMs, nowMs, staleMs) {
+    if (!Number.isFinite(wallMs)) return { ageMs: null, stale: false, known: false };
+    const ageMs = Math.max(0, nowMs - wallMs);
+    return { ageMs, stale: ageMs > (staleMs || STALE_MS), known: true };
+  }
+  function ageText(ms) {
+    if (ms == null) return 'unknown age';
+    const s = Math.round(ms / 1000);
+    if (s < 90) return s + 's ago';
+    if (s < 5400) return Math.round(s / 60) + 'm ago';
+    if (s < 172800) return Math.round(s / 3600) + 'h ago';
+    return Math.round(s / 86400) + 'd ago';
+  }
+
   // ---- practice (docs/npcs.md section 1) -------------------------------------
 
   function randomSeed() {
@@ -728,5 +789,6 @@
     deriveReplay, replayMismatches, verifyReplay, levelOf, isForfeit, ratingDelta, splitPurse, checkSettlement,
     timeline, outcomeLabel, explainSide, hindsight, fighterStats,
     randomSeed, practiceStart, practiceNpcPlan, practicePlay,
+    livePhase, actedFlags, recentForm, leaderboard, freshness, ageText, STALE_MS,
   });
 });

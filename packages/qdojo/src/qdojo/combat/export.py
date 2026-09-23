@@ -165,12 +165,32 @@ def _write(path: Path, doc: dict):
     os.replace(tmp, path)
 
 
-def export_all(c: CombatContract, root: Path) -> list[Path]:
-    """Write every public file; returns the paths written."""
+def export_all(c: CombatContract, root: Path, keep: int | None = None, deployment: dict | None = None) -> list[Path]:
+    """Write every public file; returns the paths written.
+
+    `keep` limits fight files to the most recent N fights (plus every active
+    one) and removes older fight files from `root`; the full history stays in
+    the contract journal. `deployment` labels what produced the data (for a
+    devnet: fake QU, synthetic identities)."""
     root = Path(root)
     if root.name != "v1" or root.parent.name != "combat":
         raise ValueError("export root must be .../combat/v1 so legacy files are never touched")
     out = []
+    fight_ids = sorted(c.fights)
+    if keep is not None:
+        recent = set(fight_ids[-keep:]) | {f for f, x in c.fights.items() if x.phase != "DONE"}
+        fight_ids = [f for f in fight_ids if f in recent]
+        fights_dir = root / "fights"
+        if fights_dir.exists():
+            for p in fights_dir.iterdir():
+                stem = p.name.split(".")[0]
+                if stem.isdigit() and int(stem) not in recent:
+                    if p.is_dir():
+                        for q in p.iterdir():
+                            q.unlink()
+                        p.rmdir()
+                    else:
+                        p.unlink()
 
     def put(rel, doc):
         p = root / rel
@@ -187,14 +207,35 @@ def export_all(c: CombatContract, root: Path) -> list[Path]:
                                                      "rules": artifact})
     put("book.json", book(c))
     put("npcs.json", npc_list())
-    for fid in c.fights:
+    for fid in fight_ids:
+        fight = c.fights[fid]
+        # A finished fight never changes again: write it once, so a live export
+        # does not rewrite hundreds of files for a new generated_tick.
+        final = fight.phase == "DONE" and c.contests[fight.contest_id].status == "DONE"
+        if final and (root / f"fights/{fid}.json").exists():
+            continue
         put(f"fights/{fid}.json", fight_summary(c, fid))
-        if c.fights[fid].rounds or c.fights[fid].result:
+        if fight.rounds or fight.result:
             put(f"fights/{fid}/replay.json", fight_replay(c, fid))
     for fid in c.fighters:
         put(f"fighters/{fid.hex()}.json", fighter(c, fid))
     put("events/latest.json", events(c, max(0, c.event_seq - PAGE)))
+    results = []
+    for fid in reversed(fight_ids):
+        f = c.fights[fid]
+        if f.phase != "DONE" or not f.result:
+            continue
+        results.append({"fight_id": str(fid), "contest_id": str(f.contest_id),
+                        "mode": codec.Mode(f.context.mode).name.lower(),
+                        "A": f.context.participant_a.fighter_id.hex(), "B": f.context.participant_b.fighter_id.hex(),
+                        "kind": f.result["kind"], "winner": f.result.get("winner"),
+                        "result": f.result.get("result"), "tick": str(f.result["tick"])})
+    put("results.json", _envelope(c, "results", {"results": results}))
+    extra = {"generated_at": deployment["generated_at"]} if deployment and "generated_at" in deployment else {}
     put("index.json", _envelope(c, "index", {
-        "fights": [str(f) for f in sorted(c.fights)][-200:],
-        "fighters": [f.hex() for f in c.fighters]}))
+        "fights": [str(f) for f in fight_ids][-(keep or 200):],
+        "active_fights": [str(f) for f in fight_ids if c.fights[f].phase != "DONE"],
+        "fighters": [f.hex() for f in c.fighters],
+        "deployment": deployment or {"kind": "unspecified"},
+        "names": {k: v for k, v in (deployment or {}).get("names", {}).items()}, **extra}))
     return out

@@ -374,3 +374,55 @@ test('a forfeit carries the re-derived state at the deadline; a tampered one fai
   u.forfeit_round = 2;
   assert.equal(statusOf(await verify(u), 'replay'), 'FAIL');
 });
+
+// ---- live site helpers --------------------------------------------------------
+
+const summaryOf = id => { try { return readJson(path.join(SAMPLE, 'fights', String(id) + '.json')); } catch (e) { return null; } };
+
+test('live phase counts ticks left from the deadline, never from HP', () => {
+  const s = { phase: 'COMMIT', commit_last: '1234', reveal_last: '1246', state: { A: { hp: 3 } } };
+  assert.deepEqual(L.livePhase(s, '1230'), { phase: 'COMMIT', deadline: '1234', left: 4, overdue: false });
+  assert.deepEqual(L.livePhase(Object.assign({}, s, { phase: 'REVEAL' }), '1240'), { phase: 'REVEAL', deadline: '1246', left: 6, overdue: false });
+  assert.deepEqual(L.livePhase(s, '1300'), { phase: 'COMMIT', deadline: '1234', left: 0, overdue: true });
+  assert.equal(L.livePhase({ phase: 'DONE' }, '1').left, null);
+  assert.deepEqual(L.actedFlags({ committed: ['A', 'B'], revealed: ['A'] }), { A: 'REVEALED', B: 'COMMITTED' });
+  assert.deepEqual(L.actedFlags({}), { A: 'WAITING', B: 'WAITING' });
+});
+
+test('recent form reads finished fights newest first and skips pruned files', () => {
+  const fid = '9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439';
+  const f = readJson(path.join(SAMPLE, 'fighters', fid + '.json'));
+  const sums = f.fights.map(summaryOf);
+  const form = L.recentForm(fid, sums.concat([null, null]), 5);
+  assert.equal(form.length, 5);
+  assert.deepEqual(form.map(x => x.fight_id), f.fights.slice().sort((a, b) => b - a).slice(0, 5));
+  for (const x of form) assert.ok(['W', 'L', 'D', 'N'].includes(x.mark));
+  const old = L.recentForm(fid, sums, 50);
+  const forfeit = old.find(x => x.fight_id === '1');
+  assert.deepEqual([forfeit.mark, forfeit.forfeit, forfeit.how], ['W', true, 'FORFEIT']);
+  assert.deepEqual(L.recentForm(fid, [], 5), []);
+});
+
+test('leaderboard orders by rating and counts faults', () => {
+  const fighters = index.fighters.map(h => readJson(path.join(SAMPLE, 'fighters', h + '.json')));
+  const rows = L.leaderboard(fighters.concat([null]));
+  assert.equal(rows.length, fighters.length);
+  for (let i = 1; i < rows.length; i++) assert.ok(rows[i - 1].f.lifetime_rating >= rows[i].f.lifetime_rating);
+  const t = L.leaderboard([
+    { fighter_id: 'b', lifetime_rating: 1000, record: { W: 1 }, faults_by_epoch: { 1: 2 } },
+    { fighter_id: 'a', lifetime_rating: 1000, record: { W: 1 }, faults_by_epoch: {} },
+    { fighter_id: 'c', lifetime_rating: 1100, record: { W: 0 } },
+  ]);
+  assert.deepEqual(t.map(r => r.f.fighter_id), ['c', 'a', 'b']);
+  assert.equal(t[2].faults, 2);
+});
+
+test('freshness: a live export older than the limit is stale; unknown age is not called fresh', () => {
+  const now = Date.parse('2026-09-23T12:00:00Z');
+  assert.deepEqual(L.freshness(now - 60000, now), { ageMs: 60000, stale: false, known: true });
+  assert.equal(L.freshness(now - L.STALE_MS - 1, now).stale, true);
+  assert.deepEqual(L.freshness(NaN, now), { ageMs: null, stale: false, known: false });
+  assert.equal(L.ageText(30000), '30s ago');
+  assert.equal(L.ageText(10 * 60000), '10m ago');
+  assert.equal(L.ageText(null), 'unknown age');
+});

@@ -1,6 +1,7 @@
 /* combat.html additions on top of style.css: same cabinet, new screens. */
 
 #view:focus { outline: none; }
+[hidden] { display: none !important; }
 .plain { list-style: none; margin: 0; padding: 0; }
 .plain li { margin: 6px 0; }
 .big { font-size: 14px; }
@@ -222,3 +223,80 @@ body.still *, body.still *::before, body.still *::after { animation: none !impor
   .slots { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .controls .pos { margin-left: 0; width: 100%; }
 }
+
+/* ---- HUD freshness ---------------------------------------------------- */
+.hud-fresh { color: var(--grey); font-size: 8px; margin-left: 4px; }
+
+/* ---- title / attract -------------------------------------------------- */
+.attract { text-align: center; padding-top: 10px; }
+.attract .title-logo { margin: 10px 0 0; }
+.attract-stage { min-height: 250px; margin: 18px auto; max-width: 560px; }
+.attract-card {
+  display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 16px;
+  background: var(--panel); border: 4px solid var(--cyan); box-shadow: 6px 6px 0 var(--black); color: var(--white);
+}
+.attract-card:hover, .attract-card:focus-visible { text-decoration: none; border-color: var(--yellow); }
+.attract-kicker { font-size: 9px; color: var(--cyan); letter-spacing: 1px; }
+.attract-vs { display: flex; align-items: center; gap: 18px; }
+.attract-vs .avatar-lg { width: 80px; height: 80px; }
+.attract-vs .avatar-lg:last-child svg { transform: scaleX(-1); }
+.attract-names { font-size: 9px; color: var(--yellow); }
+.attract-state { font-size: 9px; }
+.attract-nav { font-size: 9px; color: var(--grey); }
+.live-dot { color: var(--red); font-weight: normal; }
+.live-dot::before { content: "\25CF  "; }
+.title-links { font-size: 9px; margin-top: 18px; }
+
+/* ---- mini HP / stamina (cards) ---------------------------------------- */
+.mini { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; max-width: 440px; margin: 6px 0; }
+.mini-side { display: flex; flex-direction: column; gap: 3px; }
+.mbar { position: relative; height: 14px; background: var(--black); border: 2px solid var(--white); font-size: 7px; }
+.mbar span { position: absolute; left: 4px; top: 1px; z-index: 1; color: var(--white); text-shadow: 1px 1px 0 var(--black); }
+.mbar i { position: absolute; left: 0; top: 0; bottom: 0; }
+.mbar-hp i { background: var(--green); }
+.mbar-st { height: 11px; border-color: var(--grey); }
+.mbar-st i { background: var(--cyan); }
+
+/* ---- live arena ------------------------------------------------------- */
+.arena-status { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; align-items: center; font-size: 9px; margin-bottom: 8px; }
+.arena-status p { margin: 0; }
+.phase { display: inline-block; padding: 3px 7px; color: var(--black); background: var(--grey); font-size: 9px; }
+.phase-COMMIT { background: var(--green); }
+.phase-REVEAL { background: var(--yellow); }
+.ticks { color: var(--white); }
+.acted { display: inline-block; padding: 2px 6px; margin: 2px 0; border: 1px solid var(--grey); color: var(--grey); font-size: 8px; }
+.acted-committed { color: var(--green); border-color: var(--green); }
+.acted-revealed { color: var(--yellow); border-color: var(--yellow); }
+.acted-waiting { color: var(--orange); border-color: var(--orange); border-style: dashed; }
+.compact .caption, .compact .beat-details, .compact .stage-help, .compact .speed, .compact .beat-ms { display: none; }
+.compact .stage { padding: 8px; }
+.compact .avatar-stage { width: 72px; height: 72px; }
+.compact .fighter-box { height: 78px; }
+.compact .corner-A .fighter-box::after { left: 76px; }
+.compact .corner-B .fighter-box::after { right: 76px; }
+.sub-h { font-size: 10px; color: var(--cyan); margin: 18px 0 10px; font-weight: normal; }
+.rc-vs { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 6px; }
+
+/* ---- results feed ----------------------------------------------------- */
+.feed { list-style: none; margin: 0; padding: 0; }
+.feed-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 0; border-bottom: 2px solid var(--navy-2); font-size: 9px; }
+.feed-id { min-width: 40px; }
+.feed-mode { color: var(--grey); min-width: 56px; }
+.feed-line { display: inline-flex; align-items: center; gap: 8px; flex: 1 1 320px; min-width: 0; flex-wrap: wrap; }
+.beat { color: var(--red); }
+.feed-how { color: var(--yellow); }
+.feed-tick { min-width: 80px; }
+
+/* ---- leaderboard ------------------------------------------------------ */
+table.board td.rank { color: var(--yellow); }
+.form-cell { white-space: nowrap; }
+.form { display: inline-block; width: 18px; text-align: center; margin-right: 2px; padding: 2px 0; font-size: 8px; color: var(--black); }
+.form:hover { text-decoration: none; outline: 1px solid var(--white); }
+.form-W { background: var(--green); }
+.form-L { background: var(--red); color: var(--white); }
+.form-D { background: var(--white); }
+.form-N { background: var(--grey); }
+
+/* ---- join / help ------------------------------------------------------ */
+.help-kv dt { color: var(--yellow); }
+.help-kv dd { font-family: var(--font-text); font-size: 12px; }
