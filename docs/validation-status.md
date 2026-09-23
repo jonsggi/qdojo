@@ -66,6 +66,10 @@ How this was reached, including the failures:
   - human replay readability (model.md §3);
   - latency and contract cost (§4; the C++ port reports work counters and a
     1,370 KiB state, not Core execution fees);
-  - economics and farming (§5–6).
+  - economics with real costs. [economics-report.md](economics-report.md)
+    measures rake flows, skill transfer and ring farming on the reference
+    contract with fake QU. It leaves out execution, hosting and provider
+    costs, and it found that the per-pair cap bounds a small population to
+    N(N-1) ranked fights per epoch.
 
 No paid activation is authorised by this report.
