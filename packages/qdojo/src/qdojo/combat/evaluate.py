@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import itertools
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable
 
 from ..hashing import sha256
@@ -141,6 +141,139 @@ def best_response_opening(rules: Ruleset, opponent: npcs.Policy, samples: int = 
     return best, best_v / samples
 
 
+def _beat_value(a, b) -> int:
+    if b.hp == 0 and a.hp > 0:
+        return 10**6
+    if a.hp == 0 and b.hp > 0:
+        return -10**6
+    return 8 * (a.hp - b.hp) + (a.stamina - b.stamina)
+
+
+def beam_response(rules: Ruleset, me, opp, opp_plans: list[Plan], beam: int = 48) -> Plan:
+    """Best-scoring six-action plan against predicted opponent plans, by beam
+    search over beats (exact resolution, summed over the predictions). A beam
+    that reaches a knockout stops expanding: later actions are never executed."""
+    key = (me, opp, tuple(opp_plans), beam)
+    hit = _BEAM_CACHE.get(key)
+    if hit is not None:
+        return hit
+    plan = _beam(rules, me, opp, opp_plans, beam)
+    if len(_BEAM_CACHE) > 200_000:
+        _BEAM_CACHE.clear()
+    _BEAM_CACHE[key] = plan
+    return plan
+
+
+_BEAM_CACHE: dict = {}
+
+
+def _beam(rules, me, opp, opp_plans, beam):
+    power_ok = bool(me.power_available)
+    # Beam entries: (value, actions, power_slot, per-prediction (me, opp) states, finished flags)
+    entries = [(0, (), NO_POWER, tuple((me, opp) for _ in opp_plans), tuple(False for _ in opp_plans))]
+    for i in range(6):
+        grown = []
+        for _, acts, slot, states, done in entries:
+            for a in SUBMITTED:
+                options = [False]
+                if power_ok and slot == NO_POWER and a in ATTACKS:
+                    options.append(True)
+                for pw in options:
+                    total, nxt, fin = 0, [], []
+                    for k, ((sa, sb), d) in enumerate(zip(states, done)):
+                        if d:
+                            nxt.append((sa, sb))
+                            fin.append(True)
+                            total += _beat_value(sa, sb)
+                            continue
+                        ob = opp_plans[k]
+                        na, nb, _ = resolve_beat(rules, sa, sb, a, ob.actions[i], pw, ob.power_slot == i)
+                        ko = na.hp == 0 or nb.hp == 0
+                        nxt.append((na, nb))
+                        fin.append(ko)
+                        total += _beat_value(na, nb)
+                    grown.append((total, acts + (a,), i if pw else slot, tuple(nxt), tuple(fin)))
+        grown.sort(key=lambda e: -e[0])
+        entries = grown[:beam]
+    best = entries[0]
+    return Plan.of(best[1], best[2])
+
+
+def _opp_observation(obs):
+    other = "B" if obs.slot == "A" else "A"
+    mine = tuple(tuple((b.a if obs.slot == "A" else b.b).effective for b in r.beats) for r in obs.prior)
+    return npcs.Observation(obs.round_index, obs.opponent_state, obs.self_state, mine, other, obs.prior)
+
+
+@dataclass
+class KnownPolicyResponse:
+    """Counter instrument: the opponent's policy is known (a published script,
+    or a style scouted from history); predict its plans and best-respond."""
+    opponent: npcs.Policy
+    samples: int = 3
+    beam: int = 48
+
+    def __call__(self, rules, obs, stream):
+        view = _opp_observation(obs)
+        preds = []
+        for k in range(self.samples):
+            s = npcs.Stream(sha256(TAG_EVAL, b"known", bytes([k])), obs.round_index, obs.round_index)
+            preds.append(self.opponent(rules, view, s))
+        return beam_response(rules, obs.self_state, obs.opponent_state, preds, self.beam)
+
+
+@dataclass
+class ReaderPlanner:
+    """A strategy family: assume the opponent repeats its last revealed plan
+    (weighted), hedge with generic mixed plans, and best-respond by beam search.
+    Round 0 has no history and plays mixed-v1. Ablations: `use_history=False`
+    predicts from generic plans only; `ignore_resources` plans as if both
+    fighters were at the initial state."""
+    use_history: bool = True
+    ignore_resources: bool = False
+    repeat_weight: int = 2
+    hedges: int = 2
+    beam: int = 32
+    name: str = "reader-v1"
+
+    def __call__(self, rules, obs, stream):
+        if not obs.prior and self.use_history:
+            return npcs.mixed_v1(rules, obs, stream)
+        me, opp = obs.self_state, obs.opponent_state
+        preds = []
+        if self.use_history and obs.prior:
+            last = obs.prior[-1]
+            p = last.plan_b if obs.slot == "A" else last.plan_a
+            preds += [Plan.of(p.actions)] * self.repeat_weight
+        generic = npcs.Observation(obs.round_index, opp, me)
+        for _ in range(self.hedges if self.use_history else self.hedges + self.repeat_weight):
+            preds.append(Plan.of(npcs.mixed_v1(rules, generic, stream).actions))
+        if self.ignore_resources:
+            init = npcs.FighterState.initial(rules)
+            plan = beam_response(rules, replace(init, power_available=me.power_available), init, preds, self.beam)
+            if plan.power_slot != NO_POWER and not me.power_available:
+                plan = Plan.of(plan.actions)
+            return plan
+        return beam_response(rules, me, opp, preds, self.beam)
+
+
+_SCRIPTS: dict[str, Plan] = {}
+
+
+def strong_script(rules: Ruleset, versus: str) -> npcs.Policy:
+    """A predictable but competent opponent: one fixed plan, chosen by beam
+    search as the best reply to eight round-0 plans of `versus`, replayed
+    every round (power on its first attack in the last round)."""
+    if versus not in _SCRIPTS:
+        s0 = npcs.FighterState.initial(rules)
+        obs = npcs.Observation(0, s0, s0)
+        pol = npcs.ROSTER[versus].policy
+        preds = [Plan.of(pol(rules, obs, npcs.Stream(sha256(TAG_EVAL, b"script", versus.encode(), bytes([i])), 0, 0))
+                         .actions) for i in range(8)]
+        _SCRIPTS[versus] = beam_response(rules, s0, s0, preds)
+    return pattern(_SCRIPTS[versus].actions)
+
+
 def exploit_opening(opening: Plan, then: npcs.Policy = npcs.mixed_v1):
     def policy(rules, obs, rng):
         return opening if obs.round_index == 0 else then(rules, obs, rng)
@@ -166,12 +299,19 @@ def pools() -> dict[str, dict[str, npcs.Policy]]:
         "turtle-alt": pattern([B, R, B, D, B, R]),
         "thrower": pattern([T, R, T, D, T, R]),
     }
+    rules = candidate_1()
+    scripts = {f"script-vs-{v}": strong_script(rules, v) for v in ("mixed-v1", "random-v1", "scout-v1", "kicker-v1")}
+    fixed_style = {k: roster[k] for k in ("jabber-v1", "turtle-v1", "kicker-v1")} | held_out_styles
     return {
         "roster": roster,
         "baseline": {**roster, **spams, **cycles, **misc},
-        "fixed-style": {k: roster[k] for k in ("jabber-v1", "turtle-v1", "kicker-v1")} | held_out_styles,
+        "fixed-style": fixed_style,
+        # Predictable but competent: fixed plans that beat the roster's generic play.
+        "scripts": scripts,
+        "predictable": fixed_style | scripts,
         "competent": {"mixed-v1": roster["mixed-v1"], "scout-v1": roster["scout-v1"],
-                      "search-v1": SearchPlanner(), "repeat-last-winner": repeat_last_winner},
+                      "search-v1": SearchPlanner(), "reader-v1": ReaderPlanner(),
+                      "repeat-last-winner": repeat_last_winner},
     }
 
 
@@ -184,6 +324,12 @@ def policy_by_name(name: str) -> npcs.Policy:
         return SearchPlanner(use_history=False, name="search-blind")
     if name == "search-nores":
         return SearchPlanner(ignore_resources=True, name="search-nores")
+    if name == "reader-v1":
+        return ReaderPlanner()
+    if name == "reader-blind":
+        return ReaderPlanner(use_history=False, name="reader-blind")
+    if name == "reader-nores":
+        return ReaderPlanner(ignore_resources=True, name="reader-nores")
     for pool in pools().values():
         if name in pool:
             return pool[name]

@@ -3,8 +3,8 @@
 
 Every gate is evaluated and printed PASS or FAIL with its numbers; failures
 are reported, never dropped. Test seeds (suite "test/...") are disjoint from
-anything a policy could have been tuned on, and the fixed-style pool includes
-withheld parameter variants.
+the "train/..." seeds used while developing the instruments, and the pools
+include withheld parameter variants.
 
   uv run python scripts/combat-validation.py --seeds 1000 --out docs/validation-report.md
 """
@@ -23,7 +23,9 @@ sys.path.insert(0, str(ROOT / "packages/qdojo/src"))
 
 from qdojo.combat import evaluate as E  # noqa: E402
 from qdojo.combat import npcs  # noqa: E402
+from qdojo.combat.engine import resolve_round  # noqa: E402
 from qdojo.combat.rules import candidate_1  # noqa: E402
+from qdojo.combat.types import FightState  # noqa: E402
 
 
 def log(msg):
@@ -36,8 +38,8 @@ def gate(name, ok, detail):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--seeds", type=int, default=1000, help="paired seeds per matchup (fights = 2x)")
-    p.add_argument("--search-seeds", type=int, default=250, help="paired seeds for the costly search planner")
+    p.add_argument("--seeds", type=int, default=1000, help="paired seeds per matchup for cheap policies (fights = 2x)")
+    p.add_argument("--costly-seeds", type=int, default=250, help="paired seeds for search/reader planners")
     p.add_argument("--search-candidates", type=int, default=60)
     p.add_argument("--search-samples", type=int, default=8)
     p.add_argument("--out", default=str(ROOT / "docs/validation-report.md"))
@@ -45,83 +47,121 @@ def main():
     rules = candidate_1()
     pools = E.pools()
     search = E.SearchPlanner(candidates=a.search_candidates, samples=a.search_samples)
-    blind = E.SearchPlanner(candidates=a.search_candidates, samples=a.search_samples, use_history=False)
-    nores = E.SearchPlanner(candidates=a.search_candidates, samples=a.search_samples, ignore_resources=True)
+    reader = E.ReaderPlanner()
     started = time.time()
     gates, sections, raw = [], [], {}
 
     # 1. Baselines and obvious exploits: every simple strategy needs a practical counter.
+    #    Cheap counters first; the known-policy best response (a published or scouted
+    #    style) and the reader are tried only when those fall short.
     simple = {k: v for k, v in pools["baseline"].items() if k not in ("mixed-v1", "scout-v1", "random-v1")}
-    counters = {"scout-v1": npcs.ROSTER["scout-v1"].policy, "mixed-v1": npcs.ROSTER["mixed-v1"].policy}
     rows, missing = [], []
     for name, pol in simple.items():
         log(f"counter search for {name}")
-        opening, _ = E.best_response_opening(rules, pol, samples=1 if name not in ("repeat-last-winner",) else 4)
-        cands = dict(counters, **{"br-opening+scout": E.exploit_opening(opening, npcs.scout_v1)})
         best = None
-        for cname, cpol in cands.items():
-            r = E.summarize(name, E.paired(cpol, pol, a.seeds, f"test/counter/{name}"))
-            r["counter"] = cname
-            if best is None or r["lower95"] > best["lower95"]:
-                best = r
+        tiers = [{"scout-v1": npcs.scout_v1, "mixed-v1": npcs.mixed_v1},
+                 {"known-policy-response": E.KnownPolicyResponse(pol)},
+                 {"reader-v1": reader}]
+        for tier in tiers:
+            for cname, cpol in tier.items():
+                seeds = a.seeds if cname in ("scout-v1", "mixed-v1", "known-policy-response") else a.costly_seeds * 4
+                r = E.summarize(name, E.paired(cpol, pol, seeds, f"test/counter/{name}"))
+                r["counter"] = cname
+                if best is None or r["lower95"] > best["lower95"]:
+                    best = r
+            if best["score"] >= 0.60 and best["lower95"] > 0.55 and best["fights"] >= 2000:
+                break
         rows.append(best)
-        if not (best["score"] >= 0.60 and best["lower95"] > 0.55):
+        if not (best["score"] >= 0.60 and best["lower95"] > 0.55 and best["fights"] >= 2000):
             missing.append(name)
     raw["counters"] = rows
-    gates.append(gate("Every simple strategy has a counter (>=0.60, LB>0.55)", not missing,
-                      f"{len(rows) - len(missing)}/{len(rows)} countered" + (f"; uncountered: {', '.join(missing)}" if missing else "")))
-    sections.append("### Best counter per simple strategy\n\n| Strategy | Counter | Score | 95% LB | Fights |\n|---|---|---:|---:|---:|\n"
-                    + "\n".join(f"| {r['opponent']} | {r['counter']} | {r['score']:.3f} | {r['lower95']:.3f} | {r['fights']} |" for r in rows) + "\n")
+    gates.append(gate("Every simple strategy has a practical counter (>=0.60, LB>0.55, >=2000 fights)", not missing,
+                      f"{len(rows) - len(missing)}/{len(rows)} countered"
+                      + (f"; uncountered: {', '.join(missing)}" if missing else "")))
+    sections.append("### Best counter per simple strategy\n\n| Strategy | Counter | Score | 95% LB | Fights |\n"
+                    "|---|---|---:|---:|---:|\n" + "\n".join(
+                        f"| {r['opponent']} | {r['counter']} | {r['score']:.3f} | {r['lower95']:.3f} | {r['fights']} |"
+                        for r in rows) + "\n")
 
     # 2. Optimization reward.
     log("optimization reward")
-    planners = {"scout-v1": npcs.ROSTER["scout-v1"].policy, "search-v1": search}
+    planners = {"scout-v1": (npcs.scout_v1, a.seeds), "search-v1": (search, a.costly_seeds * 4),
+                "reader-v1": (reader, a.costly_seeds * 4)}
     reward = {}
-    for pname, pol in planners.items():
-        seeds = a.search_seeds if pname == "search-v1" else a.seeds
+    for pname, (pol, seeds) in planners.items():
         vs_random = E.summarize("random-v1", E.paired(pol, npcs.random_v1, seeds, "test/reward/random"))
         style_scores = []
+        per = max(1, -(-seeds // len(pools["fixed-style"])))
         for oname, opol in pools["fixed-style"].items():
-            t = E.paired(pol, opol, max(1, seeds // len(pools["fixed-style"]) * 2), f"test/reward/{oname}")
-            style_scores += t.scores
-        style = {"score": E.mean(style_scores), "lower95": E.bootstrap_lower(style_scores), "fights": 2 * len(style_scores)}
+            style_scores += E.paired(pol, opol, per, f"test/reward/{oname}").scores
+        style = {"score": E.mean(style_scores), "lower95": E.bootstrap_lower(style_scores),
+                 "fights": 2 * len(style_scores)}
         reward[pname] = {"random": vs_random, "fixed_style": style}
     raw["reward"] = reward
-    ok = any(r["random"]["score"] >= 0.65 and r["random"]["lower95"] > 0.60 and r["random"]["fights"] >= 2000
-             and r["fixed_style"]["score"] >= 0.60 and r["fixed_style"]["lower95"] > 0.55 and r["fixed_style"]["fights"] >= 2000
-             for r in reward.values())
-    gates.append(gate("A <=1500 ms planner beats random (>=0.65, LB>0.60) and fixed styles (>=0.60, LB>0.55), >=2000 fights each", ok,
-                      "; ".join(f"{k}: random {v['random']['score']:.3f} (LB {v['random']['lower95']:.3f}, {v['random']['fights']}), "
-                                f"styles {v['fixed_style']['score']:.3f} (LB {v['fixed_style']['lower95']:.3f}, {v['fixed_style']['fights']})"
+
+    def rewarded(v):
+        return (v["random"]["score"] >= 0.65 and v["random"]["lower95"] > 0.60 and v["random"]["fights"] >= 2000
+                and v["fixed_style"]["score"] >= 0.60 and v["fixed_style"]["lower95"] > 0.55
+                and v["fixed_style"]["fights"] >= 2000)
+    gates.append(gate("A <=1500 ms planner beats random (>=0.65, LB>0.60) and fixed styles (>=0.60, LB>0.55), "
+                      ">=2000 fights each", any(rewarded(v) for v in reward.values()),
+                      "; ".join(f"{k}: random {v['random']['score']:.3f} (LB {v['random']['lower95']:.3f}, "
+                                f"{v['random']['fights']}), styles {v['fixed_style']['score']:.3f} "
+                                f"(LB {v['fixed_style']['lower95']:.3f}, {v['fixed_style']['fights']})"
                                 for k, v in reward.items())))
 
-    # 3. Ablations on the same held-out pool.
+    # 3. Ablations of the reader on the predictable pool (fixed styles + strong scripts).
     log("ablations")
-    held = pools["fixed-style"]
-    res_ab = E.ablation(search, nores, held, max(1, a.search_seeds // len(held)), "test/ablation/resources")
-    hist_ab = E.ablation(search, blind, held, max(1, a.search_seeds // len(held)), "test/ablation/history")
+    pred = pools["predictable"]
+    per = max(1, a.costly_seeds // len(pred))
+    res_ab = E.ablation(reader, E.ReaderPlanner(ignore_resources=True), pred, per, "test/ablation/resources")
+    hist_ab = E.ablation(reader, E.ReaderPlanner(use_history=False), pred, per, "test/ablation/history")
     raw["ablation"] = {"resources": res_ab, "history": hist_ab}
-    gates.append(gate("Resource/opening state matters (improvement >=0.05, LB>0)",
+    gates.append(gate("Resource/opening state matters to the improved planner (>=0.05, LB>0)",
                       res_ab["mean_improvement"] >= 0.05 and res_ab["lower95"] > 0,
-                      f"+{res_ab['mean_improvement']:.3f} (LB {res_ab['lower95']:.3f}, {res_ab['pairs']} pairs)"))
+                      f"reader-v1 vs its no-resource ablation: +{res_ab['mean_improvement']:.3f} "
+                      f"(LB {res_ab['lower95']:.3f}, {res_ab['pairs']} pairs)"))
     gates.append(gate("History-aware beats history-blind on predictable families (>=0.05, LB>0)",
                       hist_ab["mean_improvement"] >= 0.05 and hist_ab["lower95"] > 0,
-                      f"+{hist_ab['mean_improvement']:.3f} (LB {hist_ab['lower95']:.3f}, {hist_ab['pairs']} pairs)"))
+                      f"reader-v1 vs history-blind: +{hist_ab['mean_improvement']:.3f} "
+                      f"(LB {hist_ab['lower95']:.3f}, {hist_ab['pairs']} pairs)"))
 
-    # 4. Fight shape on the competent pool (round robin, excluding passive NPCs).
+    # 4. Same round-start state, different beliefs: do several competitive plans occur?
+    log("plan diversity")
+    s0 = FightState(1, npcs.FighterState(70, 40, 0, 0, 1), npcs.FighterState(70, 40, 0, 0, 1))
+    beliefs = {name: E.KnownPolicyResponse(pol, samples=2) for name, pol in pools["predictable"].items()}
+    plans = {}
+    for name, br in beliefs.items():
+        obs = npcs.Observation(1, s0.a, s0.b, (), "A", ())
+        plans[name] = br(rules, obs, npcs.Stream(bytes(32), 1, 1))
+    distinct = {pl.actions for pl in plans.values()}
+    # "Competitive": each plan beats at least one belief's predicted opponent.
+    competitive = set()
+    for name, pl in plans.items():
+        for oname, opol in pools["predictable"].items():
+            oplan = opol(rules, npcs.Observation(1, s0.b, s0.a, (), "B", ()), npcs.Stream(bytes(32), 1, 1))
+            end = resolve_round(rules, s0, pl, oplan).end
+            if end.a.hp > end.b.hp:
+                competitive.add(pl.actions)
+                break
+    raw["diversity"] = {"distinct_plans": len(distinct), "competitive": len(competitive)}
+    gates.append(gate("Same state, different beliefs: >=2 competitive plans", len(competitive) >= 2,
+                      f"{len(distinct)} distinct plans from {len(beliefs)} beliefs; {len(competitive)} competitive"))
+
+    # 5. Fight shape on the competent pool (round robin, excluding passive NPCs).
     log("fight shape")
     competent = {"mixed-v1": npcs.mixed_v1, "scout-v1": npcs.scout_v1, "repeat-last-winner": E.repeat_last_winner,
-                 "search-v1": search}
+                 "search-v1": search, "reader-v1": reader}
+    costly = {"search-v1", "reader-v1"}
     names = list(competent)
     total = E.Tally()
     strength = {n: [] for n in names}
     matrix = []
     for i, x in enumerate(names):
         for y in names[i:]:
-            seeds = a.search_seeds if "search-v1" in (x, y) else a.seeds
+            seeds = a.costly_seeds if {x, y} & costly else a.seeds
             t = E.paired(competent[x], competent[y], seeds, f"test/shape/{x}/{y}")
-            row = E.summarize(f"{x} vs {y}", t)
-            matrix.append(row)
+            matrix.append(E.summarize(f"{x} vs {y}", t))
             strength[x] += t.scores
             if x != y:
                 strength[y] += [1 - s for s in t.scores]
@@ -134,18 +174,19 @@ def main():
         "round0_ko": total.round0_ko / total.fights,
         "trailer_wins": total.trailing_won / max(1, total.trailing_after_r0),
         "exhausted": total.exhausted_beats / max(1, total.executed_beats),
-        "families_ge_045": [n for n, s in strength.items() if E.mean(s) >= 0.45],
+        "strength": {n: E.mean(s) for n, s in strength.items()},
     }
-    raw["shape"] = shape
-    raw["shape_matrix"] = matrix
+    families = [n for n, s in shape["strength"].items() if s >= 0.45]
+    raw["shape"], raw["shape_matrix"] = shape, matrix
     gates += [
         gate("Draws <=15%", shape["draws"] <= 0.15, f"{shape['draws']:.1%}"),
         gate("Fights reaching round 2 >=40%", shape["round2"] >= 0.40, f"{shape['round2']:.1%}"),
         gate("Round-0 knockouts <=20%", shape["round0_ko"] <= 0.20, f"{shape['round0_ko']:.1%}"),
-        gate("Trailing-after-round-0 wins in 10..40%", 0.10 <= shape["trailer_wins"] <= 0.40, f"{shape['trailer_wins']:.1%}"),
+        gate("Trailing-after-round-0 wins in 10..40%", 0.10 <= shape["trailer_wins"] <= 0.40,
+             f"{shape['trailer_wins']:.1%}"),
         gate("Exhausted beats <10% for competent policies", shape["exhausted"] < 0.10, f"{shape['exhausted']:.1%}"),
-        gate(">=3 strategy families score >=0.45 against the pool", len(shape["families_ge_045"]) >= 3,
-             ", ".join(f"{n} {E.mean(strength[n]):.3f}" for n in names)),
+        gate(">=3 strategy families score >=0.45 against the pool", len(families) >= 3,
+             ", ".join(f"{n} {s:.3f}" for n, s in shape["strength"].items())),
     ]
     sections.append(E.markdown("Competent-pool round robin", matrix))
 
@@ -156,12 +197,15 @@ def main():
         "# Combat candidate 1 — strategic validation report", "",
         f"Generated by `scripts/combat-validation.py` at commit {commit}, "
         f"ruleset `{rules.digest.hex()}` ({rules.semantic_version}).",
-        f"Hardware: {platform.machine()}, {platform.processor() or 'unknown CPU'}, Python {platform.python_version()}; "
-        f"runtime {elapsed / 60:.1f} min.",
-        f"Budgets: {a.seeds} paired seeds for cheap policies, {a.search_seeds} for search-v1 "
-        f"({a.search_candidates} candidate plans x {a.search_samples} opponent samples per round).",
-        "Uncertainty: paired bootstrap (2000 resamples) 2.5th percentile of the per-seed mean.", "",
-        f"**{passed}/{len(gates)} gates pass.** This report records measurements; it does not waive a failed gate.", "",
+        f"Hardware: {platform.machine()}, Python {platform.python_version()}, 2 CPUs; runtime {elapsed / 60:.1f} min.",
+        f"Budgets: {a.seeds} paired seeds for cheap policies; {a.costly_seeds} (x4 where a gate needs 2000 fights) for "
+        f"search-v1 ({a.search_candidates} candidate plans x {a.search_samples} samples) and reader-v1 "
+        "(beam 32 over 2 repeat + 2 hedge predictions).",
+        "Uncertainty: paired bootstrap (2000 resamples), 2.5th percentile of the per-seed mean.",
+        "Instruments were developed on `train/...` seed suites; every number below uses `test/...` suites.", "",
+        f"**{passed}/{len(gates)} gates pass.** This report records measurements; it does not waive a failed gate.",
+        "Not measured here: adaptation time against a style-switching opponent, economics, latency and "
+        "contract cost (model.md §4-6).", "",
         "| Gate | Result | Measured |", "|---|---|---|",
         *[f"| {g['gate']} | {'PASS' if g['pass'] else '**FAIL**'} | {g['detail']} |" for g in gates], "",
         *sections,
