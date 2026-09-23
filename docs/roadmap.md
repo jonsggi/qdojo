@@ -15,7 +15,7 @@ See [pivot-plan.md](pivot-plan.md) for file-level work and acceptance criteria.
 | P4 | Done on fake chain | `combat/contract.py` reference, devnet, owner bot with plan journal and budgets; fuzzed conservation |
 | P5 | Done on fake chain | Ratings, placement, seasons, duels, cups with replay/postponement/abort |
 | P6 | Done against sample data | `apps/web/combat.html`: replays re-derived in the browser, per-check verification badges, practice |
-| P7 | C++ port and parity in progress; **not deployed** | Local Qubic testnet needs a 16 GB host with clang (this host: 7 GB, no clang); mainnet inclusion needs a computor proposal and IPO |
+| P7 | Contract done in Core's dialect; **not deployed** | `contracts/qubic/QDOJO.h` passes Core's contract checker and replays all parity journals inside core-lite's harness. A live local testnet needs 12 GB RAM (this host: 7.9 GB), so that run is deferred. Mainnet inclusion needs a computor proposal and IPO. |
 | P8 | Inventory and plan only | [legacy-closeout.md](legacy-closeout.md); no sends executed |
 
 "Done" means implemented and tested locally. It never means paid activation,
