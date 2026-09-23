@@ -2,34 +2,34 @@
  "schema": "qdojo.combat.fight.v1",
  "network_id": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
  "contract_id": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
- "generated_tick": "2747",
+ "generated_tick": "10887",
  "source": "reference-contract-state",
- "fight_id": "84",
- "contest_id": "84",
- "phase": "REVEAL",
+ "fight_id": "280",
+ "contest_id": "280",
+ "phase": "COMMIT",
  "round_index": 2,
  "state": {
   "round_index": 2,
   "A": {
-   "hp": 56,
-   "stamina": 56,
+   "hp": 34,
+   "stamina": 60,
    "opening": 0,
    "guard_streak": 0,
    "power_available": 1
   },
   "B": {
-   "hp": 44,
-   "stamina": 51,
+   "hp": 8,
+   "stamina": 60,
    "opening": 0,
-   "guard_streak": 1,
+   "guard_streak": 0,
    "power_available": 1
   },
   "outcome": null
  },
- "context_digest": "e6b4baff0ebe48118d21cb7b5c9db1ee7d7038682a01cf4a3bb8ab8b91aaed7d",
- "round_state_digest": "4e0930420288afc1bc9b86e5abe2199f31493e4633975ca0e9aa4963030086b0",
- "commit_last": "2746",
- "reveal_last": "2758",
+ "context_digest": "ea31edde4a1977abdf24e03880e5df1edbf40b7dd02b4123a0b44475c42b764d",
+ "round_state_digest": "ed36e6d9bd3f235cccc443ea976251bf3414c5b8b9675763edfd35a109930f5f",
+ "commit_last": "10890",
+ "reveal_last": "10902",
  "committed": [
   "A",
   "B"
@@ -38,13 +38,13 @@
  "result": null,
  "fighters": {
   "A": {
-   "fighter_id": "658c8b12a9d23909c08e3dbe611404f4bb9dd3985224f702e94cfdcfda2786e9",
-   "owner": "e5a6340274009ff2025d5e5905bc264af3ae43951e6aa5e45e4f7614a9231362",
-   "operator": "e5a6340274009ff2025d5e5905bc264af3ae43951e6aa5e45e4f7614a9231362",
+   "fighter_id": "885875a2b815ff8ae93eae11d526f6e5842ee8a8fb6c4aa7cf6023bbf99c4660",
+   "owner": "4c5ca65be3d933f8b4aa97f1eb3b2ea2eace4c88f90f53c0fc1ce4eb0498f637",
+   "operator": "4c5ca65be3d933f8b4aa97f1eb3b2ea2eace4c88f90f53c0fc1ce4eb0498f637",
    "auth_version": 1,
-   "payout_recipient": "e5a6340274009ff2025d5e5905bc264af3ae43951e6aa5e45e4f7614a9231362",
-   "lifetime_rating": 968,
-   "season_rating": 968
+   "payout_recipient": "4c5ca65be3d933f8b4aa97f1eb3b2ea2eace4c88f90f53c0fc1ce4eb0498f637",
+   "lifetime_rating": 898,
+   "season_rating": 898
   },
   "B": {
    "fighter_id": "c6b3e0788459f509f631cd5bff38aeee64e7686a74f19b14e9f6600e8f463707",
@@ -52,8 +52,8 @@
    "operator": "6ee260096467bbd2b0fc7cfd04603dc02a62ae12d565ac8a393a21bcd2c70a3e",
    "auth_version": 1,
    "payout_recipient": "6ee260096467bbd2b0fc7cfd04603dc02a62ae12d565ac8a393a21bcd2c70a3e",
-   "lifetime_rating": 965,
-   "season_rating": 965
+   "lifetime_rating": 909,
+   "season_rating": 909
   }
  },
  "mode": "ranked"
