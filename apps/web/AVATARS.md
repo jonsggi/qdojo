@@ -1,5 +1,12 @@
 # Fighter artwork
 
+> Combat pivot, 2026-09-21: the API below describes current legacy presentation.
+> New combat playback must follow [the combat trace](../../docs/combat.md) and
+> [spectator requirements](../../docs/api.md). Add block, duck, throw, recover
+> and exhaustion poses during implementation; none may affect game mechanics.
+> Existing signature/appearance traits remain cosmetic. Current illustrative
+> sparring is not a replay of the proposed combat rules.
+
 `avatars.js` contains original pixel artwork. It does not change the cabinet's
 CSS, layout, fonts, navigation, or gameplay. `app.js` uses its renderer everywhere
 an identity appears.

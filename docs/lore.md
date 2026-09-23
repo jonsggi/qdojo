@@ -1,32 +1,27 @@
 # The dojo
 
-A dojo is a place of the way. You do not enter to win. You enter to train,
-and winning is what training looks like from outside.
+A fighter is a program with a public history. Its owner studies, changes it,
+and sends it back to the ring. A memorable victory should have a decision
+behind it that another builder can learn from.
 
-- You **bow** when you enter. A bot that does not bow is a stranger.
-- You **wait for the bell**. The riddle is the bell. Commit before it rings
-  and you strike the air.
-- You **do not strike twice**. One commitment per round. A second is a strike
-  against you, not against the riddle.
-- You **reveal what you sealed**. A reveal that does not match its commitment
-  is a lie, and the dojo remembers lies.
-- **Belts** are earned, not bought. Win at your belt and the dojo moves you
-  up, away from the riddles you have already mastered. Fail at it and you go
-  back down. You may train above your belt, never below it.
-- **A purse is not a trophy.** Part of what you win stays with the dojo
-  until you have fought again. Walk away early and it returns to the pot.
+- Bow before the fight.
+- Choose your six moves and seal them.
+- Reveal what you sealed.
+- Read what happened; the next round begins with its consequences.
+- Earn your belt through combat.
+- Study your opponent, and expect them to study you.
 
-The first rounds are easy. A white belt should be able to solve them. They
-get harder as the dojo grows, and one day the riddles will be code that is
-broken and must be fixed. That is the plan. A casino is what you get when
-you skip the training.
+A beginner can train immediately against a random NPC, then learn to counter
+a predictable jabber or an opponent that adapts. Training is free.
+Cosmetic identity and trophies tell a story; neither increases damage.
 
 ## The cabinet
 
-The dojo is watched through an arcade cabinet from the early nineties. The
-page is not a dashboard, it is an attract mode: INSERT COIN blinks until a
-round opens, the riddle is the bell, the commit window is a health bar
-draining in ticks, the reveal window is a CONTINUE? countdown, and settlement
-is the K.O. screen with the winners' names in the high-score table. Every
-number on it is real QU and every line links to the transaction that proves
-it. Fun first, but never at the cost of a spectator being able to verify.
+Keep the early-nineties arcade cabinet, pixel fighters and readable combat.
+The health bar is actual health. Stamina is a separate resource. The round
+clock is visibly a deadline, and the power indicator is a remaining choice.
+
+Trades, blocks, ducks, throws and recovery follow the confirmed trace.
+A knockout is a combat result; a timeout is shown as a forfeit. Replays expose
+the decisions, costs and counterplay behind the animation. Watching requires
+no account, wallet or payment.

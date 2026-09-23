@@ -1,33 +1,28 @@
-# How we work here
+# Contributing during the combat pivot
 
-- **Tests first.** A behaviour exists when its test exists. `make test` is
-  green before every commit, and the pre-commit hook runs it.
-- **Pure core, thin edges.** Hashing, payloads and round evaluation are pure
-  functions with no I/O. Chain access sits behind one interface with a fake
-  for tests, a native Python implementation plus indexer for real, and a
-  qubic-cli one kept as the reference the native signer is checked against.
-- **The signer is proven, not assumed.** `qdojo.qubic` reimplements Qubic's
-  crypto. After touching anything under it, run `scripts/crosscheck-signer.py
-  --node IP`: it signs real transactions both ways and compares every byte.
-  Signing is deterministic, so "it verifies" is not good enough — it must be
-  the same bytes.
-- **A bot needs nothing but Python.** No bot command may look for qubic-cli
-  unless `--chain cli` was asked for; the binary is built only by someone who
-  wants to run the crosscheck. A new chain call gets a native implementation
-  and a frozen `-print-only hex` vector from the reference (test_contracts.py
-  shows how), not a shell-out.
-- **Markers, not exit codes.** qubic-cli exits 0 on failure. Under
-  `--chain cli` every wrapper parses stdout for the marker that proves
-  success and treats its absence as failure, with an explicit timeout on
-  every call.
-- **No seed anywhere but a 0600 conf.** Never argv, never stdout, never a
-  log, never git. `.githooks/pre-commit` refuses any commit that stages a
-  `seed=` line or a bare 55-character lowercase token, and runs the tests;
-  wire it once with `make hooks`.
-- **Money moves only from a plan you can read.** `settle` prints the plan
-  and sends nothing unless `--apply` is given. Applied sends are confirmed by
-  tick inclusion and by balance re-read.
-- **Docs are specs.** A change in behaviour changes `docs/spec.md` in the
-  same commit, and anything a bot developer can see changes `docs/api.md`.
-  The wire format is `docs/protocol.md`; what we have measured about the
-  mechanics is `docs/model.md`.
+The [combat specification](spec.md) and [pivot plan](pivot-plan.md) govern new
+work. Current riddle code is supported legacy behavior until explicitly migrated.
+
+- Keep core combat, protocol, matcher, rating and accounting pure with explicit
+  state/tick inputs. No I/O, random damage, wall-clock ordering or float arithmetic.
+- Test meaningful behavioral boundaries, especially simultaneous resolution,
+  money conservation, wrong-context commitments and missing reveals.
+  Use hand-derived expected vectors and independent implementations.
+- Run relevant checks and `make test` before every commit. Document measured
+  results; do not mark planned acceptance gates passed.
+- Preserve byte-verified native signing. Changing qdojo.qubic crypto requires
+  the existing reference signer crosscheck and authorization for any live query.
+- Native transport is the default. A new contract call needs frozen byte vectors
+  and a native implementation, not an implicit shell-out to qubic-cli.
+- Parser/documentation tests must track both current instructions and labelled
+  legacy examples. Never publish a planned command as runnable.
+- Keep secrets in protected local configuration/journals, never argv, stdout,
+  logs, exports or git. Planner subprocesses receive no signer secrets.
+- Money-moving tools require readable plans and explicit live-action intent.
+  Documentation/spec work does not authorize deployment, minting or transfers.
+- Update the owning doc with behavior changes, along with API/protocol/artifact
+  and fixtures when applicable. Candidate balance changes get new versions.
+- Keep the arcade visual direction. New animations are trace presentations and
+  cannot decide a hit, delay combat or fabricate a forfeit knockout.
+- Label legacy and combat state/data explicitly; do not migrate financial
+  obligations or ratings by reinterpretation.

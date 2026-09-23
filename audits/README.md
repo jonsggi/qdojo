@@ -1,5 +1,11 @@
 # Audit findings and issue backlog
 
+> Combat pivot, 2026-09-21: these findings remain evidence about the legacy
+> implementation. The pivot does not close them. Review reusable transport,
+> custody, verification, bot admission and asset concerns against the
+> [new spec](../docs/spec.md); explicitly resolve or retire each finding
+> with evidence during [migration](../docs/pivot-plan.md).
+
 Reviewed **2026-09-16** against commit
 `833d2200cff9a05a096666b81783522d3c328f85` (line references refer to that code).
 

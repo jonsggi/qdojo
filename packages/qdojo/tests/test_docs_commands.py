@@ -27,7 +27,10 @@ ROOT = os.path.join(os.path.dirname(__file__), "..", "..", "..")
 # apps/web/tests/setup.test.cjs, which evaluates the literal in a vm instead --
 # the same trick help.test.cjs uses for HELP. Python reads markdown; node reads
 # JavaScript; neither guesses at the other's escaping.
+# Archived examples still document the supported legacy implementation.
+# Active combat commands are explicitly planned until their parser exists.
 SURFACES = ["README.md", "docs/api.md", "docs/protocol.md", "docs/riddle-pack.md", "apps/web/llms.txt"]
+SURFACES += ["docs/archive/riddle-v0/" + path for path in SURFACES]
 
 # A published line is written for a human and carries placeholders. Each one is
 # spelled out here on purpose: an unrecognised placeholder FAILS rather than
@@ -142,7 +145,10 @@ def test_every_published_command_parses(rel, cmd):
         return
     try:
         build_parser().parse_args(tokens)
-    except SystemExit:
+    except SystemExit as exc:
+        # argparse deliberately exits successfully when displaying requested help.
+        if exc.code == 0 and any(token in ("--help", "-h") for token in tokens):
+            return
         pytest.fail(f"{rel} publishes a command the CLI rejects:\n    qdojo {' '.join(tokens)}\n"
                     f"  as written: {cmd}")
 
