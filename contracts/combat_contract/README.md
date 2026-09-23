@@ -50,7 +50,7 @@ than or equal to them, and `init` rejects a manifest that is not.
 | Record | Capacity | Notes |
 |---|---:|---|
 | fighters | 1024 | Never evicted. The index is the stable fighter handle. |
-| accounts | 2048 | A unified slot for the nonce record and the withdrawable credit. |
+| accounts | 2048 | One entry per identity: the account slot (`contract.py self.accounts`: nonce and credit), bounded by the manifest's `max_accounts`. Slots are seeded with the admin and the fee recipients and are never released. |
 | registry assets | 2048 | Written by admin opcode 100. |
 | open offers | 64 | 128 slots. Terminal offers are evicted, lowest id first. |
 | active fights | 16 | 32 slots. Terminal fights are evicted. |
@@ -95,31 +95,48 @@ step the runner also asserts two things:
 
 | Journal | Records | Calls | END_TICKs | Events | Result |
 |---|---:|---:|---:|---:|---|
-| fuzz-1 | 3279 | 1231 | 2000 | 1416 | final digest identical |
-| fuzz-2 | 3316 | 1270 | 2000 | 1456 | final digest identical |
+| fuzz-1 | 3253 | 1203 | 2000 | 1332 | final digest identical |
+| fuzz-2 | 3300 | 1253 | 2000 | 1427 | final digest identical |
 | season | 11206 | 516 | 10675 | 901 | final digest identical |
+| scenarios | 1889 | 277 | 1534 | 420 | final digest identical |
 
 `--trace DIR` writes one line per event (`E seq tick type body digest`) and one
 line per call (`C tick code op target refunded`). The format matches a
-reference-side dump. On all three journals the port's trace equals the
+reference-side dump. On all four journals the port's trace equals the
 reference's line for line, so result codes, targets and refunds also agree.
 Result codes are not part of the digest.
 
-The committed journals contain no cup traffic, no SetOperator, no failed
-withdrawal and no ruleset retirement. During the port, five more journals were
-generated from the same Python reference through `sim.World`:
+`scenarios.journal` (358 KB) is written by `scripts/combat-contract-scenarios.py`,
+which `scripts/combat-sample-data.py` runs. It is a scripted run with a short
+timing profile (commit 4, reveal 3), 4 fight slots and 48 account slots, and
+salts from a seeded RNG, so regeneration is byte-identical. It covers:
 
-| Journal | Contents |
-|---|---|
-| two cup fuzz runs | 9,000 ticks each, with concurrent cups, ranked and duel pressure, SetOperator, sales during a cup, failed withdrawals and a service gap |
-| two tight-manifest runs | 4 fight slots, 10 credit accounts, 4 offers, 2 cups, a 16-event ring, direct paybacks to slotless strangers, and a degenerate cup descriptor |
-| one scripted scenario | a NO_CHAMPION abort, a draw leading to a replay, a finalist sold during the final, SetOperator refused after check-in, and a postponement followed by a CAPACITY abort |
+- a ranked match with rating, a failed then retried withdrawal, and SetOperator at IDLE;
+- Advance with a nonzero nonce, and AdminCreateCup rejections;
+- a cup with three byes, a drawn pairing replayed, one fighter per owner, a
+  withdrawn entry, SetOperator refused after check-in and allowed between
+  pairings, and a finalist sold during the final;
+- a postponed level whose retry succeeds, then NO_CHAMPION;
+- a level postponed twice (CAPACITY), with a duel accept refused FULL;
+- a cup CANCELLED below minimum;
+- a service gap voiding a duel, an open offer and a cup (SERVICE_VOID);
+- ruleset retirement;
+- strangers refused NOT_OWNER, refunds taking the last account slots, a new
+  registrant refused FULL, and direct paybacks, one of which fails.
 
-All five replayed with identical traces, event for event and code for code.
-Together they emit every one of the 26 event types. They are 0.4 to 16 MB each
-and are not committed.
+Together the four journals emit all 29 event types. Two cup fuzz runs of 9,000
+ticks each (16 MB, not committed) also replay with identical traces.
 
-Maximum work per entry point seen over all eight journals:
+Two paths cannot be reached, so no journal covers them:
+
+- **EXPIRED cup abort.** Every level now finishes inside its window, because
+  descriptor validation guarantees the worst case fits. The expiry is a full
+  window beyond the last permitted final.
+- **Check-in COOLDOWN.** A fighter can only fault while it is locked in the
+  cup, and a fault (forfeit or double fault) eliminates it. CupRegister
+  already refuses a fighter in cooldown.
+
+Maximum work per entry point seen over these journals:
 
 | Entry point | SHA-256 blocks | Events | Fights advanced | Match comparisons | Owner queries | Transfers |
 |---|---:|---:|---:|---:|---:|---:|
@@ -135,9 +152,10 @@ blocks, which is well below any per-tick budget still to be measured.
 ## Where the port must bound what the reference does not
 
 The reference keeps every record forever. The port bounds everything, and it
-never evicts anything that holds a liability or a lock. None of the rules
-below is reached by the parity journals, except the terminal-id answers,
-which the scratch cup journals exercise.
+never evicts anything that holds a liability or a lock. Account slots follow
+the reference exactly (eligibility, `_claim`, FULL at `max_accounts`); only
+the table size itself is a port bound. None of the rules below is reached by
+the parity journals, except the terminal-id answers.
 
 - **Terminal records are evicted, lowest id first.** An id that was issued
   (`1 <= id < next`) but is no longer retained must have been terminal, so
@@ -150,11 +168,10 @@ which the scratch cup journals exercise.
   offer return NOT_FOUND. The reference would answer DUPLICATE,
   ALREADY_MATCHED or EXPIRED. DUPLICATE is the only accepted answer of the
   three, so the difference is whether that nonce is recorded.
-- **The nonce slot is reserved before the handler runs.** If the invocator
-  has no slot and all 2048 are in use, the call is refused with FULL.
-- **Credits with no free slot go to `overflow_credit`.** The credit stays a
-  liability and a fault counter is incremented. The reference credits
-  settlement recipients with no bound.
+- **Credits with no free table entry go to `overflow_credit`.** The credit
+  stays a liability and a fault counter is incremented. This can only happen
+  for credit-only entries: failed direct paybacks to identities without a
+  slot, which the reference records without a slot.
 - **Pair history keeps only what matching can still read:** current-epoch
   start counts and results less than 120 ticks old. If the table is full, a
   pair is treated as not matchable, which fails closed.

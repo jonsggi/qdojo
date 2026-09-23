@@ -118,6 +118,9 @@ def main():
             traffic(w, 2000, seed=seed, check=False)
             w.check_conservation()
             store.write(TRACES / f"fuzz-{seed}.journal", w.manifest, w.journal, w.contract.event_digest)
+        # Scripted cup/capacity/stranger scenarios (scenarios.journal).
+        import runpy
+        runpy.run_path(str(ROOT / "scripts/combat-contract-scenarios.py"))["main"](TRACES / "scenarios.journal")
         fights = len(c.fights)
         kinds = sorted({x.result["kind"] for x in c.contests.values() if x.result})
         print(f"sample: {fights} fights, contests {kinds}; journal {len(net.world.journal)} records")

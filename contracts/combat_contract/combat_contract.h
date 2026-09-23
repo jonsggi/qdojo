@@ -111,7 +111,8 @@ enum EventType : uint16_t {
     EV_CONTEST_SETTLED = 13, EV_RATING = 14, EV_FAULT = 15, EV_WITHDRAWN = 16,
     EV_WITHDRAW_FAILED = 17, EV_CUP_CREATED = 18, EV_CUP_ENTRY = 19, EV_CUP_BRACKET = 20,
     EV_CUP_LEVEL = 21, EV_CUP_PAIRING = 22, EV_CUP_FINISHED = 23, EV_ASSET_REGISTERED = 24,
-    EV_RULESET_RETIRED = 25, EV_REFUND_CREDIT = 26,
+    EV_RULESET_RETIRED = 25, EV_REFUND_CREDIT = 26, EV_CUP_WITHDRAWN = 27, EV_CUP_CHECKED_IN = 28,
+    EV_CUP_REPLAY_SCHEDULED = 29,
 };
 
 enum Lock : uint8_t { L_IDLE = 0, L_QUEUED = 1, L_DUEL_OFFER = 2, L_CONTEST = 3, L_TOURNAMENT = 4 };
@@ -250,6 +251,7 @@ struct Account {
     Id who;
     int64_t credit;           // withdrawable QU
     uint8_t used;
+    uint8_t slot;             // holds an account slot (contract.py self.accounts); never released
     uint8_t has_nonce;
     uint16_t last_op;
     uint64_t nonce;           // last accepted nonce
@@ -424,6 +426,7 @@ struct State {
     int64_t paid_out;
     int64_t overflow_credit;  // credits that found no account slot (fault)
     uint32_t credit_count;    // accounts holding a positive credit (len(ledger.credits))
+    uint32_t n_slots;         // len(self.accounts): slot holders, bounded by manifest max_accounts
     // service heartbeat
     uint64_t generation;
     uint64_t last_serviced, last_observed, tick;
@@ -625,12 +628,13 @@ inline int32_t account_index(State& s, const Id& who) {
     return -1;
 }
 
-// An account slot is reusable when it holds neither credit nor a nonce.
+// A table entry is reusable when it is not a slot holder and holds no credit
+// (credit-only entries come from a failed direct payback).
 inline int32_t account_free_slot(State& s) {
     for (uint32_t i = 0; i < CAP_ACCOUNTS; ++i) {
         ++s.work.scan_steps;
         const Account& a = s.accounts[i];
-        if (!a.used || (a.credit == 0 && !a.has_nonce)) return int32_t(i);
+        if (!a.used || (!a.slot && a.credit == 0)) return int32_t(i);
     }
     return -1;
 }
@@ -644,6 +648,7 @@ inline int32_t account_get_or_alloc(State& s, const Id& who) {
     a.who = who;
     a.credit = 0;
     a.used = 1;
+    a.slot = 0;
     a.has_nonce = 0;
     a.last_op = 0;
     a.nonce = 0;
@@ -861,26 +866,63 @@ inline Res dup(uint64_t target = 0) { return Res{DUPLICATE, target}; }
 inline Res rej(uint8_t code) { return Res{code, 0}; }
 inline bool accepted(const Res& r) { return r.code == OK || r.code == DUPLICATE; }
 
-inline bool has_slot(State& s, const Id& who) {
+inline bool holds_slot(State& s, const Id& who) {
     int32_t a = account_index(s, who);
-    if (a >= 0 && (s.accounts[a].credit > 0 || s.accounts[a].has_nonce)) return true;
+    return a >= 0 && s.accounts[a].slot;
+}
+
+// Give `who` a slot, ignoring the manifest bound (construction seeding).
+inline bool add_slot(State& s, const Id& who) {
+    int32_t a = account_get_or_alloc(s, who);
+    if (a < 0) {
+        ++s.faults.account_overflow;
+        return false;
+    }
+    if (!s.accounts[a].slot) {
+        s.accounts[a].slot = 1;
+        s.n_slots += 1;
+    }
+    return true;
+}
+
+// contract.py _claim: reserve an account slot (nonce + credit) before
+// accepting funds for `who`; FULL when it is new and the table is full.
+inline Res claim(State& s, const Id& who) {
+    if (holds_slot(s, who)) return ok();
+    if (s.n_slots >= s.m.max_accounts) return rej(FULL);
+    return add_slot(s, who) ? ok() : rej(FULL);
+}
+
+// contract.py _eligible: only account holders, owners/operators of registered
+// fighters, and the live owner registering a registry asset get a slot.
+inline bool eligible(State& s, Host& h, const Id& who, uint16_t op, const uint8_t* body) {
+    if (holds_slot(s, who)) return true;
     for (uint32_t i = 0; i < CAP_FIGHTERS; ++i) {
         if (i >= s.n_fighters) break;
         ++s.work.scan_steps;
         if (id_eq(s.fighters[i].owner, who) || id_eq(s.fighters[i].op, who)) return true;
     }
+    if (op == OP_REGISTER_FIGHTER) {
+        Id fid;
+        copy32(fid.b, body);
+        if (asset_index(s, fid) < 0) return false;
+        Id owner;
+        return owner_of(s, h, fid, owner) && id_eq(owner, who);
+    }
     return false;
 }
 
-// contract.py _refund: rejected attachments become withdrawal credit; an
-// unknown invocator with no account slot is paid straight back.
+// contract.py _refund: rejected attachments become withdrawal credit for slot
+// holders (a slot is given while there is room); otherwise the amount is paid
+// straight back, and if that fails it is still owed as credit.
 inline int64_t refund(State& s, Host& h, const Id& who, int64_t amount) {
     if (!amount) return 0;
-    if (has_slot(s, who) || s.credit_count < s.m.max_accounts) {
+    Body b{};
+    b_id(b, who);
+    b_u64(b, uint64_t(amount));
+    if (holds_slot(s, who) || s.n_slots < s.m.max_accounts) {
+        add_slot(s, who);
         credit(s, who, amount);
-        Body b{};
-        b_id(b, who);
-        b_u64(b, uint64_t(amount));
         emit(s, EV_REFUND_CREDIT, b);
         return amount;
     }
@@ -888,6 +930,7 @@ inline int64_t refund(State& s, Host& h, const Id& who, int64_t amount) {
     if (!transfer(s, h, who, amount)) {
         s.balance = add_i64(s, s.balance, amount);
         credit(s, who, amount);
+        emit(s, EV_REFUND_CREDIT, b);
     }
     return amount;
 }
@@ -1770,6 +1813,11 @@ inline void cup_pairing_done(State& s, Contest& c, uint64_t t) {
     } else if (kind == R_COMBAT && !c.replay) {
         p.status = PS_REPLAY_WAIT;
         p.replay_at = add_u64(s, t, cup.d.replay_delay);
+        Body b{};
+        b_u64(b, cup.cup_id);
+        b_u64(b, p.pairing_id);
+        b_u64(b, p.replay_at);
+        emit(s, EV_CUP_REPLAY_SCHEDULED, b);
         return;
     } else {
         p.status = PS_UNRESOLVED;
@@ -2276,6 +2324,7 @@ inline Res op_queue_enter(State& s, Host& h, const Id& inv, Reader r, int64_t am
     if (t < f.cooldown_until) return rej(COOLDOWN);
     if (f.suspended_epoch == epoch_of(s, t)) return rej(COOLDOWN);
     if (open_offers(s) >= s.m.max_offers) return rej(FULL);
+    QD_TRY(claim(s, f.owner));  // the payout recipient needs a credit slot
     return open_offer(s, f, uint16_t(fi), inv, amount, timing_id, fee_id, tier_id, max_gap, t, expires, K_RANKED,
                       id_zero(), 0, L_QUEUED);
 }
@@ -2284,11 +2333,11 @@ inline Res cancel(State& s, Host& h, const Id& inv, uint64_t offer_id, uint8_t k
     int32_t k = offer_slot(s, offer_id);
     if (k < 0 || s.offers[k].kind != kind) return rej(NOT_FOUND);
     Offer& o = s.offers[k];
-    if (o.status == O_MATCHED) return rej(ALREADY_MATCHED);
-    if (o.status != O_OPEN) return dup(offer_id);
     Id live;
     bool have = owner_of(s, h, o.fighter_id, live);
     if (!id_eq(inv, o.owner) && !id_eq(inv, o.op) && !(have && id_eq(inv, live))) return rej(NOT_OWNER);
+    if (o.status == O_MATCHED) return rej(ALREADY_MATCHED);
+    if (o.status != O_OPEN) return dup(offer_id);
     close_offer(s, o, O_CANCELLED);
     return ok(offer_id);
 }
@@ -2318,6 +2367,7 @@ inline Res op_duel_offer(State& s, Host& h, const Id& inv, Reader r, int64_t amo
     if (f.lock != L_IDLE) return rej(FIGHTER_BUSY);
     if (t < f.cooldown_until) return rej(COOLDOWN);
     if (open_offers(s) >= s.m.max_offers) return rej(FULL);
+    QD_TRY(claim(s, f.owner));  // the payout recipient needs a credit slot
     return open_offer(s, f, uint16_t(fi), inv, amount, timing_id, fee_id, 0, 0, t, expires, K_DUEL,
                       s.fighters[oi].fighter_id, fmt, L_DUEL_OFFER);
 }
@@ -2347,6 +2397,7 @@ inline Res op_duel_accept(State& s, Host& h, const Id& inv, Reader r, int64_t am
     if (t < d.cooldown_until) return rej(COOLDOWN);
     if (amount != s.offers[k].amount) return rej(BAD_AMOUNT);
     if (fights_in_use(s) >= s.m.max_fights) return rej(FULL);
+    QD_TRY(claim(s, d.owner));
     int32_t mk = new_offer_slot(s);
     if (mk < 0) return rej(FULL);
     Offer& o = s.offers[k];
@@ -2548,6 +2599,8 @@ inline Res op_admin_create_cup(State& s, const Id& inv, Reader r, int64_t amount
     if (!(4 <= d.min_entrants && d.min_entrants <= d.max_entrants && d.max_entrants <= s.m.max_cup_entrants))
         return rej(BAD_BODY);
     if (!(0 < entry_fee && entry_fee <= uint64_t(MAX_STAKE)) || d.registration_close <= t) return rej(BAD_BODY);
+    // Every scheduled boundary must fall on a tick END_TICK examines.
+    if (d.checkin_ticks < 1 || d.first_level_delay < 2 || d.replay_delay < 1) return rej(BAD_BODY);
     d.entry_fee = int64_t(entry_fee);
     const TimingProfile* tp = timing(s, d.timing_id);
     uint64_t cr = uint64_t(tp->commit_ticks) + tp->reveal_ticks;
@@ -2594,6 +2647,7 @@ inline Res op_cup_register(State& s, Host& h, const Id& inv, Reader r, int64_t a
     if (t < f.cooldown_until) return rej(COOLDOWN);
     if (cup.n_entries >= cup.d.max_entrants || cup.n_entries >= CAP_CUP_ENTRANTS) return rej(FULL);
     if (represented(s, cup, f.owner, f.op, nullptr)) return rej(INCOMPATIBLE);
+    QD_TRY(claim(s, f.owner));
     CupEntry& e = cup.entries[cup.n_entries];
     cup.n_entries = uint8_t(cup.n_entries + 1);
     e.fighter_id = f.fighter_id;
@@ -2635,6 +2689,12 @@ inline Res op_cup_withdraw(State& s, const Id& inv, Reader r, int64_t amount, ui
     if (cup.n_entries == 0 && cup.sponsorship == 0) cup.has_pot = 0;
     f.lock = L_IDLE;
     f.lock_ref = 0;
+    Body b{};
+    b_u64(b, cup.cup_id);
+    b_id(b, e.fighter_id);
+    b_id(b, e.payer);
+    b_u64(b, uint64_t(e.amount));
+    emit(s, EV_CUP_WITHDRAWN, b);
     return ok(cup.cup_id);
 }
 
@@ -2661,8 +2721,15 @@ inline Res op_cup_check_in(State& s, Host& h, const Id& inv, Reader r, int64_t a
     QD_TRY(authorize(s, h, f, inv, auth));
     if (represented(s, cup, f.owner, f.op, &fid)) return rej(INCOMPATIBLE);
     if ((is_a && p.checked_a) || (is_b && p.checked_b)) return dup(p.pairing_id);
+    if (t < f.cooldown_until) return rej(COOLDOWN);  // check-in observes the fault cooldown
+    QD_TRY(claim(s, f.owner));                        // a transferred finalist's owner may be new
     if (is_a) p.checked_a = 1;
     else p.checked_b = 1;
+    Body b{};
+    b_u64(b, cup.cup_id);
+    b_u64(b, p.pairing_id);
+    b_id(b, fid);
+    emit(s, EV_CUP_CHECKED_IN, b);
     return ok(p.pairing_id);
 }
 
@@ -2757,6 +2824,14 @@ inline bool init(State& s, const Manifest& m, uint64_t construction_tick) {
     s.generation = 1;
     s.last_serviced = s.last_observed = s.tick = construction_tick;
     s.next_offer = s.next_contest = s.next_fight = s.next_cup = 1;
+    // The admin and the fee recipients hold account slots from construction.
+    detail::add_slot(s, m.admin);
+    for (uint32_t i = 0; i < CAP_FEES; ++i) {
+        if (!m.fees[i].used) continue;
+        detail::add_slot(s, m.fees[i].house);
+        detail::add_slot(s, m.fees[i].dev);
+        detail::add_slot(s, m.fees[i].share);
+    }
     // EVENT_TAG_GENESIS = SHA256("qdojo/combat/event/genesis/v1\0")
     qdojo_combat::sha256(reinterpret_cast<const uint8_t*>(detail::TAG_EVENT_GENESIS),
                          uint32_t(sizeof(detail::TAG_EVENT_GENESIS)), s.event_digest);
@@ -2785,8 +2860,13 @@ inline CallResult dispatch(State& s, Host& h, const Id& inv, const uint8_t frame
     if (code != OK) return reject(s, h, inv, amount, code, 0);
     uint8_t digest[32];
     sha(s, frame, FRAME_LEN, digest);
+    if (fr.op == OP_ADVANCE && fr.nonce != 0) return reject(s, h, inv, amount, BAD_BODY, fr.op);
     int32_t acct = -1;
     if (fr.op != OP_ADVANCE) {
+        // Only registry-backed users and account holders get state slots (protocol.md section 3).
+        if (!eligible(s, h, inv, fr.op, fr.body)) return reject(s, h, inv, amount, NOT_OWNER, fr.op);
+        Res c = claim(s, inv);
+        if (!accepted(c)) return reject(s, h, inv, amount, c.code, fr.op);
         acct = account_index(s, inv);
         if (acct >= 0 && s.accounts[acct].has_nonce) {
             const Account& a = s.accounts[acct];
@@ -2804,9 +2884,6 @@ inline CallResult dispatch(State& s, Host& h, const Id& inv, const uint8_t frame
             if (fr.nonce < a.nonce) return reject(s, h, inv, amount, STALE, fr.op);
         }
         if (fr.nonce == 0) return reject(s, h, inv, amount, STALE, fr.op);
-        // Reserve the signer's nonce slot before any state changes (the
-        // reference's nonce map is unbounded; README.md).
-        if (acct < 0 && account_free_slot(s) < 0) return reject(s, h, inv, amount, FULL, fr.op);
     }
     Res r = run_handler(s, h, inv, fr, amount, t);
     if (!accepted(r)) return reject(s, h, inv, amount, r.code, fr.op);
