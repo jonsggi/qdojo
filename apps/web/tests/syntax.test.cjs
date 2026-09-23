@@ -10,7 +10,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const WEB = path.join(__dirname, '..');
-for (const name of ['app.js', 'dash.js', 'anim.js', 'avatars.js']) {
+for (const name of ['app.js', 'dash.js', 'anim.js', 'avatars.js', 'combat/engine.js']) {
   test(`${name} parses as a whole file`, () => {
     const src = fs.readFileSync(path.join(WEB, name), 'utf8');
     assert.doesNotThrow(() => new vm.Script(src, { filename: name }), `${name} has a syntax error`);

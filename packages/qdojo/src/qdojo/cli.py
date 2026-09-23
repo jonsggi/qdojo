@@ -15,6 +15,9 @@ from .house import House, HouseError
 from .bot import Bot, BotError, fetch_board
 from . import nodes, onboard, spar, events, lab, wizard, term, training, prompts as P, dash, fees
 from . import portable, seedconf
+from .combat import cli as combat_cli
+from .combat.training import ReplayMismatch
+from .combat.types import PlanError, StateError
 from . import settings, cockpit
 from .shares import Shares, SharesError
 
@@ -1094,6 +1097,8 @@ def build_parser():
     tp.add_argument("--no-color", dest="color", action="store_false", default=None)
     tp.set_defaults(fn=cmd_train)
 
+    combat_cli.add_parser(sub)
+
     bp = sub.add_parser("bot")
     bp.add_argument("--state", default=os.path.expanduser("~/.qdojo/bot"), help="bot state dir (seed conf, profile, node cache)")
     s = bp.add_subparsers(dest="sub", required=True)
@@ -1186,7 +1191,8 @@ def main(argv=None):
     a = build_parser().parse_args(argv)
     try:
         a.fn(a)
-    except (HouseError, BotError, ChainError, R.RiddleError, riddles.RiddleGenError, payload.PayloadError, onboard.OnboardError, SharesError, term.TermError, RuntimeError) as e:
+    except (HouseError, BotError, ChainError, R.RiddleError, riddles.RiddleGenError, payload.PayloadError, onboard.OnboardError, SharesError, term.TermError, RuntimeError,
+            ReplayMismatch, PlanError, StateError) as e:
         sys.exit(f"qdojo: {e}")
 
 
