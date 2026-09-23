@@ -1,0 +1,53 @@
+{
+ "schema": "qdojo.combat.npcs.v1",
+ "npcs": [
+  {
+   "id": "random-v1",
+   "behavior": "Uniform independent actions, optional random power timing",
+   "lesson": "Learn rules; benchmark against an unstructured opponent",
+   "practice": true,
+   "exhibition": true,
+   "ranked": false
+  },
+  {
+   "id": "jabber-v1",
+   "behavior": "JAB,JAB,JAB,RECOVER,JAB,JAB each round",
+   "lesson": "Punish predictable highs with duck/counter",
+   "practice": true,
+   "exhibition": true,
+   "ranked": false
+  },
+  {
+   "id": "turtle-v1",
+   "behavior": "BLOCK,BLOCK,RECOVER,BLOCK,DUCK,RECOVER",
+   "lesson": "Use throw, low attacks and guard pressure",
+   "practice": true,
+   "exhibition": true,
+   "ranked": false
+  },
+  {
+   "id": "kicker-v1",
+   "behavior": "KICK,RECOVER,KICK,RECOVER,KICK,RECOVER",
+   "lesson": "Punish expensive attacks and recovery timing",
+   "practice": true,
+   "exhibition": true,
+   "ranked": false
+  },
+  {
+   "id": "mixed-v1",
+   "behavior": "Stateful weighted policy",
+   "lesson": "Test basic resource-aware optimization",
+   "practice": true,
+   "exhibition": true,
+   "ranked": false
+  },
+  {
+   "id": "scout-v1",
+   "behavior": "Adapt next-round action distribution from past observations",
+   "lesson": "Train against an opponent that changes strategy",
+   "practice": true,
+   "exhibition": true,
+   "ranked": false
+  }
+ ]
+}

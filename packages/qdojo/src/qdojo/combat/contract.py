@@ -597,6 +597,7 @@ class CombatContract:
         self.contests[cid] = contest
         if x.offer_id and y.offer_id:
             self.ledger.offers_to_contest(cid, (x.offer_id, y.offer_id))
+            x.contest_id = y.contest_id = cid
         for o in (x, y):
             ftr = self.fighters[o.fighter_id]
             if mode != Mode.CUP:
@@ -858,6 +859,8 @@ class CombatContract:
         (salt_a, plan_a), (salt_b, plan_b) = fight.reveals["A"], fight.reveals["B"]
         res: RoundResult = resolve_round(self.m.ruleset, fight.state, plan_a, plan_b)
         fight.rounds.append({"round_index": fight.state.round_index, "tick": t,
+                             "start": fight.state, "round_state_digest": fight.round_state_digest(),
+                             "commitments": dict(fight.commits),
                              "salts": {"A": salt_a, "B": salt_b},
                              "plans": {"A": codec.encode_plan(plan_a), "B": codec.encode_plan(plan_b)},
                              "executed": res.executed, "end": res.end})

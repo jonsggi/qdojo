@@ -39,12 +39,12 @@ def _check_locks(w):
                 assert c.fighters[fid].lock == "CONTEST" and c.fighters[fid].lock_ref == ct.contest_id
 
 
-def test_random_traffic_conserves_and_keeps_locks(world):  # noqa: F811
-    rng = random.Random(0xF022)
+def traffic(world, ticks, seed=0xF022, check=True):
+    rng = random.Random(seed)
     players = [Player(world, f"z{i}") for i in range(8)]
     c = world.contract
     secrets_, absentees = {}, {}
-    for _ in range(TICKS):
+    for _ in range(ticks):
         for p in players:
             if rng.random() > 0.3:
                 continue
@@ -107,9 +107,39 @@ def test_random_traffic_conserves_and_keeps_locks(world):  # noqa: F811
         if rng.random() < 0.002:
             world.skip_ticks(rng.randint(1, 3))
         world.end()
-        world.check_conservation()
-        _check_locks(world)
+        if check:
+            world.check_conservation()
+            _check_locks(world)
+
+
+def test_random_traffic_conserves_and_keeps_locks(world):  # noqa: F811
+    traffic(world, TICKS)
+    c = world.contract
     settled = [ct for ct in c.contests.values() if ct.status == "DONE"]
     assert len(settled) > 20
     kinds = {ct.result["kind"] for ct in settled}
     assert {"COMBAT", "FORFEIT"} <= kinds
+
+
+def test_journal_replay_rebuilds_the_identical_contract(world, tmp_path):  # noqa: F811
+    from qdojo.combat import store
+    traffic(world, 1500, seed=7, check=False)
+    path = tmp_path / "combat.journal"
+    store.write(path, world.manifest, world.journal, world.contract.event_digest)
+    head, records = store.load(path)
+    rebuilt = store.replay(world.manifest, head, records)
+    assert rebuilt.event_digest == world.contract.event_digest
+    assert rebuilt.ledger.credits == world.contract.ledger.credits
+    assert {k: (f.lock, f.lifetime) for k, f in rebuilt.fighters.items()} == \
+        {k: (f.lock, f.lifetime) for k, f in world.contract.fighters.items()}
+    # A torn final append is tolerated; a digest mismatch is not.
+    with open(path, "a") as f:
+        f.write('{"k":"call","t":')
+    store.replay(world.manifest, *store.load(path))
+    records[-1]["event_digest"] = "00" * 32
+    import pytest
+    with pytest.raises(store.StoreError):
+        store.replay(world.manifest, head, records)
+    (tmp_path / "rounds.json").write_text("{}")
+    with pytest.raises(store.StoreError):
+        store.write(path, world.manifest, [])

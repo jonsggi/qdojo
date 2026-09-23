@@ -42,6 +42,7 @@ class Offer:
     kind: str = "RANKED"          # RANKED or DUEL
     opponent_id: bytes = b""      # DUEL only
     series_format: int = 0        # DUEL only
+    contest_id: int = 0           # set when matched
 
 
 def window(o: Offer, tick: int) -> int:

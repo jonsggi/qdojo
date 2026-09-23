@@ -51,3 +51,32 @@ def test_frozen_fight_fixtures_match_engine():
     frozen = json.loads(next((ROOT / "packages/qdojo/tests/combat/fixtures").glob("fights-*.json")).read_text())
     _, fights, traced = mod.generate(len(frozen["fights"]), frozen["seed"])
     assert fights == frozen["fights"] and traced == frozen["traced"]
+
+
+def manifest_from_header(head):
+    from qdojo.combat.contract import Manifest
+    from qdojo.combat.ledger import FeeProfile
+    from qdojo.combat.rules import candidate_1
+    return Manifest(
+        bytes.fromhex(head["network_id"]), bytes.fromhex(head["contract_id"]), bytes.fromhex(head["admin"]),
+        candidate_1(), {int(k): tuple(v) for k, v in head["timing"].items()},
+        {int(k): FeeProfile(int(k), f["rake_bps"], f["house_bps"], f["dev_bps"], f["share_bps"],
+                            bytes.fromhex(f["house"]), bytes.fromhex(f["dev"]), bytes.fromhex(f["share"]))
+         for k, f in head["fees"].items()},
+        {int(k): v for k, v in head["tiers"].items()},
+        offer_lifetime=tuple(head["offer_lifetime"]),
+        **{k: head[k] for k in ("genesis_tick", "genesis_epoch", "ticks_per_epoch", "season_start_epoch",
+                                "season_epochs", "season_closeout_ticks", "max_fighters", "max_accounts",
+                                "max_offers", "max_fights", "max_cups", "max_cup_entrants", "event_ring",
+                                "match_interval", "cooldown_ticks", "faults_per_epoch")})
+
+
+def test_contract_parity_journals_replay_to_their_digest():
+    """The journals the C++ contract port replays must still match this reference."""
+    from qdojo.combat import store
+    paths = sorted((ROOT / "packages/qdojo/tests/combat/fixtures/contract").glob("*.journal"))
+    assert len(paths) >= 3
+    for path in paths:
+        head, records = store.load(path)
+        assert records[-1]["k"] == "digest"
+        store.replay(manifest_from_header(head), head, records)     # raises on digest mismatch

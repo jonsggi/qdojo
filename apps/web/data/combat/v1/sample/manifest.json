@@ -1,0 +1,34 @@
+{
+ "schema": "qdojo.combat.manifest.v1",
+ "network_id": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
+ "contract_id": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
+ "generated_tick": "10676",
+ "source": "reference-contract-state",
+ "ruleset_digest": "12085c86a61ffd106430b6690acbd522c5a94f90ed8024585817f4939fe4842c",
+ "semantic_version": "combat-v1-candidate-1",
+ "timing_profiles": {
+  "1": {
+   "commit_ticks": 24,
+   "reveal_ticks": 12
+  }
+ },
+ "tiers": {
+  "1": "1000"
+ },
+ "fee_profiles": {
+  "1": {
+   "rake_bps": 500,
+   "house_bps": 6000,
+   "dev_bps": 1000,
+   "share_bps": 3000
+  }
+ },
+ "supported_schemas": [
+  "qdojo.combat.replay.v1",
+  "qdojo.combat.fight.v1",
+  "qdojo.combat.fighter.v1",
+  "qdojo.combat.book.v1",
+  "qdojo.combat.events.v1",
+  "qdojo.combat.npcs.v1"
+ ]
+}

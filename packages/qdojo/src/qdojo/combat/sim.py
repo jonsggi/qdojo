@@ -4,6 +4,11 @@ Total QU is conserved across the world: external balances plus the contract
 balance never change except through `mint`. Transactions submitted during a
 tick run in submission order, then END_TICK runs — the order the protocol
 specifies for Qubic. Nothing here touches a real network or key.
+
+Every input that can change the contract — calls, ticks, asset transfers,
+failing recipients — is appended to `journal`. Replaying a journal rebuilds
+the identical contract (store.py), and the same journals drive the C++ port's
+parity test.
 """
 from __future__ import annotations
 
@@ -22,18 +27,47 @@ def identity(label: str) -> bytes:
     return sha256(b"qdojo/combat/sim-identity/v1\0", label.encode())
 
 
+class _Owners(dict):
+    """Asset ownership as the contract sees it; writes are journalled."""
+
+    def __init__(self, world):
+        super().__init__()
+        self.world = world
+
+    def __setitem__(self, key, value):
+        super().__setitem__(key, value)
+        self.world.journal.append({"k": "owner", "t": self.world.tick, "id": key.hex(),
+                                   "owner": value.hex() if value else None})
+
+
+class _Failing(set):
+    def add(self, who):
+        super().add(who)
+        self.world.journal.append({"k": "fail", "t": self.world.tick, "who": who.hex(), "on": True})
+
+    def discard(self, who):
+        super().discard(who)
+        self.world.journal.append({"k": "fail", "t": self.world.tick, "who": who.hex(), "on": False})
+
+    def clear(self):
+        for who in list(self):
+            self.discard(who)
+
+
 @dataclass
 class World:
     manifest: Manifest
     tick: int = 1
     balances: dict[bytes, int] = field(default_factory=dict)
-    owners: dict[bytes, bytes | None] = field(default_factory=dict)     # fighter/asset id -> owner
-    transfer_fails: set[bytes] = field(default_factory=set)
     nonces: dict[bytes, int] = field(default_factory=dict)
     minted: int = 0
-    pending: list = field(default_factory=list)
+    journal: list = field(default_factory=list)
 
     def __post_init__(self):
+        self.owners = _Owners(self)
+        self.transfer_fails = _Failing()
+        self.transfer_fails.world = self
+        self.journal.append({"k": "start", "t": self.tick})
         self.contract = CombatContract(self.manifest, self.owners.get, self._transfer, self.tick)
 
     # -- money --------------------------------------------------------------
@@ -41,6 +75,30 @@ class World:
     def mint(self, who: bytes, amount: int):
         self.balances[who] = self.balances.get(who, 0) + amount
         self.minted += amount
+        self.journal.append({"k": "mint", "t": self.tick, "who": who.hex(), "amount": amount})
+
+    @classmethod
+    def replay(cls, manifest: Manifest, records: list) -> "World":
+        """Rebuild a whole world (balances too) from its journal."""
+        start = next(r for r in records if r["k"] == "start")
+        w = cls(manifest, tick=start["t"])
+        for rec in records:
+            k = rec["k"]
+            if k == "mint":
+                w.mint(bytes.fromhex(rec["who"]), rec["amount"])
+            elif k == "owner":
+                w.owners[bytes.fromhex(rec["id"])] = bytes.fromhex(rec["owner"]) if rec["owner"] else None
+            elif k == "fail":
+                who = bytes.fromhex(rec["who"])
+                (w.transfer_fails.add if rec["on"] else w.transfer_fails.discard)(who)
+            elif k == "call":
+                w.raw(bytes.fromhex(rec["who"]), bytes.fromhex(rec["frame"]), rec["amount"])
+            elif k == "end":
+                w.end()
+            elif k == "begin":
+                w.skip_ticks(rec["t"] - w.tick)
+        w.nonces = {who: last[0] for who, last in w.contract.nonces.items()}
+        return w
 
     def _transfer(self, to: bytes, amount: int) -> bool:
         if to in self.transfer_fails:
@@ -66,17 +124,18 @@ class World:
         """Submit and execute within the current tick (after BEGIN_TICK)."""
         if nonce is None:
             nonce = 0 if op is Op.ADVANCE else self.next_nonce(who)
-        frame = codec.encode_frame(op, nonce, fields)
-        return self.raw(who, frame, amount)
+        return self.raw(who, codec.encode_frame(op, nonce, fields), amount)
 
     def raw(self, who: bytes, frame: bytes, amount: int = 0) -> CallResult:
         if self.balances.get(who, 0) < amount:
             raise ValueError("insufficient external balance")
         self.balances[who] = self.balances.get(who, 0) - amount
+        self.journal.append({"k": "call", "t": self.tick, "who": who.hex(), "frame": frame.hex(), "amount": amount})
         return self.contract.call(who, frame, amount, self.tick)
 
     def end(self):
-        """END_TICK for the current tick, then open the next."""
+        """END_TICK for the current tick, then BEGIN_TICK of the next."""
+        self.journal.append({"k": "end", "t": self.tick})
         self.contract.end_tick(self.tick)
         self.tick += 1
         self.contract.begin_tick(self.tick)
@@ -88,6 +147,7 @@ class World:
     def skip_ticks(self, n: int):
         """Simulate a contract that did not run for n ticks (reserve outage)."""
         self.tick += n
+        self.journal.append({"k": "begin", "t": self.tick})
         self.contract.begin_tick(self.tick)
 
 

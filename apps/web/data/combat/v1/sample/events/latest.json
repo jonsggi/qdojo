@@ -1,0 +1,786 @@
+{
+ "schema": "qdojo.combat.events.v1",
+ "network_id": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
+ "contract_id": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
+ "generated_tick": "10676",
+ "source": "reference-contract-state",
+ "after": "837",
+ "events": [
+  {
+   "seq": "838",
+   "tick": "10126",
+   "type": "REVEALED",
+   "fields": [
+    "24",
+    "1",
+    "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
+    "28452e0e99c06c55ed327a21f24171adb937fbaabff15df493210b5f9efde4c4",
+    "010101040000ff"
+   ],
+   "digest": "0af920d4885fe8626c04408b908a92696b339d4c75a183fb02c91be9e4956256"
+  },
+  {
+   "seq": "839",
+   "tick": "10126",
+   "type": "REVEALED",
+   "fields": [
+    "24",
+    "1",
+    "fe8cd3d0fb944fdac2e671353a6a6e4ce1fcd0dc9ade519749a8ea44500f384d",
+    "d4a3c00868dd8ddef77943e2c1c63815b8153f36702710d29635df5cf3cd2c1a",
+    "000000050000ff"
+   ],
+   "digest": "f6a974216ab280106debed6757c05d925baa0cbad68dd4765a5f429dc50f5822"
+  },
+  {
+   "seq": "840",
+   "tick": "10126",
+   "type": "ROUND_RESOLVED",
+   "fields": [
+    "24",
+    "1",
+    "6",
+    "1c000300000001000000060000000100"
+   ],
+   "digest": "ba7c651bc4a2822b1c8f13785d65719f8f1d42623b64f61f52ec81d212fe9ea7"
+  },
+  {
+   "seq": "841",
+   "tick": "10126",
+   "type": "FIGHT_ENDED",
+   "fields": [
+    "24",
+    "COMBAT",
+    "A"
+   ],
+   "digest": "82ed65f0ad5a45ee4b00c6366d402e61f5acea7de89c25f6af25f184c9cfc7b5"
+  },
+  {
+   "seq": "842",
+   "tick": "10126",
+   "type": "FIGHT_CREATED",
+   "fields": [
+    "25",
+    "24",
+    "10126",
+    "10150",
+    "10162"
+   ],
+   "digest": "a88146df4e54f07ed23945234bb041e8f0b2ab32c2ba5b50cf2293812c0d16fb"
+  },
+  {
+   "seq": "843",
+   "tick": "10127",
+   "type": "COMMITTED",
+   "fields": [
+    "25",
+    "0",
+    "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
+    "d9e060c9e48e9a19eecb911d9fd2f1fc6609e3b7158d0fe395315874bc8bd0e2"
+   ],
+   "digest": "71e782b60d5c5128d969528c6035af4a01f5943b8995cd51071dc01ca2886dda"
+  },
+  {
+   "seq": "844",
+   "tick": "10127",
+   "type": "COMMITTED",
+   "fields": [
+    "25",
+    "0",
+    "fe8cd3d0fb944fdac2e671353a6a6e4ce1fcd0dc9ade519749a8ea44500f384d",
+    "c2b53a6376c338775b1ff4804514a557f6cefd33d6ffd29ca3aad4a4ed93074b"
+   ],
+   "digest": "b279dfe29d29c77367196192294f9384c45b04c4b6bf4286468fb77d965229d0"
+  },
+  {
+   "seq": "845",
+   "tick": "10151",
+   "type": "REVEALED",
+   "fields": [
+    "25",
+    "0",
+    "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
+    "f70fe39fa3674a6fb102d186f0353bab0012632264b1c9935e1c820a35763c79",
+    "000503020400ff"
+   ],
+   "digest": "4fe46879d2f049820ccfeae05a6284ae7accc48b0e62b11840ad1f5a9054b00c"
+  },
+  {
+   "seq": "846",
+   "tick": "10151",
+   "type": "REVEALED",
+   "fields": [
+    "25",
+    "0",
+    "fe8cd3d0fb944fdac2e671353a6a6e4ce1fcd0dc9ade519749a8ea44500f384d",
+    "11e9a0a735690a9fd4839395eda861f117d5974b12b49606e27558b1e21a61ce",
+    "010401000401ff"
+   ],
+   "digest": "ccc68d1b3f55fdd29ad047dca405234d09d4be20339d75e2dce807033d4594cf"
+  },
+  {
+   "seq": "847",
+   "tick": "10151",
+   "type": "ROUND_RESOLVED",
+   "fields": [
+    "25",
+    "0",
+    "6",
+    "24003700000001005400160000000100"
+   ],
+   "digest": "09e4b8a1fedfa06774f1cb0a156de33572549be9311611ba386431ad3ca3e3c1"
+  },
+  {
+   "seq": "848",
+   "tick": "10152",
+   "type": "COMMITTED",
+   "fields": [
+    "25",
+    "1",
+    "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
+    "88434c357d81c52f43d42e2626610b62c04d7cf3a66535e7f1b5d51366052034"
+   ],
+   "digest": "42dfbc64175c6d7331de20e98c348a20059569b09018a79b3df3896dadb3f6e1"
+  },
+  {
+   "seq": "849",
+   "tick": "10152",
+   "type": "COMMITTED",
+   "fields": [
+    "25",
+    "1",
+    "fe8cd3d0fb944fdac2e671353a6a6e4ce1fcd0dc9ade519749a8ea44500f384d",
+    "a337196a7fe30c4da24ea0f0e82dc743f5475adb6c2d8355f39308c4d79b9175"
+   ],
+   "digest": "1fcfc6e31fe88716266cae6cfa4e4a7599a7a55684396e144f4dcda132b7a3e9"
+  },
+  {
+   "seq": "850",
+   "tick": "10176",
+   "type": "REVEALED",
+   "fields": [
+    "25",
+    "1",
+    "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
+    "831a3076db09d0a4d547d32ce86747299d9091d443634f2f971cdfff995a269e",
+    "010304010104ff"
+   ],
+   "digest": "9c88f86470a7fd6ff9be311e1dc1705dbd4993f2aca37df4965b576847be4f8b"
+  },
+  {
+   "seq": "851",
+   "tick": "10176",
+   "type": "REVEALED",
+   "fields": [
+    "25",
+    "1",
+    "fe8cd3d0fb944fdac2e671353a6a6e4ce1fcd0dc9ade519749a8ea44500f384d",
+    "ad4e153fc5cfa8c3d9d41bdaea3a61240094f5edc93461a3b6846b2ba6c7d6be",
+    "050104020101ff"
+   ],
+   "digest": "c2cd36f07344dc50baa308549e477006fa919f7706e7dbcdaff1bb1dd983331d"
+  },
+  {
+   "seq": "852",
+   "tick": "10176",
+   "type": "ROUND_RESOLVED",
+   "fields": [
+    "25",
+    "1",
+    "6",
+    "12001300000001001e00190000000100"
+   ],
+   "digest": "6a2467c502a0fc44d9dc2bb137a049cbe5c806c18305e8291104bca5a1759029"
+  },
+  {
+   "seq": "853",
+   "tick": "10177",
+   "type": "COMMITTED",
+   "fields": [
+    "25",
+    "2",
+    "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
+    "7fcd62bcbda6cd0b2179ab15c6b7f197944d572ab10aab778ce06d05a8261524"
+   ],
+   "digest": "c4fda4ea8e7bb07bc5fd870396a39d6d7f5c41e04bef6c94b0cdcd73d60ef939"
+  },
+  {
+   "seq": "854",
+   "tick": "10177",
+   "type": "COMMITTED",
+   "fields": [
+    "25",
+    "2",
+    "fe8cd3d0fb944fdac2e671353a6a6e4ce1fcd0dc9ade519749a8ea44500f384d",
+    "c8416a94407220dc6e57778f9a1bfdd33b84ecca38c28d24cc2d326be70bd137"
+   ],
+   "digest": "e2c9289d195e7ee265d40cc890e3c9ae4f018fb1e39d5dba710c860af8da9ae4"
+  },
+  {
+   "seq": "855",
+   "tick": "10201",
+   "type": "REVEALED",
+   "fields": [
+    "25",
+    "2",
+    "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
+    "70439d0a949444fee946002ec6e0b6a78ec8111445d909f842c1790a909c3443",
+    "01020501000000"
+   ],
+   "digest": "35b48969c7aaa6252e8e4364403effb5f0232810cbdbc3859d06fbb41429370e"
+  },
+  {
+   "seq": "856",
+   "tick": "10201",
+   "type": "REVEALED",
+   "fields": [
+    "25",
+    "2",
+    "fe8cd3d0fb944fdac2e671353a6a6e4ce1fcd0dc9ade519749a8ea44500f384d",
+    "2e07206521a36f4d5d7a7bb8be14c5b370f42b95f89bdb702f7e7eccf2afa4e7",
+    "04000304010500"
+   ],
+   "digest": "b441022f0e5a8071700d01ea4203766d359c637a8a1f7181970aab8073679dbc"
+  },
+  {
+   "seq": "857",
+   "tick": "10201",
+   "type": "ROUND_RESOLVED",
+   "fields": [
+    "25",
+    "2",
+    "4",
+    "12000b000000000000000e0000000000"
+   ],
+   "digest": "08bde3b4a9cb2e00b9095c7dd227be79e5aed4bad690a7d938317e0b65e97b81"
+  },
+  {
+   "seq": "858",
+   "tick": "10201",
+   "type": "FIGHT_ENDED",
+   "fields": [
+    "25",
+    "COMBAT",
+    "A"
+   ],
+   "digest": "b8b4da5bd9f6703cd4ca9e24ae3a7c502416e9291ba1d84e61d310ed9dd56b33"
+  },
+  {
+   "seq": "859",
+   "tick": "10201",
+   "type": "CONTEST_SETTLED",
+   "fields": [
+    "24",
+    "COMBAT",
+    "A"
+   ],
+   "digest": "5dbe1e53e88930d539cfc87d24eddab3d70b6530c34c58e5e33621360a55c198"
+  },
+  {
+   "seq": "860",
+   "tick": "10202",
+   "type": "OFFER_OPEN",
+   "fields": [
+    "238",
+    "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
+    "1000",
+    "10442"
+   ],
+   "digest": "76cea7d187bc05ba95a25a8c56568baaf1998b3bf2690dd276e36cb3e867f78e"
+  },
+  {
+   "seq": "861",
+   "tick": "10202",
+   "type": "OFFER_OPEN",
+   "fields": [
+    "239",
+    "fe8cd3d0fb944fdac2e671353a6a6e4ce1fcd0dc9ade519749a8ea44500f384d",
+    "1000",
+    "10442"
+   ],
+   "digest": "9141295e73df6e55f4281f97d1e16e90652dacdc1aca549b40efdd2dbaeb104b"
+  },
+  {
+   "seq": "862",
+   "tick": "10204",
+   "type": "OFFER_CLOSED",
+   "fields": [
+    "235",
+    "EXPIRED"
+   ],
+   "digest": "c3dd1939293d4393a67bced562b31a2e5f9b0fa749003d488b157faf56d00c60"
+  },
+  {
+   "seq": "863",
+   "tick": "10204",
+   "type": "MATCHED",
+   "fields": [
+    "238",
+    "239"
+   ],
+   "digest": "0e5ff6f3d81516ec0f1ab6064abc77121bffef265c0a7177c8af370e35aabc20"
+  },
+  {
+   "seq": "864",
+   "tick": "10204",
+   "type": "FIGHT_CREATED",
+   "fields": [
+    "26",
+    "25",
+    "10204",
+    "10228",
+    "10240"
+   ],
+   "digest": "831b1fd952ed2c871abc25daf7f446e034a95f23612e70b17d92e8383d9f0d42"
+  },
+  {
+   "seq": "865",
+   "tick": "10205",
+   "type": "COMMITTED",
+   "fields": [
+    "26",
+    "0",
+    "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
+    "167cafb112217a80e6a7c6b940eeda1656998239c16412595c8704e8b30651df"
+   ],
+   "digest": "8bf962c6b9259a39e180ce0e0d932b0403676e800fee1798e2bbe5e758cb6c66"
+  },
+  {
+   "seq": "866",
+   "tick": "10205",
+   "type": "COMMITTED",
+   "fields": [
+    "26",
+    "0",
+    "fe8cd3d0fb944fdac2e671353a6a6e4ce1fcd0dc9ade519749a8ea44500f384d",
+    "298ab56eb28755c71a70e96380ddbf1b6ae7362cab38b23001eaa12b50a250a7"
+   ],
+   "digest": "3b180a2ec76a43200dbf8c75977f153422a5adb479ec9b913ee7995e00a41628"
+  },
+  {
+   "seq": "867",
+   "tick": "10229",
+   "type": "REVEALED",
+   "fields": [
+    "26",
+    "0",
+    "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
+    "6a9a1075740be69dc5eb05ff65feb418526ab18a48ca1c053c85c33ff4a1b2d5",
+    "010000050205ff"
+   ],
+   "digest": "180af99f51bf9a12626e833255f2ce9fb897fbf30952a33f2fe7523753b3c3cc"
+  },
+  {
+   "seq": "868",
+   "tick": "10229",
+   "type": "REVEALED",
+   "fields": [
+    "26",
+    "0",
+    "fe8cd3d0fb944fdac2e671353a6a6e4ce1fcd0dc9ade519749a8ea44500f384d",
+    "07cee08750246b67393685ebd318eb6eeeefcdbd7ed84ca86e4c15e8aafc68fc",
+    "040400000101ff"
+   ],
+   "digest": "e8386ee84466726d074571c4e5efb29b7310ae91781e8d5024d770f1d0fb04b1"
+  },
+  {
+   "seq": "869",
+   "tick": "10229",
+   "type": "ROUND_RESOLVED",
+   "fields": [
+    "26",
+    "0",
+    "6",
+    "3e0038000000010042001c0000000100"
+   ],
+   "digest": "3ee8f6cd31bddd9be46606c4dc51a3e614c1bbef0f971fd8f104677e2a8ec476"
+  },
+  {
+   "seq": "870",
+   "tick": "10230",
+   "type": "COMMITTED",
+   "fields": [
+    "26",
+    "1",
+    "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
+    "a53fd43a190f486a06bb8fa403793731a109571e05b7d631a645a063e4476f30"
+   ],
+   "digest": "fb42aa75a95bd233565760efe13faec988cbde650450c205945164315df022cf"
+  },
+  {
+   "seq": "871",
+   "tick": "10230",
+   "type": "COMMITTED",
+   "fields": [
+    "26",
+    "1",
+    "fe8cd3d0fb944fdac2e671353a6a6e4ce1fcd0dc9ade519749a8ea44500f384d",
+    "0ecb67e65f90fc6a1bc755c54b6cb80aab2153824efa5dba5d2ea26ab4f95442"
+   ],
+   "digest": "d3a410f9673b9c07518a3437df045ef2a46c6207ee0adc38d69256506dd9a64d"
+  },
+  {
+   "seq": "872",
+   "tick": "10254",
+   "type": "REVEALED",
+   "fields": [
+    "26",
+    "1",
+    "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
+    "e8d816813dde654a5b1a90910b2557d359effdb71521460a3875f1f6c582a671",
+    "010101010100ff"
+   ],
+   "digest": "d85f0f1843267977c59d9df6e16ae5da922fd2fd66f164d74774eb436b9fcc9f"
+  },
+  {
+   "seq": "873",
+   "tick": "10254",
+   "type": "REVEALED",
+   "fields": [
+    "26",
+    "1",
+    "fe8cd3d0fb944fdac2e671353a6a6e4ce1fcd0dc9ade519749a8ea44500f384d",
+    "a07eaaf964dcce496b2919e083b67e07018a9d04f676032ae179ba7e9db61e03",
+    "010405010400ff"
+   ],
+   "digest": "f4dda26b588cbb86ac599648563a5875165743df17605dfb5247aa412f9ef035"
+  },
+  {
+   "seq": "874",
+   "tick": "10254",
+   "type": "ROUND_RESOLVED",
+   "fields": [
+    "26",
+    "1",
+    "5",
+    "220006000000010000000d0000000100"
+   ],
+   "digest": "6d07cd252b072e0ca8e2894d1688b6a5ba8ef5def534d4db72e53848789cb077"
+  },
+  {
+   "seq": "875",
+   "tick": "10254",
+   "type": "FIGHT_ENDED",
+   "fields": [
+    "26",
+    "COMBAT",
+    "A"
+   ],
+   "digest": "1e203f1d2d978941875560d06742edc5928a0103752d870061a42f99df56f767"
+  },
+  {
+   "seq": "876",
+   "tick": "10254",
+   "type": "RATING",
+   "fields": [
+    "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
+    "1122",
+    "fe8cd3d0fb944fdac2e671353a6a6e4ce1fcd0dc9ade519749a8ea44500f384d",
+    "1077"
+   ],
+   "digest": "2529706d1dd18f6cd936698aec6fc884bd0c64d7866ff7e2c956209ffe64694d"
+  },
+  {
+   "seq": "877",
+   "tick": "10254",
+   "type": "CONTEST_SETTLED",
+   "fields": [
+    "25",
+    "COMBAT",
+    "A"
+   ],
+   "digest": "b17dc5c160f593cf74c297dd49957026eaca9846bbc7572db5fcf07f5f7b83f2"
+  },
+  {
+   "seq": "878",
+   "tick": "10255",
+   "type": "OFFER_OPEN",
+   "fields": [
+    "240",
+    "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
+    "1000",
+    "10495"
+   ],
+   "digest": "977b423ecd4ecc9f8328384864e4929cb8c74d7fc1a6317359f17dea8578e87e"
+  },
+  {
+   "seq": "879",
+   "tick": "10255",
+   "type": "OFFER_OPEN",
+   "fields": [
+    "241",
+    "fe8cd3d0fb944fdac2e671353a6a6e4ce1fcd0dc9ade519749a8ea44500f384d",
+    "1000",
+    "10495"
+   ],
+   "digest": "81036a31caff0822715cbc12f13b2d5b11fbf8413c44423f27cd839e4e4af17c"
+  },
+  {
+   "seq": "880",
+   "tick": "10376",
+   "type": "MATCHED",
+   "fields": [
+    "240",
+    "241"
+   ],
+   "digest": "fa21ce7285b4f168794a57988859f355070e586eea5451e943e4e2d8af19e6f5"
+  },
+  {
+   "seq": "881",
+   "tick": "10376",
+   "type": "FIGHT_CREATED",
+   "fields": [
+    "27",
+    "26",
+    "10376",
+    "10400",
+    "10412"
+   ],
+   "digest": "daa663b2d347de8c17b714dfc9aac746d8af14b5de5da56df19a53eb2c80da8c"
+  },
+  {
+   "seq": "882",
+   "tick": "10377",
+   "type": "COMMITTED",
+   "fields": [
+    "27",
+    "0",
+    "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
+    "7eec285beba013666838f2fe6c8e4a2e68192fb9cb2d51cecd4d0a00f0bd8864"
+   ],
+   "digest": "439b9f91501fbcd73810b46fb0665ced06647a753b5fb476c285481fb3eb21b1"
+  },
+  {
+   "seq": "883",
+   "tick": "10377",
+   "type": "COMMITTED",
+   "fields": [
+    "27",
+    "0",
+    "fe8cd3d0fb944fdac2e671353a6a6e4ce1fcd0dc9ade519749a8ea44500f384d",
+    "809d8aab63ef9b855d4993d65f1c96e2fd9ff2f106632828bdc4711c24afc13c"
+   ],
+   "digest": "a5be9089d8f7c085cc2f4f614c9e2428ffe72d175ae9e3abda40583b93defcd7"
+  },
+  {
+   "seq": "884",
+   "tick": "10401",
+   "type": "REVEALED",
+   "fields": [
+    "27",
+    "0",
+    "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
+    "eb361e7fa9bfc3536d2a15ae2a21a2bdbf5847b95e4285521ca3c84765623913",
+    "020201020003ff"
+   ],
+   "digest": "c36b6116b83587b3c0db40bac884b07edaef53a6d91d2417bf83c12a90ae6655"
+  },
+  {
+   "seq": "885",
+   "tick": "10401",
+   "type": "REVEALED",
+   "fields": [
+    "27",
+    "0",
+    "fe8cd3d0fb944fdac2e671353a6a6e4ce1fcd0dc9ade519749a8ea44500f384d",
+    "a519ef51490a6f0d690d065455bb846c175eccc2cbedec4fe6e608b7400940f8",
+    "010102030102ff"
+   ],
+   "digest": "9f751667cd90998c0d91e65badb85e672a527880c38984717bd71f06b86ce7e7"
+  },
+  {
+   "seq": "886",
+   "tick": "10401",
+   "type": "ROUND_RESOLVED",
+   "fields": [
+    "27",
+    "0",
+    "6",
+    "56002100000001005c001c0000010100"
+   ],
+   "digest": "107124b32a9062e47c34a769f501c366a962db5251880a710ac69ca6613ef755"
+  },
+  {
+   "seq": "887",
+   "tick": "10402",
+   "type": "COMMITTED",
+   "fields": [
+    "27",
+    "1",
+    "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
+    "810c5915fbd3bf820b4af503f505757efe9e246b07abdaa6d22819f42a63e39a"
+   ],
+   "digest": "773c47e28875fbd479636568a21fe432fba41c8134e29798d3cea5fd1ef25259"
+  },
+  {
+   "seq": "888",
+   "tick": "10402",
+   "type": "COMMITTED",
+   "fields": [
+    "27",
+    "1",
+    "fe8cd3d0fb944fdac2e671353a6a6e4ce1fcd0dc9ade519749a8ea44500f384d",
+    "d4e0a6d0c1eaa2b7f3864d3952c8d447ae723ca13b5b00d164ea2a9a4af2732b"
+   ],
+   "digest": "639ebe6c252decf4973d81ff3bacc0384a273fad2639add8309323fdb6882298"
+  },
+  {
+   "seq": "889",
+   "tick": "10426",
+   "type": "REVEALED",
+   "fields": [
+    "27",
+    "1",
+    "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
+    "f491662494133693db390b3f36c64e549ec743843bc3fcb7f66c88dfa6e747db",
+    "010100050400ff"
+   ],
+   "digest": "73f07a46c1e1a8031d6f7d3d0778131a8f9dba02e61dee7381cc7db870a5c49b"
+  },
+  {
+   "seq": "890",
+   "tick": "10426",
+   "type": "REVEALED",
+   "fields": [
+    "27",
+    "1",
+    "fe8cd3d0fb944fdac2e671353a6a6e4ce1fcd0dc9ade519749a8ea44500f384d",
+    "28a7fe309fdd85f9fe843be13d67c877ba27f8b1e06003a646ee26c8ea172923",
+    "010501050100ff"
+   ],
+   "digest": "a88f773466c651950c594fc31b87e45ca42c91b4e11c4a63114ba123cb24d4a7"
+  },
+  {
+   "seq": "891",
+   "tick": "10426",
+   "type": "ROUND_RESOLVED",
+   "fields": [
+    "27",
+    "1",
+    "6",
+    "24001a00000001002c001c0000000100"
+   ],
+   "digest": "7eaba5ea193273dfef5165282bbbe8c7af3dea10675e769bac35220214f3d265"
+  },
+  {
+   "seq": "892",
+   "tick": "10427",
+   "type": "COMMITTED",
+   "fields": [
+    "27",
+    "2",
+    "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
+    "580b7198da985841fcb39db75e6e58c5400464cdb4214231964e7345a4267664"
+   ],
+   "digest": "78110b41d81cf73894cebcdf9e42bb20122fb520d4904d103f32ee14594a0225"
+  },
+  {
+   "seq": "893",
+   "tick": "10427",
+   "type": "COMMITTED",
+   "fields": [
+    "27",
+    "2",
+    "fe8cd3d0fb944fdac2e671353a6a6e4ce1fcd0dc9ade519749a8ea44500f384d",
+    "a6a206df0fd9d962b04c95b83716abaa2969e5db775a4a05b885f8b1d6bce3f6"
+   ],
+   "digest": "14d364ff33fc7ef21dac9f8beb4d1d912cd3526f8ac70f0bfe54eb1596282b54"
+  },
+  {
+   "seq": "894",
+   "tick": "10451",
+   "type": "REVEALED",
+   "fields": [
+    "27",
+    "2",
+    "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
+    "4805bbba60b2b635f675985f34efce56d713e103255a9304e83193aea1582f5f",
+    "01010501050100"
+   ],
+   "digest": "08c29b93f60a56a5524db81bbe52ff64e0b91ac94bdda489feeee35266075a90"
+  },
+  {
+   "seq": "895",
+   "tick": "10451",
+   "type": "REVEALED",
+   "fields": [
+    "27",
+    "2",
+    "fe8cd3d0fb944fdac2e671353a6a6e4ce1fcd0dc9ade519749a8ea44500f384d",
+    "cf128dbe23ea73ec342f219fe7f5f0114833273187dac0abba8ee59af4d2b8af",
+    "00020400000300"
+   ],
+   "digest": "66e0f018dce2ab2b0d7ad66eb8a17f097cb916334b823f2330c4b17cebe7af37"
+  },
+  {
+   "seq": "896",
+   "tick": "10451",
+   "type": "ROUND_RESOLVED",
+   "fields": [
+    "27",
+    "2",
+    "5",
+    "00001400000000001a00070001000000"
+   ],
+   "digest": "a55c23b97b3cf5480a9e7728493a50babc82a231d5f9e569e216f3b796250fea"
+  },
+  {
+   "seq": "897",
+   "tick": "10451",
+   "type": "FIGHT_ENDED",
+   "fields": [
+    "27",
+    "COMBAT",
+    "B"
+   ],
+   "digest": "073aede08cbf9668c643dd41c15b347cf7701aa547428ee3ebddf244c2bc698c"
+  },
+  {
+   "seq": "898",
+   "tick": "10451",
+   "type": "RATING",
+   "fields": [
+    "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
+    "1105",
+    "fe8cd3d0fb944fdac2e671353a6a6e4ce1fcd0dc9ade519749a8ea44500f384d",
+    "1094"
+   ],
+   "digest": "ffd0474116a59c83bc07b00b03d91d3d276a8eaef404dcfd4044f92f2a7cac4d"
+  },
+  {
+   "seq": "899",
+   "tick": "10451",
+   "type": "CONTEST_SETTLED",
+   "fields": [
+    "26",
+    "COMBAT",
+    "B"
+   ],
+   "digest": "297e1b935bc5aa0f299598f53b5fa5237359c3c44fcc64fbe82eb4da13aaf76c"
+  },
+  {
+   "seq": "900",
+   "tick": "10452",
+   "type": "OFFER_OPEN",
+   "fields": [
+    "242",
+    "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
+    "1000",
+    "10692"
+   ],
+   "digest": "84ddcf65fae141b1c97828c069ea5fb3becafa9da05daa3c64ca7225eacd66cd"
+  },
+  {
+   "seq": "901",
+   "tick": "10452",
+   "type": "OFFER_OPEN",
+   "fields": [
+    "243",
+    "fe8cd3d0fb944fdac2e671353a6a6e4ce1fcd0dc9ade519749a8ea44500f384d",
+    "1000",
+    "10692"
+   ],
+   "digest": "20bff91896fe40971aa1c81e98b2d7ce6ad8d58bb201e4e12f5f581c64330f47"
+  }
+ ]
+}
