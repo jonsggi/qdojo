@@ -39,3 +39,15 @@ def test_ruleset_rejects_drift():
     changed = json.loads(json.dumps(doc))
     changed["power_cost"] = 5
     assert rules_mod.parse(changed).digest != rules_mod.parse(doc).digest
+
+
+def test_frozen_fight_fixtures_match_engine():
+    """The parity set for the C++ and browser engines must still be what this engine produces."""
+    import importlib.util
+    import json
+    spec = importlib.util.spec_from_file_location("combat_fixtures", ROOT / "scripts/combat-fixtures.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    frozen = json.loads(next((ROOT / "packages/qdojo/tests/combat/fixtures").glob("fights-*.json")).read_text())
+    _, fights, traced = mod.generate(len(frozen["fights"]), frozen["seed"])
+    assert fights == frozen["fights"] and traced == frozen["traced"]
