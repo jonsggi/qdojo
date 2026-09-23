@@ -455,14 +455,18 @@
           ', house ' + String(sp.house) + ', dev ' + String(sp.dev) + ', share ' + String(sp.share));
       } else {
         // Draw, double fault or void: each stake back to its payer, no rake.
-        // The payer is not in the export, so any identity of that side counts.
-        const sides = { A: 0n, B: 0n };
-        for (const [who, v] of Object.entries(got)) {
-          const s = SIDES.filter(x => [ctx.participants[x].owner, ctx.participants[x].operator, ctx.participants[x].payout_recipient].includes(who));
-          if (s.length !== 1) note(false, 'credit of ' + String(v) + ' to ' + who.slice(0, 8) + '... is not a refund to exactly one side');
-          else sides[s[0]] += v;
+        // Each stake goes back to the side's payer, exactly; nobody else is credited.
+        const payers = st.payers || {};
+        const exp = {};
+        for (const x of SIDES) {
+          const p = payers[x];
+          if (typeof p !== 'string' || !/^[0-9a-f]{64}$/.test(p)) { note(false, 'settlement names no valid payer for side ' + x); continue; }
+          if (stake > 0n) exp[p] = (exp[p] || 0n) + stake;
         }
-        for (const x of SIDES) note(sides[x] === stake, 'side ' + x + ' refunded ' + String(sides[x]) + ', expected its stake ' + String(stake) + ' (no rake)');
+        for (const k of new Set(Object.keys(got).concat(Object.keys(exp)))) {
+          const role = SIDES.filter(x => payers[x] === k).map(x => 'payer ' + x).join(', ') || 'not a payer';
+          note((got[k] || 0n) === (exp[k] || 0n), 'refund ' + k.slice(0, 8) + '... (' + role + '): export ' + String(got[k] || 0n) + ', expected ' + String(exp[k] || 0n) + ' (stake back, no rake)');
+        }
       }
     }
     // Ratings: ranked only; combat results and unilateral forfeits move them.

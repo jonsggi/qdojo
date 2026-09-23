@@ -319,7 +319,9 @@ test('draws, double faults and voids refund each stake with no rake', () => {
   const rp = fullFight();
   const ctx = L.parseContext(rp.context_bytes);
   const stake = rp.settlement.stake_per_fighter;
-  const refund = { [ctx.participants.A.owner]: stake, [ctx.participants.B.owner]: stake };
+  const payers = rp.settlement.payers;
+  assert.ok(/^[0-9a-f]{64}$/.test(payers.A) && /^[0-9a-f]{64}$/.test(payers.B), 'the export names both payers');
+  const refund = { [payers.A]: stake, [payers.B]: stake };
   const pre = { A: ctx.participants.A, B: ctx.participants.B };
   const draw = L.ratingDelta(pre.A.lifetime_rating, pre.B.lifetime_rating, 1000);
   const dS = L.ratingDelta(pre.A.season_rating, pre.B.season_rating, 1000);
@@ -340,8 +342,22 @@ test('draws, double faults and voids refund each stake with no rake', () => {
   assert.equal(L.checkSettlement(mk('DOUBLE_FAULT', refund, same), ctx, tie).status, 'PASS', 'a double fault refunds and does not rate');
   assert.equal(L.checkSettlement(mk('VOID', refund, same), ctx, tie).status, 'PASS');
   assert.equal(L.checkSettlement(mk('DOUBLE_FAULT', refund, rated), ctx, tie).status, draw || dS ? 'FAIL' : 'PASS', 'a double fault must not move ratings');
-  const raked = { [ctx.participants.A.owner]: String(BigInt(stake) - 50n), [ctx.participants.B.owner]: stake, [ctx.house_recipient]: '50' };
+  const raked = { [payers.A]: String(BigInt(stake) - 50n), [payers.B]: stake, [ctx.house_recipient]: '50' };
   assert.equal(L.checkSettlement(mk('VOID', raked, same), ctx, tie).status, 'FAIL', 'no rake on a refund');
+
+  // The refund must reach the payer exactly: crediting A's owner fails when
+  // A's stake was paid by a different identity.
+  const other = mk('DOUBLE_FAULT', { [ctx.participants.A.owner]: stake, [payers.B]: stake }, same);
+  other.settlement.payers = { A: 'cd'.repeat(32), B: payers.B };
+  const res = L.checkSettlement(other, ctx, tie);
+  assert.equal(res.status, 'FAIL', 'a refund to the owner instead of the payer');
+  assert.ok(res.details.some(d => d.startsWith('FAIL refund cdcdcdcd') && /payer A/.test(d)));
+  const same2 = mk('DOUBLE_FAULT', { [ctx.participants.A.owner]: stake, [payers.B]: stake }, same);
+  same2.settlement.payers = { A: ctx.participants.A.owner, B: payers.B };
+  assert.equal(L.checkSettlement(same2, ctx, tie).status, 'PASS', 'the same credit passes when the owner was the payer');
+  const missing = mk('VOID', refund, same);
+  delete missing.settlement.payers;
+  assert.equal(L.checkSettlement(missing, ctx, tie).status, 'FAIL', 'a refund without named payers cannot pass');
 });
 
 test('a forfeit carries the re-derived state at the deadline; a tampered one fails', async () => {
