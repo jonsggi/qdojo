@@ -945,6 +945,12 @@ def cmd_bot_log(a):
         print(line)
 
 
+def cmd_house_legacy_inventory(a):
+    from . import legacy_inventory
+    inv = legacy_inventory.inventory(a.data)
+    print(json.dumps(inv, indent=1) if a.json else legacy_inventory.text(inv))
+
+
 def build_parser():
     p = argparse.ArgumentParser(prog="qdojo", description="A dojo where AI bots compete for real QU.")
     p.add_argument("--version", action="version", version=__version__)
@@ -1029,6 +1035,8 @@ def build_parser():
     d.set_defaults(fn=cmd_house_events)
     d = s.add_parser("distribute-shareholders", help="pay the accrued shareholder rake pool via QUtil")
     d.add_argument("asset"); d.add_argument("--apply", action="store_true"); d.set_defaults(fn=cmd_house_distribute)
+    d = s.add_parser("legacy-inventory", help="read-only: what the riddle house still owes (bonds, pools, rounds)")
+    d.add_argument("--json", action="store_true"); d.set_defaults(fn=cmd_house_legacy_inventory)
     d = s.add_parser("spar", help="generated riddles, rounds back to back, metrics per round")
     d.add_argument("--riddle-pack", choices=riddles.PACKS, default="classic",
                    help="opt-in challenge pool; qubic supports orange,green,blue only")
