@@ -2,7 +2,7 @@
  "schema": "qdojo.combat.replay.v1",
  "network_id": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
  "contract_id": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
- "generated_tick": "12237",
+ "generated_tick": "12277",
  "source": "reference-contract-state",
  "fight_id": "336",
  "contest_id": "336",
@@ -514,23 +514,513 @@
     "A": [],
     "B": []
    }
+  },
+  {
+   "round_index": 1,
+   "start": {
+    "round_index": 1,
+    "A": {
+     "hp": 100,
+     "stamina": 60,
+     "opening": 0,
+     "guard_streak": 0,
+     "power_available": 1
+    },
+    "B": {
+     "hp": 100,
+     "stamina": 46,
+     "opening": 0,
+     "guard_streak": 1,
+     "power_available": 1
+    },
+    "outcome": null
+   },
+   "plans": {
+    "A": {
+     "actions": [
+      "BLOCK",
+      "JAB",
+      "DUCK",
+      "JAB",
+      "DUCK",
+      "THROW"
+     ],
+     "power_slot": 3
+    },
+    "B": {
+     "actions": [
+      "KICK",
+      "KICK",
+      "KICK",
+      "KICK",
+      "JAB",
+      "RECOVER"
+     ],
+     "power_slot": -1
+    }
+   },
+   "executed_beats": 6,
+   "beats": [
+    {
+     "beat": 0,
+     "A": {
+      "before": {
+       "hp": 100,
+       "stamina": 60,
+       "opening": 0,
+       "guard_streak": 0,
+       "power_available": 1
+      },
+      "after": {
+       "hp": 100,
+       "stamina": 52,
+       "opening": 0,
+       "guard_streak": 1,
+       "power_available": 1
+      },
+      "intended": "BLOCK",
+      "effective": "BLOCK",
+      "power": false,
+      "cost": 4,
+      "cost_paid": 4,
+      "base_damage": 0,
+      "opening_bonus": 0,
+      "power_bonus": 0,
+      "bonus_damage": 0,
+      "computed_damage": 0,
+      "actual_hp_lost": 0,
+      "strain": 6,
+      "recovered": 2,
+      "reasons": [
+       "GUARD_STRAIN"
+      ]
+     },
+     "B": {
+      "before": {
+       "hp": 100,
+       "stamina": 46,
+       "opening": 0,
+       "guard_streak": 1,
+       "power_available": 1
+      },
+      "after": {
+       "hp": 100,
+       "stamina": 36,
+       "opening": 0,
+       "guard_streak": 0,
+       "power_available": 1
+      },
+      "intended": "KICK",
+      "effective": "KICK",
+      "power": false,
+      "cost": 12,
+      "cost_paid": 12,
+      "base_damage": 0,
+      "opening_bonus": 0,
+      "power_bonus": 0,
+      "bonus_damage": 0,
+      "computed_damage": 0,
+      "actual_hp_lost": 0,
+      "strain": 0,
+      "recovered": 2,
+      "reasons": [
+       "BLOCKED"
+      ]
+     }
+    },
+    {
+     "beat": 1,
+     "A": {
+      "before": {
+       "hp": 100,
+       "stamina": 52,
+       "opening": 0,
+       "guard_streak": 1,
+       "power_available": 1
+      },
+      "after": {
+       "hp": 86,
+       "stamina": 48,
+       "opening": 0,
+       "guard_streak": 0,
+       "power_available": 1
+      },
+      "intended": "JAB",
+      "effective": "JAB",
+      "power": false,
+      "cost": 6,
+      "cost_paid": 6,
+      "base_damage": 8,
+      "opening_bonus": 0,
+      "power_bonus": 0,
+      "bonus_damage": 0,
+      "computed_damage": 8,
+      "actual_hp_lost": 14,
+      "strain": 0,
+      "recovered": 2,
+      "reasons": [
+       "HIT"
+      ]
+     },
+     "B": {
+      "before": {
+       "hp": 100,
+       "stamina": 36,
+       "opening": 0,
+       "guard_streak": 0,
+       "power_available": 1
+      },
+      "after": {
+       "hp": 92,
+       "stamina": 26,
+       "opening": 0,
+       "guard_streak": 0,
+       "power_available": 1
+      },
+      "intended": "KICK",
+      "effective": "KICK",
+      "power": false,
+      "cost": 12,
+      "cost_paid": 12,
+      "base_damage": 14,
+      "opening_bonus": 0,
+      "power_bonus": 0,
+      "bonus_damage": 0,
+      "computed_damage": 14,
+      "actual_hp_lost": 8,
+      "strain": 0,
+      "recovered": 2,
+      "reasons": [
+       "HIT"
+      ]
+     }
+    },
+    {
+     "beat": 2,
+     "A": {
+      "before": {
+       "hp": 86,
+       "stamina": 48,
+       "opening": 0,
+       "guard_streak": 0,
+       "power_available": 1
+      },
+      "after": {
+       "hp": 68,
+       "stamina": 46,
+       "opening": 0,
+       "guard_streak": 0,
+       "power_available": 1
+      },
+      "intended": "DUCK",
+      "effective": "DUCK",
+      "power": false,
+      "cost": 4,
+      "cost_paid": 4,
+      "base_damage": 0,
+      "opening_bonus": 0,
+      "power_bonus": 0,
+      "bonus_damage": 0,
+      "computed_damage": 0,
+      "actual_hp_lost": 18,
+      "strain": 0,
+      "recovered": 2,
+      "reasons": []
+     },
+     "B": {
+      "before": {
+       "hp": 92,
+       "stamina": 26,
+       "opening": 0,
+       "guard_streak": 0,
+       "power_available": 1
+      },
+      "after": {
+       "hp": 92,
+       "stamina": 16,
+       "opening": 0,
+       "guard_streak": 0,
+       "power_available": 1
+      },
+      "intended": "KICK",
+      "effective": "KICK",
+      "power": false,
+      "cost": 12,
+      "cost_paid": 12,
+      "base_damage": 18,
+      "opening_bonus": 0,
+      "power_bonus": 0,
+      "bonus_damage": 0,
+      "computed_damage": 18,
+      "actual_hp_lost": 0,
+      "strain": 0,
+      "recovered": 2,
+      "reasons": [
+       "HIT"
+      ]
+     }
+    },
+    {
+     "beat": 3,
+     "A": {
+      "before": {
+       "hp": 68,
+       "stamina": 46,
+       "opening": 0,
+       "guard_streak": 0,
+       "power_available": 1
+      },
+      "after": {
+       "hp": 54,
+       "stamina": 38,
+       "opening": 0,
+       "guard_streak": 0,
+       "power_available": 0
+      },
+      "intended": "JAB",
+      "effective": "JAB",
+      "power": true,
+      "cost": 10,
+      "cost_paid": 10,
+      "base_damage": 8,
+      "opening_bonus": 0,
+      "power_bonus": 4,
+      "bonus_damage": 4,
+      "computed_damage": 12,
+      "actual_hp_lost": 14,
+      "strain": 0,
+      "recovered": 2,
+      "reasons": [
+       "HIT",
+       "POWER_USED"
+      ]
+     },
+     "B": {
+      "before": {
+       "hp": 92,
+       "stamina": 16,
+       "opening": 0,
+       "guard_streak": 0,
+       "power_available": 1
+      },
+      "after": {
+       "hp": 80,
+       "stamina": 6,
+       "opening": 0,
+       "guard_streak": 0,
+       "power_available": 1
+      },
+      "intended": "KICK",
+      "effective": "KICK",
+      "power": false,
+      "cost": 12,
+      "cost_paid": 12,
+      "base_damage": 14,
+      "opening_bonus": 0,
+      "power_bonus": 0,
+      "bonus_damage": 0,
+      "computed_damage": 14,
+      "actual_hp_lost": 12,
+      "strain": 0,
+      "recovered": 2,
+      "reasons": [
+       "HIT"
+      ]
+     }
+    },
+    {
+     "beat": 4,
+     "A": {
+      "before": {
+       "hp": 54,
+       "stamina": 38,
+       "opening": 0,
+       "guard_streak": 0,
+       "power_available": 0
+      },
+      "after": {
+       "hp": 54,
+       "stamina": 36,
+       "opening": 1,
+       "guard_streak": 0,
+       "power_available": 0
+      },
+      "intended": "DUCK",
+      "effective": "DUCK",
+      "power": false,
+      "cost": 4,
+      "cost_paid": 4,
+      "base_damage": 0,
+      "opening_bonus": 0,
+      "power_bonus": 0,
+      "bonus_damage": 0,
+      "computed_damage": 0,
+      "actual_hp_lost": 0,
+      "strain": 0,
+      "recovered": 2,
+      "reasons": [
+       "OPENING_EARNED"
+      ]
+     },
+     "B": {
+      "before": {
+       "hp": 80,
+       "stamina": 6,
+       "opening": 0,
+       "guard_streak": 0,
+       "power_available": 1
+      },
+      "after": {
+       "hp": 80,
+       "stamina": 2,
+       "opening": 0,
+       "guard_streak": 0,
+       "power_available": 1
+      },
+      "intended": "JAB",
+      "effective": "JAB",
+      "power": false,
+      "cost": 6,
+      "cost_paid": 6,
+      "base_damage": 0,
+      "opening_bonus": 0,
+      "power_bonus": 0,
+      "bonus_damage": 0,
+      "computed_damage": 0,
+      "actual_hp_lost": 0,
+      "strain": 0,
+      "recovered": 2,
+      "reasons": [
+       "EVADED"
+      ]
+     }
+    },
+    {
+     "beat": 5,
+     "A": {
+      "before": {
+       "hp": 54,
+       "stamina": 36,
+       "opening": 1,
+       "guard_streak": 0,
+       "power_available": 0
+      },
+      "after": {
+       "hp": 54,
+       "stamina": 29,
+       "opening": 0,
+       "guard_streak": 0,
+       "power_available": 0
+      },
+      "intended": "THROW",
+      "effective": "THROW",
+      "power": false,
+      "cost": 9,
+      "cost_paid": 9,
+      "base_damage": 18,
+      "opening_bonus": 4,
+      "power_bonus": 0,
+      "bonus_damage": 4,
+      "computed_damage": 22,
+      "actual_hp_lost": 0,
+      "strain": 0,
+      "recovered": 2,
+      "reasons": [
+       "HIT",
+       "OPENING_USED"
+      ]
+     },
+     "B": {
+      "before": {
+       "hp": 80,
+       "stamina": 2,
+       "opening": 0,
+       "guard_streak": 0,
+       "power_available": 1
+      },
+      "after": {
+       "hp": 58,
+       "stamina": 8,
+       "opening": 0,
+       "guard_streak": 0,
+       "power_available": 1
+      },
+      "intended": "RECOVER",
+      "effective": "RECOVER",
+      "power": false,
+      "cost": 0,
+      "cost_paid": 0,
+      "base_damage": 0,
+      "opening_bonus": 0,
+      "power_bonus": 0,
+      "bonus_damage": 0,
+      "computed_damage": 0,
+      "actual_hp_lost": 22,
+      "strain": 0,
+      "recovered": 6,
+      "reasons": [
+       "RECOVERY_PUNISHED"
+      ]
+     }
+    }
+   ],
+   "break_recovery": {
+    "A": 10,
+    "B": 10
+   },
+   "end": {
+    "round_index": 2,
+    "A": {
+     "hp": 54,
+     "stamina": 39,
+     "opening": 0,
+     "guard_streak": 0,
+     "power_available": 0
+    },
+    "B": {
+     "hp": 58,
+     "stamina": 18,
+     "opening": 0,
+     "guard_streak": 0,
+     "power_available": 1
+    },
+    "outcome": null
+   },
+   "tick": "12254",
+   "round_state_digest": "b208ae8824732d6aea65b711665e9c7b1cd3803d6b2c0484644837a44bfed8b9",
+   "commitments": {
+    "A": "77a6d3539df2d389de9cb9273ed5c9d8c84b5343404ac3a38aff22c2a03541ea",
+    "B": "c52ce6db602ec835ea265cacc603e03ecf826c647047b590a01b82fda690040d"
+   },
+   "salts": {
+    "A": "099116e92235dc05ce78821c2197f6234d1910560d5d475720706f6dca34b7e5",
+    "B": "95cf56785412046ad82b8ea55531add41f7d64b7af3527b79029cfa742c1dce7"
+   },
+   "plan_bytes": {
+    "A": "02000300030403",
+    "B": "010101010005ff"
+   },
+   "unexecuted": {
+    "A": [],
+    "B": []
+   }
   }
  ],
  "result": {},
  "outcome": null,
  "final": {
   "A": {
-   "hp": 100,
-   "stamina": 60,
+   "hp": 54,
+   "stamina": 39,
    "opening": 0,
    "guard_streak": 0,
-   "power_available": 1
+   "power_available": 0
   },
   "B": {
-   "hp": 100,
-   "stamina": 46,
+   "hp": 58,
+   "stamina": 18,
    "opening": 0,
-   "guard_streak": 1,
+   "guard_streak": 0,
    "power_available": 1
   }
  },
