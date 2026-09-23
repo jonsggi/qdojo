@@ -193,6 +193,22 @@ Signers store next nonce durably. New, unknown invocators cannot fill arbitrary
 nonce storage: only registry-backed authorized users or existing credit owners
 receive state slots. Admission-capacity failure rejects and refunds.
 
+The reference contract implements this as follows:
+
+- An account slot holds one identity's nonce and credit. The admin and every
+  fee recipient hold slots from construction.
+- A non-Advance call is eligible if the invocator already holds a slot, is
+  owner or operator of a registered fighter, or is registering a recognised
+  asset it currently owns. An ineligible call is refused with NOT_OWNER, and
+  no nonce is stored for it.
+- An eligible newcomer is given a slot, or FULL if none is free.
+- Admissions claim a slot for the payout owner before escrowing. These are
+  QueueEnter, DuelOffer, DuelAccept, CupRegister and CupCheckIn.
+- A rejected attachment is credited when the invocator holds a slot or one is
+  free. Otherwise it is paid straight back. If that transfer fails, the amount
+  is still credited, with a REFUND_CREDIT event, and never kept.
+- Advance must carry nonce 0; any other nonce is BAD_BODY.
+
 ## 4. Fight state machine and deadlines
 
 Candidate timing profile: commit_ticks=24, reveal_ticks=12.
