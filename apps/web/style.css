@@ -105,6 +105,14 @@ body.shake { animation: shake .45s steps(2) 1; }
 .pill-live { color: var(--green); }
 .pill-demo { color: var(--orange); }
 .pill-lost { color: var(--red); animation: blink 1.1s steps(1) infinite; }
+.pill-legacy { color: var(--magenta); }
+.pill-sample { color: var(--orange); }
+.hud-nav a.nav-combat { color: var(--black); background: var(--yellow); padding: 4px 6px; }
+.hud-nav a.nav-combat:hover, .hud-nav a.nav-combat:focus-visible { background: var(--cyan); color: var(--black); }
+.legacy-banner {
+  margin: 0 0 16px; padding: 6px 10px; font-size: 9px; line-height: 1.8; color: var(--magenta);
+  border: 2px dashed var(--magenta); background: rgba(255, 60, 172, .06);
+}
 
 /* ---- Layout -------------------------------------------------------- */
 #main { padding: 20px var(--gutter) 40px; max-width: 1200px; margin: 0 auto; width: 100%; flex: 1 0 auto; }
