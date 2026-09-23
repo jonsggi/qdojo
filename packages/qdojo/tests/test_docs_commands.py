@@ -28,7 +28,7 @@ ROOT = os.path.join(os.path.dirname(__file__), "..", "..", "..")
 # the same trick help.test.cjs uses for HELP. Python reads markdown; node reads
 # JavaScript; neither guesses at the other's escaping.
 # Archived examples still document the supported legacy implementation.
-# Active combat commands are explicitly planned until their parser exists.
+# Combat commands are live and parsed like every other published line.
 SURFACES = ["README.md", "docs/api.md", "docs/protocol.md", "docs/riddle-pack.md", "apps/web/llms.txt"]
 SURFACES += ["docs/archive/riddle-v0/" + path for path in SURFACES]
 
@@ -41,7 +41,7 @@ ANGLE = {
     "<board url>": "https://x/data/board.json", "<your solver>": "./s.py",
     "<origin>": "https://x", "<any live node>": "1.2.3.4", "<ip>": "1.2.3.4",
     "<house>": "https://x", "<the repository>": "https://x/r.git", "<repo>": "https://x/r.git",
-    "<id>": "1", "<url>": "https://x", "<n>": "1", "<name>": "N", "<path>": "./p",
+    "<hex32>": "00" * 32, "<id>": "1", "<url>": "https://x", "<n>": "1", "<name>": "N", "<path>": "./p",
     "<data>": "./d", "<tmp>": "./d", "<board>": "https://x/data/board.json",
     "...": "", "…": "",
 }
@@ -57,7 +57,7 @@ PLACEHOLDER_RE = re.compile(r"<[^>\s][^>]*>")
 # The top-level subcommands. Requiring one of these immediately after `qdojo`
 # is what separates an invocation from a domain tag ("qdojo/answer/v0") or a
 # path ("qdojo/data/"), which are all over the protocol docs.
-VERBS = ("payload", "doc", "riddle", "house", "bot")
+VERBS = ("payload", "doc", "riddle", "house", "bot", "combat")
 FENCE = re.compile(r"^\s*```")
 
 
@@ -87,6 +87,8 @@ def _lines(text, fenced_only):
         cmd = m.group(1).strip()
         cmd = re.split(r"\s{2,}", cmd)[0]      # a synopsis table's description column
         cmd = cmd.rstrip("`\"';.")
+        if cmd.count('"') % 2:           # the rstrip ate the closing quote of a quoted argument
+            cmd += '"'
         if cmd.endswith("\\"):
             buf = cmd.rstrip("\\").strip()
         else:

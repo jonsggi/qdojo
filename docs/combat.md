@@ -1,7 +1,7 @@
 # Combat engine: combat-v1 candidate 1
 
 Owner of all mechanical rules. Read [spec.md](spec.md) for scope and money.
-Status: specified, not implemented; numerical balance must pass [model.md](model.md).
+Status: implemented in Python, C++ and browser engines that agree on 10,000 frozen fights; numerical balance must still pass [model.md](model.md).
 
 ## 1. Design contract
 
@@ -212,7 +212,7 @@ Additional stateful vectors:
   B=(82,52,0,0). A's kick dealt 18 due to its opening.
 - A has stamina=11 and attempts KICK against B's JAB:
   A effective EXHAUSTED, A=(88,17,0,0), B=(100,56,1,0).
-- A has stamina=12 and attempts KICK: it executes, ending stamina=2.
+- A has stamina=12 and attempts KICK (whatever B plays): it executes, ending stamina=2.
 - A at stamina=60, opening=1 uses powered KICK into DUCK:
   A stamina=46, power_available=0; B loses 26 HP; no other damage.
 - Powered JAB into BLOCK: A stamina=52, power_available=0, no HP loss.
@@ -232,7 +232,10 @@ Additional stateful vectors:
   32 after break. Round 2 first JABs cause a simultaneous KO;
   later intended actions are revealed but not executed.
 - Ending round 0 with stamina=55, opening=1, guard_streak=3 results
-  in next round stamina=60, opening=1, guard_streak=3.
+  in next round stamina=60, opening=1, guard_streak=3. (This is a break-rule
+  check on a hypothetical state: one fighter cannot end a beat with both an
+  opening and a guard streak, because a streak needs BLOCK and an opening
+  needs DUCK or JAB. Tests check each carry separately in playable rounds.)
 - Power at a planned slot after an earlier KO is marked unexecuted.
   It is not charged and does not create damage or a third-round action.
 
@@ -253,6 +256,26 @@ HIT, BLOCKED, EVADED, THROW_INTERRUPTED, THROW_CLASH, INSUFFICIENT_STAMINA,
 RECOVERY_PUNISHED, GUARD_STRAIN, OPENING_EARNED, OPENING_USED,
 OPENING_EXPIRED, POWER_USED, POWER_WASTED, KO, DOUBLE_KO.
 Multiple codes may describe a beat; do not use a reason code as hidden logic.
+
+Codes are attached per side, in this order (the Python, C++ and browser
+engines agree on all 10,000 frozen fixture fights):
+
+1. INSUFFICIENT_STAMINA when the effective action is EXHAUSTED.
+2. HIT when this side's computed damage is positive; otherwise, for an
+   effective attack: THROW_CLASH (throw vs throw), THROW_INTERRUPTED
+   (throw vs jab/kick), BLOCKED (vs block), EVADED (vs duck).
+3. RECOVERY_PUNISHED when an effective RECOVER takes positive damage.
+4. GUARD_STRAIN when an effective BLOCK meets an effective KICK, even if
+   the strain actually deducted is 0.
+5. OPENING_USED (pre-beat opening and positive base damage) or
+   OPENING_EXPIRED (pre-beat opening otherwise).
+6. POWER_USED (designated slot, executed as intended, positive base damage)
+   or POWER_WASTED (designated slot otherwise).
+7. OPENING_EARNED when the new opening is 1.
+8. KO on the side knocked out alone; DOUBLE_KO on both sides.
+
+The trace's `recovered` and `strain` fields are the amounts actually applied
+after the zero clamp and the stamina cap, not the nominal values.
 
 A useful explanation is: "Your kick cost 12; you had 11, so you were exposed
 and took 12 from the jab." Show the numbers and the alternative only after

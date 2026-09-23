@@ -157,6 +157,13 @@ the fields listed, without host alignment. Extra body bytes reject.
 | 12 | CupWithdraw | cup_id u64, fighter_id[32] |
 | 13 | CupCheckIn | cup_id u64, pairing_id u64, fighter_id[32], auth_version u32 |
 | 14 | DuelCancel | offer_id u64 |
+| 100 | AdminRegisterAsset | fighter_id[32], registry_version u32, house_npc u8 |
+| 101 | AdminCreateCup | ruleset_digest[32], timing_profile_id u32, fee_profile_id u32, entry_fee u64, registration_close u64, min_entrants u8, max_entrants u8, level_ticks u16, first_level_delay u16, checkin_ticks u16, replay_delay u16 |
+| 102 | AdminRetireRuleset | ruleset_digest[32] |
+
+Opcodes 100–102 are accepted only from the manifest's admin identity.
+AdminCreateCup attaches the sponsorship, which is reserved immediately and
+never raked. None of them can touch an accepted contest, a credit or a result.
 
 RegisterFighter binds an already recognized registry asset after confirming
 ownership; it does not mint an NFT or invent an asset ID. Issuance/registry
@@ -292,6 +299,20 @@ SHA256("qdojo/combat/event/v1\0" || previous_digest[32] ||
 event_seq u64 || event_type u16 || canonical_event_body).
 Canonical event bodies MUST be frozen alongside the ABI before contract port;
 do not hash in-memory structs or arbitrary exported JSON.
+
+Frozen as `qdojo.combat.event-body.v1`: the body is the event's fields in
+order, and each field is one tag byte followed by the value:
+
+| Tag | Value |
+|---:|---|
+| 0 | integer, u64 LE |
+| 1 | bytes: u16 LE length, then raw bytes |
+| 2 | ASCII label: u8 length, then bytes |
+
+The chain starts from SHA256("qdojo/combat/event/genesis/v1\0"). Event type
+numbers, and each type's field list, are `EVENT_TYPES` and the `_emit` calls
+in `packages/qdojo/src/qdojo/combat/contract.py`. The parity journals under
+`packages/qdojo/tests/combat/fixtures/contract/` pin the resulting digests.
 
 Retain a bounded event ring and current per-fighter/contest summaries. Export
 full history with raw confirmed transactions through redundant indexers. Chain

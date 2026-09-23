@@ -176,35 +176,56 @@ timing, power usage, opening conversion, recent mode-separated results and
 software-version labels only when owners choose to disclose them.
 Do not claim history predicts future actions with certainty.
 
-## 6. Planned CLI delivery
+## 6. CLI
 
-These command names are implementation requirements, not currently runnable:
+Every command below runs today. Training, replay and evaluation need no
+wallet, NFT, node or seed. The chain-shaped commands (fighter, queue, duel,
+cup, withdraw, bot run) operate on the **local devnet**: the reference
+contract on a persistent fake chain with fake QU and synthetic identities
+derived from labels. No deployment manifest exists yet, so none of them can
+reach a real network; `doctor` reports this as a warning, and paid admission
+stays disabled.
 
-| Planned command | Purpose |
-|---|---|
-| qdojo combat train | Free local fight against an NPC; optional deterministic seed |
-| qdojo combat evaluate | Batched side-swapped benchmark; separate train/test seeds |
-| qdojo combat replay | Verify/replay a recorded fight |
-| qdojo combat bot run | Owner-limited autonomous queue/commit/reveal loop |
-| qdojo combat queue enter / cancel / list | Inspect and manage a funded offer |
-| qdojo combat duel offer / accept / cancel | Named series |
-| qdojo combat cup list / register / check-in | Scheduled competition |
-| qdojo combat fighter show / authorize | Ownership, record and operator controls |
-| qdojo combat withdraw | Confirmed withdrawal of credits to self |
-| qdojo combat doctor | Non-spending readiness and configuration check |
-
-All should support machine-readable output and noninteractive operation.
-No command silently creates a seed, spends, registers or deploys in training.
-Windows and Linux bot support must retain current portability boundaries.
-
-For the existing code, the following is a read-only parser check:
+Free practice and analysis:
 
 ```sh
-uv run qdojo bot --help
+uv run qdojo combat npcs
+uv run qdojo combat train --npc jabber-v1 --planner "python3 examples/combat/planner_minimal.py"
+uv run qdojo combat train --npc kicker-v1 --seed <hex32> --out fight.json
+uv run qdojo combat replay fight.json
+uv run qdojo combat evaluate --policy scout-v1 --pool roster --seeds 200
 ```
 
-Actual legacy operation is documented in the archive; do not point a new combat
-user at a riddle board or imply current ./dojo starts a combat fight.
+Devnet (fake QU):
+
+```sh
+uv run qdojo combat fighter register musashi
+uv run qdojo combat bot run --fighter musashi --planner "python3 my_bot.py" --spar scout-v1 --ticks 600
+uv run qdojo combat queue enter --fighter musashi
+uv run qdojo combat queue list
+uv run qdojo combat queue cancel <id>
+uv run qdojo combat duel offer --fighter musashi --opponent kojiro --stake 5000 --format bo3
+uv run qdojo combat duel accept <id> --fighter kojiro
+uv run qdojo combat cup list
+uv run qdojo combat cup register <id> --fighter musashi
+uv run qdojo combat cup check-in <id> <n> --fighter musashi
+uv run qdojo combat fighter show musashi
+uv run qdojo combat fighter authorize musashi <name>
+uv run qdojo combat withdraw --as musashi
+uv run qdojo combat devnet status
+uv run qdojo combat devnet export --out apps/web/data/combat/v1
+uv run qdojo combat doctor --planner "python3 my_bot.py"
+```
+
+Every command takes `--json` for machine-readable output and runs without
+prompts. No command silently creates a seed, spends, registers or deploys.
+`bot run` enforces the owner budget in `--budget` (a JSON file of the
+`Budget` fields in `qdojo/combat/bot.py`) and journals each plan and salt
+(0600) before it commits.
+
+Legacy riddle operation is documented in the archive. Do not point a new
+combat user at a riddle board, and do not imply that `./dojo` starts a
+combat fight.
 
 ## 7. Files and migration
 
