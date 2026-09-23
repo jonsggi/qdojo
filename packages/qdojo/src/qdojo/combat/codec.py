@@ -204,6 +204,11 @@ class Op(IntEnum):
     CUP_WITHDRAW = 12
     CUP_CHECK_IN = 13
     DUEL_CANCEL = 14
+    # Deployment administration (docs/protocol.md §8): authorised by the
+    # manifest's admin identity only; cannot touch accepted contests or credits.
+    ADMIN_REGISTER_ASSET = 100
+    ADMIN_CREATE_CUP = 101
+    ADMIN_RETIRE_RULESET = 102
 
 
 # Field layouts per opcode (docs/protocol.md §3). Width 32 is a raw 32-byte
@@ -230,7 +235,47 @@ BODIES: dict[Op, tuple[tuple[str, object], ...]] = {
     Op.CUP_WITHDRAW: (("cup_id", 8), ("fighter_id", _ID)),
     Op.CUP_CHECK_IN: (("cup_id", 8), ("pairing_id", 8), ("fighter_id", _ID), ("auth_version", 4)),
     Op.DUEL_CANCEL: (("offer_id", 8),),
+    Op.ADMIN_REGISTER_ASSET: (("fighter_id", _ID), ("registry_version", 4), ("house_npc", 1)),
+    Op.ADMIN_CREATE_CUP: (("ruleset_digest", _ID), ("timing_profile_id", 4), ("fee_profile_id", 4),
+                          ("entry_fee", 8), ("registration_close", 8), ("min_entrants", 1),
+                          ("max_entrants", 1), ("level_ticks", 2), ("first_level_delay", 2),
+                          ("checkin_ticks", 2), ("replay_delay", 2)),
+    Op.ADMIN_RETIRE_RULESET: (("ruleset_digest", _ID),),
 }
+
+
+class Code(IntEnum):
+    """Stable result codes (docs/protocol.md §6)."""
+    OK = 0
+    DUPLICATE = 1
+    BAD_FRAME = 2
+    BAD_OPCODE = 3
+    BAD_BODY = 4
+    BAD_AMOUNT = 5
+    UNKNOWN_FIGHTER = 6
+    NOT_OWNER = 7
+    NOT_OPERATOR = 8
+    STALE_AUTH = 9
+    FIGHTER_BUSY = 10
+    COOLDOWN = 11
+    FULL = 12
+    NONCE_CONFLICT = 13
+    STALE = 14
+    NOT_FOUND = 15
+    EXPIRED = 16
+    ALREADY_MATCHED = 17
+    INCOMPATIBLE = 18
+    RULESET_RETIRED = 19
+    WRONG_PHASE = 20
+    LATE = 21
+    ALREADY_COMMITTED = 22
+    BAD_STATE = 23
+    BAD_COMMITMENT = 24
+    BAD_PLAN = 25
+    ALREADY_REVEALED = 26
+    TERMINAL = 27
+    SERVICE_VOID = 28
+    TRANSFER_FAILED = 29
 
 
 def _width(kind) -> int:
