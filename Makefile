@@ -1,7 +1,12 @@
-.PHONY: test lint sync hooks
+.PHONY: test lint sync hooks cpp-test
 test:
 	uv run pytest -q packages/qdojo/tests
 	node --test "apps/web/tests/*.test.cjs"
+	@if command -v g++ >/dev/null 2>&1; then $(MAKE) --no-print-directory cpp-test; else echo "g++ not found; skipping cpp-test"; fi
+cpp-test:
+	printf '#include "combat_core.h"\n#include "sha256.h"\n' | g++ -std=c++17 -x c++ -fsyntax-only -Wall -Wextra -Werror -Wconversion -fno-exceptions -fno-rtti -nostdinc++ -Icontracts/combat_core -
+	g++ -std=c++17 -O2 -Wall -Wextra -Werror -o contracts/combat_core/test_combat_core contracts/combat_core/test_combat_core.cpp
+	contracts/combat_core/test_combat_core .
 lint:
 	uv run python -m compileall -q packages/qdojo/src
 sync:
