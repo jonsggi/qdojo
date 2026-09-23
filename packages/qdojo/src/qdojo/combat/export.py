@@ -59,6 +59,17 @@ def fight_replay(c: CombatContract, fight_id: int) -> dict:
         rounds.append(entry)
         state = res.end
     result = fight.result or {}
+    contest = c.contests[fight.contest_id]
+    settlement = None
+    if contest.settlement is not None and fight.fight_id == contest.fights[-1]:
+        settlement = {
+            "contest_result": {k: (str(v) if k == "tick" else v) for k, v in contest.result.items()},
+            "stake_per_fighter": str(contest.stake), "series_fights": [str(x) for x in contest.fights],
+            "credits": {who.hex(): str(v) for who, v in sorted(contest.settlement["credits"].items())},
+            "ratings": contest.settlement["ratings"] if contest.mode == codec.Mode.RANKED else None,
+        }
+    if state is None and result:
+        state = fight.state          # a forfeit before any reveal: the state at the deadline
     body = {
         "fight_id": str(fight.fight_id), "contest_id": str(fight.contest_id),
         "mode": codec.Mode(ctx.mode).name.lower(), "ruleset_digest": ctx.ruleset_digest.hex(),
@@ -70,6 +81,8 @@ def fight_replay(c: CombatContract, fight_id: int) -> dict:
         "outcome": ({"winner": result.get("winner"), "result": result.get("result") or result.get("kind")}
                     if result else None),
         "final": ({"A": state.a.to_json(), "B": state.b.to_json()} if state else None),
+        "forfeit_round": (fight.state.round_index if result.get("kind") in ("FORFEIT", "DOUBLE_FAULT") else None),
+        "settlement": settlement,
         # This export comes from contract state, not raw confirmed transactions,
         # so inclusion is not independently established here (api.md §4).
         "evidence": {"inputs_confirmed": "UNAVAILABLE", "source": "same-source export"},
@@ -123,6 +136,7 @@ def manifest(c: CombatContract) -> dict:
         "ruleset_digest": c.m.ruleset.digest.hex(), "semantic_version": c.m.ruleset.semantic_version,
         "timing_profiles": {str(k): {"commit_ticks": v[0], "reveal_ticks": v[1]} for k, v in c.m.timing.items()},
         "tiers": {str(k): str(v) for k, v in c.m.tiers.items()},
+        "match_interval_ticks": c.m.match_interval,
         "fee_profiles": {str(k): {"rake_bps": v.rake_bps, "house_bps": v.house_bps, "dev_bps": v.dev_bps,
                                   "share_bps": v.share_bps} for k, v in c.m.fees.items()},
         "supported_schemas": [SCHEMA.format(k) for k in ("replay", "fight", "fighter", "book", "events", "npcs")],
@@ -162,9 +176,14 @@ def export_all(c: CombatContract, root: Path) -> list[Path]:
         _write(p, doc)
         out.append(p)
     put("manifest.json", manifest(c))
+    from .rules import CANDIDATE_1, RULESET_DIR, digest_of
+    artifact = json.loads((RULESET_DIR / f"{CANDIDATE_1}.json").read_text())
+    if digest_of(artifact) != c.m.ruleset.digest:
+        raise ValueError("the packaged ruleset artifact is not the contract's ruleset")
     put(f"rulesets/{c.m.ruleset.digest.hex()}.json", {"schema": SCHEMA.format("ruleset"),
                                                      "semantic_version": c.m.ruleset.semantic_version,
-                                                     "digest": c.m.ruleset.digest.hex()})
+                                                     "digest": c.m.ruleset.digest.hex(),
+                                                     "rules": artifact})
     put("book.json", book(c))
     put("npcs.json", npc_list())
     for fid in c.fights:

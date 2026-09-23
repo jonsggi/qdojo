@@ -159,6 +159,7 @@ class Contest:
     result: dict | None = None
     replay: bool = False
     starts_key: tuple | None = None   # ranked pair/epoch counter to reverse on a service void
+    settlement: dict | None = None    # credit deltas and rating changes, recorded once at termination
 
 
 @dataclass
@@ -900,6 +901,8 @@ class CombatContract:
         fa, fb = self.fighters[c.a.fighter_id], self.fighters[c.b.fighter_id]
         side = {"A": c.a, "B": c.b}
         kind, winner = result["kind"], result.get("winner")
+        credits_before = dict(self.ledger.credits)
+        ratings_before = {"A": (fa.lifetime, fa.rating_in(c.season)), "B": (fb.lifetime, fb.rating_in(c.season))}
         if kind == "DOUBLE_FAULT":
             self._fault(fa, t)
             self._fault(fb, t)
@@ -917,6 +920,15 @@ class CombatContract:
         for ftr in (fa, fb):
             if c.mode != Mode.CUP and ftr.lock == CONTEST and ftr.lock_ref == c.contest_id:
                 ftr.lock, ftr.lock_ref = IDLE, 0
+        c.settlement = {
+            "credits": {who: self.ledger.credits.get(who, 0) - credits_before.get(who, 0)
+                        for who in set(self.ledger.credits) | set(credits_before)
+                        if self.ledger.credits.get(who, 0) != credits_before.get(who, 0)},
+            "ratings": {"A": {"lifetime": [ratings_before["A"][0], fa.lifetime],
+                              "season": [ratings_before["A"][1], fa.rating_in(c.season)]},
+                        "B": {"lifetime": [ratings_before["B"][0], fb.lifetime],
+                              "season": [ratings_before["B"][1], fb.rating_in(c.season)]}},
+        }
         self._emit("CONTEST_SETTLED", c.contest_id, kind, winner or "-")
         if c.mode == Mode.CUP:
             self._cup_pairing_done(c, t)

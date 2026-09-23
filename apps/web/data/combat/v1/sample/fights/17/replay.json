@@ -101,6 +101,8 @@
       "cost": 12,
       "cost_paid": 12,
       "base_damage": 14,
+      "opening_bonus": 0,
+      "power_bonus": 0,
       "bonus_damage": 0,
       "computed_damage": 14,
       "actual_hp_lost": 14,
@@ -131,6 +133,8 @@
       "cost": 12,
       "cost_paid": 12,
       "base_damage": 14,
+      "opening_bonus": 0,
+      "power_bonus": 0,
       "bonus_damage": 0,
       "computed_damage": 14,
       "actual_hp_lost": 14,
@@ -164,6 +168,8 @@
       "cost": 0,
       "cost_paid": 0,
       "base_damage": 0,
+      "opening_bonus": 0,
+      "power_bonus": 0,
       "bonus_damage": 0,
       "computed_damage": 0,
       "actual_hp_lost": 12,
@@ -194,6 +200,8 @@
       "cost": 6,
       "cost_paid": 6,
       "base_damage": 12,
+      "opening_bonus": 0,
+      "power_bonus": 0,
       "bonus_damage": 0,
       "computed_damage": 12,
       "actual_hp_lost": 0,
@@ -228,6 +236,8 @@
       "cost": 12,
       "cost_paid": 12,
       "base_damage": 14,
+      "opening_bonus": 0,
+      "power_bonus": 0,
       "bonus_damage": 0,
       "computed_damage": 14,
       "actual_hp_lost": 12,
@@ -258,6 +268,8 @@
       "cost": 6,
       "cost_paid": 6,
       "base_damage": 8,
+      "opening_bonus": 4,
+      "power_bonus": 0,
       "bonus_damage": 4,
       "computed_damage": 12,
       "actual_hp_lost": 14,
@@ -292,6 +304,8 @@
       "cost": 0,
       "cost_paid": 0,
       "base_damage": 0,
+      "opening_bonus": 0,
+      "power_bonus": 0,
       "bonus_damage": 0,
       "computed_damage": 0,
       "actual_hp_lost": 12,
@@ -322,6 +336,8 @@
       "cost": 6,
       "cost_paid": 6,
       "base_damage": 12,
+      "opening_bonus": 0,
+      "power_bonus": 0,
       "bonus_damage": 0,
       "computed_damage": 12,
       "actual_hp_lost": 0,
@@ -356,6 +372,8 @@
       "cost": 12,
       "cost_paid": 12,
       "base_damage": 14,
+      "opening_bonus": 0,
+      "power_bonus": 0,
       "bonus_damage": 0,
       "computed_damage": 14,
       "actual_hp_lost": 12,
@@ -386,6 +404,8 @@
       "cost": 6,
       "cost_paid": 6,
       "base_damage": 8,
+      "opening_bonus": 4,
+      "power_bonus": 0,
       "bonus_damage": 4,
       "computed_damage": 12,
       "actual_hp_lost": 14,
@@ -420,6 +440,8 @@
       "cost": 0,
       "cost_paid": 0,
       "base_damage": 0,
+      "opening_bonus": 0,
+      "power_bonus": 0,
       "bonus_damage": 0,
       "computed_damage": 0,
       "actual_hp_lost": 18,
@@ -450,6 +472,8 @@
       "cost": 12,
       "cost_paid": 12,
       "base_damage": 18,
+      "opening_bonus": 0,
+      "power_bonus": 0,
       "bonus_damage": 0,
       "computed_damage": 18,
       "actual_hp_lost": 0,
@@ -571,6 +595,8 @@
       "cost": 12,
       "cost_paid": 12,
       "base_damage": 14,
+      "opening_bonus": 0,
+      "power_bonus": 0,
       "bonus_damage": 0,
       "computed_damage": 14,
       "actual_hp_lost": 0,
@@ -601,6 +627,8 @@
       "cost": 9,
       "cost_paid": 9,
       "base_damage": 0,
+      "opening_bonus": 0,
+      "power_bonus": 0,
       "bonus_damage": 0,
       "computed_damage": 0,
       "actual_hp_lost": 14,
@@ -634,6 +662,8 @@
       "cost": 0,
       "cost_paid": 0,
       "base_damage": 0,
+      "opening_bonus": 0,
+      "power_bonus": 0,
       "bonus_damage": 0,
       "computed_damage": 0,
       "actual_hp_lost": 18,
@@ -664,6 +694,8 @@
       "cost": 12,
       "cost_paid": 12,
       "base_damage": 18,
+      "opening_bonus": 0,
+      "power_bonus": 0,
       "bonus_damage": 0,
       "computed_damage": 18,
       "actual_hp_lost": 0,
@@ -697,6 +729,8 @@
       "cost": 12,
       "cost_paid": 12,
       "base_damage": 14,
+      "opening_bonus": 0,
+      "power_bonus": 0,
       "bonus_damage": 0,
       "computed_damage": 14,
       "actual_hp_lost": 2,
@@ -728,6 +762,8 @@
       "cost": 12,
       "cost_paid": 12,
       "base_damage": 14,
+      "opening_bonus": 0,
+      "power_bonus": 0,
       "bonus_damage": 0,
       "computed_damage": 14,
       "actual_hp_lost": 14,
@@ -739,10 +775,7 @@
      }
     }
    ],
-   "break_recovery": {
-    "A": 0,
-    "B": 0
-   },
+   "break_recovery": null,
    "end": {
     "round_index": 1,
     "A": {
@@ -816,6 +849,47 @@
    "opening": 0,
    "guard_streak": 0,
    "power_available": 1
+  }
+ },
+ "forfeit_round": null,
+ "settlement": {
+  "contest_result": {
+   "kind": "COMBAT",
+   "winner": "B",
+   "last_result": "KO",
+   "tick": "526"
+  },
+  "stake_per_fighter": "1000",
+  "series_fights": [
+   "17"
+  ],
+  "credits": {
+   "03fd7fcb2e654d48713927e156c897b0d631d61b84e75262cf224638d943019d": "1900",
+   "1afcb2deee8f9c4e35489c9e5112ba436269622468e3c6b045a6fcaaa64a1efa": "60",
+   "1ecdef5f811c88fd8311f67fca2cb9c42a04037b1eaa4c3b6397b9828743eb48": "30",
+   "4eb8c0ec15eb3b4c9d9172d6a3d40fc069877270807f89371688e5d6050e3ef9": "10"
+  },
+  "ratings": {
+   "A": {
+    "lifetime": [
+     955,
+     943
+    ],
+    "season": [
+     955,
+     943
+    ]
+   },
+   "B": {
+    "lifetime": [
+     1059,
+     1071
+    ],
+    "season": [
+     1059,
+     1071
+    ]
+   }
   }
  },
  "evidence": {

@@ -5,7 +5,7 @@ never clamped into plausibility (docs/combat.md §7).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum, IntEnum
 
 from .rules import Ruleset
@@ -134,7 +134,9 @@ class SideTrace:
     cost: int               # full cost of the intended action, including power
     cost_paid: int          # 0 when exhausted
     base_damage: int        # dealt, from the matrix
-    bonus_damage: int       # opening + power, only when base > 0
+    opening_bonus: int      # +opening_damage when base > 0 and the pre-beat opening was 1
+    power_bonus: int        # +power_damage when base > 0 on the executed designated slot
+    bonus_damage: int       # opening_bonus + power_bonus
     computed_damage: int    # dealt, base + bonus
     actual_hp_lost: int     # received, after clamping at zero
     strain: int             # stamina actually removed by guard strain
@@ -146,7 +148,8 @@ class SideTrace:
             "before": self.before.to_json(), "after": self.after.to_json(),
             "intended": self.intended.name, "effective": self.effective.name,
             "power": self.power, "cost": self.cost, "cost_paid": self.cost_paid,
-            "base_damage": self.base_damage, "bonus_damage": self.bonus_damage,
+            "base_damage": self.base_damage, "opening_bonus": self.opening_bonus,
+            "power_bonus": self.power_bonus, "bonus_damage": self.bonus_damage,
             "computed_damage": self.computed_damage, "actual_hp_lost": self.actual_hp_lost,
             "strain": self.strain, "recovered": self.recovered,
             "reasons": [r.value for r in self.reasons],
@@ -192,7 +195,7 @@ class RoundResult:
     plan_b: Plan
     beats: tuple[BeatTrace, ...]
     end: FightState                     # next round's start, or the terminal state
-    break_recovery: tuple[int, int] = field(default=(0, 0))   # stamina actually added, A and B
+    break_recovery: tuple[int, int] | None = None   # stamina actually added at the break; None when terminal
 
     @property
     def executed(self) -> int:
@@ -205,6 +208,7 @@ class RoundResult:
             "plans": {"A": self.plan_a.to_json(), "B": self.plan_b.to_json()},
             "executed_beats": self.executed,
             "beats": [b.to_json() for b in self.beats],
-            "break_recovery": {"A": self.break_recovery[0], "B": self.break_recovery[1]},
+            "break_recovery": ({"A": self.break_recovery[0], "B": self.break_recovery[1]}
+                               if self.break_recovery is not None else None),
             "end": self.end.to_json(),
         }

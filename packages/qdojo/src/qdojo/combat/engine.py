@@ -108,16 +108,13 @@ def resolve_beat(rules: Ruleset, a: FighterState, b: FighterState,
     base = (rules.damage[eff[0]][eff[1]], rules.damage[eff[1]][eff[0]])
 
     # 5. Bonuses only turn positive base damage into more damage.
-    dealt = []
+    dealt, opening_bonus, power_bonus = [], [], []
     for i in (0, 1):
-        d = base[i]
-        if d > 0:
-            if snaps[i].opening:
-                d += rules.opening_damage
-            if powers[i] and eff[i] is intents[i]:
-                d += rules.power_damage
-        dealt.append(d)
-    bonus = (dealt[0] - base[0], dealt[1] - base[1])
+        ob = rules.opening_damage if base[i] > 0 and snaps[i].opening else 0
+        pb = rules.power_damage if base[i] > 0 and powers[i] and eff[i] is intents[i] else 0
+        opening_bonus.append(ob)
+        power_bonus.append(pb)
+        dealt.append(base[i] + ob + pb)
 
     sides, nexts = [], []
     for i in (0, 1):
@@ -152,7 +149,8 @@ def resolve_beat(rules: Ruleset, a: FighterState, b: FighterState,
         nexts.append(nxt)
         sides.append(dict(
             before=s, after=nxt, intended=intents[i], effective=own, power=powers[i],
-            cost=cost, cost_paid=paid, base_damage=base[i], bonus_damage=bonus[i],
+            cost=cost, cost_paid=paid, base_damage=base[i], opening_bonus=opening_bonus[i],
+            power_bonus=power_bonus[i], bonus_damage=opening_bonus[i] + power_bonus[i],
             computed_damage=dealt[i], actual_hp_lost=s.hp - hp, strain=strain,
             recovered=after_recovery - stamina,
             reasons=_reasons(rules, s, nxt, intents[i], own, opp, powers[i],

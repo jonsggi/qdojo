@@ -42,7 +42,63 @@
   "winner": "B",
   "result": "FORFEIT"
  },
- "final": null,
+ "final": {
+  "A": {
+   "hp": 100,
+   "stamina": 60,
+   "opening": 0,
+   "guard_streak": 0,
+   "power_available": 1
+  },
+  "B": {
+   "hp": 100,
+   "stamina": 60,
+   "opening": 0,
+   "guard_streak": 0,
+   "power_available": 1
+  }
+ },
+ "forfeit_round": 0,
+ "settlement": {
+  "contest_result": {
+   "kind": "FORFEIT",
+   "winner": "B",
+   "stage": "COMMIT",
+   "tick": "28"
+  },
+  "stake_per_fighter": "1000",
+  "series_fights": [
+   "1"
+  ],
+  "credits": {
+   "1afcb2deee8f9c4e35489c9e5112ba436269622468e3c6b045a6fcaaa64a1efa": "60",
+   "1ecdef5f811c88fd8311f67fca2cb9c42a04037b1eaa4c3b6397b9828743eb48": "30",
+   "4eb8c0ec15eb3b4c9d9172d6a3d40fc069877270807f89371688e5d6050e3ef9": "10",
+   "54458abb4876cccc010ec0759f23cef998217250b1a8c3382e7c140d275cbb80": "1900"
+  },
+  "ratings": {
+   "A": {
+    "lifetime": [
+     1000,
+     984
+    ],
+    "season": [
+     1000,
+     984
+    ]
+   },
+   "B": {
+    "lifetime": [
+     1000,
+     1016
+    ],
+    "season": [
+     1000,
+     1016
+    ]
+   }
+  }
+ },
  "evidence": {
   "inputs_confirmed": "UNAVAILABLE",
   "source": "same-source export"
