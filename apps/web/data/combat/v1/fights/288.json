@@ -2,34 +2,34 @@
  "schema": "qdojo.combat.fight.v1",
  "network_id": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
  "contract_id": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
- "generated_tick": "2817",
+ "generated_tick": "11017",
  "source": "reference-contract-state",
- "fight_id": "92",
- "contest_id": "92",
+ "fight_id": "288",
+ "contest_id": "288",
  "phase": "COMMIT",
  "round_index": 2,
  "state": {
   "round_index": 2,
   "A": {
-   "hp": 92,
-   "stamina": 15,
-   "opening": 1,
+   "hp": 50,
+   "stamina": 50,
+   "opening": 0,
    "guard_streak": 0,
    "power_available": 1
   },
   "B": {
-   "hp": 84,
-   "stamina": 40,
+   "hp": 48,
+   "stamina": 55,
    "opening": 0,
    "guard_streak": 0,
    "power_available": 1
   },
   "outcome": null
  },
- "context_digest": "a9ea4bafc36f8b53d1a70fee143f9e89162bd25f69d3e1340b91fafcad7af432",
- "round_state_digest": "39f52267b8c674686bb38e0d9404f5332f8f142da1bfdc382f0f7e85fd6e7a68",
- "commit_last": "2822",
- "reveal_last": "2834",
+ "context_digest": "94696f1fab2eaf8b5fc1d1084c3ce3f608e383ffba74d8ced6caf2b6e8de8f49",
+ "round_state_digest": "2ebe5f5271a2bcf33e72ce9f5bfe95e33448664d24c26b0c8cf1029a4ef060ca",
+ "commit_last": "11018",
+ "reveal_last": "11030",
  "committed": [
   "A",
   "B"
@@ -43,8 +43,8 @@
    "operator": "09e28f80900c8400886c515d694ddc387c4046675e4d969d3b4019f28d579f79",
    "auth_version": 1,
    "payout_recipient": "09e28f80900c8400886c515d694ddc387c4046675e4d969d3b4019f28d579f79",
-   "lifetime_rating": 885,
-   "season_rating": 885
+   "lifetime_rating": 909,
+   "season_rating": 909
   },
   "B": {
    "fighter_id": "c6b3e0788459f509f631cd5bff38aeee64e7686a74f19b14e9f6600e8f463707",
@@ -52,8 +52,8 @@
    "operator": "6ee260096467bbd2b0fc7cfd04603dc02a62ae12d565ac8a393a21bcd2c70a3e",
    "auth_version": 1,
    "payout_recipient": "6ee260096467bbd2b0fc7cfd04603dc02a62ae12d565ac8a393a21bcd2c70a3e",
-   "lifetime_rating": 950,
-   "season_rating": 950
+   "lifetime_rating": 893,
+   "season_rating": 893
   }
  },
  "mode": "ranked"
