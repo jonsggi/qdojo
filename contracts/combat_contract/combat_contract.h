@@ -913,15 +913,14 @@ inline bool eligible(State& s, Host& h, const Id& who, uint16_t op, const uint8_
 }
 
 // contract.py _refund: rejected attachments become withdrawal credit for slot
-// holders (a slot is given while there is room); otherwise the amount is paid
-// straight back, and if that fails it is still owed as credit.
+// holders; anyone else is paid straight back and never given a slot, and if
+// that transfer fails the amount is still owed as credit.
 inline int64_t refund(State& s, Host& h, const Id& who, int64_t amount) {
     if (!amount) return 0;
     Body b{};
     b_id(b, who);
     b_u64(b, uint64_t(amount));
-    if (holds_slot(s, who) || s.n_slots < s.m.max_accounts) {
-        add_slot(s, who);
+    if (holds_slot(s, who)) {
         credit(s, who, amount);
         emit(s, EV_REFUND_CREDIT, b);
         return amount;

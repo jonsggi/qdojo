@@ -383,12 +383,12 @@ class CombatContract:
 
     def _refund(self, who: bytes, amount: int) -> int:
         """Rejected attachments become withdrawal credit for account holders. An
-        identity without a slot is paid straight back instead of taking one; if
-        that transfer fails the amount is still owed, as credit, never kept."""
+        identity without a slot is paid straight back and never given one (so
+        strangers cannot exhaust the account table); if that transfer fails the
+        amount is still owed, as credit outside the slot table, never kept."""
         if not amount:
             return 0
-        if who in self.accounts or len(self.accounts) < self.m.max_accounts:
-            self.accounts.add(who)
+        if who in self.accounts:
             self.ledger.refund_attachment(who, amount)
             self._emit("REFUND_CREDIT", who, amount)
             return amount

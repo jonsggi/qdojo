@@ -158,7 +158,7 @@ def beam_response(rules: Ruleset, me, opp, opp_plans: list[Plan], beam: int = 48
     if hit is not None:
         return hit
     plan = _beam(rules, me, opp, opp_plans, beam)
-    if len(_BEAM_CACHE) > 200_000:
+    if len(_BEAM_CACHE) > 20_000:          # bounded: the campaign runs on a small host
         _BEAM_CACHE.clear()
     _BEAM_CACHE[key] = plan
     return plan

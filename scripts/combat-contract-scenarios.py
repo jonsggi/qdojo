@@ -278,18 +278,23 @@ class Scenario:
         self.ok(w.send(ADMIN, Op.ADMIN_RETIRE_RULESET, ruleset_digest=c.m.ruleset.digest))
         self.ok(U[1].enter(), Code.RULESET_RETIRED)
 
-        # Strangers: no slot for a zero-QU request; attachments take the last
-        # slots as credit; then a new registrant gets FULL, and further
-        # attachments are paid straight back (one payback fails: still credit).
+        # Strangers never get a slot: a zero-QU request is refused, and an
+        # attachment is paid straight back. Legitimate registrants fill the
+        # table; then a new registrant gets FULL, and a stranger whose payback
+        # fails is still owed the amount as credit.
         s0 = identity("sc-stranger")
         w.mint(s0, 10_000)
         self.ok(w.send(s0, Op.WITHDRAW), Code.NOT_OWNER)
         self.ok(w.send(s0, Op.QUEUE_CANCEL, offer_id=1), Code.NOT_OWNER)
+        before = len(c.accounts)
+        self.ok(w.raw(s0, bytes(512), 7), Code.BAD_FRAME)
+        assert len(c.accounts) == before, "a stranger's refund must not take a slot"
         i = 0
         while len(c.accounts) < MAX_ACCOUNTS:
-            who = identity(f"sc-stranger-{i}")
-            w.mint(who, 100)
-            self.ok(w.raw(who, bytes(512), 7), Code.BAD_FRAME)
+            fid, owner = identity(f"fighter:sc-fill-{i}"), identity(f"owner:sc-fill-{i}")
+            w.owners[fid] = owner
+            self.ok(w.send(ADMIN, Op.ADMIN_REGISTER_ASSET, fighter_id=fid, registry_version=1, house_npc=0))
+            self.ok(w.send(owner, Op.REGISTER_FIGHTER, fighter_id=fid, registry_version=1))
             i += 1
         late_fid, late_owner = identity("fighter:sc-late"), identity("owner:sc-late")
         w.owners[late_fid] = late_owner
