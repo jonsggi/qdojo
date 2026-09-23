@@ -2,34 +2,34 @@
  "schema": "qdojo.combat.fight.v1",
  "network_id": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
  "contract_id": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
- "generated_tick": "2777",
+ "generated_tick": "2817",
  "source": "reference-contract-state",
  "fight_id": "93",
  "contest_id": "93",
  "phase": "COMMIT",
- "round_index": 1,
+ "round_index": 2,
  "state": {
-  "round_index": 1,
+  "round_index": 2,
   "A": {
-   "hp": 68,
-   "stamina": 57,
+   "hp": 28,
+   "stamina": 47,
    "opening": 0,
-   "guard_streak": 1,
+   "guard_streak": 0,
    "power_available": 0
   },
   "B": {
-   "hp": 86,
-   "stamina": 60,
-   "opening": 0,
+   "hp": 40,
+   "stamina": 56,
+   "opening": 1,
    "guard_streak": 0,
    "power_available": 1
   },
   "outcome": null
  },
  "context_digest": "ed692e444453275618beca9026fca0e975f52184b12521c6c557e78f60e382b0",
- "round_state_digest": "3c49b38e1964837e0f3e5e8fdda9a352e2a55dbd1a7f87740a2981c7e8d2d984",
- "commit_last": "2797",
- "reveal_last": "2809",
+ "round_state_digest": "19839e70a442cc03d03078f970d78cc1e65adea9490211f52d2ff4cec485a638",
+ "commit_last": "2822",
+ "reveal_last": "2834",
  "committed": [
   "A",
   "B"
