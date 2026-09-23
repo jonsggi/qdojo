@@ -169,4 +169,7 @@ def add_parser(sub):
     d.add_argument("--suite", default="test", help="seed namespace; keep training and test suites apart")
     d.add_argument("--json", action="store_true")
     d.set_defaults(fn=cmd_evaluate)
+
+    from . import chain_cli
+    chain_cli.add_parsers(s)
     return s
