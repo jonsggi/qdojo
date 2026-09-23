@@ -80,3 +80,10 @@ def test_contract_parity_journals_replay_to_their_digest():
         head, records = store.load(path)
         assert records[-1]["k"] == "digest"
         store.replay(manifest_from_header(head), head, records)     # raises on digest mismatch
+
+
+def test_npc_fixtures_match_the_roster():
+    import subprocess
+    import sys
+    r = subprocess.run([sys.executable, str(ROOT / "scripts/combat-npc-fixtures.py"), "--check"])
+    assert r.returncode == 0
