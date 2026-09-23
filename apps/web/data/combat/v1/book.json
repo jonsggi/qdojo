@@ -2,27 +2,16 @@
  "schema": "qdojo.combat.book.v1",
  "network_id": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
  "contract_id": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
- "generated_tick": "3387",
+ "generated_tick": "3507",
  "source": "reference-contract-state",
  "offers": [
-  {
-   "offer_id": "325",
-   "kind": "RANKED",
-   "fighter_id": "b598e2991617e1b44046ad1c9c1efb9909de234506b3aae254ad2578dba59dee",
-   "rating": 913,
-   "stake": "1000",
-   "window": 200,
-   "max_gap": 200,
-   "expires_tick": "3524",
-   "opponent_id": null
-  },
   {
    "offer_id": "334",
    "kind": "RANKED",
    "fighter_id": "40685a53c36a488297c0fdfdad934a83b41698434a54e8edc43a79a26b0575b3",
    "rating": 1164,
    "stake": "1000",
-   "window": 150,
+   "window": 200,
    "max_gap": 200,
    "expires_tick": "3571",
    "opponent_id": null
@@ -33,42 +22,9 @@
    "fighter_id": "c0745b0e546d6f3bd4f605570e9012b0f716c9e21376ef2fdbecf3dad43af7f4",
    "rating": 1163,
    "stake": "1000",
-   "window": 100,
+   "window": 200,
    "max_gap": 200,
    "expires_tick": "3599",
-   "opponent_id": null
-  },
-  {
-   "offer_id": "338",
-   "kind": "RANKED",
-   "fighter_id": "a692c798ab7ca1a6746249209d28ccf50d8e41eae175df78d468ab29ab333e71",
-   "rating": 1039,
-   "stake": "1000",
-   "window": 100,
-   "max_gap": 200,
-   "expires_tick": "3600",
-   "opponent_id": null
-  },
-  {
-   "offer_id": "340",
-   "kind": "RANKED",
-   "fighter_id": "6a5efcca23410d1dc7300479ec0866de819043f8bea7ad91f5791d996065a79d",
-   "rating": 837,
-   "stake": "1000",
-   "window": 100,
-   "max_gap": 200,
-   "expires_tick": "3600",
-   "opponent_id": null
-  },
-  {
-   "offer_id": "342",
-   "kind": "RANKED",
-   "fighter_id": "82a8e7e488c616a769ba6d810379ac024498218904c3c4a40f3b47739756d58c",
-   "rating": 973,
-   "stake": "1000",
-   "window": 100,
-   "max_gap": 200,
-   "expires_tick": "3612",
    "opponent_id": null
   },
   {
@@ -77,20 +33,64 @@
    "fighter_id": "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
    "rating": 930,
    "stake": "1000",
-   "window": 100,
+   "window": 200,
    "max_gap": 200,
    "expires_tick": "3624",
    "opponent_id": null
   },
   {
-   "offer_id": "345",
+   "offer_id": "346",
    "kind": "RANKED",
-   "fighter_id": "2ecea2382f7f190d4aa65e280dec9ac09f0b937f8915dd30d4e09f41c1428bc9",
-   "rating": 1030,
+   "fighter_id": "fe8cd3d0fb944fdac2e671353a6a6e4ce1fcd0dc9ade519749a8ea44500f384d",
+   "rating": 1131,
+   "stake": "1000",
+   "window": 200,
+   "max_gap": 200,
+   "expires_tick": "3651",
+   "opponent_id": null
+  },
+  {
+   "offer_id": "354",
+   "kind": "RANKED",
+   "fighter_id": "a692c798ab7ca1a6746249209d28ccf50d8e41eae175df78d468ab29ab333e71",
+   "rating": 1052,
    "stake": "1000",
    "window": 100,
    "max_gap": 200,
-   "expires_tick": "3624",
+   "expires_tick": "3727",
+   "opponent_id": null
+  },
+  {
+   "offer_id": "356",
+   "kind": "RANKED",
+   "fighter_id": "82a8e7e488c616a769ba6d810379ac024498218904c3c4a40f3b47739756d58c",
+   "rating": 984,
+   "stake": "1000",
+   "window": 100,
+   "max_gap": 200,
+   "expires_tick": "3728",
+   "opponent_id": null
+  },
+  {
+   "offer_id": "357",
+   "kind": "RANKED",
+   "fighter_id": "6a5efcca23410d1dc7300479ec0866de819043f8bea7ad91f5791d996065a79d",
+   "rating": 826,
+   "stake": "1000",
+   "window": 100,
+   "max_gap": 200,
+   "expires_tick": "3728",
+   "opponent_id": null
+  },
+  {
+   "offer_id": "358",
+   "kind": "RANKED",
+   "fighter_id": "b598e2991617e1b44046ad1c9c1efb9909de234506b3aae254ad2578dba59dee",
+   "rating": 901,
+   "stake": "1000",
+   "window": 100,
+   "max_gap": 200,
+   "expires_tick": "3740",
    "opponent_id": null
   }
  ],
@@ -100,10 +100,10 @@
   "fights_in_use": 4
  },
  "active_fights": [
-  "145",
-  "146",
-  "147",
-  "148"
+  "152",
+  "153",
+  "154",
+  "155"
  ],
- "next_matching_tick": "3388"
+ "next_matching_tick": "3508"
 }
