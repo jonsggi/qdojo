@@ -92,6 +92,23 @@
     return sha(concat([ascii('qdojo/combat/rules/v1\0'), ascii(canonicalJson(rules))]));
   }
 
+  /* The export's ruleset artifact wins when it hashes to the manifest digest;
+   * the embedded copy is the fallback, and is used only if it hashes there too.
+   * Returns { rules, source, digest, ok, note }. */
+  async function chooseRuleset(opts) {
+    const sha = opts.sha256 || defaultSha256(), want = opts.manifestDigest;
+    const ex = opts.exported && opts.exported.rules;
+    if (ex && typeof ex === 'object') {
+      try {
+        const d = await rulesetDigest(ex, sha);
+        if (!want || d === want) return { rules: ex, source: 'export', digest: d, ok: !!want, note: 'Loaded from the export; its SHA-256 ' + (want ? 'equals the manifest digest.' : 'could not be compared (no manifest).') };
+      } catch (e) { /* malformed artifact: fall through to the embedded copy */ }
+    }
+    const d = await rulesetDigest(opts.embedded, sha);
+    const why = ex ? 'The export\'s ruleset artifact does not hash to the manifest digest; ' : 'The export has no ruleset body; ';
+    return { rules: opts.embedded, source: 'embedded', digest: d, ok: !want || d === want, note: why + 'using the embedded copy, which ' + (!want ? 'could not be compared.' : d === want ? 'hashes to the manifest digest.' : 'does NOT hash to the manifest digest.') };
+  }
+
   // ---- fight context (protocol.md section 2) ---------------------------------
 
   const CONTEXT_LEN = 254 + 2 * 136;
@@ -170,10 +187,12 @@
 
   const namesOf = ids => ids.map(i => NAMES[i]);
   const TRACE_KEYS = ['intended', 'effective', 'power', 'cost', 'cost_paid', 'base_damage', 'bonus_damage', 'computed_damage', 'actual_hp_lost', 'strain', 'recovered'];
+  // Newer exports split the bonus; older ones only carry bonus_damage.
+  const OPTIONAL_TRACE_KEYS = ['opening_bonus', 'power_bonus'];
 
   function compareTrace(mine, theirs, where) {
     if (!theirs) return where + ': beat missing from the export';
-    for (const k of TRACE_KEYS) {
+    for (const k of TRACE_KEYS.concat(OPTIONAL_TRACE_KEYS.filter(k => k in theirs))) {
       const want = (k === 'intended' || k === 'effective') ? NAMES[mine[k]] : mine[k];
       if (theirs[k] !== want) return where + ' ' + k + ': export says ' + JSON.stringify(theirs[k]) + ', engine says ' + JSON.stringify(want);
     }
@@ -210,6 +229,9 @@
       if (JSON.stringify(theirsBr) !== JSON.stringify(br ? { A: br.a, B: br.b } : null)) bad.push(tag + ': break recovery differs');
     });
     const forfeit = isForfeit(replay);
+    if (forfeit && 'forfeit_round' in replay && replay.forfeit_round !== derived.end.round_index) {
+      bad.push('forfeit_round: export says ' + replay.forfeit_round + ', the replayed state is at round ' + derived.end.round_index);
+    }
     if (!forfeit) {
       const o = replay.outcome || {};
       if (!derived.outcome) bad.push('the revealed rounds do not end the fight, but the export claims ' + (o.result || 'a result'));
@@ -220,7 +242,7 @@
     } else if (derived.outcome) {
       bad.push('the export records a forfeit, but the revealed rounds already ended the fight by ' + derived.outcome.result);
     }
-    if (replay.final && derived.rounds.length) {
+    if (replay.final && (derived.rounds.length || forfeit)) {
       if (!stateEq(replay.final.A, derived.end.a) || !stateEq(replay.final.B, derived.end.b)) bad.push('final state differs from the replayed one');
     }
     return bad;
@@ -228,7 +250,8 @@
 
   function isForfeit(x) {
     const r = x && x.result;
-    return !!r && (r.kind === 'FORFEIT' || r.result === 'FORFEIT' || (x.outcome && x.outcome.result === 'FORFEIT'));
+    const k = ['FORFEIT', 'DOUBLE_FAULT', 'VOID'];
+    return !!r && (k.includes(r.kind) || k.includes(r.result) || !!(x.outcome && k.includes(x.outcome.result)));
   }
 
   // ---- verification levels (api.md section 4) --------------------------------
@@ -350,11 +373,124 @@
             (isForfeit(replay) ? 'the pre-forfeit state match (forfeit is a timeout, not replayed).' : 'the outcome (' + derived.outcome.result + ') match.'), bad);
     }
 
-    // 5. accounting and rating: nothing in this export to check it against.
-    add('accounting', 'Accounting and rating follow the outcome', 'UNAVAILABLE',
-      'The export carries no pre/post ratings or credits for this fight; this page makes no payout claim.');
+    // 5. accounting and rating, recomputed from the settlement and the committed terms.
+    const acc = ctx ? checkSettlement(replay, ctx, derived) : { status: 'FAIL', evidence: 'Fight context unreadable.', details: [] };
+    add('accounting', 'Accounting and rating follow the outcome', acc.status, acc.evidence, acc.details);
 
     return { checks, level: levelOf(checks), derived };
+  }
+
+  // ---- settlement (api.md section 4 check 5) ----------------------------------
+
+  const BPS = 10000n;
+
+  /* docs/competition.md section 1: integer, zero-sum, from both OLD ratings.
+   * Returns the amount moved from B to A. */
+  function ratingDelta(ra, rb, scoreA) {
+    const ea = Math.min(1900, Math.max(100, 1000 + 2 * (ra - rb)));
+    const raw = 32 * (scoreA - ea);
+    let d = Math.sign(raw) * Math.floor(Math.abs(raw) / 2000);
+    if (d > 0) d = Math.min(d, rb, 3000 - ra);
+    else if (d < 0) d = -Math.min(-d, ra, 3000 - rb);
+    return d || 0;
+  }
+
+  /* Protocol fee split: rake = floor(purse * rake_bps / 1e4); dev and share
+   * are floored shares of the rake; the house keeps the rest. */
+  function splitPurse(purse, t) {
+    const rake = purse * BigInt(t.rake_bps) / BPS;
+    const dev = rake * BigInt(t.dev_bps) / BPS, share = rake * BigInt(t.share_bps) / BPS;
+    return { winner: purse - rake, rake, house: rake - dev - share, dev, share };
+  }
+
+  function checkSettlement(replay, ctx, derived) {
+    const st = replay.settlement;
+    const details = [];
+    if (!st) {
+      return {
+        status: 'UNAVAILABLE', details,
+        evidence: 'No settlement on this fight' + (replay.mode === 'duel' || replay.mode === 'cup' ? ' (a series settles once, on its last fight)' : '') + '; nothing to check.',
+      };
+    }
+    if (ctx.mode === 'cup') return { status: 'UNAVAILABLE', details, evidence: 'Cup purses settle at the cup level, not per contest.' };
+    let fail = false;
+    const note = (ok, text) => { details.push((ok ? 'PASS ' : 'FAIL ') + text); if (!ok) fail = true; };
+    const cr = st.contest_result || {}, kind = cr.kind, winner = cr.winner == null ? null : cr.winner;
+    let stake;
+    try { stake = BigInt(st.stake_per_fighter); } catch (e) { stake = -1n; }
+    note(stake >= 0n && String(stake) === ctx.stake_per_fighter, 'stake ' + st.stake_per_fighter + ' per fighter equals the committed context (' + ctx.stake_per_fighter + ')');
+    const series = st.series_fights || [];
+    note(series[series.length - 1] === String(replay.fight_id), 'settled on the last fight of its series (' + series.join(', ') + ')');
+    // A one-fight contest's result must agree with this fight.
+    if (series.length === 1) {
+      const mine = isForfeit(replay) ? (replay.result || {}) : { kind: 'COMBAT', winner: derived.outcome ? derived.outcome.winner : undefined };
+      const mw = mine.winner == null ? null : mine.winner;
+      note(kind === mine.kind && winner === mw, 'contest result ' + kind + ' winner ' + winner + ' matches this fight (' + mine.kind + ' winner ' + mw + ')');
+    } else if (!isForfeit(replay) && kind === 'COMBAT') {
+      note(derived.outcome && derived.outcome.winner === winner, 'series winner ' + winner + ' also won this deciding fight');
+      details.push('NOTE earlier series fights (' + series.slice(0, -1).join(', ') + ') are verified on their own pages, not re-tallied here');
+    }
+    // Credits: exact deltas at termination.
+    const got = {};
+    for (const [who, v] of Object.entries(st.credits || {})) {
+      let n = null;
+      try { n = /^[0-9]+$/.test(String(v)) ? BigInt(v) : null; } catch (e) { n = null; }
+      if (n === null) note(false, 'credit to ' + who.slice(0, 8) + '... is not a decimal amount: ' + v);
+      else if (n !== 0n) got[who] = n;
+    }
+    if (stake >= 0n) {
+      if ((kind === 'COMBAT' || kind === 'FORFEIT') && (winner === 'A' || winner === 'B')) {
+        // A duel's single rake applies to the series purse: one split, once.
+        const sp = splitPurse(2n * stake, ctx);
+        const exp = {};
+        const add = (who, v) => { if (v > 0n) exp[who] = (exp[who] || 0n) + v; };
+        add(ctx.participants[winner].payout_recipient, sp.winner);
+        add(ctx.house_recipient, sp.house);
+        add(ctx.dev_recipient, sp.dev);
+        add(ctx.share_recipient, sp.share);
+        for (const k of new Set(Object.keys(got).concat(Object.keys(exp)))) {
+          note((got[k] || 0n) === (exp[k] || 0n), 'credit ' + k.slice(0, 8) + '...: export ' + String(got[k] || 0n) + ', expected ' + String(exp[k] || 0n));
+        }
+        details.push('NOTE purse ' + String(2n * stake) + ', rake ' + String(sp.rake) + ' (' + ctx.rake_bps + ' bps): winner ' + String(sp.winner) +
+          ', house ' + String(sp.house) + ', dev ' + String(sp.dev) + ', share ' + String(sp.share));
+      } else {
+        // Draw, double fault or void: each stake back to its payer, no rake.
+        // The payer is not in the export, so any identity of that side counts.
+        const sides = { A: 0n, B: 0n };
+        for (const [who, v] of Object.entries(got)) {
+          const s = SIDES.filter(x => [ctx.participants[x].owner, ctx.participants[x].operator, ctx.participants[x].payout_recipient].includes(who));
+          if (s.length !== 1) note(false, 'credit of ' + String(v) + ' to ' + who.slice(0, 8) + '... is not a refund to exactly one side');
+          else sides[s[0]] += v;
+        }
+        for (const x of SIDES) note(sides[x] === stake, 'side ' + x + ' refunded ' + String(sides[x]) + ', expected its stake ' + String(stake) + ' (no rake)');
+      }
+    }
+    // Ratings: ranked only; combat results and unilateral forfeits move them.
+    if (ctx.mode === 'ranked') {
+      const r = st.ratings;
+      if (!r || !r.A || !r.B) note(false, 'ranked settlement carries no ratings');
+      else {
+        const rated = kind === 'COMBAT' || kind === 'FORFEIT';
+        const score = winner === 'A' ? 2000 : winner === 'B' ? 0 : 1000;
+        for (const [key, snap] of [['lifetime', 'lifetime_rating'], ['season', 'season_rating']]) {
+          const [ap, aq] = r.A[key] || [], [bp, bq] = r.B[key] || [];
+          note(ap === ctx.participants.A[snap] && bp === ctx.participants.B[snap], key + ' pre ratings ' + ap + '/' + bp + ' equal the snapshot in the fight context');
+          const ok = Number.isInteger(ap) && Number.isInteger(bp) && ap >= 0 && bp >= 0 && ap <= 3000 && bp <= 3000;
+          const d = rated && ok ? ratingDelta(ap, bp, score) : 0;
+          note(ok && aq === ap + d && bq === bp - d, key + ' ' + ap + '/' + bp + ' -> ' + aq + '/' + bq +
+            (rated ? '; formula gives ' + (ap + d) + '/' + (bp - d) : '; unrated (' + kind + '), so unchanged'));
+        }
+      }
+    } else if (st.ratings) {
+      const same = SIDES.every(x => ['lifetime', 'season'].every(k => { const v = (st.ratings[x] || {})[k] || []; return v[0] === v[1]; }));
+      note(same, ctx.mode + ' fights never change ratings');
+    }
+    return {
+      status: fail ? 'FAIL' : 'PASS', details,
+      evidence: fail ? 'The settlement does not follow the outcome and the committed terms; see details.'
+        : 'Credits recomputed from the committed fee terms (rake ' + ctx.rake_bps + ' bps)' + (ctx.mode === 'ranked' ? ' and ratings from the integer formula' : '; no rating change') +
+          ': all match. Credits are ledger entries, not proof that a withdrawal executed.',
+    };
   }
 
   // ---- replay timeline -------------------------------------------------------
@@ -387,7 +523,9 @@
     }
     const endState = derived.rounds.length ? derived.end : null;
     if (isForfeit(replay)) {
-      frames.push({ kind: 'forfeit', round: derived.rounds.length, a: endState ? endState.a : null, b: endState ? endState.b : null, result: replay.result });
+      // The state at the deadline is the re-derived one (the fight's start
+      // state when no round was played); no beat is invented.
+      frames.push({ kind: 'forfeit', round: derived.end.round_index, a: derived.end.a, b: derived.end.b, result: replay.result, played: derived.rounds.length });
     } else if (derived.outcome) {
       frames.push({ kind: 'end', round: derived.rounds[derived.rounds.length - 1].round_index, a: endState.a, b: endState.b, outcome: derived.outcome });
     }
@@ -399,6 +537,12 @@
   const OTHER = { A: 'B', B: 'A' };
 
   function outcomeLabel(x) {
+    if (isForfeit(x) && (x.result || {}).kind === 'DOUBLE_FAULT') {
+      return { kind: 'timeout', short: 'DOUBLE FAULT', text: 'DOUBLE FAULT: both fighters missed the ' + String(x.result.stage || 'deadline').toLowerCase() + ' deadline. No winner; stakes refunded. Not a knockout.' };
+    }
+    if (isForfeit(x) && (x.result || {}).kind === 'VOID') {
+      return { kind: 'timeout', short: 'VOID', text: 'VOID: the service could not complete this fight. No winner; stakes refunded. Not a knockout.' };
+    }
     if (isForfeit(x)) {
       const r = x.result || {};
       const loser = r.winner ? OTHER[r.winner] : null;
@@ -575,9 +719,9 @@
 
   return Object.freeze({
     NAMES, ID, LEVELS,
-    fromHex, toHex, concat, uLE, canonicalJson, rulesetDigest, defaultSha256,
+    fromHex, toHex, concat, uLE, canonicalJson, rulesetDigest, chooseRuleset, defaultSha256,
     parseContext, roundStateBytes, commitmentPreimage,
-    deriveReplay, replayMismatches, verifyReplay, levelOf, isForfeit,
+    deriveReplay, replayMismatches, verifyReplay, levelOf, isForfeit, ratingDelta, splitPurse, checkSettlement,
     timeline, outcomeLabel, explainSide, hindsight, fighterStats,
     randomSeed, practiceStart, practiceNpcPlan, practicePlay,
   });

@@ -240,3 +240,121 @@ test('practice is reproducible from its seed and the NPC is sealed before the hu
   assert.throws(() => L.practiceStart(R, 'scout-v1', 'nothex', 1));
   assert.throws(() => L.practicePlay(R, L.practiceStart(R, 'jabber-v1', seed, 1), { actions: [2, 2, 2, 2, 2, 2], power_slot: 0 }));
 });
+
+// ---- ruleset from the export, settlement (check 5), forfeit state ----------
+
+test('the export ruleset artifact is used when it hashes to the manifest digest', async () => {
+  const art = readJson(path.join(SAMPLE, 'rulesets', manifest.ruleset_digest + '.json'));
+  assert.deepEqual(art.rules, readJson(path.join(ROOT, 'docs/combat-v1.json')));
+  const pick = await L.chooseRuleset({ exported: art, embedded: R, manifestDigest: manifest.ruleset_digest });
+  assert.equal(pick.source, 'export');
+  assert.equal(pick.ok, true);
+  const bad = clone(art);
+  bad.rules.damage[0][0] = 9;
+  const fb = await L.chooseRuleset({ exported: bad, embedded: R, manifestDigest: manifest.ruleset_digest });
+  assert.equal(fb.source, 'embedded');
+  assert.equal(fb.ok, true);
+  const none = await L.chooseRuleset({ exported: bad, embedded: R, manifestDigest: 'ff'.repeat(32) });
+  assert.equal(none.ok, false);
+  // every sample fight verifies with the export's own ruleset too
+  const v = await L.verifyReplay(fullFight(), { rules: art.rules, manifest });
+  assert.equal(v.level, 'REPLAY_MATCH');
+});
+
+test('competition.md rating vectors and the protocol fee split', () => {
+  assert.equal(L.ratingDelta(1000, 1000, 2000), 16);
+  assert.equal(L.ratingDelta(1200, 1000, 2000), 9);
+  assert.equal(L.ratingDelta(1200, 1000, 0), -22);
+  assert.equal(L.ratingDelta(1200, 1000, 1000), -6);
+  assert.equal(L.ratingDelta(3000, 0, 2000), 0);
+  assert.equal(L.ratingDelta(0, 1000, 0), 0, 'clamped at the floor');
+  assert.equal(L.ratingDelta(2990, 2995, 2000), 10, 'clamped at the ceiling');
+  const sp = L.splitPurse(2000n, { rake_bps: 500, dev_bps: 1000, share_bps: 3000 });
+  assert.deepEqual([sp.winner, sp.rake, sp.house, sp.dev, sp.share], [1900n, 100n, 60n, 10n, 30n]);
+  const odd = L.splitPurse(2001n, { rake_bps: 333, dev_bps: 1000, share_bps: 3333 });
+  assert.equal(odd.winner + odd.house + odd.dev + odd.share, 2001n, 'rounding stays with the house');
+});
+
+test('settlements pass on every settled sample fight; an unfinished series fight is UNAVAILABLE', async () => {
+  let settled = 0;
+  for (const id of index.fights) {
+    const rp = replayOf(id);
+    const v = await verify(rp);
+    const st = statusOf(v, 'accounting');
+    if (rp.settlement) { settled++; assert.equal(st, 'PASS', 'fight ' + id + ': ' + JSON.stringify(v.checks.find(c => c.id === 'accounting').details.filter(d => d.startsWith('FAIL')))); }
+    else assert.equal(st, 'UNAVAILABLE', 'fight ' + id);
+  }
+  assert.ok(settled >= 20);
+  const duel = index.fights.map(replayOf).find(rp => rp.mode === 'duel' && rp.settlement);
+  assert.ok(duel && duel.settlement.series_fights.length > 1, 'sample has a settled multi-fight duel');
+});
+
+test('a tampered credit, rating or stake fails the accounting check', async () => {
+  const base = fullFight();
+  const who = Object.keys(base.settlement.credits).find(k => base.settlement.credits[k] !== '0');
+  let rp = clone(base);
+  rp.settlement.credits[who] = String(BigInt(rp.settlement.credits[who]) + 1n);
+  let v = await verify(rp);
+  assert.equal(statusOf(v, 'accounting'), 'FAIL');
+  assert.equal(statusOf(v, 'replay'), 'PASS');
+  assert.equal(v.level, 'FAILED');
+  rp = clone(base);
+  rp.settlement.credits['ab'.repeat(32)] = '1';
+  assert.equal(statusOf(await verify(rp), 'accounting'), 'FAIL', 'an extra recipient');
+  rp = clone(base);
+  rp.settlement.ratings.A.lifetime[1] += 1;
+  assert.equal(statusOf(await verify(rp), 'accounting'), 'FAIL', 'a post rating off by one');
+  rp = clone(base);
+  rp.settlement.ratings.B.season[0] += 1;
+  assert.equal(statusOf(await verify(rp), 'accounting'), 'FAIL', 'a pre rating that is not the context snapshot');
+  rp = clone(base);
+  rp.settlement.stake_per_fighter = '999';
+  assert.equal(statusOf(await verify(rp), 'accounting'), 'FAIL', 'a stake that differs from the committed context');
+  rp = clone(base);
+  rp.settlement.contest_result.winner = rp.settlement.contest_result.winner === 'A' ? 'B' : 'A';
+  assert.equal(statusOf(await verify(rp), 'accounting'), 'FAIL', 'a contest result that disagrees with the fight');
+});
+
+test('draws, double faults and voids refund each stake with no rake', () => {
+  const rp = fullFight();
+  const ctx = L.parseContext(rp.context_bytes);
+  const stake = rp.settlement.stake_per_fighter;
+  const refund = { [ctx.participants.A.owner]: stake, [ctx.participants.B.owner]: stake };
+  const pre = { A: ctx.participants.A, B: ctx.participants.B };
+  const draw = L.ratingDelta(pre.A.lifetime_rating, pre.B.lifetime_rating, 1000);
+  const dS = L.ratingDelta(pre.A.season_rating, pre.B.season_rating, 1000);
+  const mk = (kind, credits, ratings) => Object.assign(clone(rp), {
+    result: kind === 'COMBAT' ? { kind, winner: null, result: 'HP_TIE' } : { kind, winner: null, stage: 'REVEAL' },
+    settlement: Object.assign(clone(rp.settlement), { contest_result: { kind, winner: null }, credits, ratings }),
+  });
+  const rated = {
+    A: { lifetime: [pre.A.lifetime_rating, pre.A.lifetime_rating + draw], season: [pre.A.season_rating, pre.A.season_rating + dS] },
+    B: { lifetime: [pre.B.lifetime_rating, pre.B.lifetime_rating - draw], season: [pre.B.season_rating, pre.B.season_rating - dS] },
+  };
+  const same = {
+    A: { lifetime: [pre.A.lifetime_rating, pre.A.lifetime_rating], season: [pre.A.season_rating, pre.A.season_rating] },
+    B: { lifetime: [pre.B.lifetime_rating, pre.B.lifetime_rating], season: [pre.B.season_rating, pre.B.season_rating] },
+  };
+  const tie = { outcome: { winner: null, result: 'HP_TIE' }, end: { round_index: 2 } };
+  assert.equal(L.checkSettlement(mk('COMBAT', refund, rated), ctx, tie).status, 'PASS', 'a combat draw refunds and still rates');
+  assert.equal(L.checkSettlement(mk('DOUBLE_FAULT', refund, same), ctx, tie).status, 'PASS', 'a double fault refunds and does not rate');
+  assert.equal(L.checkSettlement(mk('VOID', refund, same), ctx, tie).status, 'PASS');
+  assert.equal(L.checkSettlement(mk('DOUBLE_FAULT', refund, rated), ctx, tie).status, draw || dS ? 'FAIL' : 'PASS', 'a double fault must not move ratings');
+  const raked = { [ctx.participants.A.owner]: String(BigInt(stake) - 50n), [ctx.participants.B.owner]: stake, [ctx.house_recipient]: '50' };
+  assert.equal(L.checkSettlement(mk('VOID', raked, same), ctx, tie).status, 'FAIL', 'no rake on a refund');
+});
+
+test('a forfeit carries the re-derived state at the deadline; a tampered one fails', async () => {
+  const rp = index.fights.map(replayOf).find(L.isForfeit);
+  assert.equal(rp.forfeit_round, 0);
+  const d = L.deriveReplay(R, rp);
+  const last = L.timeline(rp, d).pop();
+  assert.equal(last.kind, 'forfeit');
+  assert.deepEqual(last.a, rp.final.A);
+  const t = clone(rp);
+  t.final.B.hp = 0;
+  assert.equal(statusOf(await verify(t), 'replay'), 'FAIL', 'no invented KO for a forfeit');
+  const u = clone(rp);
+  u.forfeit_round = 2;
+  assert.equal(statusOf(await verify(u), 'replay'), 'FAIL');
+});

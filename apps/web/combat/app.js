@@ -12,7 +12,11 @@
  */
 'use strict';
 (() => {
-  const L = window.QDojoCombatLogic, E = window.QDojoCombat, R = window.QDojoRuleset, N = window.QDojoNpcs;
+  const L = window.QDojoCombatLogic, E = window.QDojoCombat, N = window.QDojoNpcs;
+  // The ruleset every replay and practice fight uses: the export's artifact
+  // when it hashes to the manifest digest, else the embedded copy (see boot).
+  let R = window.QDojoRuleset;
+  let RULES_INFO = { source: 'embedded', note: 'No export loaded; using the embedded copy.' };
   // avatars.js and anim.js declare top-level consts, not window properties.
   const A = typeof QDojoAvatars !== 'undefined' ? QDojoAvatars : null;
   const ANIM = typeof QDojoAnim !== 'undefined' ? QDojoAnim : null;
@@ -64,6 +68,10 @@
         // Unknown major schema versions fail closed.
         if (m.schema !== 'qdojo.combat.manifest.v1') { D.error = src.base + 'manifest.json has unknown schema ' + m.schema; continue; }
         D.base = src.base; D.sample = src.sample; D.manifest = m;
+        const art = HEX64.test(m.ruleset_digest || '') ? await fetchJson('rulesets/' + m.ruleset_digest + '.json').catch(() => null) : null;
+        const pick = await L.chooseRuleset({ exported: art, embedded: window.QDojoRuleset, manifestDigest: m.ruleset_digest, sha256: SHA });
+        R = pick.rules;
+        RULES_INFO = pick;
         return;
       } catch (e) { /* try the next source */ }
     }
@@ -174,7 +182,7 @@
       '<div class="cols">' +
       '<section class="panel panel-yellow"><h3>CAPACITY</h3>' +
       capMeter('OPEN OFFERS', offers.length, cap.offers) + capMeter('FIGHTS IN USE', cap.fights_in_use || 0, cap.fights) +
-      '<p class="tiny muted">Offers are paired on the next matching tick (' + esc(book.next_matching_tick) + '). A tick countdown is time, never health.</p></section>' +
+      '<p class="tiny muted">Offers are paired on matching ticks' + (D.manifest.match_interval_ticks ? ', every ' + esc(D.manifest.match_interval_ticks) + ' ticks' : '') + '; the next is ' + esc(book.next_matching_tick) + '. A tick countdown is time, never health.</p></section>' +
       '<section class="panel panel-cyan"><h3>ACTIVE FIGHTS</h3>' +
       ((book.active_fights || []).length ? '<ul class="plain">' + book.active_fights.map(id => '<li><a href="#fight/' + esc(id) + '">FIGHT #' + esc(id) + ' &#9654;</a></li>').join('') + '</ul>'
         : '<p class="muted">No fight in progress at this snapshot. <a href="#fights">Completed fights &#9654;</a></p>') +
@@ -394,7 +402,7 @@
       note.textContent = text;
       note.className = 'center-note note-' + f.kind;
       if (f.kind === 'forfeit') {
-        els.A.cap.innerHTML = '<p>' + esc(L.outcomeLabel(opts.replay).text) + '</p>' + (st.initialOnly ? '<p class="muted">No round was played; the bars show the fight\'s start state, not a result.</p>' : '<p class="muted">Bars show the last confirmed state. No beat is invented for the missing reveal.</p>');
+        els.A.cap.innerHTML = '<p>' + esc(L.outcomeLabel(opts.replay).text) + '</p>' + (!f.played ? '<p class="muted">No round was played; the bars show the start state at the deadline, not a result.</p>' : '<p class="muted">Bars show the re-derived state at the deadline (round ' + (f.round + 1) + '). No beat is invented for the missing reveal.</p>');
       }
       if (f.kind === 'end') els.A.cap.innerHTML = '<p>' + esc(L.outcomeLabel({ outcome: f.outcome }).text) + '</p>';
       $$('tr.fr.on', table).forEach(r => r.classList.remove('on'));
@@ -803,7 +811,7 @@
       R.damage.map((row, i) => '<tr><th>' + NAMES[i] + '</th>' + row.map(v => '<td class="num' + (v ? ' dmg' : ' zero') + '">' + v + '</td>').join('') + '</tr>').join('');
     const I = R.initial;
     setView(screen('RULES', esc(R.semantic_version.toUpperCase()) + ' &middot; EVERY NUMBER BELOW IS READ FROM THE RULESET') +
-      '<section class="panel panel-cyan"><h3>RULESET DIGEST</h3><p id="digest" class="muted">Computing&hellip;</p></section>' +
+      '<section class="panel panel-cyan"><h3>RULESET DIGEST</h3><p id="digest" class="muted">Computing&hellip;</p><p class="tiny">SOURCE: ' + esc(RULES_INFO.source.toUpperCase()) + '. ' + esc(RULES_INFO.note) + '</p></section>' +
       '<section class="panel"><h3>THE FIGHT</h3><ul class="plain rules-list">' +
       '<li>Both fighters submit <b>' + R.beats_per_round + ' actions</b> at once, sealed by a commitment, for each of <b>' + R.rounds + ' rounds</b>. Beats resolve in pairs, simultaneously.</li>' +
       '<li>Start: HP ' + I.hp + ', STAMINA ' + I.stamina + ', one POWER strike per fight. HP never resets between rounds.</li>' +

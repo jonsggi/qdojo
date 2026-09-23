@@ -65,6 +65,7 @@ def fight_replay(c: CombatContract, fight_id: int) -> dict:
         settlement = {
             "contest_result": {k: (str(v) if k == "tick" else v) for k, v in contest.result.items()},
             "stake_per_fighter": str(contest.stake), "series_fights": [str(x) for x in contest.fights],
+            "payers": {s: p.hex() for s, p in contest.payers.items()},
             "credits": {who.hex(): str(v) for who, v in sorted(contest.settlement["credits"].items())},
             "ratings": contest.settlement["ratings"] if contest.mode == codec.Mode.RANKED else None,
         }
