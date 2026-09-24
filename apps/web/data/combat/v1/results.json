@@ -2,9 +2,42 @@
  "schema": "qdojo.combat.results.v1",
  "network_id": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
  "contract_id": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
- "generated_tick": "21557",
+ "generated_tick": "21687",
  "source": "reference-contract-state",
  "results": [
+  {
+   "fight_id": "449",
+   "contest_id": "449",
+   "mode": "ranked",
+   "A": "40685a53c36a488297c0fdfdad934a83b41698434a54e8edc43a79a26b0575b3",
+   "B": "5e5983158739c500e8d2d33533271392e9b14aeafe3a9b2399c8ad6f0e506712",
+   "kind": "COMBAT",
+   "winner": "A",
+   "result": "KO",
+   "tick": "21670"
+  },
+  {
+   "fight_id": "448",
+   "contest_id": "448",
+   "mode": "ranked",
+   "A": "2ecea2382f7f190d4aa65e280dec9ac09f0b937f8915dd30d4e09f41c1428bc9",
+   "B": "885875a2b815ff8ae93eae11d526f6e5842ee8a8fb6c4aa7cf6023bbf99c4660",
+   "kind": "COMBAT",
+   "winner": "B",
+   "result": "KO",
+   "tick": "21675"
+  },
+  {
+   "fight_id": "447",
+   "contest_id": "447",
+   "mode": "ranked",
+   "A": "6a5efcca23410d1dc7300479ec0866de819043f8bea7ad91f5791d996065a79d",
+   "B": "76ff0985bba457ae8089737600c0f23f9ffc97716f47311a072dda32caca0c88",
+   "kind": "COMBAT",
+   "winner": "B",
+   "result": "HP",
+   "tick": "21587"
+  },
   {
    "fight_id": "446",
    "contest_id": "446",
@@ -2171,28 +2204,6 @@
    "winner": "A",
    "result": "KO",
    "tick": "10535"
-  },
-  {
-   "fight_id": "249",
-   "contest_id": "249",
-   "mode": "ranked",
-   "A": "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
-   "B": "c6b3e0788459f509f631cd5bff38aeee64e7686a74f19b14e9f6600e8f463707",
-   "kind": "COMBAT",
-   "winner": "B",
-   "result": "KO",
-   "tick": "10535"
-  },
-  {
-   "fight_id": "248",
-   "contest_id": "248",
-   "mode": "ranked",
-   "A": "2ecea2382f7f190d4aa65e280dec9ac09f0b937f8915dd30d4e09f41c1428bc9",
-   "B": "5e5983158739c500e8d2d33533271392e9b14aeafe3a9b2399c8ad6f0e506712",
-   "kind": "COMBAT",
-   "winner": "A",
-   "result": "KO",
-   "tick": "10486"
   }
  ]
 }
