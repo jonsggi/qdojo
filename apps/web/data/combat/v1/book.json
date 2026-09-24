@@ -2,7 +2,7 @@
  "schema": "qdojo.combat.book.v1",
  "network_id": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
  "contract_id": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
- "generated_tick": "20717",
+ "generated_tick": "20837",
  "source": "reference-contract-state",
  "offers": [
   {
@@ -11,36 +11,78 @@
    "fighter_id": "6a5efcca23410d1dc7300479ec0866de819043f8bea7ad91f5791d996065a79d",
    "rating": 674,
    "stake": "1000",
-   "window": 150,
+   "window": 200,
    "max_gap": 200,
    "expires_tick": "20905",
    "opponent_id": null
   },
   {
-   "offer_id": "1770",
+   "offer_id": "1771",
    "kind": "RANKED",
-   "fighter_id": "5e5983158739c500e8d2d33533271392e9b14aeafe3a9b2399c8ad6f0e506712",
-   "rating": 1066,
+   "fighter_id": "a692c798ab7ca1a6746249209d28ccf50d8e41eae175df78d468ab29ab333e71",
+   "rating": 1179,
+   "stake": "1000",
+   "window": 200,
+   "max_gap": 200,
+   "expires_tick": "20975",
+   "opponent_id": null
+  },
+  {
+   "offer_id": "1772",
+   "kind": "RANKED",
+   "fighter_id": "40685a53c36a488297c0fdfdad934a83b41698434a54e8edc43a79a26b0575b3",
+   "rating": 1287,
+   "stake": "1000",
+   "window": 200,
+   "max_gap": 200,
+   "expires_tick": "20975",
+   "opponent_id": null
+  },
+  {
+   "offer_id": "1780",
+   "kind": "RANKED",
+   "fighter_id": "fe8cd3d0fb944fdac2e671353a6a6e4ce1fcd0dc9ade519749a8ea44500f384d",
+   "rating": 1161,
+   "stake": "1000",
+   "window": 150,
+   "max_gap": 200,
+   "expires_tick": "20999",
+   "opponent_id": null
+  },
+  {
+   "offer_id": "1784",
+   "kind": "RANKED",
+   "fighter_id": "ff99f52a50ec6df930adbfb68ad5e65f4d16ef523a82ef1a688d12e16f5a82b5",
+   "rating": 1207,
+   "stake": "1000",
+   "window": 150,
+   "max_gap": 200,
+   "expires_tick": "21024",
+   "opponent_id": null
+  },
+  {
+   "offer_id": "1786",
+   "kind": "RANKED",
+   "fighter_id": "82a8e7e488c616a769ba6d810379ac024498218904c3c4a40f3b47739756d58c",
+   "rating": 856,
    "stake": "1000",
    "window": 100,
    "max_gap": 200,
-   "expires_tick": "20955",
+   "expires_tick": "21056",
    "opponent_id": null
   }
  ],
  "capacity": {
   "offers": 64,
   "fights": 16,
-  "fights_in_use": 7
+  "fights_in_use": 5
  },
  "active_fights": [
-  "408",
-  "409",
-  "410",
-  "411",
-  "412",
-  "413",
-  "414"
+  "418",
+  "419",
+  "420",
+  "421",
+  "422"
  ],
- "next_matching_tick": "20720"
+ "next_matching_tick": "20840"
 }
