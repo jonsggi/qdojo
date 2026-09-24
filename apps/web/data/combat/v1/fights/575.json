@@ -2,34 +2,34 @@
  "schema": "qdojo.combat.fight.v1",
  "network_id": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
  "contract_id": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
- "generated_tick": "20377",
+ "generated_tick": "40217",
  "source": "reference-contract-state",
- "fight_id": "374",
- "contest_id": "374",
+ "fight_id": "575",
+ "contest_id": "575",
  "phase": "COMMIT",
  "round_index": 2,
  "state": {
   "round_index": 2,
   "A": {
-   "hp": 18,
-   "stamina": 56,
+   "hp": 36,
+   "stamina": 60,
    "opening": 0,
    "guard_streak": 0,
    "power_available": 1
   },
   "B": {
-   "hp": 36,
-   "stamina": 48,
+   "hp": 20,
+   "stamina": 43,
    "opening": 0,
    "guard_streak": 0,
    "power_available": 1
   },
   "outcome": null
  },
- "context_digest": "b5532bb417609384fbbc9c418e3b04e90919fe574b6dff9fccbaf3f065ff9c60",
- "round_state_digest": "122756d41e3101e3e5e3b80c71be70e78bc4b902489d9c51406a12baf00b23c5",
- "commit_last": "20382",
- "reveal_last": "20394",
+ "context_digest": "36523651a1b4f43c9042d13b7255ab82c83ff0a4169ed7b029b44b75e407b5ff",
+ "round_state_digest": "d1dfa8331403f282e69d701c75819e3f0a1d07b23bbc9f86ad88108ac036dcab",
+ "commit_last": "40230",
+ "reveal_last": "40242",
  "committed": [
   "A",
   "B"
@@ -43,8 +43,8 @@
    "operator": "e5a6340274009ff2025d5e5905bc264af3ae43951e6aa5e45e4f7614a9231362",
    "auth_version": 1,
    "payout_recipient": "e5a6340274009ff2025d5e5905bc264af3ae43951e6aa5e45e4f7614a9231362",
-   "lifetime_rating": 944,
-   "season_rating": 944
+   "lifetime_rating": 962,
+   "season_rating": 1030
   },
   "B": {
    "fighter_id": "76ff0985bba457ae8089737600c0f23f9ffc97716f47311a072dda32caca0c88",
@@ -52,8 +52,8 @@
    "operator": "c82eeb2428401bf5123c52a17e1da4f4dab9d865363980c165708b20a44fc710",
    "auth_version": 1,
    "payout_recipient": "c82eeb2428401bf5123c52a17e1da4f4dab9d865363980c165708b20a44fc710",
-   "lifetime_rating": 865,
-   "season_rating": 865
+   "lifetime_rating": 893,
+   "season_rating": 1000
   }
  },
  "mode": "ranked"
