@@ -27,7 +27,15 @@ RUN rm -f /usr/share/nginx/html/dash.html /usr/share/nginx/html/dash.js
 # files say max-age=300: without an origin header the CDN in front kept an
 # old app.js for four hours after a deploy, so the site showed new data with
 # old code (2026-09-21).
-RUN printf '%s\n' \
+#
+# Live combat data (/data/combat/v1/) is not baked into the image: it is
+# proxied to the live devnet's data server, so spectators see fights within
+# seconds and main is not flooded with data commits. If that server is down,
+# the copy baked into the image answers instead and the page's STALE badge
+# shows its age. QDOJO_LIVE_DATA is substituted by the nginx image's template
+# step at container start; nothing else in the config is an env variable.
+ENV QDOJO_LIVE_DATA=http://100.101.145.63:8790
+RUN mkdir -p /etc/nginx/templates && printf '%s\n' \
     'types { text/plain txt; }' \
     'server {' \
     '  listen 80;' \
@@ -37,9 +45,18 @@ RUN printf '%s\n' \
     '  location = /llms.txt { default_type text/plain; }' \
     '  location = /legacy-llms.txt { default_type text/plain; }' \
     '  location ~ \.py$ { default_type text/plain; }' \
+    '  location /data/combat/v1/ {' \
+    '    proxy_pass ${QDOJO_LIVE_DATA}/;' \
+    '    proxy_connect_timeout 2s;' \
+    '    proxy_read_timeout 5s;' \
+    '    proxy_intercept_errors on;' \
+    '    error_page 404 502 503 504 = @baked;' \
+    '    add_header Cache-Control "public, max-age=5" always;' \
+    '  }' \
+    '  location @baked { add_header Cache-Control "public, max-age=30"; try_files $uri =404; }' \
     '  location /data/ { add_header Cache-Control "public, max-age=30"; }' \
     '  location ~* \.(js|css|html)$ { add_header Cache-Control "public, max-age=300, must-revalidate"; }' \
     '  location / { try_files $uri $uri/ /index.html; }' \
-    '}' > /etc/nginx/conf.d/default.conf
+    '}' > /etc/nginx/templates/default.conf.template && rm -f /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
