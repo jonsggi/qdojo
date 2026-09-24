@@ -2,9 +2,53 @@
  "schema": "qdojo.combat.results.v1",
  "network_id": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
  "contract_id": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
- "generated_tick": "21077",
+ "generated_tick": "21197",
  "source": "reference-contract-state",
  "results": [
+  {
+   "fight_id": "435",
+   "contest_id": "435",
+   "mode": "ranked",
+   "A": "5e5983158739c500e8d2d33533271392e9b14aeafe3a9b2399c8ad6f0e506712",
+   "B": "658c8b12a9d23909c08e3dbe611404f4bb9dd3985224f702e94cfdcfda2786e9",
+   "kind": "COMBAT",
+   "winner": "A",
+   "result": "KO",
+   "tick": "21158"
+  },
+  {
+   "fight_id": "434",
+   "contest_id": "434",
+   "mode": "ranked",
+   "A": "6a5efcca23410d1dc7300479ec0866de819043f8bea7ad91f5791d996065a79d",
+   "B": "b598e2991617e1b44046ad1c9c1efb9909de234506b3aae254ad2578dba59dee",
+   "kind": "COMBAT",
+   "winner": "B",
+   "result": "HP",
+   "tick": "21171"
+  },
+  {
+   "fight_id": "433",
+   "contest_id": "433",
+   "mode": "ranked",
+   "A": "1fb47dc1ce6c02dc0599b79c3f08a58644f951cac8260707991a1c010bef0f6a",
+   "B": "2ecea2382f7f190d4aa65e280dec9ac09f0b937f8915dd30d4e09f41c1428bc9",
+   "kind": "COMBAT",
+   "winner": "B",
+   "result": "KO",
+   "tick": "21159"
+  },
+  {
+   "fight_id": "432",
+   "contest_id": "432",
+   "mode": "ranked",
+   "A": "76ff0985bba457ae8089737600c0f23f9ffc97716f47311a072dda32caca0c88",
+   "B": "885875a2b815ff8ae93eae11d526f6e5842ee8a8fb6c4aa7cf6023bbf99c4660",
+   "kind": "COMBAT",
+   "winner": "B",
+   "result": "KO",
+   "tick": "21119"
+  },
   {
    "fight_id": "431",
    "contest_id": "431",
@@ -15,6 +59,17 @@
    "winner": "B",
    "result": "KO",
    "tick": "21066"
+  },
+  {
+   "fight_id": "430",
+   "contest_id": "430",
+   "mode": "ranked",
+   "A": "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
+   "B": "c6b3e0788459f509f631cd5bff38aeee64e7686a74f19b14e9f6600e8f463707",
+   "kind": "COMBAT",
+   "winner": "A",
+   "result": "KO",
+   "tick": "21087"
   },
   {
    "fight_id": "429",
@@ -2127,61 +2182,6 @@
    "winner": null,
    "result": "DOUBLE_KO",
    "tick": "10403"
-  },
-  {
-   "fight_id": "237",
-   "contest_id": "237",
-   "mode": "ranked",
-   "A": "76ff0985bba457ae8089737600c0f23f9ffc97716f47311a072dda32caca0c88",
-   "B": "c6b3e0788459f509f631cd5bff38aeee64e7686a74f19b14e9f6600e8f463707",
-   "kind": "COMBAT",
-   "winner": "B",
-   "result": "HP",
-   "tick": "10383"
-  },
-  {
-   "fight_id": "236",
-   "contest_id": "236",
-   "mode": "ranked",
-   "A": "658c8b12a9d23909c08e3dbe611404f4bb9dd3985224f702e94cfdcfda2786e9",
-   "B": "82a8e7e488c616a769ba6d810379ac024498218904c3c4a40f3b47739756d58c",
-   "kind": "COMBAT",
-   "winner": "A",
-   "result": "HP",
-   "tick": "10383"
-  },
-  {
-   "fight_id": "235",
-   "contest_id": "235",
-   "mode": "ranked",
-   "A": "885875a2b815ff8ae93eae11d526f6e5842ee8a8fb6c4aa7cf6023bbf99c4660",
-   "B": "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
-   "kind": "COMBAT",
-   "winner": "A",
-   "result": "HP",
-   "tick": "10383"
-  },
-  {
-   "fight_id": "234",
-   "contest_id": "234",
-   "mode": "ranked",
-   "A": "5e5983158739c500e8d2d33533271392e9b14aeafe3a9b2399c8ad6f0e506712",
-   "B": "ff99f52a50ec6df930adbfb68ad5e65f4d16ef523a82ef1a688d12e16f5a82b5",
-   "kind": "COMBAT",
-   "winner": "B",
-   "result": "KO",
-   "tick": "10354"
-  },
-  {
-   "fight_id": "233",
-   "contest_id": "233",
-   "mode": "ranked",
-   "A": "2ecea2382f7f190d4aa65e280dec9ac09f0b937f8915dd30d4e09f41c1428bc9",
-   "B": "a692c798ab7ca1a6746249209d28ccf50d8e41eae175df78d468ab29ab333e71",
-   "kind": "COMBAT",
-   "winner": "B",
-   "result": "KO",
-   "tick": "10354"
   }
  ]
 }
