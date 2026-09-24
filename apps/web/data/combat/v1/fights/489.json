@@ -2,34 +2,34 @@
  "schema": "qdojo.combat.fight.v1",
  "network_id": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
  "contract_id": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
- "generated_tick": "11017",
+ "generated_tick": "30407",
  "source": "reference-contract-state",
- "fight_id": "290",
- "contest_id": "290",
+ "fight_id": "489",
+ "contest_id": "489",
  "phase": "COMMIT",
  "round_index": 2,
  "state": {
   "round_index": 2,
   "A": {
-   "hp": 16,
-   "stamina": 29,
+   "hp": 18,
+   "stamina": 30,
    "opening": 0,
    "guard_streak": 0,
    "power_available": 0
   },
   "B": {
-   "hp": 26,
-   "stamina": 60,
-   "opening": 0,
+   "hp": 72,
+   "stamina": 21,
+   "opening": 1,
    "guard_streak": 0,
    "power_available": 1
   },
   "outcome": null
  },
- "context_digest": "7ceff134b88846cb2a153a73633bbc81d04325f1456883b3d9e641d2b3106e9b",
- "round_state_digest": "f5f1f574244f7f450666b013327448855803934918ee2ffbbaef4547074ed3e3",
- "commit_last": "11018",
- "reveal_last": "11030",
+ "context_digest": "b2f0b2c8f95461b883492bc84b9ef689fb7a033f12b0bc4b8f28fb0e677ad428",
+ "round_state_digest": "961a5db58aa91c9d48d828d53d71961ca5e7d724f6dd3b7b869f97918a4bd7b5",
+ "commit_last": "30422",
+ "reveal_last": "30434",
  "committed": [
   "A",
   "B"
@@ -43,17 +43,17 @@
    "operator": "044a9922e08ea24335d8f02b7d02cba086c2818ffe6fd2c1262255ca19630e9f",
    "auth_version": 1,
    "payout_recipient": "044a9922e08ea24335d8f02b7d02cba086c2818ffe6fd2c1262255ca19630e9f",
-   "lifetime_rating": 905,
-   "season_rating": 905
+   "lifetime_rating": 886,
+   "season_rating": 886
   },
   "B": {
-   "fighter_id": "658c8b12a9d23909c08e3dbe611404f4bb9dd3985224f702e94cfdcfda2786e9",
-   "owner": "e5a6340274009ff2025d5e5905bc264af3ae43951e6aa5e45e4f7614a9231362",
-   "operator": "e5a6340274009ff2025d5e5905bc264af3ae43951e6aa5e45e4f7614a9231362",
+   "fighter_id": "c6b3e0788459f509f631cd5bff38aeee64e7686a74f19b14e9f6600e8f463707",
+   "owner": "6ee260096467bbd2b0fc7cfd04603dc02a62ae12d565ac8a393a21bcd2c70a3e",
+   "operator": "6ee260096467bbd2b0fc7cfd04603dc02a62ae12d565ac8a393a21bcd2c70a3e",
    "auth_version": 1,
-   "payout_recipient": "e5a6340274009ff2025d5e5905bc264af3ae43951e6aa5e45e4f7614a9231362",
-   "lifetime_rating": 939,
-   "season_rating": 939
+   "payout_recipient": "6ee260096467bbd2b0fc7cfd04603dc02a62ae12d565ac8a393a21bcd2c70a3e",
+   "lifetime_rating": 870,
+   "season_rating": 870
   }
  },
  "mode": "ranked"
