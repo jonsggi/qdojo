@@ -60,6 +60,8 @@ class Facts:
     pair_starts: Callable[[bytes, bytes], int]         # this epoch
     pair_last_result: Callable[[bytes, bytes], int | None]
     capacity_left: Callable[[], int]
+    pair_starts_per_epoch: int = PAIR_STARTS_PER_EPOCH
+    pair_rematch_ticks: int = PAIR_REMATCH_TICKS
 
 
 def compatible(x: Offer, y: Offer, f: Facts) -> bool:
@@ -77,10 +79,10 @@ def compatible(x: Offer, y: Offer, f: Facts) -> bool:
     gap = abs(x.rating - y.rating)
     if gap > window(x, t) or gap > window(y, t):
         return False
-    if f.pair_starts(x.fighter_id, y.fighter_id) >= PAIR_STARTS_PER_EPOCH:
+    if f.pair_starts(x.fighter_id, y.fighter_id) >= f.pair_starts_per_epoch:
         return False
     last = f.pair_last_result(x.fighter_id, y.fighter_id)
-    if last is not None and t - last < PAIR_REMATCH_TICKS:
+    if last is not None and t - last < f.pair_rematch_ticks:
         return False
     if f.in_cooldown(x.fighter_id) or f.in_cooldown(y.fighter_id):
         return False

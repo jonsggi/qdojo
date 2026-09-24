@@ -63,6 +63,10 @@ class Manifest:
     offer_lifetime: tuple[int, int] = (40, 1200)
     cooldown_ticks: int = 240
     faults_per_epoch: int = 3
+    # Anti-farming pair limits (matchmaking.md §2). Defaults are the specified
+    # values; a demo devnet may loosen them, and says so in its export.
+    pair_starts_per_epoch: int = 2
+    pair_rematch_ticks: int = 120
 
     def epoch(self, tick: int) -> int:
         return self.genesis_epoch + (tick - self.genesis_tick) // self.ticks_per_epoch
@@ -597,7 +601,8 @@ class CombatContract:
             or self.fighters[fid].suspended_epoch == epoch,
             pair_starts=lambda x, y: self.pair_starts.get(key(x, y) + (epoch,), 0),
             pair_last_result=lambda x, y: self.pair_last.get(key(x, y)),
-            capacity_left=lambda: self.m.max_fights - self.fights_in_use())
+            capacity_left=lambda: self.m.max_fights - self.fights_in_use(),
+            pair_starts_per_epoch=self.m.pair_starts_per_epoch, pair_rematch_ticks=self.m.pair_rematch_ticks)
 
         def invalid(o):
             self._close_offer(o, "EXPIRED" if t >= o.expires_tick else "INVALIDATED")

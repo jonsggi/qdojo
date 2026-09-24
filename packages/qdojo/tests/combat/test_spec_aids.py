@@ -68,7 +68,8 @@ def manifest_from_header(head):
         **{k: head[k] for k in ("genesis_tick", "genesis_epoch", "ticks_per_epoch", "season_start_epoch",
                                 "season_epochs", "season_closeout_ticks", "max_fighters", "max_accounts",
                                 "max_offers", "max_fights", "max_cups", "max_cup_entrants", "event_ring",
-                                "match_interval", "cooldown_ticks", "faults_per_epoch")})
+                                "match_interval", "cooldown_ticks", "faults_per_epoch",
+                                "pair_starts_per_epoch", "pair_rematch_ticks")})
 
 
 def test_contract_parity_journals_replay_to_their_digest():

@@ -138,6 +138,8 @@ def manifest(c: CombatContract) -> dict:
         "timing_profiles": {str(k): {"commit_ticks": v[0], "reveal_ticks": v[1]} for k, v in c.m.timing.items()},
         "tiers": {str(k): str(v) for k, v in c.m.tiers.items()},
         "match_interval_ticks": c.m.match_interval,
+        "pair_starts_per_epoch": c.m.pair_starts_per_epoch, "pair_rematch_ticks": c.m.pair_rematch_ticks,
+        "ticks_per_epoch": c.m.ticks_per_epoch,
         "fee_profiles": {str(k): {"rake_bps": v.rake_bps, "house_bps": v.house_bps, "dev_bps": v.dev_bps,
                                   "share_bps": v.share_bps} for k, v in c.m.fees.items()},
         "supported_schemas": [SCHEMA.format(k) for k in ("replay", "fight", "fighter", "book", "events", "npcs")],

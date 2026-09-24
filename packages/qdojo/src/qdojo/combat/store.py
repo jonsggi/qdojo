@@ -45,7 +45,8 @@ def header(manifest: Manifest) -> dict:
             **{k: getattr(m, k) for k in (
                 "genesis_tick", "genesis_epoch", "ticks_per_epoch", "season_start_epoch", "season_epochs",
                 "season_closeout_ticks", "max_fighters", "max_accounts", "max_offers", "max_fights", "max_cups",
-                "max_cup_entrants", "event_ring", "match_interval", "cooldown_ticks", "faults_per_epoch")},
+                "max_cup_entrants", "event_ring", "match_interval", "cooldown_ticks", "faults_per_epoch",
+                "pair_starts_per_epoch", "pair_rematch_ticks")},
             "offer_lifetime": list(m.offer_lifetime)}
 
 
