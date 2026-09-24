@@ -109,6 +109,9 @@
     if (idx && idx.names) FIGHTER_NAMES = idx.names;
     const tick = idx ? idx.generated_tick : D.manifest.generated_tick;
     D.tick = tick;
+    // Simulated-chain and profile facts, and per-fighter name/driver/asset.
+    D.deployment = (idx && idx.deployment) || null;
+    D.known = idx && Array.isArray(idx.fights) ? new Set(idx.fights.map(String)) : null;
     const at = idx && idx.generated_at != null ? Date.parse(idx.generated_at) || Number(idx.generated_at) : NaN;
     D.wallMs = Number.isFinite(at) ? at : (D.meta.get('index.json') || {}).lastModified;
   }
@@ -135,7 +138,7 @@
     await noteFreshness().catch(() => {});
     paintSource();
     const name = currentRoute()[0];
-    if (['arena', 'title', 'book', 'results', 'leaderboard'].includes(name) || (name === 'fight' && D.tick !== before)) repaint();
+    if (['arena', 'title', 'book', 'results', 'leaderboard', 'cups', 'cup', 'duels', 'duel', 'season'].includes(name) || (name === 'fight' && D.tick !== before)) repaint();
   }
 
   function paintSource() {
@@ -286,8 +289,15 @@
 
   // Older fights may have been pruned from a live export: a missing file is
   // skipped (null), never guessed.
-  const summaryOf = id => (DEC.test(String(id)) ? fetchJson('fights/' + id + '.json').catch(() => null) : Promise.resolve(null));
-  const replayOf = id => (DEC.test(String(id)) ? fetchJson('fights/' + id + '/replay.json').catch(() => null) : Promise.resolve(null));
+  // Only fights index.json lists are requested: a live export keeps the most
+  // recent ~200, and asking for a pruned file is a 404, not information.
+  const listed = id => DEC.test(String(id)) && (!D.known || D.known.has(String(id)));
+  const summaryOf = id => (listed(id) ? fetchJson('fights/' + id + '.json').catch(() => null) : Promise.resolve(null));
+  // A replay exists once a round resolved or the fight ended; a live fight
+  // still in its first round has none yet, so it is not requested.
+  const hasReplay = s => !!s && (s.phase === 'DONE' || Number(s.round_index) > 0 || !!(s.state && s.state.round_index > 0));
+  const replayOf = id => (listed(id) ? fetchJson('fights/' + id + '/replay.json').catch(() => null) : Promise.resolve(null));
+  const replayFor = s => (hasReplay(s) ? replayOf(s.fight_id) : Promise.resolve(null));
   async function activeIds() {
     const book = await fetchJson('book.json').catch(() => null);
     return ((book && book.active_fights) || []).filter(id => DEC.test(id));
@@ -369,7 +379,7 @@
     // Fights that were live during this visit and have finished since: result cards.
     const finishedIds = Array.from(seenLive).filter(id => !liveIds.includes(id));
     const [live, finished] = await Promise.all([
-      Promise.all(liveIds.map(async id => ({ s: await summaryOf(id), rp: await replayOf(id) }))),
+      Promise.all(liveIds.map(async id => { const s = await summaryOf(id); return { s, rp: await replayFor(s) }; })),
       Promise.all(finishedIds.map(summaryOf)),
     ]);
     const recent = !live.length && !finished.filter(Boolean).length ? await latestDone(3) : [];
@@ -393,6 +403,7 @@
         (book && book.offers && book.offers.length ? book.offers.length + ' offer(s) wait in the <a href="#book">book</a>.' : 'The <a href="#book">book</a> is empty.') +
         ' This page checks again every ' + (POLL_MS / 1000) + ' s. Meanwhile: <a href="#practice">free practice</a>.</p></section>') +
       finished.filter(Boolean).map(s => resultCard(s, 'FINISHED')).join('') +
+      chainPanel() +
       (recent.length ? '<h3 class="sub-h">LATEST RESULTS</h3><div class="cols">' + recent.map(s => resultCard(s, 'RESULT')).join('') + '</div>' : ''));
     // One compact player per live fight: the newest resolved round plays as
     // soon as it lands; otherwise it rests on the current confirmed state.
@@ -416,6 +427,276 @@
       const p = track(createPlayer(host, { frames, ids: { A: s.fighters.A.fighter_id, B: s.fighters.B.fighter_id }, names, links: true, replay: rp || {}, compact: true, startAt: fresh ? startAt : frames.length - 1, autoplay: fresh && rounds > 0 }));
       if (!fresh) p.seek(frames.length - 1, false);
     }
+  }
+
+  // ---- fighter identity: name, driver, simulated NFT ---------------------------
+
+  function metaOf(hex, f) {
+    const dep = (D.deployment && D.deployment.fighters && D.deployment.fighters[hex]) || {};
+    return { name: (f && f.name) || dep.name || null, driver: (f && f.driver) || dep.driver || null, asset: (f && f.asset) || dep.asset || null };
+  }
+  function driverBadge(d) {
+    if (!d) return '';
+    if (/^llm:/.test(d)) return '<span class="drv drv-llm" title="An LLM chooses this fighter\'s plans">MODEL: ' + esc(d.slice(4)) + '</span>';
+    if (d === 'planner') return '<span class="drv drv-planner" title="The owner\'s own planner program">PLANNER</span>';
+    return '<span class="drv drv-policy" title="A disclosed policy chooses this fighter\'s plans">POLICY: ' + esc(d) + '</span>';
+  }
+  const foundingBadge = a => (a && a.founding ? '<span class="drv drv-founding" title="One of the founding fighters of this deployment">FOUNDING</span>' : '');
+  function ownerLink(hex) {
+    if (!HEX64.test(hex || '')) return '<span class="muted">none</span>';
+    return '<a class="id" href="#owner/' + hex + '">' + esc(hex.slice(0, 8)) + '&hellip;</a>';
+  }
+  function nftHistory(asset) {
+    if (!asset || !Array.isArray(asset.history) || !asset.history.length) return '<p class="muted">No asset record in this export.</p>';
+    return '<div class="tscroll"><table><thead><tr><th class="num">TICK</th><th>FROM</th><th></th><th>TO</th><th>EVENT</th></tr></thead><tbody>' +
+      asset.history.map(h => '<tr><td class="num">' + esc(h.tick) + '</td><td>' + (h.from ? ownerLink(h.from) : '<span class="muted">&mdash;</span>') + '</td><td>&rarr;</td><td>' + ownerLink(h.to) + '</td><td>' +
+        (h.from ? 'TRANSFER' : 'MINTED') + '</td></tr>').join('') + '</tbody></table></div>';
+  }
+
+  // ---- simulated chain and demo profile ------------------------------------------
+
+  function chainPanel() {
+    const dep = D.deployment, m = D.manifest || {};
+    if (!dep) return '';
+    const c = dep.chain || {};
+    const lat = Array.isArray(c.latency_ticks) ? c.latency_ticks.join('&ndash;') + ' ticks' : c.latency_ticks != null ? esc(c.latency_ticks) + ' ticks' : '?';
+    const val = v => (v == null ? '<span class="muted">not exported</span>' : esc(typeof v === 'number' ? numberFmt(v) : v));
+    return '<div class="cols info-cols">' +
+      '<section class="panel panel-red sim-panel"><h3>SIMULATED CHAIN</h3><p class="tiny">' + esc(dep.note || 'Not a Qubic deployment.') + ' Currency: ' + esc(dep.currency || '?') + '; identities: ' + esc(dep.identities || '?') + '.</p><dl class="kv">' +
+      '<dt>LATENCY</dt><dd>' + lat + ' from send to inclusion</dd>' +
+      '<dt>DROP RATE</dt><dd>' + (c.drop_rate == null ? val(null) : esc((c.drop_rate * 100).toFixed(1)) + '% of transactions lost') + '</dd>' +
+      '<dt>EXECUTION RESERVE</dt><dd>' + val(c.execution_reserve) + '</dd>' +
+      '<dt>FEES BURNED</dt><dd>' + val(c.fees_burned) + '</dd>' +
+      '<dt>OPERATOR FUNDING</dt><dd>' + val(c.operator_funding) + '</dd>' +
+      '<dt>HALTED TICKS</dt><dd>' + val(c.halted_ticks) + '</dd></dl></section>' +
+      '<section class="panel panel-yellow sim-panel"><h3>' + esc(String(dep.profile || 'deployment').toUpperCase()) + ' PROFILE</h3><p class="tiny">Limits this deployment runs with. ' + esc(dep.bots || '') + '</p><dl class="kv">' +
+      '<dt>PAIR STARTS</dt><dd>' + val(m.pair_starts_per_epoch) + ' rated starts per pair per epoch</dd>' +
+      '<dt>REMATCH GAP</dt><dd>' + val(m.pair_rematch_ticks) + ' ticks before the same pair meets again</dd>' +
+      '<dt>EPOCH</dt><dd>' + val(m.ticks_per_epoch) + ' ticks</dd>' +
+      '<dt>MATCHING</dt><dd>every ' + val(m.match_interval_ticks) + ' ticks</dd>' +
+      '<dt>TICK LENGTH</dt><dd>' + (dep.tick_seconds ? esc(dep.tick_seconds) + ' s' : '<span class="muted">not published (simulated clock)</span>') + '</dd></dl></section></div>';
+  }
+
+  // ticks -> "~3 h" when the export says how long a tick is
+  function tickSpan(ticks) {
+    const ts = D.deployment && Number(D.deployment.tick_seconds);
+    if (!ts || !Number.isFinite(Number(ticks))) return '';
+    const s = Number(ticks) * ts;
+    return ' (~' + (s < 5400 ? Math.round(s / 60) + ' min' : s < 172800 ? Math.round(s / 3600) + ' h' : Math.round(s / 86400) + ' d') + ')';
+  }
+
+  // ---- CUPS ----------------------------------------------------------------------
+
+  /* Series scores are exported in fight-slot order: wins_a belongs to the
+   * lexicographically smaller fighter ID. Returns { hex: wins }. */
+  const seriesWins = L.seriesWins;
+  const slotHex = (a, b, slot) => (slot === 'A' ? (a < b ? a : b) : (a < b ? b : a));
+
+  async function loadCups() { const c = await fetchJson('cups.json').catch(() => null); return (c && c.cups) || []; }
+
+  async function viewCups(tok) {
+    if (needData()) return;
+    const cups = await loadCups();
+    if (tok !== viewToken) return;
+    const rows = cups.slice().sort((a, b) => Number(b.cup_id) - Number(a.cup_id)).map(c => '<tr><td class="num"><a href="#cup/' + esc(c.cup_id) + '">#' + esc(c.cup_id) + '</a></td>' +
+      '<td><span class="cstat cstat-' + esc(String(c.status).toLowerCase()) + '">' + esc(c.status) + '</span></td>' +
+      '<td class="num">' + esc((c.entries || []).length) + ' / ' + esc(c.max_entrants) + '</td>' +
+      '<td class="num qu">' + esc(numberFmt(c.entry_fee)) + '</td><td class="num qu">' + esc(numberFmt(c.sponsorship)) + '</td>' +
+      '<td class="num">' + (Number(c.level) + 1) + ' / ' + esc(c.levels) + '</td>' +
+      '<td>' + (c.champion ? fighterLink(c.champion) : '<span class="muted">&mdash;</span>') + '</td>' +
+      '<td><a class="btn btn-sm" href="#cup/' + esc(c.cup_id) + '">BRACKET</a></td></tr>').join('');
+    setView(screen('CUPS', 'SCHEDULED KNOCKOUT TOURNAMENTS &middot; SNAPSHOT TICK ' + esc(D.tick)) +
+      '<section class="panel panel-yellow"><h3>ALL CUPS (' + cups.length + ')</h3>' + (cups.length
+        ? '<div class="tscroll"><table><thead><tr><th class="num">CUP</th><th>STATUS</th><th class="num">ENTRIES</th><th class="num">ENTRY FEE</th><th class="num">SPONSOR</th><th class="num">LEVEL</th><th>CHAMPION</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+        : '<p class="muted">No cup in this export.</p>') +
+      '<p class="tiny muted">Every pairing is a series; both fighters must check in before it starts. Cup fights never change ratings.</p></section>');
+  }
+
+  async function viewCup(tok, id) {
+    if (needData()) return;
+    const cup = (await loadCups()).find(c => String(c.cup_id) === String(id));
+    if (tok !== viewToken) return;
+    if (!cup) return notFound('Cup #' + id + ' is not in this export.');
+    const levels = Number(cup.levels) || 1;
+    const byLevel = Array.from({ length: levels }, (_, l) => (cup.pairings || []).filter(p => Number(p.level) === l));
+    const side = (p, x) => {
+      const hex = p[x], won = p.winner && p.winner === hex, inn = (p.checked_in || []).includes(hex);
+      // Series wins are in fight-slot order (slot A = the smaller fighter ID),
+      // not in the pairing's a/b order.
+      const score = p.series && hex ? seriesWins(p.a, p.b, p.series.wins_a, p.series.wins_b)[hex] : '';
+      const empty = p.status === 'DONE' || (p.winner && !hex) ? '<span class="muted">BYE</span>' : '<span class="muted">TBD</span>';
+      return '<div class="bk-side' + (won ? ' won' : p.winner ? ' lost' : '') + '">' + (hex ? fighterLink(hex) : empty) +
+        '<span class="bk-in ' + (inn ? 'in' : 'out') + '" title="' + (inn ? 'checked in' : 'not checked in') + '">' + (inn ? 'IN' : p.status === 'DONE' ? '' : 'WAIT') + '</span>' +
+        '<b class="bk-score">' + esc(score) + '</b></div>';
+    };
+    const box = p => '<div class="bk-pair bk-' + esc(String(p.status).toLowerCase()) + '"><div class="bk-head">PAIRING ' + esc(p.pairing_id) + ' &middot; ' + esc(p.status) +
+      (p.series ? ' &middot; FIRST TO ' + esc(p.series.need) : '') + (p.series && p.series.replay ? ' &middot; <b class="neg">REPLAY</b>' : '') + '</div>' +
+      side(p, 'a') + side(p, 'b') +
+      ((p.fights || []).length ? '<div class="bk-fights">' + p.fights.map(f => '<a href="#fight/' + esc(f) + '">#' + esc(f) + '</a>').join(' ') + '</div>' : '') + '</div>';
+    const cols = byLevel.map((ps, l) => '<div class="bk-col"><h4>' + (l === levels - 1 ? 'FINAL' : l === levels - 2 ? 'SEMI-FINAL' : 'ROUND ' + (l + 1)) + '</h4>' +
+      (ps.length ? ps.map(box).join('') : '<p class="muted tiny">not paired yet' + (l === Number(cup.level) + 1 ? '' : '') + '</p>') + '</div>').join('');
+    setView(screen('CUP #' + id, esc(cup.status) + ' &middot; LEVEL ' + (Number(cup.level) + 1) + ' OF ' + esc(levels)) +
+      (cup.champion ? '<section class="panel panel-yellow champ"><h3>CHAMPION</h3><p class="champ-line">' + avatar(cup.champion, 'avatar-lg') + ' ' + fighterLink(cup.champion) + ' <span class="drv drv-founding">CUP WINNER</span></p></section>' : '') +
+      '<section class="panel"><h3>BRACKET</h3><div class="bracket">' + cols + '</div>' +
+      '<p class="tiny muted">IN: checked in for the pairing. A series pairing is decided by fight wins (first to the number shown); REPLAY marks a series that had to be replayed.</p></section>' +
+      '<div class="cols"><section class="panel"><h3>TERMS</h3><dl class="kv">' +
+      '<dt>ENTRY FEE</dt><dd class="qu">' + esc(numberFmt(cup.entry_fee)) + ' QU</dd><dt>SPONSORSHIP</dt><dd class="qu">' + esc(numberFmt(cup.sponsorship)) + ' QU</dd>' +
+      '<dt>ENTRANTS</dt><dd>' + esc((cup.entries || []).length) + ' (min ' + esc(cup.min_entrants) + ', max ' + esc(cup.max_entrants) + ')</dd></dl></section>' +
+      '<section class="panel"><h3>SCHEDULE (TICKS)</h3><dl class="kv">' +
+      '<dt>REGISTRATION CLOSED</dt><dd>' + esc(cup.registration_close) + '</dd><dt>LEVEL START</dt><dd>' + esc(cup.level_start) + '</dd>' +
+      '<dt>LEVEL LENGTH</dt><dd>' + esc(cup.level_ticks) + tickSpan(cup.level_ticks) + '</dd><dt>CHECK-IN WINDOW</dt><dd>' + esc(cup.checkin_ticks) + tickSpan(cup.checkin_ticks) + '</dd>' +
+      '<dt>EXPIRES</dt><dd>' + esc(cup.expiry_tick) + '</dd></dl></section></div>' +
+      '<section class="panel"><h3>ENTRIES</h3><p>' + (cup.entries || []).map(h => fighterLink(h)).join(' ') + '</p></section>');
+  }
+
+  // ---- DUELS ---------------------------------------------------------------------
+
+  async function loadDuels() { const d = await fetchJson('duels.json').catch(() => null); return (d && d.duels) || []; }
+  function duelScore(d) { const w = seriesWins(d.a, d.b, d.wins_a, d.wins_b); return esc(w[d.a]) + ' &ndash; ' + esc(w[d.b]); }
+  const duelWinner = d => (d.result && d.result.winner ? slotHex(d.a, d.b, d.result.winner) : null);
+
+  async function viewDuels(tok) {
+    if (needData()) return;
+    const duels = await loadDuels();
+    if (tok !== viewToken) return;
+    const rows = duels.slice().sort((a, b) => Number(b.contest_id) - Number(a.contest_id)).map(d => '<tr><td class="num"><a href="#duel/' + esc(d.contest_id) + '">#' + esc(d.contest_id) + '</a></td><td>' + esc(d.format) + '</td>' +
+      '<td>' + fighterLink(d.a) + '</td><td class="num"><b>' + duelScore(d) + '</b></td><td>' + fighterLink(d.b) + '</td><td class="num qu">' + esc(numberFmt(d.stake)) + '</td>' +
+      '<td>' + esc(d.status) + (duelWinner(d) ? ' &middot; ' + esc(short(duelWinner(d))) + ' WON' : '') + '</td></tr>').join('');
+    setView(screen('DUELS', 'NAMED SERIES BETWEEN TWO FIGHTERS') + '<section class="panel"><h3>ALL DUELS (' + duels.length + ')</h3>' +
+      (rows ? '<div class="tscroll"><table><thead><tr><th class="num">DUEL</th><th>FORMAT</th><th>A</th><th class="num">SCORE</th><th>B</th><th class="num">STAKE</th><th>STATUS</th></tr></thead><tbody>' + rows + '</tbody></table></div>' : '<p class="muted">No duel in this export.</p>') +
+      '<p class="tiny muted">A duel is one purse for the whole series, raked once; it never changes ratings.</p></section>');
+  }
+
+  async function viewDuel(tok, id) {
+    if (needData()) return;
+    const d = (await loadDuels()).find(x => String(x.contest_id) === String(id));
+    if (tok !== viewToken) return;
+    if (!d) return notFound('Duel #' + id + ' is not in this export.');
+    const sums = await Promise.all((d.fights || []).map(summaryOf));
+    if (tok !== viewToken) return;
+    const wHex = duelWinner(d);
+    const rows = (d.fights || []).map((fid, i) => {
+      const s = sums[i];
+      const out = s ? summaryOutcome(s) : null;
+      const fw = out && out.outcome ? out.outcome.winner : null;
+      return '<tr><td class="num">' + (i + 1) + '</td><td class="num"><a href="#fight/' + esc(fid) + '">#' + esc(fid) + '</a></td><td>' +
+        (s ? resultBadge(out) + ' ' + (fw ? esc(short(s.fighters[fw].fighter_id)) + ' won' : 'no winner') + ' <span class="muted">' + esc(howText(s)) + '</span>' : '<span class="muted">not in this export</span>') + '</td></tr>';
+    }).join('');
+    setView(screen('DUEL #' + id, esc(d.format) + ' &middot; FIRST TO ' + esc(d.need) + ' &middot; AT MOST ' + esc(d.cap) + ' FIGHTS') +
+      '<section class="panel panel-yellow duel-head"><h3>' + esc(d.status) + '</h3><div class="duel-score">' +
+      '<div class="ds ' + (wHex === d.a ? 'won' : '') + '">' + avatar(d.a, 'avatar-lg') + fighterLink(d.a) + '</div>' +
+      '<div class="ds-num">' + duelScore(d) + '</div>' +
+      '<div class="ds ' + (wHex === d.b ? 'won' : '') + '">' + avatar(d.b, 'avatar-lg') + fighterLink(d.b) + '</div></div>' +
+      '<p class="center">' + (wHex ? esc(short(wHex)) + ' wins the series' + (d.result.last_result ? ' (last fight: ' + esc(d.result.last_result) + ')' : '') + '.' : d.result ? esc(d.result.kind) + ': no series winner.' : 'In progress.') +
+      ' Stake <span class="qu">' + esc(numberFmt(d.stake)) + ' QU</span> each, one purse for the series.</p></section>' +
+      '<section class="panel"><h3>FIGHTS</h3><div class="tscroll"><table><thead><tr><th class="num">#</th><th class="num">FIGHT</th><th>RESULT</th></tr></thead><tbody>' + rows + '</tbody></table></div></section>' +
+      '<p><a href="#duels">ALL DUELS &#9654;</a></p>');
+  }
+
+  // Replay header: which series or cup pairing a fight belongs to.
+  async function seriesLink(fightId, mode) {
+    if (mode === 'duel') {
+      const d = (await loadDuels()).find(x => (x.fights || []).includes(String(fightId)));
+      if (d) return '<a class="pill" href="#duel/' + esc(d.contest_id) + '">DUEL #' + esc(d.contest_id) + ' &middot; ' + esc(d.format) + ' ' + duelScore(d) + ' &#9654;</a>';
+    }
+    if (mode === 'cup') {
+      for (const c of await loadCups()) {
+        const p = (c.pairings || []).find(x => (x.fights || []).includes(String(fightId)));
+        if (p) {
+          const w = p.series ? seriesWins(p.a, p.b, p.series.wins_a, p.series.wins_b) : null;
+          return '<a class="pill" href="#cup/' + esc(c.cup_id) + '">CUP #' + esc(c.cup_id) + ' &middot; PAIRING ' + esc(p.pairing_id) + (w && p.a && p.b ? ' ' + esc(w[p.a]) + '&ndash;' + esc(w[p.b]) : '') + ' &#9654;</a>';
+        }
+      }
+    }
+    return '';
+  }
+
+  // ---- SEASON --------------------------------------------------------------------
+
+  const QUAL = { fights: 12, opponents: 4, defeated: 3, final_epoch_fights: 3, placement: 10 };
+
+  async function viewSeason(tok) {
+    if (needData()) return;
+    const doc = await fetchJson('seasons.json').catch(() => null);
+    const seasons = (doc && doc.seasons) || [];
+    const ids = new Set();
+    seasons.forEach(s => (s.standings || []).forEach(r => ids.add(r.fighter_id)));
+    const fighters = {};
+    await Promise.all(Array.from(ids).filter(h => HEX64.test(h)).map(async h => { fighters[h] = await fetchJson('fighters/' + h + '.json').catch(() => null); }));
+    if (tok !== viewToken) return;
+    if (!seasons.length) { setView(screen('SEASON') + '<section class="panel"><p class="muted">No season in this export.</p></section>'); return; }
+    const tpe = Number(doc.ticks_per_epoch) || 0;
+    const prog = (have, need) => '<span class="qbar' + (have >= need ? ' ok' : '') + '" title="' + have + ' of ' + need + '"><i style="width:' + Math.min(100, Math.round(100 * have / need)) + '%"></i><b>' + have + '/' + need + '</b></span>';
+    const unknown = '<span class="qbar unk" title="not in the export"><b>?</b></span>';
+    const blocks = seasons.slice().sort((a, b) => b.season - a.season).map(s => {
+      const status = s.status || 'NO_CHAMPION';
+      const rows = (s.standings || []).map((r, i) => {
+        const f = fighters[r.fighter_id];
+        const placed = f ? Number(f.placement_fights) >= QUAL.placement : null;
+        return '<tr' + (r.qualified ? ' class="winner"' : '') + '><td class="num rank">' + (i + 1) + '</td><td>' + fighterLink(r.fighter_id) + '</td><td class="num"><b>' + esc(r.rating) + '</b></td>' +
+          '<td class="num">' + esc(r.defeated) + '</td><td class="num">' + esc(r.wins) + '</td>' +
+          '<td>' + prog(r.fights, QUAL.fights) + '</td><td>' + (r.opponents != null ? prog(r.opponents, QUAL.opponents) : unknown) + '</td><td>' + prog(r.defeated, QUAL.defeated) + '</td>' +
+          '<td>' + (r.final_epoch_fights != null ? prog(r.final_epoch_fights, QUAL.final_epoch_fights) : unknown) + '</td>' +
+          '<td>' + (placed == null ? unknown : placed ? '<span class="pos">DONE</span>' : '<span class="neg">NO</span>') + '</td>' +
+          '<td>' + (r.qualified ? '<b class="pos">QUALIFIED</b>' : '<span class="muted">not yet</span>') + '</td></tr>';
+      }).join('');
+      const first = Number(s.first_tick), next = Number(s.next_tick);
+      const done = D.tick != null ? Math.max(0, Math.min(1, (Number(D.tick) - first) / Math.max(1, next - first))) : 0;
+      return '<section class="panel ' + (s.current ? 'panel-cyan' : '') + '"><h3>SEASON ' + esc(s.season) + (s.current ? ' &middot; CURRENT' : '') + (s.final ? ' &middot; FINAL' : ' &middot; OPEN') + '</h3>' +
+        '<p><span class="sstat sstat-' + esc(status.toLowerCase()) + '">' + esc(status.replace(/_/g, ' ')) + '</span> ' +
+        (s.champion ? 'CHAMPION: ' + fighterLink(s.champion) : status === 'PLAYOFF' ? 'Tied leaders go to a playoff: ' + (s.playoff || []).map(h => fighterLink(h)).join(' ') : s.final ? 'Nobody qualified: no trophy is minted.' : 'No champion yet: nobody has qualified so far.') + '</p>' +
+        '<p class="tiny">TICKS ' + esc(s.first_tick) + ' &rarr; ' + esc(s.next_tick) + tickSpan(next - first) + ' &middot; ' + esc(doc.season_epochs) + ' epochs of ' + esc(tpe) + ' ticks' +
+        (s.current ? ' &middot; ' + Math.round(100 * done) + '% elapsed (epoch ' + esc(doc.epoch) + ')' : '') + '</p>' +
+        (s.current ? '<div class="meter season-meter"><div class="meter-fill" style="width:' + Math.round(100 * done) + '%"></div></div>' : '') +
+        '<div class="tscroll"><table class="season"><thead><tr><th class="num">#</th><th>FIGHTER</th><th class="num">RATING</th><th class="num">DEFEATED</th><th class="num">WINS</th>' +
+        '<th>FIGHTS &ge;' + QUAL.fights + '</th><th>OPPONENTS &ge;' + QUAL.opponents + '</th><th>BEATEN &ge;' + QUAL.defeated + '</th><th>FINAL EPOCH &ge;' + QUAL.final_epoch_fights + '</th><th>PLACEMENT</th><th>STATUS</th></tr></thead><tbody>' +
+        (rows || '<tr><td colspan="11" class="muted">No ranked fights yet.</td></tr>') + '</tbody></table></div></section>';
+    }).join('');
+    setView(screen('SEASON', 'RANKED CHAMPIONSHIP &middot; SEASON RATING, THEN DISTINCT OPPONENTS DEFEATED, THEN WINS') + blocks +
+      '<section class="panel"><h3>HOW TO QUALIFY</h3><ul class="plain rules-list">' +
+      '<li>At least ' + QUAL.fights + ' completed ranked combat fights in the season, against at least ' + QUAL.opponents + ' distinct opponents.</li>' +
+      '<li>Combat wins against at least ' + QUAL.defeated + ' distinct opponents, and at least ' + QUAL.final_epoch_fights + ' ranked fights in the final epoch.</li>' +
+      '<li>Placement complete (' + QUAL.placement + ' ranked fights) and no admission suspension. Forfeits, duels, cups and NPCs do not count.</li>' +
+      '<li>A unique qualified leader is champion. Tied leaders play off; if nobody qualifies the season is archived NO_CHAMPION: no arbitrary winner is minted.</li></ul>' +
+      '<p class="tiny muted">? = the export does not carry that count yet.</p></section>');
+  }
+
+  // ---- OWNER ---------------------------------------------------------------------
+
+  async function viewOwner(tok, hex) {
+    if (needData()) return;
+    if (!HEX64.test(hex || '')) return notFound('An owner ID is 64 lowercase hex digits.');
+    await fetchJson('index.json').catch(() => null);
+    const dep = (D.deployment && D.deployment.fighters) || {};
+    const now = [], past = [];
+    for (const [fid, m] of Object.entries(dep)) {
+      const a = m.asset || {};
+      const hist = a.history || [];
+      if (a.owner === hex) now.push(fid);
+      else if (hist.some(h => h.to === hex)) past.push(fid);
+    }
+    const fighters = {};
+    await Promise.all(now.concat(past).map(async f => { fighters[f] = await fetchJson('fighters/' + f + '.json').catch(() => null); }));
+    if (tok !== viewToken) return;
+    const acq = (fid) => {
+      const h = ((dep[fid].asset || {}).history || []).filter(x => x.to === hex).pop();
+      return h ? (h.from ? 'bought at tick ' + esc(h.tick) + ' from ' + ownerLink(h.from) : 'minted to this owner at tick ' + esc(h.tick)) : '';
+    };
+    const left = (fid) => {
+      const hist = (dep[fid].asset || {}).history || [];
+      const h = hist.filter(x => x.from === hex).pop();
+      return h ? 'sold at tick ' + esc(h.tick) + ' to ' + ownerLink(h.to) : '';
+    };
+    const card = (fid, owned) => {
+      const f = fighters[fid] || {}, m = metaOf(fid, fighters[fid]), r = f.record || {};
+      return '<tr><td>' + fighterLink(fid) + ' ' + foundingBadge(m.asset) + '</td><td>' + driverBadge(m.driver) + '</td><td class="num"><b>' + esc(f.lifetime_rating == null ? '?' : f.lifetime_rating) + '</b></td>' +
+        '<td class="num">' + esc(r.W || 0) + '-' + esc(r.D || 0) + '-' + esc(r.L || 0) + '</td><td class="wraptd">' + (owned ? acq(fid) : left(fid)) + '</td></tr>';
+    };
+    const head = '<thead><tr><th>FIGHTER</th><th>DRIVER</th><th class="num">RATING</th><th class="num">W-D-L</th><th>HOW</th></tr></thead>';
+    setView(screen('OWNER', '<span class="id wrap">' + esc(hex) + '</span>') +
+      '<section class="panel panel-yellow"><h3>FIGHTERS OWNED (' + now.length + ')</h3>' + (now.length ? '<div class="tscroll"><table>' + head + '<tbody>' + now.map(f => card(f, true)).join('') + '</tbody></table></div>' : '<p class="muted">This identity owns no fighter in this export.</p>') + '</section>' +
+      (past.length ? '<section class="panel"><h3>PREVIOUSLY OWNED (' + past.length + ')</h3><div class="tscroll"><table>' + head + '<tbody>' + past.map(f => card(f, false)).join('') + '</tbody></table></div></section>' : '') +
+      '<p class="tiny muted">Public spectator view: ownership comes from the simulated fighter NFTs in the export. Balances, budgets, keys and plans are never shown here.</p>');
   }
 
   // ---- RESULTS -----------------------------------------------------------------------
@@ -444,6 +725,7 @@
     }).join('');
     setView(screen('RESULTS', esc(done.length) + ' FINISHED &middot; ' + esc(active.length) + ' LIVE &middot; SNAPSHOT TICK ' + esc(index.generated_tick)) +
       (active.length ? '<section class="panel panel-cyan"><h3>LIVE NOW (' + active.length + ')</h3><p>' + active.map(s => '<a href="#fight/' + esc(s.fight_id) + '">#' + esc(s.fight_id) + '</a> ' + phaseBadge(s)).join('<br>') + '</p><p><a href="#arena">WATCH IN THE ARENA &#9654;</a></p></section>' : '') +
+      '<p class="sub-links"><a href="#duels">DUELS &#9654;</a> &middot; <a href="#cups">CUPS &#9654;</a> &middot; <a href="#season">SEASON &#9654;</a></p>' +
       '<section class="panel"><h3>HISTORY</h3>' + (feed ? '<ol class="feed">' + feed + '</ol>' : '<p class="muted">No finished fight yet.</p>') +
       (missing || ids.length >= 200 ? '<p class="tiny muted">The export keeps the most recent fights only' + (missing ? '; ' + missing + ' listed file(s) were not available' : '') + '.</p>' : '') + '</section>');
   }
@@ -616,7 +898,7 @@
       if (f.kind === 'beat') {
         const a = f.trace.A, b = f.trace.B;
         const cell = (t, o) => '<td>' + actionTag(NAMES[t.effective], t.power, NAMES[t.intended]) + '</td><td class="num">' + (t.actual_hp_lost ? '<span class="neg">-' + t.actual_hp_lost + '</span> ' : '') + t.after.hp + '</td><td class="num">' + t.after.stamina + (t.strain ? ' <span class="strain">(-' + t.strain + ')</span>' : '') + '</td>';
-        return '<tr class="' + cls + '" data-i="' + i + '" tabindex="-1"><td>' + (f.round + 1) + '</td><td>' + (f.beat + 1) + '</td>' + cell(a, b) + cell(b, a) + '<td class="reasons">' + esc(a.reasons.join(' ')) + ' / ' + esc(b.reasons.join(' ')) + '</td></tr>';
+        return '<tr class="' + cls + '" data-i="' + i + '" tabindex="-1"><td>' + (f.round + 1) + '</td><td>' + (f.beat + 1) + '</td>' + cell(a, b) + cell(b, a) + '<td class="reasons" title="' + esc('A: ' + a.reasons.join(' ') + ' / B: ' + b.reasons.join(' ')) + '">' + esc(L.beatHeadline(a, b, names)) + '</td></tr>';
       }
       if (f.kind === 'unexecuted') {
         return '<tr class="' + cls + '" data-i="' + i + '" tabindex="-1"><td>' + (f.round + 1) + '</td><td>' + (f.beat + 1) + '</td><td colspan="3">' + esc(NAMES[f.intended.A]) + (f.power.A ? ' &#9733;' : '') + '</td><td colspan="3">' + esc(NAMES[f.intended.B]) + (f.power.B ? ' &#9733;' : '') + '</td><td class="reasons">UNEXECUTED: revealed, not played (fight already over)</td></tr>';
@@ -640,10 +922,11 @@
       '<button class="chip" data-act="last" title="Last (End)">&#9654;|</button>' +
       '<label class="speed">SPEED <select data-act="speed">' + SPEEDS.map(s => '<option value="' + s + '"' + (s === speed ? ' selected' : '') + '>' + s + 'x</option>').join('') + '</select></label>' +
       '<span class="beat-ms tiny muted"></span><span class="pos tiny"></span></div>' +
+      '<p class="beat-headline" aria-live="polite"></p>' +
       '<p class="tiny muted stage-help">Keys: LEFT/RIGHT step, SPACE play/pause, HOME/END. Motion is decoration only: every number above comes from the independent replay.</p>' +
       '<div class="caption cols"><div class="cap cap-A"></div><div class="cap cap-B"></div></div>' +
       '<details class="beat-details" open><summary>BEAT TABLE (' + frames.filter(f => f.kind === 'beat').length + ' executed beats)</summary>' +
-      '<div class="tscroll"><table class="beats"><thead><tr><th>RND</th><th>BEAT</th><th>' + esc(names.A) + '</th><th class="num">HP</th><th class="num">ST</th><th>' + esc(names.B) + '</th><th class="num">HP</th><th class="num">ST</th><th>REASONS A / B</th></tr></thead><tbody>' + rows + '</tbody></table></div></details>';
+      '<div class="tscroll"><table class="beats"><thead><tr><th>RND</th><th>BEAT</th><th>' + esc(names.A) + '</th><th class="num">HP</th><th class="num">ST</th><th>' + esc(names.B) + '</th><th class="num">HP</th><th class="num">ST</th><th>WHAT HAPPENED</th></tr></thead><tbody>' + rows + '</tbody></table></div></details>';
 
     root.classList.toggle('compact', !!opts.compact);
     const els = {};
@@ -704,6 +987,14 @@
       if (f.kind === 'end') text = L.outcomeLabel({ outcome: f.outcome }).short;
       if (f.kind === 'forfeit') text = 'TIMEOUT';
       note.textContent = text;
+      // The whole exchange in one plain sentence: the same text with motion off.
+      const head = $('.beat-headline', root);
+      head.textContent = f.kind === 'beat' ? L.beatHeadline(f.trace.A, f.trace.B, names)
+        : f.kind === 'unexecuted' ? 'Revealed but never played: the fight was already over.'
+        : f.kind === 'break' ? 'Break between rounds: +' + f.recovery.A + ' / +' + f.recovery.B + ' stamina; HP, opening, guard and power carry over.'
+        : f.kind === 'end' ? L.outcomeLabel({ outcome: f.outcome }).text
+        : f.kind === 'forfeit' ? L.outcomeLabel(opts.replay).text
+        : f.kind === 'round' ? 'Round ' + (f.round + 1) + ' begins from the state above.' : 'Both fighters start at HP ' + st.a.hp + ' and stamina ' + st.a.stamina + '.';
       note.className = 'center-note note-' + f.kind;
       if (f.kind === 'forfeit') {
         els.A.cap.innerHTML = '<p>' + esc(L.outcomeLabel(opts.replay).text) + '</p>' + (!f.played ? '<p class="muted">No round was played; the bars show the start state at the deadline, not a result.</p>' : '<p class="muted">Bars show the re-derived state at the deadline (round ' + (f.round + 1) + '). No beat is invented for the missing reveal.</p>');
@@ -825,10 +1116,10 @@
   async function viewFight(tok, id) {
     if (needData()) return;
     if (!DEC.test(id || '')) return notFound('Fight IDs are decimal numbers.');
-    const [summary, replay] = await Promise.all([
-      fetchJson('fights/' + id + '.json').catch(() => null),
-      fetchJson('fights/' + id + '/replay.json').catch(() => null),
-    ]);
+    const summary = await fetchJson('fights/' + id + '.json').catch(() => null);
+    // No summary (pruned or unknown): still try the replay once; a summary
+    // that says no round resolved yet means there is no replay to ask for.
+    const replay = summary ? await replayFor(summary) : await fetchJson('fights/' + id + '/replay.json').catch(() => null);
     if (tok !== viewToken) return;
     if (!summary && !replay) return notFound('Fight #' + id + ' is not in this export.');
     const fighters = (replay || summary).fighters;
@@ -842,7 +1133,7 @@
       : '';
     const head = screen('FIGHT #' + id, esc(String((replay || summary).mode || '').toUpperCase()) + ' &middot; ' + esc(R.semantic_version.toUpperCase()));
     const vs = '<div class="vsline">' + fighterLink(fighters.A.fighter_id, names.A) + ' <span class="vs">VS</span> ' + fighterLink(fighters.B.fighter_id, names.B) +
-      ' <span id="level-slot">' + (replay ? '<span class="level level-PENDING">VERIFYING&hellip;</span>' : '') + '</span></div>';
+      ' <span id="level-slot">' + (replay ? '<span class="level level-PENDING">VERIFYING&hellip;</span>' : '') + '</span> <span id="series-slot"></span></div>';
     if (!replay) {
       setView(head + vs + liveBanner + '<section class="panel"><h3>NO ROUND COMPLETED YET</h3><p class="muted">Nothing is revealed for this fight at this snapshot, so there is nothing to replay.</p></section>');
       return;
@@ -857,6 +1148,7 @@
       '<section class="panel verify-panel" id="verify"><h3>VERIFICATION</h3><p class="muted">Recomputing digests and commitments&hellip;</p></section>' +
       plansPanel(replay));
     track(createPlayer($('#player'), { frames, ids: { A: fighters.A.fighter_id, B: fighters.B.fighter_id }, names, links: true, replay, autoplay: true }));
+    seriesLink(id, replay.mode).then(html => { if (tok === viewToken && $('#series-slot')) $('#series-slot').innerHTML = html; }).catch(() => {});
     markScrollers($('#view'));
     const v = await L.verifyReplay(replay, { rules: R, manifest: D.manifest, sha256: SHA }).catch(e => ({ checks: [{ id: 'error', label: 'Verification', status: 'FAIL', evidence: e.message, details: [] }], level: 'FAILED' }));
     if (tok !== viewToken) return;
@@ -891,9 +1183,11 @@
     const f = await fetchJson('fighters/' + hex + '.json').catch(() => null);
     if (tok !== viewToken) return;
     if (!f) return notFound('Fighter ' + short(hex) + ' is not in this export.');
+    const meta = metaOf(hex, f);
     const ids = (f.fights || []).filter(x => DEC.test(x));
     const loaded = await Promise.all(ids.map(async id => {
-      const [s, rp] = await Promise.all([fetchJson('fights/' + id + '.json').catch(() => null), fetchJson('fights/' + id + '/replay.json').catch(() => null)]);
+      const s = await summaryOf(id);
+      const rp = await replayFor(s);
       return { id, summary: s, replay: rp };
     }));
     if (tok !== viewToken) return;
@@ -924,15 +1218,16 @@
     }).join('');
     const pw = s.power;
     setView(screen('FIGHTER', '<span class="id wrap">' + esc(hex) + '</span>') +
-      '<section class="panel panel-yellow fighter-panel"><h3>' + esc(short(hex)) + (f.house_npc ? ' &middot; HOUSE NPC' : '') + '</h3><div class="fprofile">' +
+      '<section class="panel panel-yellow fighter-panel"><h3>' + esc(meta.name ? meta.name.toUpperCase() : short(hex)) + (f.house_npc ? ' &middot; HOUSE NPC' : '') + '</h3>' +
+      '<p class="badges">' + driverBadge(meta.driver) + ' ' + foundingBadge(meta.asset) + (meta.asset ? ' <span class="drv drv-nft" title="Simulated fighter NFT">NFT ' + esc(meta.asset.name || '') + '</span>' : '') + '</p><div class="fprofile">' +
       avatar(hex, 'avatar-xl') + '<dl class="kv">' +
-      '<dt>RATING</dt><dd><b class="big">' + esc(f.lifetime_rating) + '</b> ' + (f.provisional ? '<span class="belt belt-sm belt-other">PROVISIONAL ' + esc(f.placement_fights) + '/?</span>' : '<span class="belt belt-sm ' + beltCls + '">' + esc(String(f.belt || '').toUpperCase()) + ' BELT</span>') + '</dd>' +
-      '<dt>RECORD</dt><dd>' + esc(rec.W || 0) + 'W ' + esc(rec.D || 0) + 'D ' + esc(rec.L || 0) + 'L &middot; forfeits ' + esc(rec.FW || 0) + ' won / ' + esc(rec.FL || 0) + ' lost <span class="muted">(contract record)</span></dd>' +
+      '<dt>RATING</dt><dd><b class="big">' + esc(f.lifetime_rating) + '</b> ' + (f.provisional ? '<span class="belt belt-sm belt-white" title="Placement: the first 10 ranked fights">PROVISIONAL ' + esc(f.placement_fights) + '/10</span>' : '<span class="belt belt-sm ' + beltCls + '">' + esc(String(f.belt || '').toUpperCase()) + ' BELT</span>') + '</dd>' +
+      '<dt>RECORD</dt><dd>' + esc(rec.W || 0) + 'W ' + esc(rec.D || 0) + 'D ' + esc(rec.L || 0) + 'L &middot; forfeits ' + esc(rec.FW || 0) + ' won / ' + esc(rec.FL || 0) + ' lost <span class="muted">(ranked, contract record; duels and cups below)</span></dd>' +
       '<dt>PLACEMENT</dt><dd>' + esc(f.placement_fights) + ' fights</dd>' +
       '<dt>STATUS</dt><dd>' + esc(f.lock || 'IDLE') + (f.cooldown_until && f.cooldown_until !== '0' ? ' &middot; cooldown until tick ' + esc(f.cooldown_until) : '') + '</dd>' +
       '<dt>FAULTS</dt><dd>' + (faults.length ? faults.map(([k, v]) => 'epoch ' + esc(k) + ': ' + esc(v)).join(', ') : '<span class="pos">none</span>') + '</dd>' +
       '<dt>SEASONS</dt><dd>' + Object.entries(f.season_ratings || {}).map(([k, v]) => 'S' + esc(k) + ' ' + esc(v)).join(', ') + '</dd>' +
-      '<dt>OWNER</dt><dd class="id">' + esc(short(f.owner)) + '&hellip;' + (f.operator !== f.owner ? ' &middot; operator ' + esc(short(f.operator)) + '&hellip;' : ' (self-operated)') + '</dd>' +
+      '<dt>OWNER</dt><dd>' + ownerLink((meta.asset && meta.asset.owner) || f.owner) + (f.operator !== f.owner ? ' &middot; operator <span class="id">' + esc(String(f.operator).slice(0, 8)) + '&hellip;</span>' : ' (self-operated)') + '</dd>' +
       '</dl></div></section>' +
       '<section class="panel panel-cyan"><h3>SCOUTING REPORT</h3>' +
       '<p class="caveat">Observed in ' + s.replayed + ' completed fight(s), ' + s.beats + ' executed beats, re-derived from revealed plans. ' +
@@ -946,6 +1241,8 @@
       '</div>' +
       '<h4>RESULTS BY MODE (REPLAYED)</h4><div class="tscroll"><table><thead><tr><th>MODE</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num">FW</th><th class="num">FL</th></tr></thead><tbody>' + (results || '<tr><td colspan="6" class="muted">none</td></tr>') + '</tbody></table></div>' +
       '</section>' +
+      '<section class="panel"><h3>OWNERSHIP (SIMULATED NFT)</h3>' + nftHistory(meta.asset) +
+      (meta.asset ? '<p class="tiny muted">Issuer <span class="id">' + esc(String(meta.asset.issuer || '').slice(0, 8)) + '&hellip;</span> &middot; asset ' + esc(meta.asset.name || '?') + '. A transfer changes who owns the fighter, never its stats or record.</p>' : '') + '</section>' +
       '<section class="panel"><h3>FIGHTS (' + loaded.length + ')</h3><div class="tscroll"><table><thead><tr><th class="num">FIGHT</th><th>MODE</th><th>SLOT</th><th>OPPONENT</th><th>RESULT</th></tr></thead><tbody>' + fightRows + '</tbody></table></div></section>');
   }
 
@@ -1156,6 +1453,9 @@
 
   // ---- router and chrome -------------------------------------------------------------
 
+  // Sub-pages light up the nav entry they belong to.
+  const NAV_PARENT = { fight: 'results', fights: 'results', duel: 'results', duels: 'results', fighter: 'leaderboard', owner: 'leaderboard', cup: 'cups' };
+
   function currentRoute() {
     const h = decodeURIComponent(location.hash.replace(/^#/, '')) || 'arena';
     return h.split('/');
@@ -1177,13 +1477,19 @@
     const tok = ++viewToken;
     const y = window.scrollY;
     stopPlayer();
-    $$('.hud-nav a[data-view]').forEach(a => a.classList.toggle('on', a.dataset.view === name || ((name === 'fight' || name === 'fights') && a.dataset.view === 'results') || (name === 'fighter' && a.dataset.view === 'leaderboard')));
+    $$('.hud-nav a[data-view]').forEach(a => a.classList.toggle('on', a.dataset.view === (NAV_PARENT[name] || name)));
     try {
       if (name === 'arena') await viewArena(tok);
       else if (name === 'title') await viewTitle(tok);
       else if (name === 'book') await viewBook(tok);
       else if (name === 'results' || name === 'fights') await viewResults(tok);
       else if (name === 'leaderboard') await viewLeaderboard(tok);
+      else if (name === 'cups') await viewCups(tok);
+      else if (name === 'cup') await viewCup(tok, rest[0]);
+      else if (name === 'duels') await viewDuels(tok);
+      else if (name === 'duel') await viewDuel(tok, rest[0]);
+      else if (name === 'season') await viewSeason(tok);
+      else if (name === 'owner') await viewOwner(tok, rest[0]);
       else if (name === 'join') await viewJoin(tok);
       else if (name === 'help') viewHelp();
       else if (name === 'fight') await viewFight(tok, rest[0]);

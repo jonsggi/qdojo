@@ -266,6 +266,8 @@ static bool load_manifest(const JVal& h, Manifest& m) {
     m.match_interval = uint32_t(h.at("match_interval").num);
     m.cooldown_ticks = uint64_t(h.at("cooldown_ticks").num);
     m.faults_per_epoch = uint32_t(h.at("faults_per_epoch").num);
+    m.pair_starts_per_epoch = uint32_t(h.at("pair_starts_per_epoch").num);
+    m.pair_rematch_ticks = uint64_t(h.at("pair_rematch_ticks").num);
     m.offer_lifetime_lo = uint64_t(h.at("offer_lifetime").arr.at(0).num);
     m.offer_lifetime_hi = uint64_t(h.at("offer_lifetime").arr.at(1).num);
     return true;

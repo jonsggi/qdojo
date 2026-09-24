@@ -35,6 +35,7 @@ from .codec import Op
 from .devnet import Devnet, DevnetClient, roles
 from .rules import candidate_1
 from .sim import identity
+from ..hashing import sha256
 
 # Ranked bots are rarely idle, so the duel specialists skip ranked play: they
 # fight challenges and are the fighters a collector can buy between duels.
@@ -66,8 +67,12 @@ def _budget(rules, entry) -> Budget:
 class Arena:
     def __init__(self, directory: Path, lineup: list[dict], profile: str = "demo", seed: int | None = None,
                  latency=(1, 3), drop_rate: float = 0.02, fees: FeeModel | None = FeeModel(),
-                 cup_every: int = 1800, duel_every: int = 300, market_every: int = 2400, log=print):
+                 cup_every: int = 1800, duel_every: int = 300, market_every: int = 2400, log=print,
+                 deterministic: bool = False):
         self.dir = Path(directory)
+        # Samples and tests only: derive policy seeds and salts from the seed.
+        # A live arena keeps secrets-based salts, as a real bot must.
+        self.deterministic = deterministic
         self.log = log
         self.net = Devnet(self.dir, profile)
         self.w = self.net.world
@@ -142,7 +147,9 @@ class Arena:
             return planner_chooser(cmd, int(llm.get("budget_ms", 25000)))
         if "planner" in entry:
             return planner_chooser(shlex.split(entry["planner"]), int(entry.get("budget_ms", 1500)))
-        return policy_chooser(self.rules, E.policy_by_name(entry["policy"]), secrets.token_bytes(32))
+        seed = (sha256(b"qdojo/arena-policy/v1\0", str(self.state["seed"]).encode(), entry["label"].encode())
+                if self.deterministic else secrets.token_bytes(32))
+        return policy_chooser(self.rules, E.policy_by_name(entry["policy"]), seed)
 
     def _make_bot(self, fid: bytes):
         entry = self.labels[fid]
@@ -153,6 +160,13 @@ class Arena:
         bot.play_cups = bool(entry.get("cups"))
         bot.accept_duels = bool(entry.get("duels"))
         bot.ranked = entry.get("ranked", True)
+        if self.deterministic:
+            counter = {"n": 0}
+
+            def salt(k, label=entry["label"], owner=owner):
+                counter["n"] += 1
+                return sha256(b"qdojo/sample-salt/v1\0", label.encode(), owner, counter["n"].to_bytes(8, "little"))[:k]
+            bot.salt_source = salt
         self.bots[fid] = bot
 
     # -- events -------------------------------------------------------------
@@ -216,6 +230,11 @@ class Arena:
 
     def step(self):
         for fid, b in list(self.bots.items()):
+            # "reliability" < 1 models a flaky operator (slow machine, dropped
+            # connection): it acts only on that share of ticks and sometimes
+            # misses a deadline, which the contract turns into a forfeit.
+            if self.rng.random() >= self.labels[fid].get("reliability", 1.0):
+                continue
             try:
                 b.step()
             except Exception as exc:               # one bot's failure must not stop the arena
@@ -237,7 +256,8 @@ class Arena:
                 "chain": {"latency_ticks": list(self.chain.latency), "drop_rate": self.chain.drop_rate,
                           "execution_reserve": self.chain.reserve, "fees_burned": self.chain.burned,
                           "operator_funding": self.state["funded"], "halted_ticks": self.chain.halted_ticks},
-                "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+                **({} if self.deterministic else
+                   {"generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})}
 
 
 def run(devnet_dir: Path, lineup: list[dict], export_dir: Path, tick_seconds: float = 1.5,

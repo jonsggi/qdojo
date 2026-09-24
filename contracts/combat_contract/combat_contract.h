@@ -80,8 +80,8 @@ static constexpr uint64_t WIDEN_TICKS = 40;
 static constexpr uint16_t MAX_GAP_LO = 100, MAX_GAP_HI = 200;
 static constexpr uint32_t PASS_SNAPSHOT = 64;
 static constexpr uint32_t PASS_MATCHES = 4;
-static constexpr uint32_t PAIR_STARTS_PER_EPOCH = 2;
-static constexpr uint64_t PAIR_REMATCH_TICKS = 120;
+// Anti-farming pair limits are manifest values (Manifest::pair_starts_per_epoch,
+// Manifest::pair_rematch_ticks); matchmaking.md specifies 2 and 120.
 
 // Result codes (docs/protocol.md section 6). HOST_ERROR is not a protocol
 // code: it marks a call the runtime can never produce (ticks running
@@ -209,6 +209,8 @@ struct Manifest {
     uint64_t offer_lifetime_lo, offer_lifetime_hi;
     uint64_t cooldown_ticks;
     uint32_t faults_per_epoch;
+    uint32_t pair_starts_per_epoch;   // ranked starts per pair per epoch (spec: 2)
+    uint64_t pair_rematch_ticks;      // minimum gap after a pair's last result (spec: 120)
 };
 
 // ------------------------------------------------------------ records
@@ -814,9 +816,9 @@ inline SeasonSlot& season_claim(Fighter& f, uint32_t season) {
 // An entry is semantically absent once it can no longer affect matching:
 // its starts are for an older epoch (or zero) and its last result is older
 // than the rematch interval. Such entries are reused.
-inline bool pair_stale(const PairRecord& p, int64_t epoch, uint64_t t) {
+inline bool pair_stale(const PairRecord& p, int64_t epoch, uint64_t t, uint64_t rematch_ticks) {
     bool starts_dead = p.starts == 0 || p.epoch != epoch;
-    bool last_dead = !p.has_last || t - p.last >= PAIR_REMATCH_TICKS;
+    bool last_dead = !p.has_last || t - p.last >= rematch_ticks;
     return starts_dead && last_dead;
 }
 
@@ -838,7 +840,7 @@ inline int32_t pair_find(State& s, uint16_t x, uint16_t y, bool create, int64_t 
             break;  // end of the probe chain
         }
         if (p.lo == lo && p.hi == hi) return int32_t(i);
-        if (reuse < 0 && pair_stale(p, epoch, t)) reuse = int32_t(i);
+        if (reuse < 0 && pair_stale(p, epoch, t, s.m.pair_rematch_ticks)) reuse = int32_t(i);
     }
     if (!create) return -1;
     if (reuse < 0) {
@@ -1968,8 +1970,8 @@ inline bool compatible(State& s, const Offer& x, const Offer& y, uint64_t t, int
     int32_t p = pair_find(s, x.fighter_idx, y.fighter_idx, false, epoch, t);
     if (p >= 0) {
         const PairRecord& r = s.pairs[p];
-        if (r.epoch == epoch && r.starts >= PAIR_STARTS_PER_EPOCH) return false;
-        if (r.has_last && t - r.last < PAIR_REMATCH_TICKS) return false;
+        if (r.epoch == epoch && r.starts >= s.m.pair_starts_per_epoch) return false;
+        if (r.has_last && t - r.last < s.m.pair_rematch_ticks) return false;
     }
     if (in_cooldown(s, fx, t, epoch) || in_cooldown(s, fy, t, epoch)) return false;
     uint32_t used = fights_in_use(s);
@@ -2988,6 +2990,20 @@ inline void end_tick(State& s, Host& h, uint64_t t) {
         }
     }
     if (t % s.m.match_interval == 0) {
+        // Expired ranked offers are closed and refunded on every matching
+        // tick, even when no pass runs, in offer_id order.
+        uint64_t ids[CAP_OFFER_SLOTS];
+        uint32_t n = 0;
+        for (uint32_t i = 0; i < CAP_OFFER_SLOTS; ++i) {
+            const Offer& o = s.offers[i];
+            if (o.used && o.status == O_OPEN && o.kind == K_RANKED && t >= o.expires) ids[n++] = o.offer_id;
+        }
+        sort_u64(ids, n);
+        for (uint32_t i = 0; i < CAP_OFFER_SLOTS; ++i) {
+            if (i >= n) break;
+            int32_t k = offer_slot(s, ids[i]);
+            if (k >= 0) close_offer(s, s.offers[k], O_EXPIRED);
+        }
         uint32_t ranked = 0;
         for (uint32_t i = 0; i < CAP_OFFER_SLOTS; ++i) {
             const Offer& o = s.offers[i];

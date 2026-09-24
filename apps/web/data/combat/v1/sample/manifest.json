@@ -2,7 +2,7 @@
  "schema": "qdojo.combat.manifest.v1",
  "network_id": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
  "contract_id": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
- "generated_tick": "10676",
+ "generated_tick": "4201",
  "source": "reference-contract-state",
  "ruleset_digest": "12085c86a61ffd106430b6690acbd522c5a94f90ed8024585817f4939fe4842c",
  "semantic_version": "combat-v1-candidate-1",
@@ -16,6 +16,9 @@
   "1": "1000"
  },
  "match_interval_ticks": 4,
+ "pair_starts_per_epoch": 6,
+ "pair_rematch_ticks": 60,
+ "ticks_per_epoch": 2400,
  "fee_profiles": {
   "1": {
    "rake_bps": 500,
@@ -30,6 +33,12 @@
   "qdojo.combat.fighter.v1",
   "qdojo.combat.book.v1",
   "qdojo.combat.events.v1",
-  "qdojo.combat.npcs.v1"
+  "qdojo.combat.npcs.v1",
+  "qdojo.combat.index.v1",
+  "qdojo.combat.results.v1",
+  "qdojo.combat.cups.v1",
+  "qdojo.combat.duels.v1",
+  "qdojo.combat.seasons.v1",
+  "qdojo.combat.ruleset.v1"
  ]
 }

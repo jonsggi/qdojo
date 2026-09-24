@@ -1,0 +1,65 @@
+{
+ "schema": "qdojo.combat.fight.v1",
+ "network_id": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
+ "contract_id": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
+ "generated_tick": "4201",
+ "source": "reference-contract-state",
+ "fight_id": "45",
+ "contest_id": "30",
+ "phase": "DONE",
+ "round_index": 2,
+ "state": {
+  "round_index": 2,
+  "A": {
+   "hp": 26,
+   "stamina": 17,
+   "opening": 0,
+   "guard_streak": 0,
+   "power_available": 0
+  },
+  "B": {
+   "hp": 0,
+   "stamina": 56,
+   "opening": 0,
+   "guard_streak": 0,
+   "power_available": 0
+  },
+  "outcome": {
+   "winner": "A",
+   "result": "KO"
+  }
+ },
+ "context_digest": "3bb26a289e30da4be3ce202ae55be4d652049f36cb3373f8b08545b038e4a94c",
+ "round_state_digest": "ddfd5974e2ec61cddc132e6c61a051496141fcbb2955df29d3532345f7f78942",
+ "commit_last": "2920",
+ "reveal_last": "2932",
+ "committed": [],
+ "revealed": [],
+ "result": {
+  "kind": "COMBAT",
+  "winner": "A",
+  "result": "KO",
+  "tick": "2923"
+ },
+ "fighters": {
+  "A": {
+   "fighter_id": "861dd00b56ac96f696c85e815c931a01e883a91c66350fefc4d153b95652d071",
+   "owner": "772af50d32b58161d301a8e270aeb23889ea11797ede57b19fa8dc3bb4b1b70c",
+   "operator": "772af50d32b58161d301a8e270aeb23889ea11797ede57b19fa8dc3bb4b1b70c",
+   "auth_version": 1,
+   "payout_recipient": "772af50d32b58161d301a8e270aeb23889ea11797ede57b19fa8dc3bb4b1b70c",
+   "lifetime_rating": 1000,
+   "season_rating": 1000
+  },
+  "B": {
+   "fighter_id": "c64fb2f8f74ada61c83a5b34c60e025953d25fe0b7c0df602195eedced1d6481",
+   "owner": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+   "operator": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+   "auth_version": 2,
+   "payout_recipient": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+   "lifetime_rating": 1000,
+   "season_rating": 1000
+  }
+ },
+ "mode": "duel"
+}

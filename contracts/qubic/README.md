@@ -100,6 +100,11 @@ follows.
   - `INITIALIZE` loads a TEST PROFILE (`loadDefaultManifest`). This is the
     fuzz journal's header: its synthetic test identities, and
     `contractId = SELF`. It is not a release manifest.
+  - The pair limits `pairStartsPerEpoch` and `pairRematchTicks` are manifest
+    fields. The compiled profile uses the specified 2 and 120
+    (`QDOJO_PAIR_STARTS_PER_EPOCH`, `QDOJO_PAIR_REMATCH_TICKS`). The harness
+    loads them from each journal header, so `demo-profile.journal` (6 and 60)
+    also replays.
   - A test may write `StateData::m` and set `manifestLoaded` before
     `INITIALIZE`. On chain the state arrives zeroed, so the compiled profile
     is always used.

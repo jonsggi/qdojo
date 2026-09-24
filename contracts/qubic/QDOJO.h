@@ -393,6 +393,8 @@ struct QDOJO : public ContractBase
         uint64 offerLifetimeHi;
         uint64 cooldownTicks;
         uint32 faultsPerEpoch;
+        uint32 pairStartsPerEpoch;      // matchmaking.md: 2
+        uint64 pairRematchTicks;        // matchmaking.md: 120
     };
 
     struct SeasonSlot
@@ -1554,9 +1556,9 @@ struct QDOJO : public ContractBase
 
     // =========================================================== pair history
     // An entry is semantically absent once it can no longer affect matching.
-    static bit pairStale(const PairRecord& p, sint64 epoch, uint64 t)
+    static bit pairStale(const PairRecord& p, sint64 epoch, uint64 t, uint64 rematchTicks)
     {
-        return (p.starts == 0 || p.epoch != epoch) && (!p.hasLast || t - p.last >= QDOJO_PAIR_REMATCH_TICKS);
+        return (p.starts == 0 || p.epoch != epoch) && (!p.hasLast || t - p.last >= rematchTicks);
     }
 
     static uint32 pairHash(uint16 lo, uint16 hi)
@@ -1586,7 +1588,7 @@ struct QDOJO : public ContractBase
             {
                 return sint32(c.pf_i);
             }
-            if (c.pf_reuse < 0 && pairStale(s.pairs.get(c.pf_i), epoch, t))
+            if (c.pf_reuse < 0 && pairStale(s.pairs.get(c.pf_i), epoch, t, s.m.pairRematchTicks))
             {
                 c.pf_reuse = sint32(c.pf_i);
             }
@@ -3575,11 +3577,11 @@ struct QDOJO : public ContractBase
         c.cp_p = pairFind(s, c, s.offers.get(kx).fighterIdx, s.offers.get(ky).fighterIdx, false, epoch, t);
         if (c.cp_p >= 0)
         {
-            if (s.pairs.get(c.cp_p).epoch == epoch && s.pairs.get(c.cp_p).starts >= QDOJO_PAIR_STARTS_PER_EPOCH)
+            if (s.pairs.get(c.cp_p).epoch == epoch && s.pairs.get(c.cp_p).starts >= s.m.pairStartsPerEpoch)
             {
                 return false;
             }
-            if (s.pairs.get(c.cp_p).hasLast && t - s.pairs.get(c.cp_p).last < QDOJO_PAIR_REMATCH_TICKS)
+            if (s.pairs.get(c.cp_p).hasLast && t - s.pairs.get(c.cp_p).last < s.m.pairRematchTicks)
             {
                 return false;
             }
@@ -5480,6 +5482,31 @@ struct QDOJO : public ContractBase
         }
         if (mod<uint64>(t, uint64(s.m.matchInterval)) == 0)
         {
+            // Expired ranked offers are closed and refunded on every matching
+            // tick, even when no pass runs, in offer_id order.
+            e.n = 0;
+            for (e.i = 0; e.i < QDOJO_CAP_OFFER_SLOTS; e.i++)
+            {
+                if (s.offers.get(e.i).used && s.offers.get(e.i).status == QDOJO_O_OPEN
+                    && s.offers.get(e.i).kind == QDOJO_K_RANKED && t >= s.offers.get(e.i).expires)
+                {
+                    e.ids.set(e.n, s.offers.get(e.i).offerId);
+                    e.n += 1;
+                }
+            }
+            sortU64(e.ids, e.n, c);
+            for (e.i = 0; e.i < QDOJO_CAP_OFFER_SLOTS; e.i++)
+            {
+                if (e.i >= e.n)
+                {
+                    break;
+                }
+                e.k = offerSlot(s, c, e.ids.get(e.i));
+                if (e.k >= 0)
+                {
+                    closeOffer(s, c, uint32(e.k), QDOJO_O_EXPIRED);
+                }
+            }
             e.ranked = 0;
             for (e.i = 0; e.i < QDOJO_CAP_OFFER_SLOTS; e.i++)
             {
@@ -5568,6 +5595,8 @@ struct QDOJO : public ContractBase
         s.m.offerLifetimeHi = 1200;
         s.m.cooldownTicks = 240;
         s.m.faultsPerEpoch = 3;
+        s.m.pairStartsPerEpoch = QDOJO_PAIR_STARTS_PER_EPOCH;
+        s.m.pairRematchTicks = QDOJO_PAIR_REMATCH_TICKS;
     }
 
     // combat_contract.h init(). initOk stays 0 for a manifest the compiled

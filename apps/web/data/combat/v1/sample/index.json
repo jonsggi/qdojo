@@ -2,7 +2,7 @@
  "schema": "qdojo.combat.index.v1",
  "network_id": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
  "contract_id": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
- "generated_tick": "10676",
+ "generated_tick": "4201",
  "source": "reference-contract-state",
  "fights": [
   "1",
@@ -31,18 +31,277 @@
   "24",
   "25",
   "26",
-  "27"
+  "27",
+  "28",
+  "29",
+  "30",
+  "31",
+  "32",
+  "33",
+  "34",
+  "35",
+  "36",
+  "37",
+  "38",
+  "39",
+  "40",
+  "41",
+  "42",
+  "43",
+  "44",
+  "45",
+  "46",
+  "47",
+  "48",
+  "49",
+  "50",
+  "51",
+  "52",
+  "53",
+  "54",
+  "55",
+  "56",
+  "57",
+  "58",
+  "59",
+  "60",
+  "61",
+  "62",
+  "63",
+  "64",
+  "65",
+  "66",
+  "67",
+  "68",
+  "69",
+  "70",
+  "71",
+  "72",
+  "73",
+  "74",
+  "75",
+  "76"
  ],
- "active_fights": [],
+ "active_fights": [
+  "75",
+  "76"
+ ],
  "fighters": [
-  "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
-  "c0745b0e546d6f3bd4f605570e9012b0f716c9e21376ef2fdbecf3dad43af7f4",
-  "a692c798ab7ca1a6746249209d28ccf50d8e41eae175df78d468ab29ab333e71",
-  "fe8cd3d0fb944fdac2e671353a6a6e4ce1fcd0dc9ade519749a8ea44500f384d",
-  "82a8e7e488c616a769ba6d810379ac024498218904c3c4a40f3b47739756d58c",
-  "6d80d97f8dc616fe7be34759f27c29ae2ec20f644aa37804f93cca8c406c91cb"
+  "417f3b23cc4b00870441904617b5ff4520e7bcd0d53664ea4d18b993fc5e9ac0",
+  "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630",
+  "861dd00b56ac96f696c85e815c931a01e883a91c66350fefc4d153b95652d071",
+  "0000c93f8a9556d9c7336ec8831f51a5e9c35374be248525d6e1655229096cd1",
+  "642d1dc34815dad8cb5f7429cfce9d3776e996b1e2f97df2131cb05dfabf5610",
+  "c64fb2f8f74ada61c83a5b34c60e025953d25fe0b7c0df602195eedced1d6481",
+  "ed566a3dbb6757f19e53f397af3aee53200cda11b107968ae8dec0a86ac73834",
+  "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+  "ff93d07ac1501d737aa9a7884ea7ac6b1417024b85ae3847c1681b6d239146d9"
  ],
  "deployment": {
-  "kind": "unspecified"
+  "kind": "devnet",
+  "currency": "fake QU",
+  "identities": "synthetic",
+  "chain": {
+   "latency_ticks": [
+    1,
+    3
+   ],
+   "drop_rate": 0.02,
+   "execution_reserve": 181610,
+   "fees_burned": 18390,
+   "operator_funding": 200000,
+   "halted_ticks": 0
+  },
+  "bots": "operator-run demo bots",
+  "note": "not a Qubic deployment; nothing here is real money",
+  "profile": "demo",
+  "tick_seconds": 0,
+  "names": {
+   "417f3b23cc4b00870441904617b5ff4520e7bcd0d53664ea4d18b993fc5e9ac0": "tanuki",
+   "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630": "kappa",
+   "861dd00b56ac96f696c85e815c931a01e883a91c66350fefc4d153b95652d071": "tengu",
+   "0000c93f8a9556d9c7336ec8831f51a5e9c35374be248525d6e1655229096cd1": "oni",
+   "642d1dc34815dad8cb5f7429cfce9d3776e996b1e2f97df2131cb05dfabf5610": "kitsune",
+   "c64fb2f8f74ada61c83a5b34c60e025953d25fe0b7c0df602195eedced1d6481": "baku",
+   "ed566a3dbb6757f19e53f397af3aee53200cda11b107968ae8dec0a86ac73834": "raiju",
+   "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0": "kirin",
+   "ff93d07ac1501d737aa9a7884ea7ac6b1417024b85ae3847c1681b6d239146d9": "ronin"
+  },
+  "fighters": {
+   "417f3b23cc4b00870441904617b5ff4520e7bcd0d53664ea4d18b993fc5e9ac0": {
+    "name": "tanuki",
+    "driver": "reader-v1",
+    "asset": {
+     "issuer": "4a2d9a3b95b24eedf8ead2e3fd071731f066416599c08812cd9ef344651f22dd",
+     "name": "QDOJOF",
+     "founding": true,
+     "owner": "542450e26268095ba06a9e2a8baaf162f4ffe983e0451e5ce22ce2dd8b52947c",
+     "history": [
+      {
+       "tick": "1",
+       "from": null,
+       "to": "542450e26268095ba06a9e2a8baaf162f4ffe983e0451e5ce22ce2dd8b52947c"
+      }
+     ]
+    }
+   },
+   "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630": {
+    "name": "kappa",
+    "driver": "search-v1",
+    "asset": {
+     "issuer": "4a2d9a3b95b24eedf8ead2e3fd071731f066416599c08812cd9ef344651f22dd",
+     "name": "QDOJOF",
+     "founding": false,
+     "owner": "829afd937b29761de44f255821b952d45faaf6146a9c86acc087fe359ad8eb46",
+     "history": [
+      {
+       "tick": "1",
+       "from": null,
+       "to": "829afd937b29761de44f255821b952d45faaf6146a9c86acc087fe359ad8eb46"
+      }
+     ]
+    }
+   },
+   "861dd00b56ac96f696c85e815c931a01e883a91c66350fefc4d153b95652d071": {
+    "name": "tengu",
+    "driver": "scout-v1",
+    "asset": {
+     "issuer": "4a2d9a3b95b24eedf8ead2e3fd071731f066416599c08812cd9ef344651f22dd",
+     "name": "QDOJOF",
+     "founding": true,
+     "owner": "772af50d32b58161d301a8e270aeb23889ea11797ede57b19fa8dc3bb4b1b70c",
+     "history": [
+      {
+       "tick": "1",
+       "from": null,
+       "to": "772af50d32b58161d301a8e270aeb23889ea11797ede57b19fa8dc3bb4b1b70c"
+      }
+     ]
+    }
+   },
+   "0000c93f8a9556d9c7336ec8831f51a5e9c35374be248525d6e1655229096cd1": {
+    "name": "oni",
+    "driver": "script-vs-scout-v1",
+    "asset": {
+     "issuer": "4a2d9a3b95b24eedf8ead2e3fd071731f066416599c08812cd9ef344651f22dd",
+     "name": "QDOJOF",
+     "founding": false,
+     "owner": "f129848521aa60150f84c1a640eb70343a69ce5e87c82ecac787991f62e22349",
+     "history": [
+      {
+       "tick": "1",
+       "from": null,
+       "to": "f129848521aa60150f84c1a640eb70343a69ce5e87c82ecac787991f62e22349"
+      }
+     ]
+    }
+   },
+   "642d1dc34815dad8cb5f7429cfce9d3776e996b1e2f97df2131cb05dfabf5610": {
+    "name": "kitsune",
+    "driver": "mixed-v1",
+    "asset": {
+     "issuer": "4a2d9a3b95b24eedf8ead2e3fd071731f066416599c08812cd9ef344651f22dd",
+     "name": "QDOJOF",
+     "founding": false,
+     "owner": "4874f5fe7938d4ef080746db211a6e6335971e472065d3864209cb814f7e646e",
+     "history": [
+      {
+       "tick": "1",
+       "from": null,
+       "to": "4874f5fe7938d4ef080746db211a6e6335971e472065d3864209cb814f7e646e"
+      }
+     ]
+    }
+   },
+   "c64fb2f8f74ada61c83a5b34c60e025953d25fe0b7c0df602195eedced1d6481": {
+    "name": "baku",
+    "driver": "repeat-last-winner",
+    "asset": {
+     "issuer": "4a2d9a3b95b24eedf8ead2e3fd071731f066416599c08812cd9ef344651f22dd",
+     "name": "QDOJOF",
+     "founding": false,
+     "owner": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+     "history": [
+      {
+       "tick": "1",
+       "from": null,
+       "to": "03a0b4f6f51aeee0ed3b42832ac587d6b7cfec97c88275a75930803feb82470a"
+      },
+      {
+       "tick": "1500",
+       "from": "03a0b4f6f51aeee0ed3b42832ac587d6b7cfec97c88275a75930803feb82470a",
+       "to": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7"
+      }
+     ]
+    }
+   },
+   "ed566a3dbb6757f19e53f397af3aee53200cda11b107968ae8dec0a86ac73834": {
+    "name": "raiju",
+    "driver": "kicker-v1",
+    "asset": {
+     "issuer": "4a2d9a3b95b24eedf8ead2e3fd071731f066416599c08812cd9ef344651f22dd",
+     "name": "QDOJOF",
+     "founding": false,
+     "owner": "68f4c70794369db88ed4bf954d3a423059ae2cc714704e337c7bc0bc266b3e25",
+     "history": [
+      {
+       "tick": "1",
+       "from": null,
+       "to": "68f4c70794369db88ed4bf954d3a423059ae2cc714704e337c7bc0bc266b3e25"
+      }
+     ]
+    }
+   },
+   "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0": {
+    "name": "kirin",
+    "driver": "jabber-v1",
+    "asset": {
+     "issuer": "4a2d9a3b95b24eedf8ead2e3fd071731f066416599c08812cd9ef344651f22dd",
+     "name": "QDOJOF",
+     "founding": false,
+     "owner": "e473ebff086c3a6c2ecd18d4664e229f49df4b600f03c8075696d9406031a6db",
+     "history": [
+      {
+       "tick": "1",
+       "from": null,
+       "to": "e473ebff086c3a6c2ecd18d4664e229f49df4b600f03c8075696d9406031a6db"
+      }
+     ]
+    }
+   },
+   "ff93d07ac1501d737aa9a7884ea7ac6b1417024b85ae3847c1681b6d239146d9": {
+    "name": "ronin",
+    "driver": "mixed-v1",
+    "asset": {
+     "issuer": "4a2d9a3b95b24eedf8ead2e3fd071731f066416599c08812cd9ef344651f22dd",
+     "name": "QDOJOF",
+     "founding": false,
+     "owner": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396",
+     "history": [
+      {
+       "tick": "1",
+       "from": null,
+       "to": "d99ecc996ceca363d43eacbfdca425be1dd38c2358a278850b8fa6c264c51035"
+      },
+      {
+       "tick": "3000",
+       "from": "d99ecc996ceca363d43eacbfdca425be1dd38c2358a278850b8fa6c264c51035",
+       "to": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396"
+      }
+     ]
+    }
+   }
+  }
+ },
+ "names": {
+  "417f3b23cc4b00870441904617b5ff4520e7bcd0d53664ea4d18b993fc5e9ac0": "tanuki",
+  "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630": "kappa",
+  "861dd00b56ac96f696c85e815c931a01e883a91c66350fefc4d153b95652d071": "tengu",
+  "0000c93f8a9556d9c7336ec8831f51a5e9c35374be248525d6e1655229096cd1": "oni",
+  "642d1dc34815dad8cb5f7429cfce9d3776e996b1e2f97df2131cb05dfabf5610": "kitsune",
+  "c64fb2f8f74ada61c83a5b34c60e025953d25fe0b7c0df602195eedced1d6481": "baku",
+  "ed566a3dbb6757f19e53f397af3aee53200cda11b107968ae8dec0a86ac73834": "raiju",
+  "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0": "kirin",
+  "ff93d07ac1501d737aa9a7884ea7ac6b1417024b85ae3847c1681b6d239146d9": "ronin"
  }
 }

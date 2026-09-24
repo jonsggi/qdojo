@@ -117,6 +117,15 @@ def fighter(c: CombatContract, fid: bytes) -> dict:
     })
 
 
+def _cup_purse(c: CombatContract, k) -> dict:
+    """Sponsorship is never raked; entry fees carry the cup rake, paid only with a champion."""
+    fee = c.m.fees[k.descriptor["fee_profile_id"]]
+    entries = sum(e.amount for e in k.entries.values())
+    rake = entries * fee.rake_bps // 10_000
+    return {"entries_gross": str(entries), "sponsorship": str(k.sponsorship), "rake_on_entries": str(rake),
+            "prize": str(k.sponsorship + entries - rake), "rake_bps": fee.rake_bps}
+
+
 def cups(c: CombatContract) -> dict:
     """Every cup: descriptor, roster, bracket, pairings with their series fights, result."""
     out = []
@@ -132,6 +141,7 @@ def cups(c: CombatContract) -> dict:
                              "status": p.status, "winner": p.winner.hex() if p.winner else None,
                              "checked_in": sorted(x.hex() for x in p.checked),
                              "series": ({"wins_a": ct.series.wins_a, "wins_b": ct.series.wins_b,
+                                        "wins": {ct.a.fighter_id.hex(): ct.series.wins_a, ct.b.fighter_id.hex(): ct.series.wins_b},
                                          "need": ct.series.need, "replay": ct.replay} if ct else None),
                              "fights": fights})
         out.append({"cup_id": str(k.cup_id), "status": k.status, "entry_fee": str(d["entry_fee"]),
@@ -141,7 +151,8 @@ def cups(c: CombatContract) -> dict:
                     "entries": [e.hex() for e in k.entries], "levels": k.levels, "level": k.level,
                     "level_start": str(k.level_start), "postponed": sorted(k.postponed),
                     "slots": [s.hex() if s else None for s in k.slots], "pairings": pairings,
-                    "champion": k.champion.hex() if k.champion else None, "expiry_tick": str(k.expiry_tick)})
+                    "champion": k.champion.hex() if k.champion else None, "expiry_tick": str(k.expiry_tick),
+                    "purse": _cup_purse(c, k)})
     return _envelope(c, "cups", {"cups": out})
 
 
@@ -197,7 +208,8 @@ def manifest(c: CombatContract) -> dict:
         "ticks_per_epoch": c.m.ticks_per_epoch,
         "fee_profiles": {str(k): {"rake_bps": v.rake_bps, "house_bps": v.house_bps, "dev_bps": v.dev_bps,
                                   "share_bps": v.share_bps} for k, v in c.m.fees.items()},
-        "supported_schemas": [SCHEMA.format(k) for k in ("replay", "fight", "fighter", "book", "events", "npcs")],
+        "supported_schemas": [SCHEMA.format(k) for k in ("replay", "fight", "fighter", "book", "events", "npcs",
+                                                           "index", "results", "cups", "duels", "seasons", "ruleset")],
     })
 
 

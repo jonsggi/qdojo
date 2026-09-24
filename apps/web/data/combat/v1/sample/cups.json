@@ -1,0 +1,284 @@
+{
+ "schema": "qdojo.combat.cups.v1",
+ "network_id": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
+ "contract_id": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
+ "generated_tick": "4201",
+ "source": "reference-contract-state",
+ "cups": [
+  {
+   "cup_id": "2",
+   "status": "RUNNING",
+   "entry_fee": "2000",
+   "sponsorship": "5000",
+   "registration_close": "3101",
+   "min_entrants": 4,
+   "max_entrants": 8,
+   "level_ticks": 1300,
+   "checkin_ticks": 60,
+   "entries": [
+    "0000c93f8a9556d9c7336ec8831f51a5e9c35374be248525d6e1655229096cd1",
+    "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630",
+    "ed566a3dbb6757f19e53f397af3aee53200cda11b107968ae8dec0a86ac73834",
+    "417f3b23cc4b00870441904617b5ff4520e7bcd0d53664ea4d18b993fc5e9ac0"
+   ],
+   "levels": 2,
+   "level": 1,
+   "level_start": "4441",
+   "postponed": [],
+   "slots": [
+    "0000c93f8a9556d9c7336ec8831f51a5e9c35374be248525d6e1655229096cd1",
+    "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630"
+   ],
+   "pairings": [
+    {
+     "pairing_id": "1",
+     "level": 0,
+     "a": "417f3b23cc4b00870441904617b5ff4520e7bcd0d53664ea4d18b993fc5e9ac0",
+     "b": "0000c93f8a9556d9c7336ec8831f51a5e9c35374be248525d6e1655229096cd1",
+     "status": "DONE",
+     "winner": "0000c93f8a9556d9c7336ec8831f51a5e9c35374be248525d6e1655229096cd1",
+     "checked_in": [
+      "0000c93f8a9556d9c7336ec8831f51a5e9c35374be248525d6e1655229096cd1",
+      "417f3b23cc4b00870441904617b5ff4520e7bcd0d53664ea4d18b993fc5e9ac0"
+     ],
+     "series": {
+      "wins_a": 2,
+      "wins_b": 0,
+      "wins": {
+       "0000c93f8a9556d9c7336ec8831f51a5e9c35374be248525d6e1655229096cd1": 2,
+       "417f3b23cc4b00870441904617b5ff4520e7bcd0d53664ea4d18b993fc5e9ac0": 0
+      },
+      "need": 2,
+      "replay": false
+     },
+     "fights": [
+      "54",
+      "57"
+     ]
+    },
+    {
+     "pairing_id": "2",
+     "level": 0,
+     "a": "ed566a3dbb6757f19e53f397af3aee53200cda11b107968ae8dec0a86ac73834",
+     "b": "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630",
+     "status": "DONE",
+     "winner": "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630",
+     "checked_in": [
+      "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630",
+      "ed566a3dbb6757f19e53f397af3aee53200cda11b107968ae8dec0a86ac73834"
+     ],
+     "series": {
+      "wins_a": 2,
+      "wins_b": 0,
+      "wins": {
+       "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630": 2,
+       "ed566a3dbb6757f19e53f397af3aee53200cda11b107968ae8dec0a86ac73834": 0
+      },
+      "need": 2,
+      "replay": false
+     },
+     "fights": [
+      "55",
+      "56"
+     ]
+    },
+    {
+     "pairing_id": "3",
+     "level": 1,
+     "a": "0000c93f8a9556d9c7336ec8831f51a5e9c35374be248525d6e1655229096cd1",
+     "b": "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630",
+     "status": "SCHEDULED",
+     "winner": null,
+     "checked_in": [],
+     "series": null,
+     "fights": []
+    }
+   ],
+   "champion": null,
+   "expiry_tick": "8341",
+   "purse": {
+    "entries_gross": "8000",
+    "sponsorship": "5000",
+    "rake_on_entries": "400",
+    "prize": "12600",
+    "rake_bps": 500
+   }
+  },
+  {
+   "cup_id": "1",
+   "status": "COMPLETE",
+   "entry_fee": "2000",
+   "sponsorship": "5000",
+   "registration_close": "121",
+   "min_entrants": 4,
+   "max_entrants": 8,
+   "level_ticks": 1300,
+   "checkin_ticks": 60,
+   "entries": [
+    "0000c93f8a9556d9c7336ec8831f51a5e9c35374be248525d6e1655229096cd1",
+    "ed566a3dbb6757f19e53f397af3aee53200cda11b107968ae8dec0a86ac73834",
+    "642d1dc34815dad8cb5f7429cfce9d3776e996b1e2f97df2131cb05dfabf5610",
+    "417f3b23cc4b00870441904617b5ff4520e7bcd0d53664ea4d18b993fc5e9ac0",
+    "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630"
+   ],
+   "levels": 3,
+   "level": 2,
+   "level_start": "2761",
+   "postponed": [],
+   "slots": [
+    "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630",
+    "0000c93f8a9556d9c7336ec8831f51a5e9c35374be248525d6e1655229096cd1"
+   ],
+   "pairings": [
+    {
+     "pairing_id": "1",
+     "level": 0,
+     "a": "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630",
+     "b": null,
+     "status": "DONE",
+     "winner": "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630",
+     "checked_in": [],
+     "series": null,
+     "fights": []
+    },
+    {
+     "pairing_id": "2",
+     "level": 0,
+     "a": "417f3b23cc4b00870441904617b5ff4520e7bcd0d53664ea4d18b993fc5e9ac0",
+     "b": "642d1dc34815dad8cb5f7429cfce9d3776e996b1e2f97df2131cb05dfabf5610",
+     "status": "DONE",
+     "winner": "642d1dc34815dad8cb5f7429cfce9d3776e996b1e2f97df2131cb05dfabf5610",
+     "checked_in": [
+      "417f3b23cc4b00870441904617b5ff4520e7bcd0d53664ea4d18b993fc5e9ac0",
+      "642d1dc34815dad8cb5f7429cfce9d3776e996b1e2f97df2131cb05dfabf5610"
+     ],
+     "series": {
+      "wins_a": 1,
+      "wins_b": 2,
+      "wins": {
+       "417f3b23cc4b00870441904617b5ff4520e7bcd0d53664ea4d18b993fc5e9ac0": 1,
+       "642d1dc34815dad8cb5f7429cfce9d3776e996b1e2f97df2131cb05dfabf5610": 2
+      },
+      "need": 2,
+      "replay": false
+     },
+     "fights": [
+      "3",
+      "4",
+      "6"
+     ]
+    },
+    {
+     "pairing_id": "3",
+     "level": 0,
+     "a": "ed566a3dbb6757f19e53f397af3aee53200cda11b107968ae8dec0a86ac73834",
+     "b": null,
+     "status": "DONE",
+     "winner": "ed566a3dbb6757f19e53f397af3aee53200cda11b107968ae8dec0a86ac73834",
+     "checked_in": [],
+     "series": null,
+     "fights": []
+    },
+    {
+     "pairing_id": "4",
+     "level": 0,
+     "a": "0000c93f8a9556d9c7336ec8831f51a5e9c35374be248525d6e1655229096cd1",
+     "b": null,
+     "status": "DONE",
+     "winner": "0000c93f8a9556d9c7336ec8831f51a5e9c35374be248525d6e1655229096cd1",
+     "checked_in": [],
+     "series": null,
+     "fights": []
+    },
+    {
+     "pairing_id": "5",
+     "level": 1,
+     "a": "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630",
+     "b": "642d1dc34815dad8cb5f7429cfce9d3776e996b1e2f97df2131cb05dfabf5610",
+     "status": "DONE",
+     "winner": "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630",
+     "checked_in": [
+      "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630",
+      "642d1dc34815dad8cb5f7429cfce9d3776e996b1e2f97df2131cb05dfabf5610"
+     ],
+     "series": {
+      "wins_a": 2,
+      "wins_b": 0,
+      "wins": {
+       "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630": 2,
+       "642d1dc34815dad8cb5f7429cfce9d3776e996b1e2f97df2131cb05dfabf5610": 0
+      },
+      "need": 2,
+      "replay": false
+     },
+     "fights": [
+      "18",
+      "21"
+     ]
+    },
+    {
+     "pairing_id": "6",
+     "level": 1,
+     "a": "ed566a3dbb6757f19e53f397af3aee53200cda11b107968ae8dec0a86ac73834",
+     "b": "0000c93f8a9556d9c7336ec8831f51a5e9c35374be248525d6e1655229096cd1",
+     "status": "DONE",
+     "winner": "0000c93f8a9556d9c7336ec8831f51a5e9c35374be248525d6e1655229096cd1",
+     "checked_in": [
+      "0000c93f8a9556d9c7336ec8831f51a5e9c35374be248525d6e1655229096cd1",
+      "ed566a3dbb6757f19e53f397af3aee53200cda11b107968ae8dec0a86ac73834"
+     ],
+     "series": {
+      "wins_a": 2,
+      "wins_b": 0,
+      "wins": {
+       "0000c93f8a9556d9c7336ec8831f51a5e9c35374be248525d6e1655229096cd1": 2,
+       "ed566a3dbb6757f19e53f397af3aee53200cda11b107968ae8dec0a86ac73834": 0
+      },
+      "need": 2,
+      "replay": false
+     },
+     "fights": [
+      "19",
+      "20"
+     ]
+    },
+    {
+     "pairing_id": "7",
+     "level": 2,
+     "a": "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630",
+     "b": "0000c93f8a9556d9c7336ec8831f51a5e9c35374be248525d6e1655229096cd1",
+     "status": "DONE",
+     "winner": "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630",
+     "checked_in": [
+      "0000c93f8a9556d9c7336ec8831f51a5e9c35374be248525d6e1655229096cd1",
+      "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630"
+     ],
+     "series": {
+      "wins_a": 0,
+      "wins_b": 3,
+      "wins": {
+       "0000c93f8a9556d9c7336ec8831f51a5e9c35374be248525d6e1655229096cd1": 0,
+       "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630": 3
+      },
+      "need": 3,
+      "replay": false
+     },
+     "fights": [
+      "44",
+      "47",
+      "48"
+     ]
+    }
+   ],
+   "champion": "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630",
+   "expiry_tick": "6661",
+   "purse": {
+    "entries_gross": "10000",
+    "sponsorship": "5000",
+    "rake_on_entries": "500",
+    "prize": "14500",
+    "rake_bps": 500
+   }
+  }
+ ]
+}

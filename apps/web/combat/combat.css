@@ -300,3 +300,72 @@ table.board td.rank { color: var(--yellow); }
 /* ---- join / help ------------------------------------------------------ */
 .help-kv dt { color: var(--yellow); }
 .help-kv dd { font-family: var(--font-text); font-size: 12px; }
+
+/* ---- fighter identity badges ------------------------------------------ */
+.badges { margin: 0 0 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+.drv { display: inline-block; padding: 3px 7px; font-size: 8px; border: 2px solid currentColor; letter-spacing: 1px; }
+.drv-llm { color: var(--magenta); }
+.drv-planner { color: var(--green); }
+.drv-policy { color: var(--cyan); }
+.drv-founding { color: var(--black); background: var(--yellow); border-color: var(--yellow); }
+.drv-nft { color: var(--grey); }
+.sub-links { font-size: 9px; margin: -6px 0 14px; }
+
+/* ---- simulated chain / profile ---------------------------------------- */
+.sim-panel .kv { font-size: 9px; }
+.sim-panel h3::after { content: " \00B7  NOT A REAL CHAIN"; font-size: 8px; opacity: .7; }
+.panel-yellow.sim-panel h3::after { content: ""; }
+
+/* ---- cups ------------------------------------------------------------- */
+.cstat, .sstat { display: inline-block; padding: 3px 7px; font-size: 8px; color: var(--black); background: var(--grey); }
+.cstat-running, .cstat-registration, .cstat-open { background: var(--green); }
+.cstat-complete { background: var(--yellow); }
+.cstat-void, .cstat-cancelled { background: var(--red); color: var(--white); }
+.bracket { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 6px; }
+.bk-col { flex: 1 0 230px; display: flex; flex-direction: column; justify-content: space-around; gap: 12px; }
+.bk-col h4 { margin: 0 0 4px; }
+.bk-pair { border: 3px solid var(--navy-2); background: var(--black); padding: 6px; }
+.bk-pair.bk-done { border-color: var(--grey); }
+.bk-pair.bk-running, .bk-pair.bk-live, .bk-pair.bk-checkin { border-color: var(--green); }
+.bk-head { font-size: 7px; color: var(--grey); margin-bottom: 4px; letter-spacing: 1px; }
+.bk-side { display: flex; align-items: center; gap: 6px; padding: 4px 2px; font-size: 9px; }
+.bk-side + .bk-side { border-top: 1px dashed var(--navy-2); }
+.bk-side.won { background: rgba(57, 255, 90, .1); }
+.bk-side.lost { opacity: .55; }
+.bk-in { font-size: 7px; padding: 1px 3px; }
+.bk-in.in { color: var(--green); border: 1px solid var(--green); }
+.bk-in.out:not(:empty) { color: var(--orange); border: 1px dashed var(--orange); }
+.bk-score { margin-left: auto; color: var(--yellow); font-weight: normal; font-size: 11px; }
+.bk-fights { font-size: 8px; margin-top: 4px; }
+.champ-line { font-size: 12px; }
+.champ .avatar-sm { width: 32px; height: 32px; }
+
+/* ---- duels ------------------------------------------------------------ */
+.duel-score { display: flex; align-items: center; justify-content: center; gap: 24px; flex-wrap: wrap; }
+.ds { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px; border: 3px solid transparent; }
+.ds.won { border-color: var(--green); }
+.ds-num { font-size: 26px; color: var(--yellow); text-shadow: 3px 3px 0 var(--red); }
+.center { text-align: center; }
+
+/* ---- season ----------------------------------------------------------- */
+.sstat-champion { background: var(--yellow); }
+.sstat-playoff { background: var(--cyan); }
+.sstat-no_champion { background: var(--navy-2); color: var(--grey); border: 1px solid var(--grey); }
+.season-meter { height: 12px; margin-bottom: 12px; }
+.qbar { position: relative; display: inline-block; width: 64px; height: 14px; background: var(--black); border: 1px solid var(--grey); vertical-align: middle; }
+.qbar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--orange); }
+.qbar.ok { border-color: var(--green); }
+.qbar.ok i { background: var(--green); }
+.qbar b { position: relative; z-index: 1; font-weight: normal; font-size: 8px; padding-left: 4px; color: var(--white); text-shadow: 1px 1px 0 var(--black); }
+.qbar.unk { border-style: dashed; }
+
+/* ---- one-sentence beat headline (readable with motion off) -------------- */
+.beat-headline { margin: 10px 0 4px; padding: 8px 10px; min-height: 2.6em; font-family: var(--font-text); font-size: 13px; color: var(--white); background: var(--black); border-left: 4px solid var(--yellow); }
+table.beats td.reasons { font-family: var(--font-text); font-size: 11px; color: var(--white); min-width: 300px; }
+
+/* ---- phones: the HUD scrolls away, and the ruleset pill (shown on RULES) goes */
+@media (max-width: 700px) {
+  .hud { position: static; }
+  #hud-rules { display: none; }
+  .hud-fresh { display: block; margin-left: 0; }
+}

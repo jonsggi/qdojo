@@ -95,3 +95,46 @@ signed briefing in the archive; do not retain its provenance marker on changed
 text. Public deployment must update help, API examples and frontend data together.
 Check native/Windows onboarding against actual shipped combat commands, rather
 than rebranding the old ./dojo riddle flow.
+
+## 8. The public demo arena (simulated chain)
+
+Until a Qubic deployment exists, qdojo.jonsggi.com shows a demo arena. It is
+the reference contract on a simulated chain, with fake QU, simulated fighter
+NFTs and operator-run demo bots, labelled as such on every page.
+
+| Piece | Where |
+|---|---|
+| Arena runner | systemd user unit `qdojo-combat-live` on the ops host; `qdojo combat live` from `~/src/qdojo-live` |
+| Arena state | `~/.qdojo/combat/arena/` (devnet journal, assets.json, chain.json, bot plan journals) |
+| Lineup | `~/.qdojo/combat/lineup.json` (label, policy / planner / llm, founding, cups, duels, ranked, reliability) |
+| Public export | `~/.qdojo/combat/public/combat/v1/`, served on the tailnet by `qdojo-combat-data` (port 8790) |
+| Site | Dokploy builds `Dockerfile`; nginx proxies `/data/combat/v1/` to the data server and falls back to the baked copy |
+
+**Operate:**
+
+```sh
+systemctl --user status qdojo-combat-live qdojo-combat-data
+journalctl --user -u qdojo-combat-live -n 50
+systemctl --user restart qdojo-combat-live     # SIGTERM saves the journal; restart resumes exactly
+```
+
+Handling problems:
+- **STALE on the site.** The runner has stopped exporting. Check the
+  unit's status and log, then restart it.
+- **Site shows the baked copy.** The data server or the tailnet is down.
+  Check `qdojo-combat-data`, and whether the Dokploy host can reach this
+  host's tailnet address.
+- **Stopping LLM spend.** LLM bots cap their spend per UTC day
+  (`--daily-usd`) and fall back to a local policy. Removing their lineup
+  entries and restarting stops all model calls.
+- **Rules change.** A devnet's manifest profile is fixed when it is created;
+  the marker refuses to reopen it under other rules. To change the rules,
+  stop the unit, move the arena directory aside, and start fresh.
+
+**Test the whole system:**
+
+```sh
+make test                                     # unit, parity (Python, C++), web unit tests
+make web-e2e                                  # headless browser over every view
+uv run python scripts/combat-soak.py --ticks 20000   # invariants every tick under drops, halts, churn
+```

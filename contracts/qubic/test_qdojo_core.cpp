@@ -475,6 +475,8 @@ static bool loadManifest(const JVal& h, QDOJO::Manifest& m)
     m.matchInterval = (uint32)h.at("match_interval").num;
     m.cooldownTicks = (uint64)h.at("cooldown_ticks").num;
     m.faultsPerEpoch = (uint32)h.at("faults_per_epoch").num;
+    m.pairStartsPerEpoch = (uint32)h.at("pair_starts_per_epoch").num;
+    m.pairRematchTicks = (uint64)h.at("pair_rematch_ticks").num;
     m.offerLifetimeLo = (uint64)h.at("offer_lifetime").arr.at(0).num;
     m.offerLifetimeHi = (uint64)h.at("offer_lifetime").arr.at(1).num;
     return true;
@@ -561,6 +563,8 @@ static ReplaySummary replay(const char* name)
         pm.offer_lifetime_hi = manifest.offerLifetimeHi;
         pm.cooldown_ticks = manifest.cooldownTicks;
         pm.faults_per_epoch = manifest.faultsPerEpoch;
+        pm.pair_starts_per_epoch = manifest.pairStartsPerEpoch;
+        pm.pair_rematch_ticks = manifest.pairRematchTicks;
     }
     std::unique_ptr<qdojo_contract::State> port(new qdojo_contract::State());
     PortHost host;
@@ -839,4 +843,10 @@ TEST(ContractQdojo, ReplayFuzz2)
 TEST(ContractQdojo, ReplaySeason)
 {
     qdojo_test::replay("season.journal");
+}
+
+// Non-default pair limits (6 starts per epoch, 60-tick rematch gap) from the header.
+TEST(ContractQdojo, ReplayDemoProfile)
+{
+    qdojo_test::replay("demo-profile.journal");
 }

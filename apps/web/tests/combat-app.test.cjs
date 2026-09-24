@@ -19,11 +19,17 @@ const readJson = p => JSON.parse(fs.readFileSync(p, 'utf8'));
 const manifest = readJson(path.join(SAMPLE, 'manifest.json'));
 const index = readJson(path.join(SAMPLE, 'index.json'));
 const replayOf = id => readJson(path.join(SAMPLE, 'fights', String(id), 'replay.json'));
+const hasReplay = id => fs.existsSync(path.join(SAMPLE, 'fights', String(id), 'replay.json'));
+// Every fight in the index that has a replay (a live fight with no resolved
+// round has none yet), loaded once.
+const REPLAYS = index.fights.filter(hasReplay).map(replayOf);
 const clone = x => JSON.parse(JSON.stringify(x));
 const statusOf = (v, id) => v.checks.find(c => c.id === id).status;
 const verify = (rp, man = manifest) => L.verifyReplay(rp, { rules: R, manifest: man });
-const fullFight = () => index.fights.map(replayOf).find(rp => rp.rounds.length === 3 && !L.isForfeit(rp));
-const koMidRound = () => index.fights.map(replayOf).find(rp => rp.rounds.some(r => r.unexecuted.A.length > 0));
+// A settled ranked fight that went three rounds: settlement, ratings and
+// every round kind are exercised by the tamper tests.
+const fullFight = () => REPLAYS.find(rp => rp.rounds.length === 3 && !L.isForfeit(rp) && rp.mode === 'ranked' && rp.settlement);
+const koMidRound = () => REPLAYS.find(rp => rp.rounds.some(r => r.unexecuted.A.length > 0));
 
 test('embedded ruleset equals docs/combat-v1.json and hashes to the manifest digest', async () => {
   const docs = readJson(path.join(ROOT, 'docs/combat-v1.json'));
@@ -57,8 +63,9 @@ test('protocol commitment fixture: context, round state and commitment preimage'
 
 test('every sample fight re-derives exactly and reaches REPLAY_MATCH, never COMBAT_VERIFIED', async () => {
   let replayed = 0;
-  for (const id of index.fights) {
-    const rp = replayOf(id);
+  assert.ok(fullFight(), 'the sample has a settled three-round ranked fight');
+  for (const rp of REPLAYS) {
+    const id = rp.fight_id;
     const v = await verify(rp);
     assert.equal(statusOf(v, 'ruleset'), 'PASS', 'fight ' + id);
     assert.equal(statusOf(v, 'inputs'), 'UNAVAILABLE', 'fight ' + id + ': a same-source export cannot confirm inclusion');
@@ -69,10 +76,22 @@ test('every sample fight re-derives exactly and reaches REPLAY_MATCH, never COMB
       assert.equal(statusOf(v, 'commitments'), 'PASS', 'fight ' + id);
       assert.equal(statusOf(v, 'replay'), 'PASS', 'fight ' + id);
       assert.equal(v.level, 'REPLAY_MATCH');
-      assert.deepEqual(v.derived.outcome, L.isForfeit(rp) ? null : { winner: rp.outcome.winner, result: rp.outcome.result });
+      // a live fight (resolved rounds, no result yet) claims no outcome
+      assert.deepEqual(v.derived.outcome, L.isForfeit(rp) || !rp.outcome ? null : { winner: rp.outcome.winner, result: rp.outcome.result });
     }
   }
   assert.ok(replayed >= 20, 'sample has replayable fights');
+});
+
+test('a live fight with resolved rounds replays as far as it went; a claimed early end is caught', async () => {
+  const live = REPLAYS.find(rp => rp.rounds.length && !rp.outcome && !L.isForfeit(rp));
+  if (!live) return; // the sample may be exported between fights
+  const v = await verify(live);
+  assert.equal(statusOf(v, 'replay'), 'PASS');
+  assert.equal(v.derived.outcome, null);
+  const t = clone(live);
+  t.outcome = { winner: 'A', result: 'KO' };
+  assert.equal(statusOf(await verify(t), 'replay'), 'FAIL');
 });
 
 test('a tampered salt fails only the commitment check', async () => {
@@ -141,7 +160,7 @@ test('an exporter claiming chain confirmation from the same source is still UNAV
 });
 
 test('forfeit fights render as a timeout with no invented beats', async () => {
-  const forfeits = index.fights.map(replayOf).filter(L.isForfeit);
+  const forfeits = REPLAYS.filter(L.isForfeit);
   assert.ok(forfeits.length >= 1);
   for (const rp of forfeits) {
     const label = L.outcomeLabel(rp);
@@ -205,7 +224,7 @@ test('explanations show the numbers (combat.md section 9)', () => {
 test('fighter stats count only executed play and agree with the ranked record', () => {
   for (const fid of index.fighters) {
     const f = readJson(path.join(SAMPLE, 'fighters', fid + '.json'));
-    const items = f.fights.map(id => { const rp = replayOf(id); return { replay: rp, derived: L.deriveReplay(R, rp) }; });
+    const items = f.fights.filter(hasReplay).map(id => { const rp = replayOf(id); return { replay: rp, derived: L.deriveReplay(R, rp) }; });
     const s = L.fighterStats(fid, items);
     const executed = s.perRound.flat().reduce((a, b) => a + b, 0);
     assert.equal(executed, s.beats);
@@ -277,15 +296,17 @@ test('competition.md rating vectors and the protocol fee split', () => {
 
 test('settlements pass on every settled sample fight; an unfinished series fight is UNAVAILABLE', async () => {
   let settled = 0;
-  for (const id of index.fights) {
-    const rp = replayOf(id);
+  for (const rp of REPLAYS) {
+    const id = rp.fight_id;
     const v = await verify(rp);
     const st = statusOf(v, 'accounting');
-    if (rp.settlement) { settled++; assert.equal(st, 'PASS', 'fight ' + id + ': ' + JSON.stringify(v.checks.find(c => c.id === 'accounting').details.filter(d => d.startsWith('FAIL')))); }
+    // A cup pairing moves no money itself: the purse settles at cup level.
+    if (rp.mode === 'cup') assert.equal(st, 'UNAVAILABLE', 'fight ' + id + ' (cup)');
+    else if (rp.settlement) { settled++; assert.equal(st, 'PASS', 'fight ' + id + ': ' + JSON.stringify(v.checks.find(c => c.id === 'accounting').details.filter(d => d.startsWith('FAIL')))); }
     else assert.equal(st, 'UNAVAILABLE', 'fight ' + id);
   }
   assert.ok(settled >= 20);
-  const duel = index.fights.map(replayOf).find(rp => rp.mode === 'duel' && rp.settlement);
+  const duel = REPLAYS.find(rp => rp.mode === 'duel' && rp.settlement);
   assert.ok(duel && duel.settlement.series_fights.length > 1, 'sample has a settled multi-fight duel');
 });
 
@@ -361,9 +382,10 @@ test('draws, double faults and voids refund each stake with no rake', () => {
 });
 
 test('a forfeit carries the re-derived state at the deadline; a tampered one fails', async () => {
-  const rp = index.fights.map(replayOf).find(L.isForfeit);
-  assert.equal(rp.forfeit_round, 0);
+  const rp = REPLAYS.find(L.isForfeit);
+  assert.ok(rp, 'the sample has a forfeit');
   const d = L.deriveReplay(R, rp);
+  assert.equal(rp.forfeit_round, d.end.round_index);
   const last = L.timeline(rp, d).pop();
   assert.equal(last.kind, 'forfeit');
   assert.deepEqual(last.a, rp.final.A);
@@ -371,7 +393,7 @@ test('a forfeit carries the re-derived state at the deadline; a tampered one fai
   t.final.B.hp = 0;
   assert.equal(statusOf(await verify(t), 'replay'), 'FAIL', 'no invented KO for a forfeit');
   const u = clone(rp);
-  u.forfeit_round = 2;
+  u.forfeit_round = (rp.forfeit_round + 1) % 3;
   assert.equal(statusOf(await verify(u), 'replay'), 'FAIL');
 });
 
@@ -390,17 +412,50 @@ test('live phase counts ticks left from the deadline, never from HP', () => {
 });
 
 test('recent form reads finished fights newest first and skips pruned files', () => {
-  const fid = '9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439';
+  // A fighter that won a forfeit: its form must show it as a forfeit win.
+  const ff = REPLAYS.find(rp => L.isForfeit(rp) && rp.result && rp.result.winner);
+  assert.ok(ff, 'the sample has a won forfeit');
+  const fid = ff.fighters[ff.result.winner].fighter_id;
   const f = readJson(path.join(SAMPLE, 'fighters', fid + '.json'));
   const sums = f.fights.map(summaryOf);
+  const done = sums.filter(x => x && x.phase === 'DONE').map(x => x.fight_id).sort((a, b) => b - a);
   const form = L.recentForm(fid, sums.concat([null, null]), 5);
-  assert.equal(form.length, 5);
-  assert.deepEqual(form.map(x => x.fight_id), f.fights.slice().sort((a, b) => b - a).slice(0, 5));
+  assert.equal(form.length, Math.min(5, done.length));
+  assert.deepEqual(form.map(x => x.fight_id), done.slice(0, 5));
   for (const x of form) assert.ok(['W', 'L', 'D', 'N'].includes(x.mark));
-  const old = L.recentForm(fid, sums, 50);
-  const forfeit = old.find(x => x.fight_id === '1');
+  const old = L.recentForm(fid, sums, 500);
+  const forfeit = old.find(x => x.fight_id === String(ff.fight_id));
   assert.deepEqual([forfeit.mark, forfeit.forfeit, forfeit.how], ['W', true, 'FORFEIT']);
   assert.deepEqual(L.recentForm(fid, [], 5), []);
+});
+
+test('cup and duel series scores are credited to the fighter who won those fights', () => {
+  const cups = (readJson(path.join(SAMPLE, 'cups.json')).cups || []);
+  const duels = (readJson(path.join(SAMPLE, 'duels.json')).duels || []);
+  let checked = 0;
+  const tally = fights => {
+    const w = {};
+    for (const f of fights) {
+      const s = summaryOf(f);
+      if (s && s.result && s.result.winner) { const h = s.fighters[s.result.winner].fighter_id; w[h] = (w[h] || 0) + 1; }
+    }
+    return w;
+  };
+  for (const c of cups) for (const p of c.pairings || []) {
+    if (!p.series || !p.a || !p.b) continue;
+    const got = L.seriesWins(p.a, p.b, p.series.wins_a, p.series.wins_b), real = tally(p.fights);
+    assert.equal(got[p.a], real[p.a] || 0, 'cup ' + c.cup_id + ' pairing ' + p.pairing_id + ' a');
+    assert.equal(got[p.b], real[p.b] || 0, 'cup ' + c.cup_id + ' pairing ' + p.pairing_id + ' b');
+    if (p.winner) assert.ok(got[p.winner] >= p.series.need, 'the winner reached the target');
+    checked++;
+  }
+  for (const d of duels) {
+    const got = L.seriesWins(d.a, d.b, d.wins_a, d.wins_b), real = tally(d.fights);
+    assert.equal(got[d.a], real[d.a] || 0, 'duel ' + d.contest_id);
+    assert.equal(got[d.b], real[d.b] || 0, 'duel ' + d.contest_id);
+    checked++;
+  }
+  assert.ok(checked >= 5, 'the sample has series to check');
 });
 
 test('leaderboard orders by rating and counts faults', () => {
@@ -425,4 +480,85 @@ test('freshness: a live export older than the limit is stale; unknown age is not
   assert.equal(L.ageText(30000), '30s ago');
   assert.equal(L.ageText(10 * 60000), '10m ago');
   assert.equal(L.ageText(null), 'unknown age');
+});
+
+// ---- replay readability (docs/model.md section 3) -----------------------------
+// A reviewer must be able to name the cause of a decisive exchange from the
+// replay text alone. Ten real exchanges from the sample, by kind: knockouts,
+// a double knockout, exhaustion, blocked power and punished recovery. For each,
+// the per-beat explanation and the one-line headline must state the cause in
+// plain words, not only reason codes.
+
+function decisiveBeats() {
+  const found = { KO: [], DOUBLE_KO: [], EXHAUSTED: [], POWER_BLOCKED: [], RECOVERY_PUNISHED: [] };
+  for (const rp of REPLAYS) {
+    const d = L.deriveReplay(R, rp);
+    for (const r of d.rounds) for (const bt of r.result.beats) for (const [s, me, them] of [['A', 'a', 'b'], ['B', 'b', 'a']]) {
+      const t = bt[me], o = bt[them], at = { id: rp.fight_id, round: r.round_index, beat: bt.beat, side: s, t, o, bt };
+      if (t.reasons.includes('KO')) found.KO.push(at);
+      if (t.reasons.includes('DOUBLE_KO') && s === 'A') found.DOUBLE_KO.push(at);
+      if (t.reasons.includes('INSUFFICIENT_STAMINA')) found.EXHAUSTED.push(at);
+      if (t.reasons.includes('POWER_WASTED') && t.reasons.includes('BLOCKED')) found.POWER_BLOCKED.push(at);
+      if (t.reasons.includes('RECOVERY_PUNISHED')) found.RECOVERY_PUNISHED.push(at);
+    }
+  }
+  return found;
+}
+
+test('ten decisive exchanges in the sample are explained in plain words', () => {
+  const f = decisiveBeats();
+  const plan = { KO: 3, DOUBLE_KO: 1, EXHAUSTED: 2, POWER_BLOCKED: 2, RECOVERY_PUNISHED: 2 };
+  let checked = 0;
+  for (const [kind, n] of Object.entries(plan)) {
+    const list = f[kind];
+    assert.ok(list.length >= Math.min(n, 1), 'the sample has a ' + kind + ' beat');
+    // spread the picks over the list, not just the first fight
+    const picks = Array.from({ length: Math.min(n, list.length) }, (_, i) => list[Math.floor(i * list.length / n)]);
+    for (const x of picks) {
+      const who = x.side, them = who === 'A' ? 'B' : 'A';
+      const text = L.explainSide(x.t, x.o, who, them).join(' ');
+      const head = L.beatHeadline(x.bt.a, x.bt.b);
+      const where = kind + ' fight ' + x.id + ' R' + (x.round + 1) + ' B' + (x.beat + 1) + ': ' + text + ' || ' + head;
+      const mine = L.NAMES[x.t.effective], theirs = L.NAMES[x.o.effective];
+      if (kind === 'KO') {
+        assert.match(text, new RegExp(who + ' is knocked out \\(0 HP\\) by ' + them + "'s " + theirs.toLowerCase()), where);
+        assert.match(text, /Why: /, where);
+        assert.match(head, /^K\.O\.: /, where);
+        assert.ok(head.includes(theirs) && head.includes(x.o.computed_damage + ')'), where);
+        assert.ok(head.includes(L.causeOf(x.t, x.o)), 'the headline says why: ' + where);
+      } else if (kind === 'DOUBLE_KO') {
+        assert.match(text, /both fighters reached 0 HP on the same beat, so the fight is a draw/, where);
+        assert.match(head, /^DOUBLE K\.O\.: .* both reach 0 HP: a draw\./, where);
+      } else if (kind === 'EXHAUSTED') {
+        assert.match(text, new RegExp(L.NAMES[x.t.intended].toLowerCase() + ' cost ' + x.t.cost + ' with only ' + x.t.before.stamina + ' stamina left: EXHAUSTED'), where);
+        if (x.t.actual_hp_lost) assert.match(text, /Why: An unaffordable move becomes EXHAUSTED/, where);
+        if (!x.t.reasons.includes('KO') && !x.o.reasons.includes('KO')) assert.match(head, /could not afford/, where);
+      } else if (kind === 'POWER_BLOCKED') {
+        assert.match(text, /Blocked by /, where);
+        assert.match(text, /Power spent with no damage: wasted\. The power bonus only adds to a strike that lands, and this one was blocked\./, where);
+        assert.match(head, /powered .* is blocked: no damage, and the power strike is spent/, where);
+      } else if (kind === 'RECOVERY_PUNISHED') {
+        assert.match(text, / while recovering: HP \d+ -> \d+/, where);
+        assert.match(text, /Why: Recovering leaves a fighter wide open/, where);
+        assert.ok(head.includes('RECOVER') && head.includes(theirs), where);
+      }
+      assert.doesNotMatch(text + head, /undefined|null|NaN/, where);
+      checked++;
+    }
+  }
+  assert.equal(checked, 10);
+});
+
+test('every executed beat in the sample gets a headline that names both actions', () => {
+  let n = 0;
+  for (const rp of REPLAYS) {
+    const d = L.deriveReplay(R, rp);
+    for (const r of d.rounds) for (const bt of r.result.beats) {
+      const h = L.beatHeadline(bt.a, bt.b, { A: 'Ann', B: 'Bo' });
+      assert.doesNotMatch(h, /undefined|null|NaN/, h);
+      assert.ok(h.length > 20, h);
+      n++;
+    }
+  }
+  assert.ok(n > 500, 'a meaningful number of beats: ' + n);
 });

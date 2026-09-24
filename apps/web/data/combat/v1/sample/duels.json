@@ -1,0 +1,271 @@
+{
+ "schema": "qdojo.combat.duels.v1",
+ "network_id": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
+ "contract_id": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
+ "generated_tick": "4201",
+ "source": "reference-contract-state",
+ "duels": [
+  {
+   "contest_id": "49",
+   "a": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "b": "c64fb2f8f74ada61c83a5b34c60e025953d25fe0b7c0df602195eedced1d6481",
+   "stake": "1000",
+   "format": "BO5",
+   "wins_a": 1,
+   "wins_b": 2,
+   "need": 3,
+   "cap": 7,
+   "fights": [
+    "69",
+    "71",
+    "73",
+    "75"
+   ],
+   "status": "ACTIVE",
+   "result": null
+  },
+  {
+   "contest_id": "45",
+   "a": "861dd00b56ac96f696c85e815c931a01e883a91c66350fefc4d153b95652d071",
+   "b": "c64fb2f8f74ada61c83a5b34c60e025953d25fe0b7c0df602195eedced1d6481",
+   "stake": "2000",
+   "format": "SINGLE",
+   "wins_a": 1,
+   "wins_b": 0,
+   "need": 1,
+   "cap": 1,
+   "fights": [
+    "65"
+   ],
+   "status": "DONE",
+   "result": {
+    "kind": "COMBAT",
+    "winner": "A",
+    "last_result": "KO",
+    "tick": "3687"
+   }
+  },
+  {
+   "contest_id": "40",
+   "a": "861dd00b56ac96f696c85e815c931a01e883a91c66350fefc4d153b95652d071",
+   "b": "c64fb2f8f74ada61c83a5b34c60e025953d25fe0b7c0df602195eedced1d6481",
+   "stake": "3000",
+   "format": "BO5",
+   "wins_a": 3,
+   "wins_b": 0,
+   "need": 3,
+   "cap": 7,
+   "fights": [
+    "58",
+    "60",
+    "62"
+   ],
+   "status": "DONE",
+   "result": {
+    "kind": "COMBAT",
+    "winner": "A",
+    "last_result": "KO",
+    "tick": "3557"
+   }
+  },
+  {
+   "contest_id": "36",
+   "a": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "b": "861dd00b56ac96f696c85e815c931a01e883a91c66350fefc4d153b95652d071",
+   "stake": "3000",
+   "format": "BO3",
+   "wins_a": 0,
+   "wins_b": 2,
+   "need": 2,
+   "cap": 5,
+   "fights": [
+    "50",
+    "51",
+    "53"
+   ],
+   "status": "DONE",
+   "result": {
+    "kind": "COMBAT",
+    "winner": "B",
+    "last_result": "KO",
+    "tick": "3201"
+   }
+  },
+  {
+   "contest_id": "30",
+   "a": "861dd00b56ac96f696c85e815c931a01e883a91c66350fefc4d153b95652d071",
+   "b": "c64fb2f8f74ada61c83a5b34c60e025953d25fe0b7c0df602195eedced1d6481",
+   "stake": "1000",
+   "format": "BO5",
+   "wins_a": 3,
+   "wins_b": 0,
+   "need": 3,
+   "cap": 7,
+   "fights": [
+    "40",
+    "42",
+    "45"
+   ],
+   "status": "DONE",
+   "result": {
+    "kind": "COMBAT",
+    "winner": "A",
+    "last_result": "KO",
+    "tick": "2923"
+   }
+  },
+  {
+   "contest_id": "25",
+   "a": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "b": "861dd00b56ac96f696c85e815c931a01e883a91c66350fefc4d153b95652d071",
+   "stake": "1000",
+   "format": "SINGLE",
+   "wins_a": 0,
+   "wins_b": 1,
+   "need": 1,
+   "cap": 1,
+   "fights": [
+    "35"
+   ],
+   "status": "DONE",
+   "result": {
+    "kind": "COMBAT",
+    "winner": "B",
+    "last_result": "KO",
+    "tick": "2459"
+   }
+  },
+  {
+   "contest_id": "21",
+   "a": "861dd00b56ac96f696c85e815c931a01e883a91c66350fefc4d153b95652d071",
+   "b": "c64fb2f8f74ada61c83a5b34c60e025953d25fe0b7c0df602195eedced1d6481",
+   "stake": "2000",
+   "format": "BO3",
+   "wins_a": 2,
+   "wins_b": 0,
+   "need": 2,
+   "cap": 5,
+   "fights": [
+    "30",
+    "32"
+   ],
+   "status": "DONE",
+   "result": {
+    "kind": "COMBAT",
+    "winner": "A",
+    "last_result": "KO",
+    "tick": "2272"
+   }
+  },
+  {
+   "contest_id": "15",
+   "a": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "b": "c64fb2f8f74ada61c83a5b34c60e025953d25fe0b7c0df602195eedced1d6481",
+   "stake": "1000",
+   "format": "SINGLE",
+   "wins_a": 1,
+   "wins_b": 0,
+   "need": 1,
+   "cap": 1,
+   "fights": [
+    "24"
+   ],
+   "status": "DONE",
+   "result": {
+    "kind": "COMBAT",
+    "winner": "A",
+    "last_result": "HP",
+    "tick": "1889"
+   }
+  },
+  {
+   "contest_id": "10",
+   "a": "861dd00b56ac96f696c85e815c931a01e883a91c66350fefc4d153b95652d071",
+   "b": "c64fb2f8f74ada61c83a5b34c60e025953d25fe0b7c0df602195eedced1d6481",
+   "stake": "3000",
+   "format": "BO3",
+   "wins_a": 2,
+   "wins_b": 1,
+   "need": 2,
+   "cap": 5,
+   "fights": [
+    "15",
+    "16",
+    "17"
+   ],
+   "status": "DONE",
+   "result": {
+    "kind": "COMBAT",
+    "winner": "A",
+    "last_result": "KO",
+    "tick": "1398"
+   }
+  },
+  {
+   "contest_id": "8",
+   "a": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "b": "861dd00b56ac96f696c85e815c931a01e883a91c66350fefc4d153b95652d071",
+   "stake": "3000",
+   "format": "BO3",
+   "wins_a": 1,
+   "wins_b": 2,
+   "need": 2,
+   "cap": 5,
+   "fights": [
+    "11",
+    "12",
+    "13"
+   ],
+   "status": "DONE",
+   "result": {
+    "kind": "COMBAT",
+    "winner": "B",
+    "last_result": "KO",
+    "tick": "1124"
+   }
+  },
+  {
+   "contest_id": "6",
+   "a": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "b": "c64fb2f8f74ada61c83a5b34c60e025953d25fe0b7c0df602195eedced1d6481",
+   "stake": "2000",
+   "format": "SINGLE",
+   "wins_a": 1,
+   "wins_b": 0,
+   "need": 1,
+   "cap": 1,
+   "fights": [
+    "9"
+   ],
+   "status": "DONE",
+   "result": {
+    "kind": "COMBAT",
+    "winner": "A",
+    "last_result": "HP",
+    "tick": "688"
+   }
+  },
+  {
+   "contest_id": "4",
+   "a": "861dd00b56ac96f696c85e815c931a01e883a91c66350fefc4d153b95652d071",
+   "b": "c64fb2f8f74ada61c83a5b34c60e025953d25fe0b7c0df602195eedced1d6481",
+   "stake": "1000",
+   "format": "BO3",
+   "wins_a": 2,
+   "wins_b": 0,
+   "need": 2,
+   "cap": 5,
+   "fights": [
+    "5",
+    "7"
+   ],
+   "status": "DONE",
+   "result": {
+    "kind": "COMBAT",
+    "winner": "A",
+    "last_result": "KO",
+    "tick": "467"
+   }
+  }
+ ]
+}

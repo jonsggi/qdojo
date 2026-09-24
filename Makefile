@@ -1,4 +1,4 @@
-.PHONY: test lint sync hooks cpp-test contract-test qubic-verify qubic-core-test qubic-core-syntax
+.PHONY: test lint sync hooks cpp-test contract-test qubic-verify qubic-core-test qubic-core-syntax web-e2e
 test:
 	uv run pytest -q packages/qdojo/tests
 	node --test "apps/web/tests/*.test.cjs"
@@ -19,6 +19,10 @@ qubic-core-test:
 	python3 contracts/qubic/core_harness.py test
 qubic-core-syntax:
 	python3 contracts/qubic/core_harness.py core-syntax
+# Browser end-to-end check of apps/web on the sample export (not part of `test`:
+# it needs the cached Playwright Chromium; without it the runner explains and skips).
+web-e2e:
+	node apps/web/tests/e2e/run.cjs
 lint:
 	uv run python -m compileall -q packages/qdojo/src
 sync:

@@ -98,11 +98,12 @@ step the runner also asserts two things:
 | fuzz-1 | 3253 | 1203 | 2000 | 1332 | final digest identical |
 | fuzz-2 | 3300 | 1253 | 2000 | 1427 | final digest identical |
 | season | 11206 | 516 | 10675 | 901 | final digest identical |
-| scenarios | 1889 | 277 | 1534 | 420 | final digest identical |
+| scenarios | 1912 | 300 | 1534 | 442 | final digest identical |
+| demo-profile | 1793 | 482 | 1300 | 667 | final digest identical |
 
 `--trace DIR` writes one line per event (`E seq tick type body digest`) and one
 line per call (`C tick code op target refunded`). The format matches a
-reference-side dump. On all four journals the port's trace equals the
+reference-side dump. On every journal the port's trace equals the
 reference's line for line, so result codes, targets and refunds also agree.
 Result codes are not part of the digest.
 
@@ -124,7 +125,17 @@ salts from a seeded RNG, so regeneration is byte-identical. It covers:
 - strangers refused NOT_OWNER, refunds taking the last account slots, a new
   registrant refused FULL, and direct paybacks, one of which fails.
 
-Together the four journals emit all 29 event types. Two cup fuzz runs of 9,000
+`demo-profile.journal` (580 KB) is written by
+`scripts/combat-demo-profile-journal.py`. It runs the devnet "demo" manifest:
+pair_starts_per_epoch 6, pair_rematch_ticks 60 and ticks_per_epoch 2400. Four
+fighters queue ranked repeatedly across the epoch boundary at tick 2400, so
+some pairs start 6 times in one epoch and rematch after less than 120 ticks.
+The script confirms that replaying the journal with the defaults 2/120 gives a
+different digest, so a port that ignores the header values fails. The port
+reads both values from the manifest (`Manifest::pair_starts_per_epoch`,
+`Manifest::pair_rematch_ticks`); the header supplies them.
+
+Together the journals emit all 29 event types. Two cup fuzz runs of 9,000
 ticks each (16 MB, not committed) also replay with identical traces.
 
 Two paths cannot be reached, so no journal covers them:

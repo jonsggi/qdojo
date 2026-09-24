@@ -232,7 +232,12 @@
     if (forfeit && 'forfeit_round' in replay && replay.forfeit_round !== derived.end.round_index) {
       bad.push('forfeit_round: export says ' + replay.forfeit_round + ', the replayed state is at round ' + derived.end.round_index);
     }
-    if (!forfeit) {
+    // A fight still in progress claims no outcome; its revealed rounds must
+    // then not have ended it either.
+    const claimsEnd = !!replay.outcome || !!(replay.result && replay.result.kind);
+    if (!forfeit && !claimsEnd) {
+      if (derived.outcome) bad.push('the revealed rounds already ended the fight by ' + derived.outcome.result + ', but the export shows it in progress');
+    } else if (!forfeit) {
       const o = replay.outcome || {};
       if (!derived.outcome) bad.push('the revealed rounds do not end the fight, but the export claims ' + (o.result || 'a result'));
       else if (o.winner !== derived.outcome.winner || o.result !== derived.outcome.result) {
@@ -370,7 +375,7 @@
       add('replay', 'Independent replay reproduces every post-state and the outcome', bad.length ? 'FAIL' : 'PASS',
         bad.length ? bad.length + ' mismatch(es); first: ' + bad[0]
           : 'combat/engine.js replayed ' + derived.rounds.length + ' round(s), ' + beats + ' beats from the committed plan bytes; every state, trace and ' +
-            (isForfeit(replay) ? 'the pre-forfeit state match (forfeit is a timeout, not replayed).' : 'the outcome (' + derived.outcome.result + ') match.'), bad);
+            (isForfeit(replay) ? 'the pre-forfeit state match (forfeit is a timeout, not replayed).' : derived.outcome ? 'the outcome (' + derived.outcome.result + ') match.' : 'the state so far match (fight still in progress).'), bad);
     }
 
     // 5. accounting and rating, recomputed from the settlement and the committed terms.
@@ -566,6 +571,21 @@
 
   /* Sentences for one side of one executed beat, from that side's trace and
    * the opponent's. who/them are display names. */
+  /* Why a fighter was hit, in plain words (docs/model.md section 3): what its
+   * own action could not stop. null when nothing hit it. */
+  function causeOf(t, o) {
+    if (o.computed_damage <= 0) return null;
+    switch (t.effective) {
+      case ID.RECOVER: return 'Recovering leaves a fighter wide open: any attack lands in full, and being hit cuts the recovery.';
+      case ID.EXHAUSTED: return 'An unaffordable move becomes EXHAUSTED: no move at all, so the attack lands in full.';
+      case ID.DUCK: return 'Ducking dodges jabs and throws, but not a kick.';
+      case ID.BLOCK: return 'A block stops jabs and kicks, but not a throw.';
+      case ID.THROW: return 'A throw loses to a jab or a kick: it is interrupted and takes the hit.';
+      case ID.JAB: case ID.KICK: return 'Both attacked on the same beat, so both hits landed: a trade.';
+      default: return null;
+    }
+  }
+
   function explainSide(t, o, who, them) {
     const out = [];
     const poss = x => (x === 'YOU' ? 'YOUR' : x + "'s");
@@ -588,17 +608,67 @@
     if (t.actual_hp_lost > 0 && t.effective !== ID.EXHAUSTED) {
       out.push('Took ' + o.computed_damage + ' from ' + poss(them) + ' ' + oact + (t.reasons.includes('RECOVERY_PUNISHED') ? ' while recovering' : '') +
         ': HP ' + t.before.hp + ' -> ' + t.after.hp + (t.actual_hp_lost < o.computed_damage ? ' (only ' + t.actual_hp_lost + ' HP was left)' : '') + '.');
+      const why = causeOf(t, o);
+      if (why) out.push('Why: ' + why);
+    } else if (t.effective === ID.EXHAUSTED && t.actual_hp_lost > 0) {
+      out.push('Why: ' + causeOf(t, o));
     } else if (o.computed_damage === 0 && t.effective === ID.BLOCK && o.effective !== ID.BLOCK && [ID.JAB, ID.KICK].includes(o.effective)) {
       out.push('Blocked ' + poss(them) + ' ' + oact + ': HP unchanged.');
     }
     if (t.strain > 0) out.push('Guard strain: -' + t.strain + ' stamina from blocking a kick (no HP lost).');
     if (t.recovered > 0) out.push('Recovered +' + t.recovered + ' stamina (now ' + t.after.stamina + ').');
     if (t.reasons.includes('OPENING_EXPIRED')) out.push('Opening expired unused.');
-    if (t.reasons.includes('POWER_WASTED')) out.push('Power spent with no damage: wasted.');
+    if (t.reasons.includes('POWER_WASTED')) {
+      out.push('Power spent with no damage: wasted. The power bonus only adds to a strike that lands, and ' +
+        (o.effective === ID.BLOCK ? 'this one was blocked.' : o.effective === ID.DUCK ? 'this one was ducked.' : t.effective === ID.EXHAUSTED ? 'the move was never made.' : 'this one did not land.'));
+    }
     if (t.reasons.includes('OPENING_EARNED')) out.push('Earned an OPENING: +' + 4 + ' on the next beat if it lands.');
-    if (t.reasons.includes('DOUBLE_KO')) out.push('DOUBLE K.O.');
-    else if (t.reasons.includes('KO')) out.push(who + ' is knocked out.');
+    if (t.reasons.includes('DOUBLE_KO')) out.push('DOUBLE K.O.: both fighters reached 0 HP on the same beat, so the fight is a draw.');
+    else if (t.reasons.includes('KO')) out.push(who + ' is knocked out (0 HP) by ' + poss(them) + ' ' + oact + '.');
     return out;
+  }
+
+  /* One sentence for a whole beat: what happened and why, both sides. */
+  function beatHeadline(a, b, names) {
+    const N = names || { A: 'A', B: 'B' };
+    const act = t => NAMES[t.effective] + (t.power && t.effective !== ID.EXHAUSTED ? ' (POWER)' : '');
+    const pair = [['A', a, b], ['B', b, a]];
+    if (a.reasons.includes('DOUBLE_KO')) {
+      return 'DOUBLE K.O.: ' + N.A + "'s " + act(a) + ' and ' + N.B + "'s " + act(b) + ' land together and both reach 0 HP: a draw.';
+    }
+    for (const [s, t, o] of pair) {
+      if (t.reasons.includes('KO')) {
+        const w = s === 'A' ? 'B' : 'A';
+        return 'K.O.: ' + N[w] + "'s " + act(o) + ' (' + o.computed_damage + ') finishes ' + N[s] + ', who ' +
+          (t.effective === ID.EXHAUSTED ? 'could not afford a ' + NAMES[t.intended] : 'chose ' + NAMES[t.effective]) + '. ' + causeOf(t, o);
+      }
+    }
+    for (const [s, t] of pair) {
+      if (t.effective === ID.EXHAUSTED) {
+        return N[s] + ' could not afford ' + NAMES[t.intended] + ' (' + t.cost + ' stamina, had ' + t.before.stamina + ') and stood EXHAUSTED' +
+          ((s === 'A' ? b : a).computed_damage > 0 ? ', taking ' + (s === 'A' ? b : a).computed_damage + '.' : '.');
+      }
+    }
+    if (a.actual_hp_lost > 0 && b.actual_hp_lost > 0) {
+      return 'TRADE: ' + N.A + "'s " + act(a) + ' and ' + N.B + "'s " + act(b) + ' both land (' + a.computed_damage + ' and ' + b.computed_damage + ').';
+    }
+    for (const [s, t, o] of pair) {
+      if (t.computed_damage > 0) {
+        const w = s === 'A' ? 'B' : 'A';
+        return N[s] + "'s " + act(t) + ' hits ' + N[w] + "'s " + NAMES[o.effective] + ' for ' + t.computed_damage + '. ' + causeOf(o, t);
+      }
+    }
+    for (const [s, t, o] of pair) {
+      if (t.reasons.includes('POWER_WASTED')) {
+        return N[s] + "'s powered " + NAMES[t.effective] + ' ' + (o.effective === ID.BLOCK ? 'is blocked' : o.effective === ID.DUCK ? 'is ducked' : 'misses') + ': no damage, and the power strike is spent.';
+      }
+    }
+    if (a.reasons.includes('THROW_CLASH')) return 'Throw meets throw: both fail and both pay.';
+    for (const [s, t, o] of pair) {
+      if (t.reasons.includes('BLOCKED')) return N[s === 'A' ? 'B' : 'A'] + ' blocks ' + N[s] + "'s " + NAMES[t.effective] + ': no HP lost' + (o.strain ? ', ' + o.strain + ' stamina of guard strain.' : '.');
+      if (t.reasons.includes('EVADED')) return N[s === 'A' ? 'B' : 'A'] + ' ducks ' + N[s] + "'s " + NAMES[t.effective] + ': no damage, and an opening for the next beat.';
+    }
+    return 'No damage: ' + N.A + ' ' + NAMES[a.effective] + ', ' + N.B + ' ' + NAMES[b.effective] + '.';
   }
 
   /* Hindsight for practice: against the opponent's recorded action on this
@@ -676,6 +746,19 @@
       }
     }
     return s;
+  }
+
+  // ---- series (cups, duels) --------------------------------------------------
+
+  /* Series scores are exported in fight-slot order: wins_a belongs to the
+   * lexicographically smaller fighter ID (slot A), whatever order the pairing
+   * lists its fighters in. Returns { fighter hex: wins }. */
+  function seriesWins(a, b, wa, wb) {
+    const out = {};
+    if (!a || !b) { if (a) out[a] = wa; if (b) out[b] = wb; return out; }
+    out[a < b ? a : b] = wa;
+    out[a < b ? b : a] = wb;
+    return out;
   }
 
   // ---- live site helpers (arena, leaderboard, freshness) ----------------------
@@ -787,8 +870,8 @@
     fromHex, toHex, concat, uLE, canonicalJson, rulesetDigest, chooseRuleset, defaultSha256,
     parseContext, roundStateBytes, commitmentPreimage,
     deriveReplay, replayMismatches, verifyReplay, levelOf, isForfeit, ratingDelta, splitPurse, checkSettlement,
-    timeline, outcomeLabel, explainSide, hindsight, fighterStats,
+    timeline, outcomeLabel, explainSide, causeOf, beatHeadline, hindsight, fighterStats,
     randomSeed, practiceStart, practiceNpcPlan, practicePlay,
-    livePhase, actedFlags, recentForm, leaderboard, freshness, ageText, STALE_MS,
+    seriesWins, livePhase, actedFlags, recentForm, leaderboard, freshness, ageText, STALE_MS,
   });
 });

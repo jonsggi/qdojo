@@ -864,9 +864,16 @@ class CombatContract:
             self._fight_tick(fight, t)
         for o in [o for o in self.offers.values() if o.status == "OPEN" and o.kind == "DUEL" and t >= o.expires_tick]:
             self._close_offer(o, "EXPIRED")
-        if t % self.m.match_interval == 0 and sum(1 for o in self.offers.values()
-                                                  if o.status == "OPEN" and o.kind == "RANKED") >= 2:
-            self._matching(t)
+        if t % self.m.match_interval == 0:
+            # Expired ranked offers are closed and refunded on every matching tick,
+            # even when fewer than two offers are open and no pass runs: a lone
+            # expired offer must not hold its payer's stake until someone else
+            # queues. Bounded by the open-offer capacity.
+            for o in sorted((o for o in self.offers.values() if o.status == "OPEN" and o.kind == "RANKED"
+                             and t >= o.expires_tick), key=lambda o: o.offer_id):
+                self._close_offer(o, "EXPIRED")
+            if sum(1 for o in self.offers.values() if o.status == "OPEN" and o.kind == "RANKED") >= 2:
+                self._matching(t)
         for cup in sorted(self.cups.values(), key=lambda c: c.cup_id):
             self._cup_tick(cup, t)
         self.last_serviced = t
@@ -1346,6 +1353,8 @@ class CombatContract:
                          and ftr.suspended_epoch != self.m.epoch(t))
             rows.append({"fighter_id": ftr.fighter_id, "rating": ftr.rating_in(season),
                          "defeated": len(st["defeated"]), "wins": st["wins"], "fights": st["fights"],
+                         "opponents": len(st["opponents"]), "final_epoch_fights": st["final_epoch_fights"],
+                         "placement": ftr.placement, "suspended": ftr.suspended_epoch == self.m.epoch(t),
                          "qualified": qualified})
         rows.sort(key=lambda r: (-r["rating"], -r["defeated"], -r["wins"], r["fighter_id"]))
         eligible = [r for r in rows if r["qualified"]]

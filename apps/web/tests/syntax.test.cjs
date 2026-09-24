@@ -21,9 +21,10 @@ const scriptsOf = html => [...html.matchAll(/<script src="([a-z0-9_/-]+\.js)"/g)
 const stylesOf = html => [...html.matchAll(/<link rel="stylesheet" href="([a-z0-9_/-]+\.css)"/g)].map(m => m[1]);
 
 for (const name of ['app.js', 'dash.js', 'anim.js', 'avatars.js', 'combat/engine.js', 'combat/ruleset.js',
-  'combat/npcs.js', 'combat/logic.js', 'combat/app.js']) {
+  'combat/npcs.js', 'combat/logic.js', 'combat/app.js', 'tests/e2e/run.cjs']) {
   test(`${name} parses as a whole file`, () => {
-    assert.doesNotThrow(() => new vm.Script(read(name), { filename: name }), `${name} has a syntax error`);
+    // a leading #! line is valid for node but not for vm.Script
+    assert.doesNotThrow(() => new vm.Script(read(name).replace(/^#!.*/, ''), { filename: name }), `${name} has a syntax error`);
   });
 }
 
