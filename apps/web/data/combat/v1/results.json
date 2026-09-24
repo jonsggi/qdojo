@@ -2,9 +2,31 @@
  "schema": "qdojo.combat.results.v1",
  "network_id": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
  "contract_id": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
- "generated_tick": "31257",
+ "generated_tick": "31377",
  "source": "reference-contract-state",
  "results": [
+  {
+   "fight_id": "547",
+   "contest_id": "547",
+   "mode": "ranked",
+   "A": "885875a2b815ff8ae93eae11d526f6e5842ee8a8fb6c4aa7cf6023bbf99c4660",
+   "B": "c6b3e0788459f509f631cd5bff38aeee64e7686a74f19b14e9f6600e8f463707",
+   "kind": "COMBAT",
+   "winner": "B",
+   "result": "HP",
+   "tick": "31355"
+  },
+  {
+   "fight_id": "546",
+   "contest_id": "546",
+   "mode": "ranked",
+   "A": "658c8b12a9d23909c08e3dbe611404f4bb9dd3985224f702e94cfdcfda2786e9",
+   "B": "b598e2991617e1b44046ad1c9c1efb9909de234506b3aae254ad2578dba59dee",
+   "kind": "COMBAT",
+   "winner": "B",
+   "result": "HP",
+   "tick": "31283"
+  },
   {
    "fight_id": "545",
    "contest_id": "545",
@@ -2149,50 +2171,6 @@
    "winner": "B",
    "result": "KO",
    "tick": "20155"
-  },
-  {
-   "fight_id": "350",
-   "contest_id": "350",
-   "mode": "ranked",
-   "A": "1fb47dc1ce6c02dc0599b79c3f08a58644f951cac8260707991a1c010bef0f6a",
-   "B": "658c8b12a9d23909c08e3dbe611404f4bb9dd3985224f702e94cfdcfda2786e9",
-   "kind": "COMBAT",
-   "winner": "A",
-   "result": "KO",
-   "tick": "20151"
-  },
-  {
-   "fight_id": "349",
-   "contest_id": "349",
-   "mode": "ranked",
-   "A": "2ecea2382f7f190d4aa65e280dec9ac09f0b937f8915dd30d4e09f41c1428bc9",
-   "B": "fe8cd3d0fb944fdac2e671353a6a6e4ce1fcd0dc9ade519749a8ea44500f384d",
-   "kind": "COMBAT",
-   "winner": "A",
-   "result": "KO",
-   "tick": "20151"
-  },
-  {
-   "fight_id": "348",
-   "contest_id": "348",
-   "mode": "ranked",
-   "A": "a692c798ab7ca1a6746249209d28ccf50d8e41eae175df78d468ab29ab333e71",
-   "B": "c0745b0e546d6f3bd4f605570e9012b0f716c9e21376ef2fdbecf3dad43af7f4",
-   "kind": "COMBAT",
-   "winner": null,
-   "result": "DOUBLE_KO",
-   "tick": "20126"
-  },
-  {
-   "fight_id": "347",
-   "contest_id": "347",
-   "mode": "ranked",
-   "A": "885875a2b815ff8ae93eae11d526f6e5842ee8a8fb6c4aa7cf6023bbf99c4660",
-   "B": "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
-   "kind": "COMBAT",
-   "winner": "A",
-   "result": "KO",
-   "tick": "20151"
   }
  ]
 }
