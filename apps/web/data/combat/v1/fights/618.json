@@ -2,34 +2,34 @@
  "schema": "qdojo.combat.fight.v1",
  "network_id": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
  "contract_id": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
- "generated_tick": "20777",
+ "generated_tick": "40707",
  "source": "reference-contract-state",
- "fight_id": "413",
- "contest_id": "413",
+ "fight_id": "618",
+ "contest_id": "618",
  "phase": "COMMIT",
- "round_index": 2,
+ "round_index": 1,
  "state": {
-  "round_index": 2,
+  "round_index": 1,
   "A": {
-   "hp": 12,
-   "stamina": 13,
+   "hp": 74,
+   "stamina": 46,
    "opening": 0,
    "guard_streak": 0,
    "power_available": 1
   },
   "B": {
-   "hp": 30,
-   "stamina": 13,
-   "opening": 0,
+   "hp": 74,
+   "stamina": 50,
+   "opening": 1,
    "guard_streak": 0,
    "power_available": 1
   },
   "outcome": null
  },
- "context_digest": "b95902dc37e12e3f05a73d73f0b85d9a9574bbc447d809a500e93ea375ec26da",
- "round_state_digest": "9094ddf791669ba401e6cfcd3e9a8216224d4c81b6513a9c50887cf9a12f322d",
- "commit_last": "20782",
- "reveal_last": "20794",
+ "context_digest": "a582e127ba1672f678650232e9f1c668dd16d816f52834df595b47d87a0cc286",
+ "round_state_digest": "59be81aa8d5e0cb7903c3395f0aca1abd242b556cbaeca26fffd46158f7d90fa",
+ "commit_last": "40709",
+ "reveal_last": "40721",
  "committed": [
   "A",
   "B"
@@ -43,8 +43,8 @@
    "operator": "c4c11283398708dc2d12403fa4f0cf0f023e1bf719809f3243f52c0dd04f29f6",
    "auth_version": 1,
    "payout_recipient": "c4c11283398708dc2d12403fa4f0cf0f023e1bf719809f3243f52c0dd04f29f6",
-   "lifetime_rating": 1104,
-   "season_rating": 1104
+   "lifetime_rating": 1078,
+   "season_rating": 945
   },
   "B": {
    "fighter_id": "ff99f52a50ec6df930adbfb68ad5e65f4d16ef523a82ef1a688d12e16f5a82b5",
@@ -52,8 +52,8 @@
    "operator": "4aa1b18483f94b5c8acd7fca0260d8dad835e8bc4d3ee2319b94e5307068d0de",
    "auth_version": 1,
    "payout_recipient": "4aa1b18483f94b5c8acd7fca0260d8dad835e8bc4d3ee2319b94e5307068d0de",
-   "lifetime_rating": 1194,
-   "season_rating": 1194
+   "lifetime_rating": 1184,
+   "season_rating": 1029
   }
  },
  "mode": "ranked"
