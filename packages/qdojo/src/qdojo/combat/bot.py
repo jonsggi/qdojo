@@ -193,6 +193,26 @@ class Bot:
         # client's result counts as included at once.
         self.inflight: dict = {}
 
+    def _plan(self, key, fight, slot) -> Plan | None:
+        """The plan for this round. A slow chooser (a planner process, maybe a
+        model call) runs in the background: None means "not ready yet", so one
+        slow bot never stalls the others or the tick. A crashed planner yields
+        the fallback plan, as a timed-out one does."""
+        if not getattr(self.choose, "slow", False):
+            return self.choose(fight["observation"](slot))
+        planning = self.__dict__.setdefault("_planning", {})
+        fut = planning.get(key)
+        if fut is None:
+            planning[key] = _planning_pool().submit(self.choose, fight["observation"](slot))
+            return None
+        if not fut.done():
+            return None
+        del planning[key]
+        try:
+            return fut.result()
+        except Exception:
+            return planner.FALLBACK
+
     def _submit(self, purpose, op: Op, amount: int = 0, extra=None, **fields):
         r = self.client.send(op, amount, **fields)
         if getattr(r, "code", None) is None:
@@ -418,8 +438,9 @@ class Bot:
             if tick <= fight["start_tick"] or tick > fight["commit_last"]:
                 return "outside the commit window"
             if rec is None:
-                obs = fight["observation"](slot)
-                plan = self.choose(obs)
+                plan = self._plan(key, fight, slot)
+                if plan is None:
+                    return "planning"
                 salt = self.salt_source(32)
                 commitment = codec.commitment(
                     network_id=self.client.network_id, contract_id=self.client.contract_id,
@@ -485,4 +506,16 @@ def planner_chooser(command: list[str], budget_ms: int = planner.DEFAULT_BUDGET_
     def choose(obs: dict) -> Plan:
         ran, err = planner.run_or_fallback(command, obs, budget_ms)
         return ran.plan
+    choose.slow = True          # a subprocess (maybe a model call): plan in the background
     return choose
+
+
+_PLANNING = None
+
+
+def _planning_pool():
+    global _PLANNING
+    if _PLANNING is None:
+        from concurrent.futures import ThreadPoolExecutor
+        _PLANNING = ThreadPoolExecutor(max_workers=8, thread_name_prefix="qdojo-plan")
+    return _PLANNING

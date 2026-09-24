@@ -122,3 +122,25 @@ def test_devnet_refuses_legacy_state(tmp_path):
     from qdojo.combat.store import StoreError
     with pytest.raises(StoreError):
         Devnet(tmp_path)
+
+
+def test_slow_planner_runs_in_the_background(tmp_path):
+    import sys
+    from qdojo.combat.bot import planner_chooser
+    slow = tmp_path / "slow_bot.py"
+    slow.write_text("import json,sys,time\njson.load(sys.stdin)\ntime.sleep(0.3)\n"
+                    "print(json.dumps({'schema':'qdojo.combat.plan.v1','actions':['JAB']*6,'power_slot':-1}))\n")
+    net = Devnet(tmp_path / "net")
+    fid, owner = net.ensure_fighter("sloth")
+    a = Bot(net.client(owner), RULES, fid, owner, owner, planner_chooser([sys.executable, str(slow)], 5000),
+            Budget(ruleset_digest=RULES.digest.hex()), tmp_path / "sloth", clock=lambda: NOON)
+    b = _bot(net, "quick", npcs.mixed_v1, tmp_path)
+    import time
+    for _ in range(300):
+        a.step(), b.step()
+        net.world.end()
+        time.sleep(0.04)                      # 24-tick commit window ~1 s of wall time > the 0.3 s planner
+        if any(x.status == "DONE" for x in net.world.contract.contests.values()):
+            break
+    done = [x for x in net.world.contract.contests.values() if x.status == "DONE"]
+    assert done and done[0].result["kind"] == "COMBAT"
