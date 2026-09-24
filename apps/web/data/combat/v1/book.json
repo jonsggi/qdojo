@@ -2,45 +2,76 @@
  "schema": "qdojo.combat.book.v1",
  "network_id": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
  "contract_id": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
- "generated_tick": "40217",
+ "generated_tick": "40337",
  "source": "reference-contract-state",
  "offers": [
   {
-   "offer_id": "3193",
+   "offer_id": "3239",
    "kind": "RANKED",
    "fighter_id": "6a5efcca23410d1dc7300479ec0866de819043f8bea7ad91f5791d996065a79d",
    "rating": 607,
    "stake": "1000",
-   "window": 200,
+   "window": 150,
    "max_gap": 200,
-   "expires_tick": "40269",
+   "expires_tick": "40513",
    "opponent_id": null
   },
   {
-   "offer_id": "3208",
+   "offer_id": "3245",
    "kind": "RANKED",
-   "fighter_id": "40685a53c36a488297c0fdfdad934a83b41698434a54e8edc43a79a26b0575b3",
-   "rating": 1360,
+   "fighter_id": "82a8e7e488c616a769ba6d810379ac024498218904c3c4a40f3b47739756d58c",
+   "rating": 808,
    "stake": "1000",
-   "window": 200,
+   "window": 100,
    "max_gap": 200,
-   "expires_tick": "40333",
+   "expires_tick": "40548",
+   "opponent_id": null
+  },
+  {
+   "offer_id": "3249",
+   "kind": "RANKED",
+   "fighter_id": "1fb47dc1ce6c02dc0599b79c3f08a58644f951cac8260707991a1c010bef0f6a",
+   "rating": 861,
+   "stake": "1000",
+   "window": 100,
+   "max_gap": 200,
+   "expires_tick": "40552",
+   "opponent_id": null
+  },
+  {
+   "offer_id": "3252",
+   "kind": "RANKED",
+   "fighter_id": "5e5983158739c500e8d2d33533271392e9b14aeafe3a9b2399c8ad6f0e506712",
+   "rating": 1164,
+   "stake": "1000",
+   "window": 100,
+   "max_gap": 200,
+   "expires_tick": "40575",
+   "opponent_id": null
+  },
+  {
+   "offer_id": "3253",
+   "kind": "RANKED",
+   "fighter_id": "ff99f52a50ec6df930adbfb68ad5e65f4d16ef523a82ef1a688d12e16f5a82b5",
+   "rating": 1186,
+   "stake": "1000",
+   "window": 100,
+   "max_gap": 200,
+   "expires_tick": "40575",
    "opponent_id": null
   }
  ],
  "capacity": {
   "offers": 64,
   "fights": 16,
-  "fights_in_use": 7
+  "fights_in_use": 5
  },
  "active_fights": [
-  "574",
-  "575",
-  "576",
-  "577",
-  "578",
-  "579",
-  "580"
+  "586",
+  "589",
+  "590",
+  "591",
+  "592"
  ],
- "next_matching_tick": "40220"
+ "next_matching_tick": "40340"
 }
