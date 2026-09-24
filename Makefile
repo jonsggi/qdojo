@@ -1,4 +1,4 @@
-.PHONY: test lint sync hooks cpp-test contract-test qubic-verify qubic-core-test qubic-core-syntax web-e2e
+.PHONY: test lint sync hooks cpp-test contract-test qubic-verify qubic-core-test qubic-core-syntax web-e2e test-all soak
 test:
 	uv run pytest -q packages/qdojo/tests
 	node --test "apps/web/tests/*.test.cjs"
@@ -23,6 +23,13 @@ qubic-core-syntax:
 # it needs the cached Playwright Chromium; without it the runner explains and skips).
 web-e2e:
 	node apps/web/tests/e2e/run.cjs
+# A demo-arena soak on the simulated chain with every invariant checked every
+# tick (drops, reserve halts, forfeits, sales). SOAK_TICKS=20000 for a long run.
+SOAK_TICKS ?= 4000
+soak:
+	uv run python scripts/combat-soak.py --ticks $(SOAK_TICKS)
+# Everything this host can run: unit and parity tests, the browser suite, a soak.
+test-all: test web-e2e soak
 lint:
 	uv run python -m compileall -q packages/qdojo/src
 sync:
