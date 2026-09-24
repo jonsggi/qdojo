@@ -107,13 +107,38 @@ class DevnetClient:
         f = self.c.fighters.get(fid)
         if f is None:
             return None
-        active = None
+        active, cup = None, None
         if f.lock == "CONTEST":
             contest = self.c.contests[f.lock_ref]
             live = [x for x in contest.fights if self.c.fights[x].phase != "DONE"]
             active = live[-1] if live else None
+        elif f.lock == "TOURNAMENT":
+            k = self.c.cups[f.lock_ref]
+            for contest in self.c.contests.values():
+                if contest.cup_id == k.cup_id and contest.status == "ACTIVE" \
+                        and fid in (contest.a.fighter_id, contest.b.fighter_id):
+                    live = [x for x in contest.fights if self.c.fights[x].phase != "DONE"]
+                    active = live[-1] if live else None
+            pairing = next((p for p in k.pairings.values() if p.level == k.level and p.status == "SCHEDULED"
+                            and fid in (p.a, p.b)), None)
+            cup = {"cup_id": k.cup_id, "status": k.status, "level": k.level, "level_start": k.level_start,
+                   "checkin_ticks": k.descriptor["checkin_ticks"],
+                   "pairing_id": pairing.pairing_id if pairing else None,
+                   "checked_in": bool(pairing and fid in pairing.checked)}
         return {"lock": f.lock, "auth_version": f.auth_version, "active_fight": active,
-                "lifetime": f.lifetime, "operator": f.operator}
+                "lifetime": f.lifetime, "operator": f.operator, "cup": cup}
+
+    def open_cups(self) -> list[dict]:
+        t = self.tick()
+        return [{"cup_id": k.cup_id, "entry_fee": k.descriptor["entry_fee"], "entries": len(k.entries),
+                 "max_entrants": k.descriptor["max_entrants"], "registration_close": k.descriptor["registration_close"]}
+                for k in self.c.cups.values() if k.status == "REGISTRATION" and t < k.descriptor["registration_close"]]
+
+    def duel_offers_for(self, fid: bytes) -> list[dict]:
+        t = self.tick()
+        return [{"offer_id": o.offer_id, "stake": o.amount, "format": o.series_format, "challenger": o.fighter_id}
+                for o in self.c.offers.values()
+                if o.kind == "DUEL" and o.status == "OPEN" and o.opponent_id == fid and t < o.expires_tick]
 
     def fight(self, fight_id: int) -> dict | None:
         fight = self.c.fights.get(fight_id)
@@ -154,6 +179,22 @@ class DevnetClient:
 
     def spend_outcome(self, ref: str, fid: bytes):
         kind, _, n = ref.partition(":")
+        if kind == "cup":
+            k = self.c.cups.get(int(n))
+            if k is None:
+                return None
+            entry = k.entries.get(fid)
+            if k.status in ("REGISTRATION", "RUNNING"):
+                if entry is None and k.status == "REGISTRATION":
+                    return ("refund", k.descriptor["entry_fee"])       # withdrawn before close
+                return None
+            if k.status in ("CANCELLED", "ABORTED"):
+                return ("refund", k.descriptor["entry_fee"])
+            if k.champion != fid:
+                return ("settled", 0)
+            fee = self.net.m.fees[k.descriptor["fee_profile_id"]]
+            gross_entries = sum(e.amount for e in k.entries.values())
+            return ("settled", k.sponsorship + gross_entries - gross_entries * fee.rake_bps // 10_000)
         if kind == "offer":
             o = self.c.offers.get(int(n))
             if o is None or o.status == "OPEN":

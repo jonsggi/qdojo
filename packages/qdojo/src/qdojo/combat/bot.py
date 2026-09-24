@@ -179,6 +179,9 @@ class Bot:
     clock: Callable[[], dt.datetime] = lambda: dt.datetime.now(dt.timezone.utc)
     tier: int = 1
     log: Callable[[str], None] = lambda m: None
+    play_cups: bool = False          # register for open cups (entry fee within budget), check in, fight
+    accept_duels: bool = False       # accept named challenges whose stake is within budget
+    ranked: bool = True              # enter the ranked queue when idle
 
     def __post_init__(self):
         self.journal = PlanJournal(self.state_dir)
@@ -223,9 +226,111 @@ class Bot:
         self._settle_known()
         if me["lock"] == "CONTEST":
             return self._fight_step(me, tick)
+        if me["lock"] == "TOURNAMENT":
+            return self._tournament_step(me, tick)
         if me["lock"] == "IDLE":
-            return self._maybe_enter(me, tick)
+            if self.accept_duels:
+                done = self._maybe_accept_duel(me, tick)
+                if done:
+                    return done
+            if self.play_cups:
+                done = self._maybe_join_cup(me, tick)
+                if done:
+                    return done
+            return self._maybe_enter(me, tick) if self.ranked else "idle"
         return f"waiting ({me['lock']})"
+
+    # -- duels and cups -------------------------------------------------------
+
+    def _spend_allowed(self, tick: int, amount: int) -> tuple[bool, str, str]:
+        try:
+            wallet = self.client.balance(self.wallet)
+        except Exception:
+            wallet = None
+        day = self.clock().astimezone(dt.timezone.utc).date().isoformat()
+        ok, why = decide(self.budget, self.bstate, day, tick, amount, self.tier, wallet, self.rules.digest.hex())
+        return ok, why, day
+
+    def _maybe_accept_duel(self, me: dict, tick: int) -> str | None:
+        st, extra = self._poll("duel")
+        if st == "pending":
+            return "duel acceptance waiting for inclusion"
+        if st is not None and st != "dropped":
+            spend = extra
+            if st.code.name in ("OK", "DUPLICATE"):
+                spend.contest_or_offer = f"contest:{st.data['contest_id']}"
+            else:
+                spend.returned = spend.stake
+            self.bstate.save(self.bpath)
+            return f"duel accept {st.code.name}"
+        if st == "dropped":
+            extra.returned = extra.stake
+            self.bstate.save(self.bpath)
+        offers = getattr(self.client, "duel_offers_for", lambda _f: [])(self.fighter_id)
+        for o in offers:
+            ok, why, day = self._spend_allowed(tick, o["stake"])
+            if not ok:
+                continue
+            spend = Spend(day, "pending", o["stake"])
+            self.bstate.spends.append(spend)
+            self.bstate.last_entry_tick = tick
+            self.bstate.save(self.bpath)
+            r = self._submit("duel", Op.DUEL_ACCEPT, o["stake"], extra=spend, offer_id=o["offer_id"],
+                             fighter_id=self.fighter_id, auth_version=me["auth_version"])
+            if r is None:
+                return f"accepting duel offer {o['offer_id']}"
+            if r.code.name in ("OK", "DUPLICATE"):
+                spend.contest_or_offer = f"contest:{r.data['contest_id']}"
+            else:
+                spend.returned = spend.stake
+            self.bstate.save(self.bpath)
+            return f"duel accept {r.code.name}"
+        return None
+
+    def _maybe_join_cup(self, me: dict, tick: int) -> str | None:
+        st, extra = self._poll("cup")
+        if st == "pending":
+            return "cup entry waiting for inclusion"
+        if st is not None:
+            if st == "dropped" or st.code.name not in ("OK", "DUPLICATE"):
+                extra.returned = extra.stake
+                self.bstate.save(self.bpath)
+            return None if st == "dropped" else f"cup entry {st.code.name}"
+        for k in getattr(self.client, "open_cups", lambda: [])():
+            if k["entries"] >= k["max_entrants"]:
+                continue
+            ok, why, day = self._spend_allowed(tick, k["entry_fee"])
+            if not ok:
+                continue
+            spend = Spend(day, f"cup:{k['cup_id']}", k["entry_fee"])
+            self.bstate.spends.append(spend)
+            self.bstate.last_entry_tick = tick
+            self.bstate.save(self.bpath)
+            r = self._submit("cup", Op.CUP_REGISTER, k["entry_fee"], extra=spend, cup_id=k["cup_id"],
+                             fighter_id=self.fighter_id, auth_version=me["auth_version"])
+            if r is None:
+                return f"registering for cup {k['cup_id']}"
+            if r.code.name not in ("OK", "DUPLICATE"):
+                spend.returned = spend.stake
+                self.bstate.save(self.bpath)
+            return f"cup entry {r.code.name}"
+        return None
+
+    def _tournament_step(self, me: dict, tick: int) -> str:
+        if me.get("active_fight"):
+            return self._fight_step(me, tick)
+        cup = me.get("cup") or {}
+        pid = cup.get("pairing_id")
+        if pid is None or cup.get("checked_in"):
+            return "waiting in cup"
+        if not cup["level_start"] <= tick < cup["level_start"] + cup["checkin_ticks"]:
+            return "waiting for check-in"
+        st, _ = self._poll(("checkin", cup["cup_id"], pid))
+        if st == "pending":
+            return "check-in waiting for inclusion"
+        r = self._submit(("checkin", cup["cup_id"], pid), Op.CUP_CHECK_IN, cup_id=cup["cup_id"], pairing_id=pid,
+                         fighter_id=self.fighter_id, auth_version=me["auth_version"])
+        return "check-in sent" if r is None else f"check-in {r.code.name}"
 
     # -- spending -----------------------------------------------------------
 

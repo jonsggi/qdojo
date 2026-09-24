@@ -116,3 +116,32 @@ def test_poll_semantics(tmp_path):
     for _ in range(3):
         chain.advance()
     assert chain.poll(r2) == "dropped"
+
+
+def test_bots_play_a_cup_and_a_duel_on_the_simulated_chain(tmp_path):
+    w, chain, _, bots, owners = _setup(tmp_path, n=6, latency=(1, 3), drop_rate=0.05, seed=11)
+    cuppers, challenger, target = bots[:4], bots[4], bots[5]
+    for b in bots:
+        b.budget.max_stake = b.budget.max_total_escrow = 5000
+    for b in cuppers:
+        b.play_cups, b.ranked = True, False
+    challenger.ranked = False
+    target.accept_duels, target.ranked = True, False
+    c = w.contract
+    r = w.send(ADMIN, Op.ADMIN_CREATE_CUP, 500, ruleset_digest=RULES.digest, timing_profile_id=1, fee_profile_id=1,
+               entry_fee=2000, registration_close=w.tick + 20, min_entrants=4, max_entrants=8, level_ticks=3000,
+               first_level_delay=30, checkin_ticks=60, replay_delay=40)
+    cup = c.cups[r.data["cup_id"]]
+    _run(w, chain, bots, 25)
+    assert len(cup.entries) == 4, "idle cup bots should have registered for the open cup"
+    w.send(challenger.wallet, Op.DUEL_OFFER, 1500,
+           fighter_id=challenger.fighter_id, auth_version=1, opponent_id=target.fighter_id,
+           ruleset_digest=RULES.digest, timing_profile_id=1, fee_profile_id=1, stake=1500, format=0,
+           expires_tick=w.tick + 200)
+    _run(w, chain, bots, 9000)
+    assert cup.status in ("COMPLETE", "ABORTED")
+    assert cup.status == "COMPLETE", "a cup of bots that check in should crown a champion"
+    duels = [x for x in c.contests.values() if x.mode == 1]
+    assert duels and duels[0].status == "DONE"
+    for b in bots:                                         # every spend settles eventually
+        assert all(s.returned is not None for s in b.bstate.spends if s.contest_or_offer.startswith("cup:"))
