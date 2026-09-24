@@ -2,128 +2,10 @@
  "schema": "qdojo.combat.events.v1",
  "network_id": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
  "contract_id": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
- "generated_tick": "22287",
+ "generated_tick": "22407",
  "source": "reference-contract-state",
- "after": "11061",
+ "after": "11071",
  "events": [
-  {
-   "seq": "11062",
-   "tick": "21953",
-   "type": "OFFER_OPEN",
-   "fields": [
-    "1891",
-    "a692c798ab7ca1a6746249209d28ccf50d8e41eae175df78d468ab29ab333e71",
-    "1000",
-    "22193"
-   ],
-   "digest": "197caeccdc1d73067174553875af5cea927a2ea9371cf0dff35ebf1d731d0a00"
-  },
-  {
-   "seq": "11063",
-   "tick": "21953",
-   "type": "COMMITTED",
-   "fields": [
-    "453",
-    "0",
-    "2ecea2382f7f190d4aa65e280dec9ac09f0b937f8915dd30d4e09f41c1428bc9",
-    "d5e90e4d85360bd443b5d21dd427202d8dbed3c1456ee54490d519bfb545a960"
-   ],
-   "digest": "f4d89cb724715b2b8cd2a27a47961428574893b987bc37b84fdd135bf835ec69"
-  },
-  {
-   "seq": "11064",
-   "tick": "21964",
-   "type": "OFFER_CLOSED",
-   "fields": [
-    "1874",
-    "EXPIRED"
-   ],
-   "digest": "bfe4cd61f6a4a855dde472b5aec22b22b2aa323f5135bf9fc5e3b3d80821e04c"
-  },
-  {
-   "seq": "11065",
-   "tick": "21965",
-   "type": "OFFER_OPEN",
-   "fields": [
-    "1892",
-    "c6b3e0788459f509f631cd5bff38aeee64e7686a74f19b14e9f6600e8f463707",
-    "1000",
-    "22205"
-   ],
-   "digest": "489db00f257a09be4d6264561aebbce33807c5ac2f813e5d35381b02b66c578c"
-  },
-  {
-   "seq": "11066",
-   "tick": "21976",
-   "type": "OFFER_CLOSED",
-   "fields": [
-    "1875",
-    "EXPIRED"
-   ],
-   "digest": "77d9f1622f752288b2cb91f728d50b8aa36b40ca6fa2312d725565a92d681ace"
-  },
-  {
-   "seq": "11067",
-   "tick": "21977",
-   "type": "REVEALED",
-   "fields": [
-    "453",
-    "0",
-    "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
-    "8dcfcdd656233bbf5356a4bcafca6eb58a61e5348970e0d159ab8d524b3a6fe0",
-    "050303050501ff"
-   ],
-   "digest": "620d10cba2b12e39bed2b5e41adaf6ec52fb446c825db5634f5e2d5e2a5a9430"
-  },
-  {
-   "seq": "11068",
-   "tick": "21977",
-   "type": "OFFER_OPEN",
-   "fields": [
-    "1893",
-    "fe8cd3d0fb944fdac2e671353a6a6e4ce1fcd0dc9ade519749a8ea44500f384d",
-    "1000",
-    "22217"
-   ],
-   "digest": "1242c79f83988d1d15821c2f1f02b6e2750d31e68038002058da77fe189d7538"
-  },
-  {
-   "seq": "11069",
-   "tick": "21977",
-   "type": "REVEALED",
-   "fields": [
-    "453",
-    "0",
-    "2ecea2382f7f190d4aa65e280dec9ac09f0b937f8915dd30d4e09f41c1428bc9",
-    "db452fb328781e9660c1f444c10b5ed9fa2284b287a89e18685cf7871f6a7e14",
-    "000303030205ff"
-   ],
-   "digest": "55cdee6d8b150c59739cdce42cafd69f94682f2d5b6a1df09927978f7028831c"
-  },
-  {
-   "seq": "11070",
-   "tick": "21977",
-   "type": "ROUND_RESOLVED",
-   "fields": [
-    "453",
-    "0",
-    "6",
-    "52003c000000010058003c0000000100"
-   ],
-   "digest": "917fde308dcc585aa472f988a3487da5e81bc0ad76516717f6f0b03e5e021383"
-  },
-  {
-   "seq": "11071",
-   "tick": "21978",
-   "type": "COMMITTED",
-   "fields": [
-    "453",
-    "1",
-    "9099a26c85ddb119ceccb840d6a90a1c6861576d2641f750b0ef49091f69d439",
-    "5515c2ffb8025ba51188b38068a13bd43b449240f555425d8a70d782338b3e54"
-   ],
-   "digest": "18380c7340ca917fa1f0dae0e7b10c180d5369d3efc7a8592f494ebafa4d21e1"
-  },
   {
    "seq": "11072",
    "tick": "21978",
@@ -733,6 +615,116 @@
     "22525"
    ],
    "digest": "240e20e9ed84b9071f8e8b7711b6228d8b21e9699da52f3886c8095b31a5427f"
+  },
+  {
+   "seq": "11126",
+   "tick": "22316",
+   "type": "OFFER_CLOSED",
+   "fields": [
+    "1900",
+    "EXPIRED"
+   ],
+   "digest": "db42220f8fbb084f1afd1b266aa9905f6e68d5cd7d7d95a5d1fc91638b70361d"
+  },
+  {
+   "seq": "11127",
+   "tick": "22316",
+   "type": "OFFER_CLOSED",
+   "fields": [
+    "1901",
+    "EXPIRED"
+   ],
+   "digest": "868a1a4b4f023ed7233a049e2673c389b0157f95369625dc51d5e42e8dfa52ba"
+  },
+  {
+   "seq": "11128",
+   "tick": "22317",
+   "type": "OFFER_OPEN",
+   "fields": [
+    "1916",
+    "76ff0985bba457ae8089737600c0f23f9ffc97716f47311a072dda32caca0c88",
+    "1000",
+    "22557"
+   ],
+   "digest": "838632815e8782b1c0a3bc65b1751a2b2ca0fba5b566c2461fffdcdeebca852c"
+  },
+  {
+   "seq": "11129",
+   "tick": "22317",
+   "type": "OFFER_OPEN",
+   "fields": [
+    "1917",
+    "6a5efcca23410d1dc7300479ec0866de819043f8bea7ad91f5791d996065a79d",
+    "1000",
+    "22557"
+   ],
+   "digest": "f8a82eb1fb440fc307d673c0fcc814c71fb81e7e2ceb08f1717714916cdcf1dd"
+  },
+  {
+   "seq": "11130",
+   "tick": "22360",
+   "type": "OFFER_CLOSED",
+   "fields": [
+    "1902",
+    "EXPIRED"
+   ],
+   "digest": "2bb971ef926422c2b675d773ec35d7f9ba6a004b367048ca344ce1051ba2b9a5"
+  },
+  {
+   "seq": "11131",
+   "tick": "22361",
+   "type": "OFFER_OPEN",
+   "fields": [
+    "1918",
+    "b598e2991617e1b44046ad1c9c1efb9909de234506b3aae254ad2578dba59dee",
+    "1000",
+    "22601"
+   ],
+   "digest": "24dae83c26a09fdb923dc5efe4b8380692dd37cf56cb73d3752da1c67fdaa5f4"
+  },
+  {
+   "seq": "11132",
+   "tick": "22400",
+   "type": "OFFER_CLOSED",
+   "fields": [
+    "1903",
+    "EXPIRED"
+   ],
+   "digest": "2256ce275da3a247fb854d714c323f467f84e03a225749a42062b6c355abec11"
+  },
+  {
+   "seq": "11133",
+   "tick": "22401",
+   "type": "OFFER_OPEN",
+   "fields": [
+    "1919",
+    "40685a53c36a488297c0fdfdad934a83b41698434a54e8edc43a79a26b0575b3",
+    "1000",
+    "22641"
+   ],
+   "digest": "b91f6e635ccc904407fe45422bff20a701aebf0d145feffad677fc616a0c8ebd"
+  },
+  {
+   "seq": "11134",
+   "tick": "22404",
+   "type": "OFFER_CLOSED",
+   "fields": [
+    "1904",
+    "EXPIRED"
+   ],
+   "digest": "91b59facfe5a2a1860550d2014bbdc09d1335919b5e1dfcbaac06ec8d43a8105"
+  },
+  {
+   "seq": "11135",
+   "tick": "22405",
+   "type": "OFFER_OPEN",
+   "fields": [
+    "1920",
+    "ff99f52a50ec6df930adbfb68ad5e65f4d16ef523a82ef1a688d12e16f5a82b5",
+    "1000",
+    "22645"
+   ],
+   "digest": "a958e15aad0af9d7a9007b2b68231e1d72e14bdd28d7f936ed1ad3dc876d319e"
   }
  ]
 }
