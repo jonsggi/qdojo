@@ -2,9 +2,20 @@
  "schema": "qdojo.combat.results.v1",
  "network_id": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
  "contract_id": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
- "generated_tick": "21687",
+ "generated_tick": "21807",
  "source": "reference-contract-state",
  "results": [
+  {
+   "fight_id": "450",
+   "contest_id": "450",
+   "mode": "ranked",
+   "A": "5e5983158739c500e8d2d33533271392e9b14aeafe3a9b2399c8ad6f0e506712",
+   "B": "885875a2b815ff8ae93eae11d526f6e5842ee8a8fb6c4aa7cf6023bbf99c4660",
+   "kind": "COMBAT",
+   "winner": "A",
+   "result": "KO",
+   "tick": "21766"
+  },
   {
    "fight_id": "449",
    "contest_id": "449",
@@ -2182,28 +2193,6 @@
    "winner": "A",
    "result": "KO",
    "tick": "10538"
-  },
-  {
-   "fight_id": "251",
-   "contest_id": "251",
-   "mode": "ranked",
-   "A": "1fb47dc1ce6c02dc0599b79c3f08a58644f951cac8260707991a1c010bef0f6a",
-   "B": "b598e2991617e1b44046ad1c9c1efb9909de234506b3aae254ad2578dba59dee",
-   "kind": "COMBAT",
-   "winner": "A",
-   "result": "KO",
-   "tick": "10543"
-  },
-  {
-   "fight_id": "250",
-   "contest_id": "250",
-   "mode": "ranked",
-   "A": "82a8e7e488c616a769ba6d810379ac024498218904c3c4a40f3b47739756d58c",
-   "B": "885875a2b815ff8ae93eae11d526f6e5842ee8a8fb6c4aa7cf6023bbf99c4660",
-   "kind": "COMBAT",
-   "winner": "A",
-   "result": "KO",
-   "tick": "10535"
   }
  ]
 }
