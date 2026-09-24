@@ -185,6 +185,28 @@ class Bot:
         self.bpath = Path(self.state_dir) / BUDGET_STATE
         self.bstate = BudgetState.load(self.bpath)
         self.salt_source = secrets.token_bytes
+        # On a real chain a send is a receipt, not a result. In-flight sends by
+        # purpose ("enter", ("commit", key), ("reveal", key)); a synchronous
+        # client's result counts as included at once.
+        self.inflight: dict = {}
+
+    def _submit(self, purpose, op: Op, amount: int = 0, extra=None, **fields):
+        r = self.client.send(op, amount, **fields)
+        if getattr(r, "code", None) is None:
+            self.inflight[purpose] = (r, extra)
+            return None
+        return r
+
+    def _poll(self, purpose):
+        """(state, extra): state is a CallResult, "dropped", "pending" or None (nothing in flight)."""
+        if purpose not in self.inflight:
+            return None, None
+        receipt, extra = self.inflight[purpose]
+        st = self.client.poll(receipt)
+        if st is None:
+            return "pending", extra
+        del self.inflight[purpose]
+        return st, extra
 
     def step(self) -> str:
         """One observation/action cycle. Returns what it did."""
@@ -195,6 +217,9 @@ class Bot:
             return f"state unreadable: {exc}"
         if me is None:
             return "fighter not registered"
+        drained = self._drain_entry()
+        if drained is not None and "enter" in self.inflight:
+            return drained                                  # still waiting: don't act on stale state
         self._settle_known()
         if me["lock"] == "CONTEST":
             return self._fight_step(me, tick)
@@ -204,8 +229,32 @@ class Bot:
 
     # -- spending -----------------------------------------------------------
 
+    def _entry_result(self, r, spend: Spend) -> str:
+        if r.code not in (Code.OK, Code.DUPLICATE):
+            spend.returned = spend.stake                    # rejected: the attachment came back as credit
+            self.bstate.save(self.bpath)
+            return f"entry rejected: {r.code.name}"
+        spend.contest_or_offer = f"offer:{r.data['offer_id']}"
+        self.bstate.save(self.bpath)
+        return f"entered offer {r.data['offer_id']}"
+
+    def _drain_entry(self) -> str | None:
+        """Settle an in-flight queue entry, whatever the fighter's lock says now."""
+        st, spend = self._poll("enter")
+        if st is None:
+            return None
+        if st == "pending":
+            return "entry waiting for inclusion"
+        if st == "dropped":
+            spend.returned = spend.stake                    # never included: nothing left the wallet
+            self.bstate.save(self.bpath)
+            return "entry dropped by the chain; will retry"
+        return self._entry_result(st, spend)
+
     def _maybe_enter(self, me: dict, tick: int) -> str:
-        stake = self.client.tier_amount(self.tier) if hasattr(self.client, "tier_amount") else None
+        if "enter" in self.inflight:
+            return "entry waiting for inclusion"
+        stake =self.client.tier_amount(self.tier) if hasattr(self.client, "tier_amount") else None
         if stake is None:
             return "deny: tier price unknown"
         try:
@@ -220,17 +269,14 @@ class Bot:
         self.bstate.spends.append(spend)
         self.bstate.last_entry_tick = tick
         self.bstate.save(self.bpath)                        # reserve before sending
-        r = self.client.send(Op.QUEUE_ENTER, stake, fighter_id=self.fighter_id, auth_version=me["auth_version"],
-                             ruleset_digest=self.rules.digest, timing_profile_id=self.budget.timing_profile_id,
-                             fee_profile_id=self.budget.fee_profile_id, tier_id=self.tier,
-                             max_gap=self.budget.max_rating_gap, expires_tick=tick + self.budget.offer_lifetime)
-        if r.code not in (Code.OK, Code.DUPLICATE):
-            spend.returned = stake                          # rejected: the attachment came back as credit
-            self.bstate.save(self.bpath)
-            return f"entry rejected: {r.code.name}"
-        spend.contest_or_offer = f"offer:{r.data['offer_id']}"
-        self.bstate.save(self.bpath)
-        return f"entered offer {r.data['offer_id']}"
+        r = self._submit("enter", Op.QUEUE_ENTER, stake, extra=spend, fighter_id=self.fighter_id,
+                         auth_version=me["auth_version"], ruleset_digest=self.rules.digest,
+                         timing_profile_id=self.budget.timing_profile_id, fee_profile_id=self.budget.fee_profile_id,
+                         tier_id=self.tier, max_gap=self.budget.max_rating_gap,
+                         expires_tick=tick + self.budget.offer_lifetime)
+        if r is None:
+            return "entry sent"
+        return self._entry_result(r, spend)
 
     def _settle_known(self):
         changed = False
@@ -283,23 +329,36 @@ class Bot:
                 self.journal.put(rec)                        # BEFORE sending
             if rec["round_state_digest"] != fight["round_state_digest"]:
                 raise BotStop("journalled plan belongs to a different round-start state; not substituting")
-            r = self.client.send(Op.COMMIT, fight_id=fight["fight_id"], round_index=fight["round_index"],
-                                 fighter_id=self.fighter_id, auth_version=fight["auth_version"][slot],
-                                 round_state_digest=bytes.fromhex(rec["round_state_digest"]),
-                                 commitment=bytes.fromhex(rec["commitment"]))
-            self.journal.put({**rec, "status": f"commit:{r.code.name}"})
-            return f"commit {r.code.name}"
+            st, _ = self._poll(("commit", key))
+            if st == "pending":
+                return "commit waiting for inclusion"
+            # Not committed yet and nothing in flight (or it was dropped): send. A
+            # resend carries the same commitment, which the contract treats as a
+            # harmless duplicate, so retrying is always safe.
+            r = self._submit(("commit", key), Op.COMMIT, fight_id=fight["fight_id"],
+                             round_index=fight["round_index"], fighter_id=self.fighter_id,
+                             auth_version=fight["auth_version"][slot],
+                             round_state_digest=bytes.fromhex(rec["round_state_digest"]),
+                             commitment=bytes.fromhex(rec["commitment"]))
+            status = "sent" if r is None else r.code.name
+            self.journal.put({**rec, "status": f"commit:{status}"})
+            return f"commit {status}" + (" (resent after a drop)" if st == "dropped" else "")
         if fight["phase"] == "REVEAL":
             if slot in fight["revealed"]:
                 return "revealed; waiting for resolution"
             if rec is None:
                 raise BotStop("committed plan/salt missing from the journal; cannot reveal (no substitute)")
-            r = self.client.send(Op.REVEAL, fight_id=fight["fight_id"], round_index=fight["round_index"],
-                                 fighter_id=self.fighter_id, auth_version=fight["auth_version"][slot],
-                                 round_state_digest=bytes.fromhex(rec["round_state_digest"]),
-                                 salt=bytes.fromhex(rec["salt"]), plan=codec.decode_plan(bytes.fromhex(rec["plan"])))
-            self.journal.put({**rec, "status": f"reveal:{r.code.name}"})
-            return f"reveal {r.code.name}"
+            st, _ = self._poll(("reveal", key))
+            if st == "pending":
+                return "reveal waiting for inclusion"
+            r = self._submit(("reveal", key), Op.REVEAL, fight_id=fight["fight_id"],
+                             round_index=fight["round_index"], fighter_id=self.fighter_id,
+                             auth_version=fight["auth_version"][slot],
+                             round_state_digest=bytes.fromhex(rec["round_state_digest"]),
+                             salt=bytes.fromhex(rec["salt"]), plan=codec.decode_plan(bytes.fromhex(rec["plan"])))
+            status = "sent" if r is None else r.code.name
+            self.journal.put({**rec, "status": f"reveal:{status}"})
+            return f"reveal {status}" + (" (resent after a drop)" if st == "dropped" else "")
         return fight["phase"]
 
 
