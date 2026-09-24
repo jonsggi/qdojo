@@ -2,34 +2,34 @@
  "schema": "qdojo.combat.fight.v1",
  "network_id": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
  "contract_id": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
- "generated_tick": "11417",
+ "generated_tick": "30627",
  "source": "reference-contract-state",
- "fight_id": "311",
- "contest_id": "311",
- "phase": "COMMIT",
+ "fight_id": "509",
+ "contest_id": "509",
+ "phase": "REVEAL",
  "round_index": 2,
  "state": {
   "round_index": 2,
   "A": {
-   "hp": 64,
-   "stamina": 27,
+   "hp": 62,
+   "stamina": 13,
    "opening": 0,
-   "guard_streak": 0,
+   "guard_streak": 1,
    "power_available": 1
   },
   "B": {
-   "hp": 44,
-   "stamina": 60,
+   "hp": 20,
+   "stamina": 37,
    "opening": 0,
    "guard_streak": 0,
    "power_available": 1
   },
   "outcome": null
  },
- "context_digest": "faca762d663ebe092061dee6188baae3dc70fa343ec2ed1df79d4cb3c8730862",
- "round_state_digest": "dc0f3ae3065624adcc3a05caa2e55739ff065f4c370aa623ba9fee41dcc136cf",
- "commit_last": "11418",
- "reveal_last": "11430",
+ "context_digest": "670bf18d95e7efe30a05df55259fd71ac03286cddfac607e67e7f998c51dca56",
+ "round_state_digest": "2af0babcd04c014bdbfc99d828388b4af7585a659deb41cc64aa2876f673d476",
+ "commit_last": "30626",
+ "reveal_last": "30638",
  "committed": [
   "A",
   "B"
@@ -43,8 +43,8 @@
    "operator": "c82eeb2428401bf5123c52a17e1da4f4dab9d865363980c165708b20a44fc710",
    "auth_version": 1,
    "payout_recipient": "c82eeb2428401bf5123c52a17e1da4f4dab9d865363980c165708b20a44fc710",
-   "lifetime_rating": 897,
-   "season_rating": 897
+   "lifetime_rating": 865,
+   "season_rating": 865
   },
   "B": {
    "fighter_id": "b598e2991617e1b44046ad1c9c1efb9909de234506b3aae254ad2578dba59dee",
@@ -52,8 +52,8 @@
    "operator": "09e28f80900c8400886c515d694ddc387c4046675e4d969d3b4019f28d579f79",
    "auth_version": 1,
    "payout_recipient": "09e28f80900c8400886c515d694ddc387c4046675e4d969d3b4019f28d579f79",
-   "lifetime_rating": 898,
-   "season_rating": 898
+   "lifetime_rating": 835,
+   "season_rating": 835
   }
  },
  "mode": "ranked"
