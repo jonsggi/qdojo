@@ -27,28 +27,46 @@ def roles() -> dict[str, bytes]:
     return {k: identity(k) for k in ("admin", "house", "dev", "share")}
 
 
-def manifest() -> Manifest:
+# Manifest profiles. "dev" is the development fixture with the specified
+# matchmaking limits. "demo" is the public spectator arena: shorter epochs and
+# looser pair limits so a small bot population keeps fighting, and seasons
+# turn over within hours. The site shows which profile produced its data.
+PROFILES = {
+    "dev": {},
+    "demo": {"ticks_per_epoch": 2400, "season_epochs": 4, "season_closeout_ticks": 300,
+             "pair_starts_per_epoch": 6, "pair_rematch_ticks": 60},
+}
+
+
+def manifest(profile: str = "dev") -> Manifest:
     r = roles()
-    return development_manifest(candidate_1(), r["admin"], r["house"], r["dev"], r["share"])
+    return development_manifest(candidate_1(), r["admin"], r["house"], r["dev"], r["share"], **PROFILES[profile])
 
 
 class Devnet:
-    def __init__(self, directory: Path):
+    def __init__(self, directory: Path, profile: str | None = None):
         self.dir = Path(directory)
         refuse_legacy(self.dir)
-        self.m = manifest()
         marker = self.dir / MARKER
         if marker.exists():
             meta = json.loads(marker.read_text())
+            stored = meta.get("profile", "dev")
+            if profile is not None and profile != stored:
+                raise StoreError(f"{self.dir} is a {stored!r} devnet; its rules cannot change to {profile!r}")
+            self.profile = stored
+            self.m = manifest(stored)
             if meta.get("schema") != SCHEMA or meta.get("ruleset_digest") != self.m.ruleset.digest.hex():
                 raise StoreError(f"{self.dir} is not a devnet for this ruleset")
             records = [json.loads(x) for x in (self.dir / JOURNAL).read_text().splitlines() if x.strip()]
             self.world = World.replay(self.m, records)
         else:
+            self.profile = profile or "dev"
+            self.m = manifest(self.profile)
             self.dir.mkdir(parents=True, exist_ok=True)
             self.world = World(self.m)
             self.world.mint(roles()["admin"], 10**12)
             marker.write_text(json.dumps({"schema": SCHEMA, "ruleset_digest": self.m.ruleset.digest.hex(),
+                                          "profile": self.profile,
                                           "note": "fake QU, synthetic identities; not a deployment"}))
         self._saved = len(self.world.journal)
 

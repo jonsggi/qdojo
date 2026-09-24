@@ -52,8 +52,11 @@ class AssetRegistry:
         self.world, self.issuer, self.name = world, issuer, name
         self.assets: dict[bytes, Asset] = {}
 
+    def id_for(self, label: str) -> bytes:
+        return sha256(b"qdojo/combat/sim-asset/v1\0", self.issuer, self.name.encode(), label.encode())
+
     def issue(self, label: str, owner: bytes, founding: bool = False) -> bytes:
-        fid = sha256(b"qdojo/combat/sim-asset/v1\0", self.issuer, self.name.encode(), label.encode())
+        fid = self.id_for(label)
         if fid in self.assets:
             raise ValueError(f"asset {label!r} already issued")
         self.assets[fid] = Asset(fid, self.issuer, self.name, founding, [(self.world.tick, None, owner)])

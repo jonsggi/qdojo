@@ -1,76 +1,249 @@
-"""Run the devnet live: real-time ticks, a lineup of demo bots, periodic export.
+"""The live demo arena: a devnet on a simulated chain, demo bots, events, export.
 
-This is the spectator showcase until a Qubic deployment exists. It is a
-devnet: fake QU, synthetic identities, bots run by the operator and labelled
-as demo bots. Its state is the devnet journal, so a restart resumes exactly.
+What it runs, all simulated, never a real network or real funds:
+- the reference contract on `SimChain`: transaction latency, drops, reordering,
+  execution fees burned from a reserve the operator tops up;
+- fighter NFTs from `AssetRegistry`, including founding fighters and a small
+  market that occasionally sells an idle fighter to a new collector;
+- demo bots: code policies and, optionally, LLM planners with daily caps;
+- scheduled cups, occasional duel challenges, ranked play, rolling seasons;
+- a public export for the spectator site.
 
-  qdojo combat live --lineup lineup.json --tick-seconds 1.5 --export apps/web/data/combat/v1
+State: the devnet journal, plus assets.json and chain.json next to it, so a
+restart resumes. The chain's in-flight transactions are not persisted; bots
+simply resend.
 
-Lineup JSON: [{"label": "tanuki", "policy": "reader-v1"} | {"label": ..., "planner": "cmd"}, ...]
+  qdojo combat live --lineup lineup.json --profile demo --tick-seconds 1.5 --export DIR
 """
 from __future__ import annotations
 
 import json
 import os
+import random
 import secrets
 import shlex
 import signal
+import sys
 import time
 from pathlib import Path
 
 from . import evaluate as E
 from . import export
 from .bot import Bot, Budget, planner_chooser, policy_chooser
-from .devnet import Devnet
-from .sim import identity
+from .chainsim import Asset, AssetRegistry, FeeModel, SimChain, SimQubicClient
+from .codec import Op
+from .devnet import Devnet, DevnetClient, roles
 from .rules import candidate_1
+from .sim import identity
 
+# Ranked bots are rarely idle, so the duel specialists skip ranked play: they
+# fight challenges and are the fighters a collector can buy between duels.
 DEFAULT_LINEUP = [
-    {"label": "tanuki", "policy": "reader-v1"},
-    {"label": "kappa", "policy": "search-v1"},
-    {"label": "tengu", "policy": "scout-v1"},
-    {"label": "oni", "policy": "script-vs-scout-v1"},
-    {"label": "kitsune", "policy": "mixed-v1"},
-    {"label": "baku", "policy": "repeat-last-winner"},
-    {"label": "raiju", "policy": "kicker-v1"},
-    {"label": "kirin", "policy": "jabber-v1"},
+    {"label": "tanuki", "policy": "reader-v1", "cups": True},
+    {"label": "kappa", "policy": "search-v1", "cups": True},
+    {"label": "tengu", "policy": "scout-v1", "duels": True, "ranked": False},
+    {"label": "oni", "policy": "script-vs-scout-v1", "cups": True},
+    {"label": "kitsune", "policy": "mixed-v1", "cups": True},
+    {"label": "baku", "policy": "repeat-last-winner", "duels": True, "ranked": False},
+    {"label": "raiju", "policy": "kicker-v1", "cups": True},
+    {"label": "kirin", "policy": "jabber-v1", "duels": True, "ranked": False},
 ]
 
-DEPLOYMENT = {"kind": "devnet", "currency": "fake QU", "identities": "synthetic",
+DEPLOYMENT = {"kind": "devnet", "currency": "fake QU", "identities": "synthetic", "chain": "simulated",
               "bots": "operator-run demo bots", "note": "not a Qubic deployment; nothing here is real money"}
 
-
-def _deployment(tick_seconds: float, names: dict) -> dict:
-    return {**DEPLOYMENT, "tick_seconds": tick_seconds, "names": names,
-            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+ISSUER_LABEL = "qdojo-sim-issuer"
+RESERVE_FLOOR, RESERVE_TOPUP = 20_000, 200_000
 
 
-def _budget(rules) -> Budget:
-    # Demo bots play continuously on fake QU; limits stay finite so a bug cannot loop forever silently.
-    return Budget(ruleset_digest=rules.digest.hex(), max_fights_per_day=100_000, max_daily_committed=10**12,
-                  max_daily_net_loss=10**12, max_total_escrow=10_000, stop_after_faults=10**6)
+def _budget(rules, entry) -> Budget:
+    stake = int(entry.get("max_stake", 5000))
+    return Budget(ruleset_digest=rules.digest.hex(), max_stake=stake, max_total_escrow=4 * stake,
+                  max_fights_per_day=100_000, max_daily_committed=10**12, max_daily_net_loss=10**12,
+                  stop_after_faults=10**6)
 
 
-def build_bots(net: Devnet, lineup: list[dict], state_root: Path) -> list[Bot]:
-    rules = candidate_1()
-    bots = []
-    for entry in lineup:
-        fid, owner = net.ensure_fighter(entry["label"], funds=10**12)
+class Arena:
+    def __init__(self, directory: Path, lineup: list[dict], profile: str = "demo", seed: int | None = None,
+                 latency=(1, 3), drop_rate: float = 0.02, fees: FeeModel | None = FeeModel(),
+                 cup_every: int = 1800, duel_every: int = 300, market_every: int = 2400, log=print):
+        self.dir = Path(directory)
+        self.log = log
+        self.net = Devnet(self.dir, profile)
+        self.w = self.net.world
+        self.rules = candidate_1()
+        state = self._load("chain.json", {"reserve": 0, "burned": 0, "funded": 0, "seed": seed or secrets.randbits(32),
+                                          "collectors": 0})
+        self.state = state
+        self.chain = SimChain(self.w, seed=state["seed"] ^ self.w.tick, latency=latency, drop_rate=drop_rate,
+                              fees=fees, reserve=state["reserve"] if fees else None)
+        self.chain.burned = state["burned"]
+        self.rng = random.Random(state["seed"] ^ (self.w.tick * 7919))
+        self.registry = AssetRegistry(self.w, identity(ISSUER_LABEL))
+        for fid_hex, a in self._load("assets.json", {}).items():
+            self.registry.assets[bytes.fromhex(fid_hex)] = Asset(
+                bytes.fromhex(fid_hex), bytes.fromhex(a["issuer"]), a["name"], a["founding"],
+                [(t, bytes.fromhex(f) if f else None, bytes.fromhex(to)) for t, f, to in a["history"]])
+        self.labels: dict[bytes, dict] = {}
+        self.bots: dict[bytes, Bot] = {}
+        self.cup_every, self.duel_every, self.market_every = cup_every, duel_every, market_every
+        admin = roles()["admin"]
+        for entry in lineup:
+            fid = self._fighter_for(entry, admin)
+            self.labels[fid] = entry
+            self._make_bot(fid)
+        self.save()
+
+    # -- persistence --------------------------------------------------------
+
+    def _load(self, name, default):
+        p = self.dir / name
+        try:
+            return json.loads(p.read_text())
+        except (OSError, ValueError):
+            return default
+
+    def _dump(self, name, doc):
+        p = self.dir / name
+        tmp = p.with_suffix(".tmp")
+        tmp.write_text(json.dumps(doc))
+        os.replace(tmp, p)
+
+    def save(self):
+        self.net.save()
+        self.state.update(reserve=self.chain.reserve or 0, burned=self.chain.burned)
+        self._dump("chain.json", self.state)
+        self._dump("assets.json", {fid.hex(): {"issuer": a.issuer.hex(), "name": a.name, "founding": a.founding,
+                                               "history": [[t, f.hex() if f else None, to.hex()]
+                                                           for t, f, to in a.history]}
+                                   for fid, a in self.registry.assets.items()})
+
+    # -- fighters and bots --------------------------------------------------
+
+    def _fighter_for(self, entry, admin) -> bytes:
+        fid = self.registry.id_for(entry["label"])
+        if fid not in self.registry.assets:
+            owner = identity("demo-owner:" + entry["label"])
+            self.registry.issue(entry["label"], owner, founding=bool(entry.get("founding")))
+        owner = self.registry.assets[fid].owner
+        if self.w.balances.get(owner, 0) < 10**9:
+            self.w.mint(owner, 10**12)
+        c = self.w.contract
+        if fid not in c.fighters:
+            self.w.send(admin, Op.ADMIN_REGISTER_ASSET, fighter_id=fid, registry_version=1, house_npc=0)
+            self.w.send(owner, Op.REGISTER_FIGHTER, fighter_id=fid, registry_version=1)
+        return fid
+
+    def _chooser(self, entry):
+        if "llm" in entry:
+            llm = entry["llm"]
+            cmd = [sys.executable, "-m", "qdojo.combat.llm_planner", "--model", llm["model"],
+                   "--state", str(self.dir / "llm" / entry["label"]), "--daily-usd", str(llm.get("daily_usd", 1.0))]
+            return planner_chooser(cmd, int(llm.get("budget_ms", 25000)))
         if "planner" in entry:
-            choose = planner_chooser(shlex.split(entry["planner"]), entry.get("budget_ms", 1500))
-        else:
-            choose = policy_chooser(rules, E.policy_by_name(entry["policy"]), secrets.token_bytes(32))
-        bots.append(Bot(net.client(owner), rules, fid, owner, owner, choose, _budget(rules),
-                        state_root / entry["label"]))
-    return bots
+            return planner_chooser(shlex.split(entry["planner"]), int(entry.get("budget_ms", 1500)))
+        return policy_chooser(self.rules, E.policy_by_name(entry["policy"]), secrets.token_bytes(32))
+
+    def _make_bot(self, fid: bytes):
+        entry = self.labels[fid]
+        owner = self.registry.assets[fid].owner
+        client = SimQubicClient(self.chain, owner, DevnetClient(self.net, owner))
+        bot = Bot(client, self.rules, fid, owner, owner, self._chooser(entry), _budget(self.rules, entry),
+                  self.dir / "bots" / entry["label"] / owner.hex()[:12])
+        bot.play_cups = bool(entry.get("cups"))
+        bot.accept_duels = bool(entry.get("duels"))
+        bot.ranked = entry.get("ranked", True)
+        self.bots[fid] = bot
+
+    # -- events -------------------------------------------------------------
+
+    def _maybe_cup(self):
+        c = self.w.contract
+        if any(k.status in ("REGISTRATION", "RUNNING") for k in c.cups.values()):
+            return
+        last = max([k.created_tick for k in c.cups.values()] + [getattr(self, "last_cup_attempt", -10**9)])
+        if self.w.tick - last < self.cup_every:
+            return
+        admin = roles()["admin"]
+        r = self.w.send(admin, Op.ADMIN_CREATE_CUP, 5000, ruleset_digest=self.rules.digest, timing_profile_id=1,
+                        fee_profile_id=1, entry_fee=2000, registration_close=self.w.tick + 120, min_entrants=4,
+                        max_entrants=8, level_ticks=1300, first_level_delay=40, checkin_ticks=60, replay_delay=40)
+        self.last_cup_attempt = self.w.tick
+        self.log(f"tick {self.w.tick}: cup {r.data.get('cup_id')} created ({r.code.name})")
+
+    def _maybe_duel(self):
+        if self.w.tick % self.duel_every:
+            return
+        c = self.w.contract
+        idle = [f for f, b in self.bots.items() if b.accept_duels and c.fighters[f].lock == "IDLE"]
+        if len(idle) < 2:
+            return
+        a, b = self.rng.sample(idle, 2)
+        owner = self.registry.assets[a].owner
+        stake = self.rng.choice([1000, 2000, 3000])
+        receipt = self.chain.send(owner, Op.DUEL_OFFER, stake, fighter_id=a, auth_version=c.fighters[a].auth_version,
+                                  opponent_id=b, ruleset_digest=self.rules.digest, timing_profile_id=1,
+                                  fee_profile_id=1, stake=stake, format=self.rng.choice([0, 1, 1, 2]),
+                                  expires_tick=self.w.tick + 200)
+        del receipt
+        self.log(f"tick {self.w.tick}: duel challenge {self.labels[a]['label']} -> {self.labels[b]['label']} ({stake} QU)")
+
+    def _maybe_market(self):
+        """Now and then a collector buys an idle, non-founding fighter. The bot
+        keeps operating it for the new owner after they register it."""
+        if self.market_every <= 0 or self.w.tick % self.market_every:
+            return
+        c = self.w.contract
+        for_sale = [f for f in self.bots if c.fighters[f].lock == "IDLE" and not self.registry.assets[f].founding]
+        if not for_sale:
+            return
+        fid = self.rng.choice(for_sale)
+        seller = self.registry.assets[fid].owner
+        self.state["collectors"] += 1
+        buyer = identity(f"demo-collector:{self.state['collectors']}")
+        self.w.mint(buyer, 10**12)
+        self.registry.transfer(fid, seller, buyer)
+        self.w.send(buyer, Op.REGISTER_FIGHTER, fighter_id=fid, registry_version=1)
+        self._make_bot(fid)
+        self.log(f"tick {self.w.tick}: {self.labels[fid]['label']} sold to collector #{self.state['collectors']}")
+
+    def _reserve(self):
+        if self.chain.fees is not None and (self.chain.reserve or 0) < RESERVE_FLOOR:
+            self.chain.fund_reserve(RESERVE_TOPUP)
+            self.state["funded"] += RESERVE_TOPUP
+
+    # -- running ------------------------------------------------------------
+
+    def step(self):
+        for fid, b in list(self.bots.items()):
+            try:
+                b.step()
+            except Exception as exc:               # one bot's failure must not stop the arena
+                self.log(f"tick {self.w.tick}: bot {self.labels[fid]['label']} error: {exc}")
+        self._maybe_cup()
+        self._maybe_duel()
+        self._maybe_market()
+        self._reserve()
+        self.chain.advance()
+
+    def deployment(self, tick_seconds: float) -> dict:
+        fighters = {}
+        for fid, entry in self.labels.items():
+            driver = (f"llm:{entry['llm']['model']}" if "llm" in entry else
+                      "planner" if "planner" in entry else entry.get("policy"))
+            fighters[fid.hex()] = {"name": entry["label"], "driver": driver, "asset": self.registry.public(fid)}
+        return {**DEPLOYMENT, "profile": self.net.profile, "tick_seconds": tick_seconds,
+                "names": {f: v["name"] for f, v in fighters.items()}, "fighters": fighters,
+                "chain": {"latency_ticks": list(self.chain.latency), "drop_rate": self.chain.drop_rate,
+                          "execution_reserve": self.chain.reserve, "fees_burned": self.chain.burned,
+                          "operator_funding": self.state["funded"], "halted_ticks": self.chain.halted_ticks},
+                "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
 
 
 def run(devnet_dir: Path, lineup: list[dict], export_dir: Path, tick_seconds: float = 1.5,
-        export_every: int = 10, keep: int = 200, ticks: int | None = None, log=print):
-    net = Devnet(devnet_dir)
-    bots = build_bots(net, lineup, Path(devnet_dir) / "bots")
-    names = {identity("fighter:" + e["label"]).hex(): e["label"] for e in lineup}
-    net.save()
+        export_every: int = 10, keep: int = 200, ticks: int | None = None, log=print, profile: str = "demo",
+        **arena_kw):
+    arena = Arena(devnet_dir, lineup, profile=profile, log=log, **arena_kw)
     stop = {"now": False}
 
     def _stop(*_):
@@ -80,40 +253,36 @@ def run(devnet_dir: Path, lineup: list[dict], export_dir: Path, tick_seconds: fl
     done = 0
     next_at = time.monotonic()
     while not stop["now"] and (ticks is None or done < ticks):
-        for b in bots:
-            try:
-                b.step()
-            except Exception as exc:               # one bot's failure must not stop the arena
-                log(f"tick {net.world.tick}: bot {b.fighter_id.hex()[:8]} error: {exc}")
-        net.world.end()
+        arena.step()
         done += 1
         if done % export_every == 0:
-            net.save()
-            export.export_all(net.world.contract, export_dir, keep=keep,
-                              deployment=_deployment(tick_seconds, names))
+            arena.save()
+            export.export_all(arena.w.contract, export_dir, keep=keep, deployment=arena.deployment(tick_seconds))
         next_at += tick_seconds
         delay = next_at - time.monotonic()
         if delay > 0:
             time.sleep(delay)
         else:
             next_at = time.monotonic()
-    net.save()
-    export.export_all(net.world.contract, export_dir, keep=keep, deployment=_deployment(tick_seconds, names))
-    log(f"stopped at tick {net.world.tick}; journal saved")
+    arena.save()
+    export.export_all(arena.w.contract, export_dir, keep=keep, deployment=arena.deployment(tick_seconds))
+    log(f"stopped at tick {arena.w.tick}; journal saved")
+    return arena
 
 
 def cmd_live(a):
     lineup = json.loads(Path(a.lineup).read_text()) if a.lineup else DEFAULT_LINEUP
     devnet_dir = Path(a.devnet) if a.devnet else Path(os.environ.get(
-        "QDOJO_COMBAT_HOME", os.path.expanduser("~/.qdojo/combat"))) / "live-devnet"
+        "QDOJO_COMBAT_HOME", os.path.expanduser("~/.qdojo/combat"))) / "arena"
     run(devnet_dir, lineup, Path(a.export), a.tick_seconds, a.export_every, a.keep, a.ticks,
-        log=lambda m: print(time.strftime("%H:%M:%S"), m, flush=True))
+        log=lambda m: print(time.strftime("%H:%M:%S"), m, flush=True), profile=a.profile)
 
 
 def add_parser(s):
-    d = s.add_parser("live", help="run the devnet live with a demo lineup and export for spectators")
-    d.add_argument("--devnet", help="devnet directory (default ~/.qdojo/combat/live-devnet)")
+    d = s.add_parser("live", help="run the demo arena on a simulated chain and export for spectators")
+    d.add_argument("--devnet", help="arena directory (default ~/.qdojo/combat/arena)")
     d.add_argument("--lineup", help="lineup JSON (default: eight demo bots)")
+    d.add_argument("--profile", default="demo", choices=("demo", "dev"))
     d.add_argument("--export", default="apps/web/data/combat/v1")
     d.add_argument("--tick-seconds", type=float, default=1.5)
     d.add_argument("--export-every", type=int, default=10, help="ticks between exports")

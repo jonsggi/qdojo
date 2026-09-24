@@ -117,6 +117,61 @@ def fighter(c: CombatContract, fid: bytes) -> dict:
     })
 
 
+def cups(c: CombatContract) -> dict:
+    """Every cup: descriptor, roster, bracket, pairings with their series fights, result."""
+    out = []
+    for k in sorted(c.cups.values(), key=lambda x: -x.cup_id)[:20]:
+        d = k.descriptor
+        pairings = []
+        for p in sorted(k.pairings.values(), key=lambda p: p.pairing_id):
+            ct = c.contests.get(p.contest_id) if p.contest_id else None
+            fights = [str(x.fight_id) for x in c.fights.values()
+                      if c.contests[x.contest_id].cup_id == k.cup_id and c.contests[x.contest_id].pairing_id == p.pairing_id]
+            pairings.append({"pairing_id": str(p.pairing_id), "level": p.level,
+                             "a": p.a.hex() if p.a else None, "b": p.b.hex() if p.b else None,
+                             "status": p.status, "winner": p.winner.hex() if p.winner else None,
+                             "checked_in": sorted(x.hex() for x in p.checked),
+                             "series": ({"wins_a": ct.series.wins_a, "wins_b": ct.series.wins_b,
+                                         "need": ct.series.need, "replay": ct.replay} if ct else None),
+                             "fights": fights})
+        out.append({"cup_id": str(k.cup_id), "status": k.status, "entry_fee": str(d["entry_fee"]),
+                    "sponsorship": str(k.sponsorship), "registration_close": str(d["registration_close"]),
+                    "min_entrants": d["min_entrants"], "max_entrants": d["max_entrants"],
+                    "level_ticks": d["level_ticks"], "checkin_ticks": d["checkin_ticks"],
+                    "entries": [e.hex() for e in k.entries], "levels": k.levels, "level": k.level,
+                    "level_start": str(k.level_start), "postponed": sorted(k.postponed),
+                    "slots": [s.hex() if s else None for s in k.slots], "pairings": pairings,
+                    "champion": k.champion.hex() if k.champion else None, "expiry_tick": str(k.expiry_tick)})
+    return _envelope(c, "cups", {"cups": out})
+
+
+def duels(c: CombatContract) -> dict:
+    out = []
+    for ct in sorted((x for x in c.contests.values() if x.mode == codec.Mode.DUEL), key=lambda x: -x.contest_id)[:100]:
+        out.append({"contest_id": str(ct.contest_id), "a": ct.a.fighter_id.hex(), "b": ct.b.fighter_id.hex(),
+                    "stake": str(ct.stake), "format": codec.Format(ct.fmt).name,
+                    "wins_a": ct.series.wins_a, "wins_b": ct.series.wins_b, "need": ct.series.need,
+                    "cap": ct.series.cap, "fights": [str(x) for x in ct.fights], "status": ct.status,
+                    "result": ({k: (str(v) if k == "tick" else v) for k, v in ct.result.items()} if ct.result else None)})
+    return _envelope(c, "duels", {"duels": out})
+
+
+def seasons(c: CombatContract) -> dict:
+    current = c.m.season(c.tick)
+    seen = sorted({s for f in c.fighters.values() for s in f.season_stats} | ({current} if current else set()))
+    out = []
+    for s in seen[-4:]:
+        st = c.season_standings(s, c.tick)
+        out.append({"season": s, "current": s == current, "final": st["final"], "status": st["status"],
+                    "first_tick": str(c.m.season_first_tick(s)), "next_tick": str(c.m.season_first_tick(s + 1)),
+                    "champion": st["champion"].hex() if st["champion"] else None,
+                    "playoff": [x.hex() for x in st["playoff"]],
+                    "standings": [{**{k: v for k, v in r.items() if k != "fighter_id"},
+                                   "fighter_id": r["fighter_id"].hex()} for r in st["standings"]]})
+    return _envelope(c, "seasons", {"epoch": c.m.epoch(c.tick), "ticks_per_epoch": c.m.ticks_per_epoch,
+                                    "season_epochs": c.m.season_epochs, "seasons": out})
+
+
 def book(c: CombatContract) -> dict:
     t = c.tick
     from .matchmaking import window
@@ -219,8 +274,11 @@ def export_all(c: CombatContract, root: Path, keep: int | None = None, deploymen
         put(f"fights/{fid}.json", fight_summary(c, fid))
         if fight.rounds or fight.result:
             put(f"fights/{fid}/replay.json", fight_replay(c, fid))
+    meta = (deployment or {}).get("fighters", {})
     for fid in c.fighters:
-        put(f"fighters/{fid.hex()}.json", fighter(c, fid))
+        doc = fighter(c, fid)
+        doc.update(meta.get(fid.hex(), {}))     # name, driver, simulated asset and its ownership history
+        put(f"fighters/{fid.hex()}.json", doc)
     put("events/latest.json", events(c, max(0, c.event_seq - PAGE)))
     results = []
     for fid in reversed(fight_ids):
@@ -233,7 +291,10 @@ def export_all(c: CombatContract, root: Path, keep: int | None = None, deploymen
                         "kind": f.result["kind"], "winner": f.result.get("winner"),
                         "result": f.result.get("result"), "tick": str(f.result["tick"])})
     put("results.json", _envelope(c, "results", {"results": results}))
-    extra = {"generated_at": deployment["generated_at"]} if deployment and "generated_at" in deployment else {}
+    put("cups.json", cups(c))
+    put("duels.json", duels(c))
+    put("seasons.json", seasons(c))
+    extra ={"generated_at": deployment["generated_at"]} if deployment and "generated_at" in deployment else {}
     put("index.json", _envelope(c, "index", {
         "fights": [str(f) for f in fight_ids][-(keep or 200):],
         "active_fights": [str(f) for f in fight_ids if c.fights[f].phase != "DONE"],

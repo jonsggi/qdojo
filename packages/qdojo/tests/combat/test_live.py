@@ -16,7 +16,8 @@ def test_live_run_exports_pruned_data_and_resumes(tmp_path):
     live.run(tmp_path / "net", lineup, out, tick_seconds=0, export_every=40, keep=3, ticks=40, log=lambda m: None)
     assert int(json.loads((out / "index.json").read_text())["generated_tick"]) == first_tick + 40
     # Finished fights are written once; a later export does not rewrite them.
-    done = [f for f in index["fights"] if f not in index["active_fights"]]
+    index = json.loads((out / "index.json").read_text())
+    done = [f for f in index["fights"] if f not in index["active_fights"] and (out / "fights" / f"{f}.json").exists()]
     if done:
         p = out / "fights" / f"{done[0]}.json"
         before = p.stat().st_mtime_ns
