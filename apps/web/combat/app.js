@@ -345,6 +345,8 @@
       '<div id="attract" class="attract-stage" aria-live="polite"><p class="muted">LOADING FIGHTS&hellip;</p></div>' +
       '<p><a class="btn btn-start" href="#arena">PRESS START</a></p><p class="insert-coin blink">INSERT COIN</p>' +
       '<p class="title-links"><a href="#practice">FREE PRACTICE</a> &middot; <a href="#join">BUILD A BOT</a> &middot; <a href="#leaderboard">LEADERBOARD</a></p></section>');
+    $('#view').insertAdjacentHTML('beforeend', '<div id="title-extras" class="title-extras"></div>');
+    titleExtras(tok).catch(() => {});
     if (!D.manifest) { $('#attract').innerHTML = '<p class="muted">No export yet. Practice works offline.</p>'; return; }
     const live = (await Promise.all((await activeIds()).map(summaryOf))).filter(Boolean);
     const list = live.length ? live : await latestDone(6);
@@ -1443,6 +1445,7 @@
       '<li>Credits and ratings follow the outcome and the committed fee terms.</li></ol><dl class="kv">' +
       Object.entries(L.LEVELS).map(([k, v]) => '<dt>' + levelBadge(k) + '</dt><dd>' + esc(v) + '</dd>').join('') + '</dl></section>' +
       '<section class="panel"><h3>REASON CODES</h3><p class="tiny">Replays label each beat with these codes. They explain; they are never hidden logic.</p><p class="codes">' + REASONS.map(r => '<span class="code">' + r + '</span>').join(' ') + '</p></section>');
+    addToc();
     const d = await L.rulesetDigest(R, SHA);
     if (tok !== viewToken) return;
     const m = D.manifest;
@@ -1451,13 +1454,183 @@
       : statusBadge('UNAVAILABLE') + ' no manifest loaded to compare with.') + '<br><span class="tiny muted">SHA-256("qdojo/combat/rules/v1\\0" || canonical JSON), computed in your browser.</span>';
   }
 
+  // ---- GUIDE: how it works --------------------------------------------------------------
+
+  // One card per submitted move. What it lands on is read from the damage
+  // matrix, so the card cannot disagree with RULES.
+  function moveCards() {
+    const sub = R.submitted_action_ids;
+    return sub.map(i => {
+      const n = NAMES[i], row = R.damage[i];
+      const lands = sub.filter(j => row[j] > 0), stopped = sub.filter(j => row[j] === 0);
+      return '<article class="move-card move-' + n.toLowerCase() + '">' +
+        '<header>' + actionTag(n) + '<span class="move-cost" title="Stamina cost">' + R.base_costs[i] + (n === 'BLOCK' ? '+' : '') + ' ST</span></header>' +
+        '<p class="move-purpose">' + esc(PURPOSE[n]) + '.</p>' +
+        '<dl class="move-dl">' +
+        (lands.length ? '<dt>LANDS ON</dt><dd>' + lands.map(j => '<span class="mv">' + esc(NAMES[j]) + ' <b>' + row[j] + '</b></span>').join(' ') + '</dd>' : '<dt>DAMAGE</dt><dd>none: it defends or recovers</dd>') +
+        (lands.length && stopped.length ? '<dt>STOPPED BY</dt><dd>' + stopped.map(j => '<span class="mv">' + esc(NAMES[j]) + '</span>').join(' ') + '</dd>' : '') +
+        '</dl></article>';
+    }).join('');
+  }
+
+  async function viewGuide(tok) {
+    const I = R.initial;
+    const step = (n, title, body) => '<li class="step"><span class="step-no">' + n + '</span><h4>' + title + '</h4><p>' + body + '</p></li>';
+    setView(screen('HOW IT WORKS', 'THE WHOLE GAME IN FIVE MINUTES') +
+      '<div class="doc">' +
+      '<section class="panel panel-yellow" id="g-pitch"><h3>THE PITCH</h3>' +
+      '<p class="lede">Two bots. Three rounds. Six moves a round, written in secret and sealed before the bell. Then both plans play out at once, beat by beat, and nobody can change their mind.</p>' +
+      '<p class="prose">QDOJO is a fighting game for programs. Owners write <b>bots</b> that plan their moves; the bots fight each other in a dojo whose referee is a deterministic smart contract. There are no dice and no reflexes. What wins is reading your opponent: their history is public, their next plan is not.</p>' +
+      '<div class="guide-cta"><a class="btn" href="#arena">WATCH A LIVE FIGHT</a> <a class="btn btn-cyan" href="#practice">TRY IT YOURSELF</a></div></section>' +
+
+      '<section class="panel panel-cyan" id="g-round"><h3>ONE ROUND, FOUR STEPS</h3><ol class="steps">' +
+      step(1, 'PLAN', 'Each bot reads the fight so far and writes six actions, one per beat, and may mark one strike as its POWER move.') +
+      step(2, 'COMMIT', 'Each bot publishes a hash of its plan plus a secret salt. The plan is now locked, and still invisible.') +
+      step(3, 'REVEAL', 'After both have committed, both reveal plan and salt. Anyone can check them against the hashes.') +
+      step(4, 'RESOLVE', 'The six beats resolve in pairs, simultaneously, from the same snapshot. Damage, stamina and openings carry into the next round.') +
+      '</ol><p class="prose muted">Every step has a deadline measured in chain <b>ticks</b>. Miss one and you forfeit: that shows as TIMEOUT, never as a knockout.</p></section>' +
+
+      '<section class="panel" id="g-moves"><h3>THE SIX MOVES</h3>' +
+      '<p class="prose">Everyone starts with <b>' + I.hp + ' HP</b> and <b>' + I.stamina + ' stamina</b>. Moves cost stamina; a move you cannot afford becomes <b>EXHAUSTED</b> and leaves you wide open. Numbers below are damage dealt.</p>' +
+      '<div class="move-grid">' + moveCards() + '</div>' +
+      '<p class="prose tiny muted">Full matrix, opening and power rules: <a href="#rules">RULES</a>.</p></section>' +
+
+      '<section class="panel" id="g-win"><h3>HOW TO WIN</h3><div class="win-grid">' +
+      '<div class="win win-ko"><b>K.O.</b><p>Take the other bot to 0 HP. Both at 0 on the same beat is a double KO: a draw.</p></div>' +
+      '<div class="win win-dec"><b>DECISION</b><p>After round ' + R.rounds + ', more HP wins. Equal HP is a draw. No tie-breaks.</p></div>' +
+      '<div class="win win-to"><b>TIMEOUT</b><p>A bot that misses a commit or reveal deadline forfeits the fight.</p></div>' +
+      '</div><p class="prose">Between rounds each bot gets +' + R.break_recovery + ' stamina and sees everything revealed so far. Good bots adapt: they punish a habit in round 2 and bait the counter in round 3.</p></section>' +
+
+      '<section class="panel" id="g-watch"><h3>WATCHING A FIGHT</h3><ul class="plain rules-list prose">' +
+      '<li><b>ARENA</b> shows fights in progress. Plans stay sealed until revealed, so you see each round land as it resolves.</li>' +
+      '<li>A <b>REPLAY</b> re-derives every beat in your browser from the revealed plans. Step with the arrow keys; the beat table lists the reason for every point of damage.</li>' +
+      '<li>The verification badge says what your browser checked. <b>REPLAY_MATCH</b> means the hashes and every beat matched.</li></ul></section>' +
+
+      '<section class="panel" id="g-compete"><h3>COMPETING</h3><ul class="plain rules-list prose">' +
+      '<li><b>RANKED</b>: automatic matchmaking. Ratings start at 1000; the first 10 fights are placement.</li>' +
+      '<li><b>BELTS</b>: white to black, earned by rating. Display only: a belt never changes a stat.</li>' +
+      '<li><b>DUELS</b>: a challenge between two fighters over a series.</li>' +
+      '<li><b>CUPS</b>: bracket tournaments with check-in.</li>' +
+      '<li><b>SEASONS</b>: ratings snapshot per season; lifetime rating continues.</li></ul></section>' +
+
+      '<section class="panel panel-green" id="g-build"><h3>BUILD YOUR OWN FIGHTER</h3>' +
+      '<p class="prose">A bot is any program that reads one JSON observation and prints one JSON plan. Python, JavaScript, an LLM prompt: anything that answers within the budget.</p>' +
+      '<div class="guide-cta"><a class="btn" href="#join">BUILD A BOT</a> <a class="btn btn-cyan" href="llms.txt">BRIEF YOUR CODING AGENT</a></div></section>' +
+
+      '<section class="panel" id="g-faq"><h3>FAQ</h3><dl class="faq">' +
+      '<dt>Is this real money?</dt><dd>Not yet. The arena runs on a simulated chain with fake QU. Paid play needs the contract deployed on Qubic.</dd>' +
+      '<dt>Is anything random?</dt><dd>No damage rolls, no critical hits. Surprise comes only from sealed plans, and a bot may randomize its own choices.</dd>' +
+      '<dt>Can the site fake a result?</dt><dd>Your browser recomputes every commitment and every beat from the revealed plans. A mismatch shows as FAILED.</dd>' +
+      '<dt>Who are these fighters?</dt><dd>The house arena runs founding bots and yokai: scripted policies and a few LLM planners with daily budgets.</dd>' +
+      '<dt>Are the fighters NFTs?</dt><dd>Each fighter\'s pixel art comes from a deterministic generator. Ownership is simulated today; nothing has been minted.</dd>' +
+      '</dl></section>' +
+      '</div>');
+    addToc();
+  }
+
+  // A sticky table of contents for the long reading pages, built from their panels.
+  function addToc() {
+    const v = $('#view'), panels = $$('section.panel', v);
+    if (panels.length < 4) return;
+    panels.forEach((p, i) => { if (!p.id) p.id = 'sec-' + i; });
+    const doc = $('.doc', v) || (() => {
+      const d = document.createElement('div'); d.className = 'doc';
+      panels[0].before(d); panels.forEach(p => d.appendChild(p)); return d;
+    })();
+    const toc = document.createElement('nav');
+    toc.className = 'doc-toc'; toc.setAttribute('aria-label', 'On this page');
+    toc.innerHTML = '<b>ON THIS PAGE</b>' + panels.map(p => '<a href="#' + esc(currentRoute().join('/')) + '" data-sec="' + esc(p.id) + '">' + esc($('h3', p).textContent) + '</a>').join('');
+    toc.addEventListener('click', e => {
+      const a = e.target.closest('a[data-sec]');
+      if (!a) return;
+      e.preventDefault();
+      const t = document.getElementById(a.dataset.sec);
+      if (t) t.scrollIntoView({ behavior: motion() ? 'smooth' : 'auto', block: 'start' });
+    });
+    doc.before(toc);
+    doc.parentElement.classList.add('has-toc');
+  }
+
+  // ---- TITLE extras: what the game is, who is winning, what just happened -------------
+
+  async function titleExtras(tok) {
+    const box = $('#title-extras');
+    if (!box) return;
+    box.innerHTML = '<section class="t-how"><h3 class="t-h">HOW IT WORKS</h3><ol class="t-steps">' +
+      '<li><i class="t-ico t-ico-plan" aria-hidden="true"></i><b>WRITE A BOT</b><span>Any program that turns the fight so far into six moves.</span></li>' +
+      '<li><i class="t-ico t-ico-seal" aria-hidden="true"></i><b>SEAL THE PLAN</b><span>Both bots commit in secret. No peeking, no take-backs.</span></li>' +
+      '<li><i class="t-ico t-ico-fight" aria-hidden="true"></i><b>FIGHT</b><span>Six beats resolve at once. Three rounds. Last one standing.</span></li>' +
+      '</ol><p class="t-more"><a href="#guide">THE FULL GUIDE &#9654;</a></p></section>' +
+      '<div class="t-cols"><section class="t-top"><h3 class="t-h">TOP FIGHTERS</h3><div id="t-podium" class="t-podium"><p class="muted">LOADING&hellip;</p></div><p class="t-more"><a href="#leaderboard">FULL RANKINGS &#9654;</a></p></section>' +
+      '<section class="t-latest"><h3 class="t-h">LATEST RESULTS</h3><ol id="t-latest" class="t-feed"><li class="muted">LOADING&hellip;</li></ol><p class="t-more"><a href="#results">ALL RESULTS &#9654;</a></p></section></div>';
+    if (!D.manifest) { $('#t-podium').innerHTML = $('#t-latest').innerHTML = '<p class="muted">No data yet.</p>'; return; }
+    const index = await fetchJson('index.json').catch(() => null);
+    if (index && index.names) FIGHTER_NAMES = index.names;
+    const hexes = ((index && index.fighters) || []).filter(h => HEX64.test(h));
+    const [fighters, latest] = await Promise.all([
+      Promise.all(hexes.map(h => fetchJson('fighters/' + h + '.json').catch(() => null))),
+      latestDone(6),
+    ]);
+    if (tok !== viewToken) return;
+    const top = L.leaderboard(fighters.filter(Boolean)).slice(0, 3);
+    const order = [1, 0, 2].filter(i => top[i]);
+    $('#t-podium').innerHTML = top.length ? order.map(i => {
+      const f = top[i].f;
+      return '<a class="pod pod-' + (i + 1) + '" href="#fighter/' + esc(f.fighter_id) + '">' +
+        '<span class="avatar avatar-pod" data-anim="' + (i === 0 ? 'win' : 'idle') + '" data-identity="' + esc(f.fighter_id) + '">' + (A ? A.svg(f.fighter_id, 'sprite') : '') + '</span>' +
+        '<span class="pod-name">' + esc(short(f.fighter_id)) + '</span><span class="pod-rating">' + esc(f.lifetime_rating) + '</span>' +
+        '<span class="pod-block"><b>' + (i + 1) + '</b></span></a>';
+    }).join('') : '<p class="muted">No fighters yet.</p>';
+    $('#t-latest').innerHTML = latest.length ? latest.map(s => {
+      const out = summaryOutcome(s), w = out.outcome ? out.outcome.winner : null;
+      const a = s.fighters.A.fighter_id, b = s.fighters.B.fighter_id;
+      const win = w === 'A' ? a : w === 'B' ? b : null, lose = w === 'A' ? b : w === 'B' ? a : null;
+      return '<li><a href="#fight/' + esc(s.fight_id) + '">' +
+        (win ? avatar(win, 'avatar-sm') + '<span class="t-w">' + esc(short(win)) + '</span> <span class="t-beat">BEAT</span> <span class="t-l">' + esc(short(lose)) + '</span>'
+          : avatar(a, 'avatar-sm') + '<span class="t-w">' + esc(short(a)) + '</span> <span class="t-beat">&middot;</span> <span class="t-l">' + esc(short(b)) + '</span>') +
+        ' ' + resultBadge(out) + '</a></li>';
+    }).join('') : '<li class="muted">No finished fight yet.</li>';
+    if (ANIM) ANIM.mount(box);
+  }
+
   // ---- router and chrome -------------------------------------------------------------
 
   // Sub-pages light up the nav entry they belong to.
-  const NAV_PARENT = { fight: 'results', fights: 'results', duel: 'results', duels: 'results', fighter: 'leaderboard', owner: 'leaderboard', cup: 'cups' };
+  const NAV_PARENT = { book: 'arena', fight: 'results', fights: 'results', duel: 'results', duels: 'results', fighter: 'leaderboard', owner: 'leaderboard', season: 'leaderboard', cup: 'cups', rules: 'guide', help: 'guide' };
+  // Each nav section can hold several screens: they show as tabs under the header.
+  const SECTION_TABS = {
+    arena: [['arena', 'LIVE'], ['book', 'MATCHMAKING']],
+    results: [['results', 'FIGHTS'], ['duels', 'DUELS']],
+    leaderboard: [['leaderboard', 'LEADERBOARD'], ['season', 'SEASON']],
+    guide: [['guide', 'HOW IT WORKS'], ['rules', 'RULES'], ['help', 'GLOSSARY'], ['llms.txt', 'FOR AGENTS']],
+  };
+  function paintNav(name) {
+    const section = NAV_PARENT[name] || name;
+    $$('.hud-nav a[data-view]').forEach(a => {
+      const on = a.dataset.view === section;
+      a.classList.toggle('on', on);
+      if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    });
+    const tabs = $('#hud-tabs'), list = SECTION_TABS[section];
+    tabs.hidden = !list;
+    tabs.innerHTML = list ? list.map(([v, label]) => {
+      const href = v.includes('.') ? v : '#' + v;
+      const on = v === name || (v === 'results' && name === 'fights') || (v === 'duels' && name === 'duel');
+      return '<a href="' + href + '"' + (on ? ' class="on" aria-current="page"' : '') + '>' + label + '</a>';
+    }).join('') : '';
+    document.body.dataset.section = section;
+    setMenu(false);
+  }
+  function setMenu(open) {
+    const btn = $('#hud-menu');
+    if (!btn) return;
+    btn.setAttribute('aria-expanded', String(open));
+    document.body.classList.toggle('menu-open', open);
+  }
 
   function currentRoute() {
-    const h = decodeURIComponent(location.hash.replace(/^#/, '')) || 'arena';
+    // A first visit lands on the title screen: it explains the game and shows a fight.
+    const h = decodeURIComponent(location.hash.replace(/^#/, '')) || 'title';
     return h.split('/');
   }
 
@@ -1477,7 +1650,7 @@
     const tok = ++viewToken;
     const y = window.scrollY;
     stopPlayer();
-    $$('.hud-nav a[data-view]').forEach(a => a.classList.toggle('on', a.dataset.view === (NAV_PARENT[name] || name)));
+    paintNav(name);
     try {
       if (name === 'arena') await viewArena(tok);
       else if (name === 'title') await viewTitle(tok);
@@ -1492,6 +1665,7 @@
       else if (name === 'owner') await viewOwner(tok, rest[0]);
       else if (name === 'join') await viewJoin(tok);
       else if (name === 'help') viewHelp();
+      else if (name === 'guide') await viewGuide(tok);
       else if (name === 'fight') await viewFight(tok, rest[0]);
       else if (name === 'fighter') await viewFighter(tok, rest[0]);
       else if (name === 'practice') viewPractice(tok, rest);
@@ -1527,6 +1701,8 @@
       store.set('qdojo.crt', on ? '1' : '0');
     });
     if (store.get('qdojo.crt') === '0') $('#btn-crt').click();
+    $('#hud-menu').addEventListener('click', () => setMenu(!document.body.classList.contains('menu-open')));
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.body.classList.contains('menu-open')) { setMenu(false); $('#hud-menu').focus(); } });
     paintMotion();
     await loadSource();
     paintSource();
