@@ -63,3 +63,18 @@ def test_rejections_exit_nonzero(home, capsys):
     with pytest.raises(SystemExit):
         main(["combat", "queue", "enter", "--fighter", "a", "--max-gap", "999"])
     assert "BAD_BODY" in capsys.readouterr().out
+
+
+def test_bot_run_with_a_planner_does_not_outrun_it(home, capsys):
+    # Regression: the loop kept advancing devnet ticks while the planner ran in
+    # the background, so the commit window closed first and the fight was forfeited.
+    import sys
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[4]
+    example = root / "examples/combat/planner_minimal.py"
+    run(capsys, "combat", "fighter", "register", "musashi")
+    run(capsys, "combat", "bot", "run", "--fighter", "musashi", "--planner", f"{sys.executable} {example}",
+        "--spar", "kicker-v1", "--ticks", "160", "--quiet")
+    doc = json.loads(run(capsys, "combat", "fighter", "show", "musashi", "--json"))
+    record = doc["record"]
+    assert record["FL"] == 0 and record["W"] + record["D"] + record["L"] >= 1, record
