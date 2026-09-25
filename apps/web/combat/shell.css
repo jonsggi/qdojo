@@ -425,3 +425,10 @@ body.still .select-grid .npc-card.on { animation: none; }
 .practice-stage { scroll-margin-top: calc(var(--hud-h) + 12px); }
 .practice-stage .stage-help { display: none; }
 .practice-stage .planner { margin: 14px 0; box-shadow: none; }
+
+/* ---- build a bot ---------------------------------------------------------- */
+.join-steps { margin: 6px 0 18px; }
+.join-steps code { font-family: var(--font-text); font-size: 13px; color: #ffc619; }
+.join-cta { justify-content: center; margin: 0 0 26px; }
+/* The moon keeps clear of centred page titles. */
+.bd-sun { right: 3%; top: 10vh; width: min(16vw, 170px); }
