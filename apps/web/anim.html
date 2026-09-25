@@ -30,7 +30,7 @@
   .mat::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 28px;
                 background: repeating-linear-gradient(90deg, var(--mat) 0 14px, var(--mat-2) 14px 28px);
                 border-top: 3px solid var(--cyan); }
-  .fighter { position: relative; z-index: 1; width: clamp(112px, 30vw, 160px); aspect-ratio: 1; max-width: 100%;
+  .fighter { position: relative; z-index: 1; width: 144px; aspect-ratio: 1; max-width: 100%;
              image-rendering: pixelated; filter: drop-shadow(4px 4px 0 var(--black)); margin-bottom: 20px;
              cursor: pointer; border: 0; background: none; padding: 0; }
   .fighter:focus-visible { outline: 3px dashed var(--cyan); outline-offset: 6px; }
@@ -57,7 +57,7 @@
   .sheet .who { font-size: 8px; color: var(--grey); margin: 12px 0 6px; }
   .row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; align-items: center; }
   .row .k { font-size: 8px; color: var(--grey); width: 52px; line-height: 1.5; font-variant-numeric: tabular-nums; }
-  .frame { width: 56px; height: 56px; background: #131838; border: 2px solid var(--mat); image-rendering: pixelated; }
+  .frame { width: 96px; height: 96px; background: #131838; border: 2px solid var(--mat); image-rendering: pixelated; }
   .frame svg { width: 100%; height: 100%; display: block; }
   .note { margin-top: 28px; border-top: 2px solid var(--mat); padding-top: 14px; font-size: 8px; line-height: 2; color: var(--grey); max-width: 72ch; }
   .note b { color: var(--white); }
@@ -68,7 +68,7 @@
 <div class="crt" aria-hidden="true"></div>
 <main class="ring">
   <h1>SPARRING</h1>
-  <p class="lede">ONE 32×32 SPRITE PER FIGHTER, DRAWN FROM ITS QUBIC IDENTITY. FRAMES ARE INTEGER PIXEL MOVES; THE FEET STAY PLANTED UNLESS THEY KICK OR JUMP. PICK A MOVE, THEN CLICK A FIGHTER. SPACE THROWS THE MOVE FROM BOTH SIDES.</p>
+  <p class="lede">ONE 48×48 SPRITE PER FIGHTER, DRAWN FROM ITS QUBIC IDENTITY. FRAMES ARE INTEGER PIXEL MOVES OF A SMALL SKELETON; THE FEET STAY PLANTED UNLESS THEY KICK, STEP OR JUMP. PICK A MOVE, THEN CLICK A FIGHTER. SPACE THROWS THE MOVE FROM BOTH SIDES.</p>
   <div class="mat">
     <button class="fighter left" id="f-left" aria-label="Left fighter"><span class="tag"></span><span class="hp"></span><span class="avatar" data-anim="manual"></span></button>
     <button class="fighter" id="f-right" aria-label="Right fighter"><span class="tag"></span><span class="hp"></span><span class="avatar" data-anim="manual"></span></button>
@@ -84,7 +84,7 @@
     <h2>FRAME SHEET</h2>
     <div id="sheet"></div>
   </section>
-  <p class="note"><b>WHAT THIS IS.</b> The fighter art from the spectator page, animated. Idle breathes at 4 frames a second with a blink. Jab, kick and the hit reaction run at 12, the bow at 6, the salute and the fall at 8. Frame zero of idle is the static sprite byte for byte. In auto spar each fighter has five hit points; the fall and the salute play at the end, then both bow and reset. On the real page a fighter's card plays the signature move its identity picked: <span id="sigs"></span>.</p>
+  <p class="note"><b>WHAT THIS IS.</b> The fighter art from the spectator page, animated. Idle breathes at 5 frames a second with a blink. Jab, kick and the hit reaction run at 12; block, duck and throw at 10; the bow and recover at 6; exhausted at 5; the salute and the fall at 8. Frame zero of idle is the static sprite byte for byte. In auto spar each fighter has five hit points; the fall and the salute play at the end, then both bow and reset. On the real page a fighter's card plays the signature move its identity picked: <span id="sigs"></span>.</p>
 </main>
 <script src="avatars.js"></script>
 <script src="anim.js"></script>
@@ -93,7 +93,7 @@
   'use strict';
   const EMBEDDED = null; // the artifact build inlines the roster here
   const FALLBACK = Array.from({ length: 12 }, (_, i) => ({ identity: 'sample-' + (i * 7 + 3), name: 'SAMPLE ' + i }));
-  const MOVES = ['jab', 'kick', 'hit', 'bow', 'win', 'lose'];
+  const MOVES = ['jab', 'kick', 'throw', 'block', 'duck', 'hit', 'recover', 'exhausted', 'bow', 'win', 'lose'];
   const MAX_HP = 5;
   let roster = FALLBACK, cursor = 0, speed = 1, sparring = false, move = 'jab';
   const els = [document.getElementById('f-left'), document.getElementById('f-right')];
@@ -123,7 +123,7 @@
   function throwMove(k, clip = move) {
     if (QDojoAnim.clipOf(avatars[k]) !== 'idle') return;
     QDojoAnim.play(avatars[k], clip);
-    if (clip !== 'jab' && clip !== 'kick') return;
+    if (clip !== 'jab' && clip !== 'kick' && clip !== 'throw') return;
     const o = 1 - k, landAt = 1000 / QDojoAvatars.clips[clip].fps / speed;
     setTimeout(() => {
       if (QDojoAnim.clipOf(avatars[o]) !== 'idle') return;
@@ -144,7 +144,7 @@
       out.push(`<div class="who">${esc(f.name)} · ${t.archetype.toUpperCase()} · ${t.stance.toUpperCase()} · SIGNATURE ${QDojoAvatars.signature(f.identity).toUpperCase()}</div>`);
       for (const [clip, spec] of Object.entries(QDojoAvatars.clips)) {
         out.push(`<div class="row"><span class="k">${clip.toUpperCase()}<br>${spec.fps} FPS</span>${QDojoAvatars.frames(f.identity, clip).map(b =>
-          `<div class="frame"><svg viewBox="0 0 32 32" shape-rendering="crispEdges">${b}</svg></div>`).join('')}</div>`);
+          `<div class="frame"><svg viewBox="0 0 ${QDojoAvatars.size || 32} ${QDojoAvatars.size || 32}" shape-rendering="crispEdges">${b}</svg></div>`).join('')}</div>`);
       }
     });
     document.getElementById('sheet').innerHTML = out.join('');
