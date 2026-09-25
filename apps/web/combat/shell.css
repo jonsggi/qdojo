@@ -308,3 +308,13 @@ h2.screen-title small { -webkit-text-stroke: 0; background: none; color: #ffd98a
   .feed-row .feed-mode { display: none; }
   .feed-line { grid-column: 1 / -1; order: 3; }
 }
+
+/* Legibility fixes: sub-titles upright, scenery quieter behind content. */
+h2.screen-title small { transform: skewX(8deg); letter-spacing: 1px; line-height: 1.7; }
+.bd-hills { opacity: .75; }
+@media (max-width: 700px) {
+  .bd-sun { width: 90px; top: 70px; right: 8px; opacity: .55; }
+  .bd-grid { display: none; }
+  .bd-hills { height: 22vh; min-height: 120px; opacity: .6; }
+  h2.screen-title small { font-size: 9px; }
+}

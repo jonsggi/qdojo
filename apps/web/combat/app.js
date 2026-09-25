@@ -202,6 +202,7 @@
   }
   function setView(html) {
     const v = $('#view');
+    v.classList.remove('has-toc');   // only the reading pages that call addToc() get the side column
     v.innerHTML = html;
     if (ANIM) ANIM.mount(v);
     markScrollers(v);
