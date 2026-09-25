@@ -505,6 +505,11 @@ const QDojoAvatars = (() => {
       cap(m, CX - 2 + bx, 16 + by, CX - 9 + bx, 18 + by, 1.6); cap(m, CX - 9 + bx, 18 + by, CX - 14 + bx, 17 + by, 1.2);
       cap(m, CX - 3 + bx, 17 + by, CX - 10 + bx, 22 + by, 1.3); cap(m, CX - 10 + bx, 22 + by, CX - 13 + bx, 25 + by, 1);
       c.fill(m, Tr, { band: 1 });
+      // A sword on the back: the hilt shows over the rear shoulder.
+      const hilt = cap(M(), CX - 13 + bx, 6 + by, CX - 8 + bx, 14 + by, 1.2);
+      c.fill(hilt, DARK, { band: 1 });
+      for (let k = 0; k < 3; k++) c.set(CX - 12 + k * 1.5 + bx | 0, 8 + k * 2 + by, Tr, 2);
+      c.fill(cap(M(), CX - 9 + bx, 15 + by, CX - 6 + bx, 13 + by, 1), GOLD, { band: 1 });
     }
 
     leg(0); leg(1);
