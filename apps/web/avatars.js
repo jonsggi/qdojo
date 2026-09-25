@@ -877,10 +877,11 @@ const QDojoAvatars = (() => {
       const m = M(), o = (x, y) => [HX + x, HY + y];
       if (style.pony) { cap(m, ...o(1, -2), ...o(-3, -1), 1.8); cap(m, ...o(-3, -1), ...o(-5, 5), 1.9); cap(m, ...o(-5, 5), ...o(-4, 11), 1.3); }
       if (style.tail) { cap(m, ...o(-1, 3), ...o(-3, 8), 1.5); cap(m, ...o(-3, 8), ...o(-3, 12), 1.1); }
-      if (style.braid) for (let k = 0; k < 7; k++) ell(m, HX - 1 - (k > 3 ? 1 : 0), HY + 7 + k * 2.2, 1.6, 1.3);
+      if (style.braid) for (let k = 0; k < 7; k++) ell(m, HX - 2 - Math.floor(k * 0.6), HY + 7 + k * 2.2, 1.6, 1.3);
       if (style.long) rows(m, HX, HY + 3, [[-2, 3], [-3, 3], [-3, 3], [-3, 3], [-4, 3], [-4, 2], [-4, 2], [-4, 2], [-4, 2], [-4, 2], [-4, 2], [-4, 1], [-4, 1], [-4, 1], [-3, 0], [-3, 0]]);
       c.fill(m, H, { band: 2 });
-      if (style.braid) for (let k = 0; k < 7; k++) { c.tone(HX - 1 - (k > 3 ? 1 : 0), HY + 8 + k * 2.2 | 0, 0); }
+      if (style.braid) for (let k = 0; k < 7; k++) { c.tone(HX - 2 - Math.floor(k * 0.6), HY + 8 + k * 2.2 | 0, 0); }
+      if (style.braid) { const e = [HX - 6, HY + 22]; c.set(e[0], e[1], Tr, 3); c.set(e[0] + 1, e[1], Tr, 2); }
       if (style.long) for (let y = 6; y <= 17; y += 1) c.tone(HX - 1 - (y % 3), HY + y, 1);
       if (style.pony || style.tail) { c.set(HX + (style.pony ? 1 : -1), HY + (style.pony ? -2 : 3), Tr, 2); c.set(HX + (style.pony ? 0 : -2), HY + (style.pony ? -2 : 3), Tr, 3); }
     }
