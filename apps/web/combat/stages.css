@@ -1,0 +1,274 @@
+/* The fight stage: a pixel-art arena (combat/stages.js) behind the fighters,
+ * a fighting-game HUD across the top, and arcade juice (sparks, floating
+ * damage, shake, announcer). Decoration only: every number and word shown
+ * here is also in the beat headline, captions and beat table, and body.still
+ * (motion off) stops every animation in combat.css.
+ *
+ * Grid: row 1 is the HUD (A bars | round box | B bars), row 2 the arena floor
+ * with the fighters, row 3 the move each side just made. The canvas spans
+ * rows 1-2. .corner is display: contents so its three parts land in the grid
+ * while staying one element for scripts, tests and ARIA. */
+
+.stage.arcade {
+  --fighter: 128px;
+  --feet: 14px;
+  position: relative; display: grid; gap: 0; padding: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(84px, 150px) minmax(0, 1fr);
+  grid-template-rows: auto minmax(220px, 1fr) auto;
+  background: var(--panel); border: 4px solid var(--black); box-shadow: 0 0 0 2px var(--navy-2);
+  overflow: hidden; isolation: isolate;
+}
+.stage.arcade .stage-bg {
+  /* Absolute inside its grid area, so the bitmap's size never sizes the grid. */
+  position: absolute; inset: 0; grid-row: 1 / 3; grid-column: 1 / -1; width: 100%; height: 100%; display: block; z-index: 0;
+  image-rendering: pixelated; image-rendering: crisp-edges; background: #0a0f3d;
+}
+.stage.arcade .corner { display: contents; }
+
+/* ---- HUD ------------------------------------------------------------------- */
+.stage.arcade .corner-hud {
+  grid-row: 1; z-index: 2; min-width: 0; display: flex; flex-direction: column; gap: 4px;
+  padding: 8px 10px 16px; background: linear-gradient(to bottom, rgba(0, 0, 0, .78), rgba(0, 0, 0, .45) 70%, transparent);
+}
+.stage.arcade .corner-A .corner-hud { grid-column: 1; }
+.stage.arcade .corner-B .corner-hud { grid-column: 3; text-align: right; }
+.stage.arcade .corner-name { font-size: 10px; color: var(--yellow); text-shadow: 2px 2px 0 var(--black); overflow-wrap: anywhere; }
+.stage.arcade .corner-B .corner-name { align-self: flex-end; }
+.stage.arcade .cbar { font-size: 7px; text-shadow: 1px 1px 0 var(--black); }
+.stage.arcade .cbar-label { margin-bottom: 2px; }
+.stage.arcade .cbar-label b { font-size: 9px; }
+.stage.arcade .cbar-track { height: 16px; border: 2px solid var(--yellow); box-shadow: 0 0 0 2px var(--black), inset 0 -3px 0 rgba(0, 0, 0, .35); background: #2a0008; }
+.stage.arcade .cbar-st .cbar-track { height: 8px; border-color: var(--grey); background: var(--black); }
+.stage.arcade .cbar-lost { background: repeating-linear-gradient(90deg, #ff2a2a 0 4px, #ffd200 4px 6px); opacity: .85; }
+.stage.arcade .flags { font-size: 7px; }
+.stage.arcade .flag:not(.on) { background: rgba(0, 0, 0, .55); }
+/* SF2-style: name under the life bar, yellow life, a red chunk for the hit that drains away. */
+.stage.arcade .corner-hud .cbar-hp { order: 1; }
+.stage.arcade .corner-hud .corner-name { order: 2; font-size: 11px; letter-spacing: 1px; }
+.stage.arcade .corner-hud .cbar-st { order: 3; }
+.stage.arcade .corner-hud .rmarks { order: 4; }
+.stage.arcade .corner-hud .flags { order: 5; }
+.stage.arcade .cbar-hp .cbar-label span { display: none; }
+.stage.arcade .cbar-hp .cbar-label { position: absolute; z-index: 1; top: 3px; left: 6px; right: 6px; margin: 0; justify-content: flex-start; }
+.stage.arcade .corner-B .cbar-hp .cbar-label { justify-content: flex-end; flex-direction: row; }
+.stage.arcade .cbar-hp .cbar-label b { font-size: 8px; color: var(--black); text-shadow: none; }
+.stage.arcade .cbar-hp { position: relative; }
+.stage.arcade .cbar-hp .cbar-track { height: 18px; border: 2px solid #fff6d0; box-shadow: 0 0 0 2px var(--black), 2px 2px 0 2px rgba(0, 0, 0, .5); background: #6a0c10; }
+.stage.arcade .cbar-hp .cbar-fill { background: linear-gradient(to bottom, #fff7a8 0 25%, #ffd200 25% 70%, #e0a000 70%); }
+.stage.arcade .cbar-hp .cbar-fill.low { background: linear-gradient(to bottom, #ffd0a0 0 25%, #ff8c00 25% 70%, #d05000 70%); }
+.stage.arcade .cbar-hp .cbar-lost { background: linear-gradient(to bottom, #ff7a6a 0 25%, #e0201a 25% 70%, #a00c0c 70%); opacity: 1; }
+.stage.arcade .cbar-hp .cbar-lost.drain { width: 0 !important; transition: width .45s steps(6) .35s; }
+.stage.arcade .cbar-st .cbar-label span { font-size: 6px; }
+.stage.arcade .rmarks { min-height: 12px; display: flex; gap: 3px; font-size: 12px; }
+.stage.arcade .corner-B .rmarks { justify-content: flex-end; }
+.stage.arcade .rmark { font-style: normal; color: var(--yellow); text-shadow: 1px 1px 0 var(--black), -1px -1px 0 var(--red); font-family: var(--font-text); line-height: 1; }
+
+/* The round box in the middle: KO emblem, beats left, round and beat. */
+.stage.arcade .center {
+  grid-row: 1; grid-column: 2; z-index: 2; align-self: start; margin: 6px auto 0; padding: 0 0 6px; min-width: 76px;
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+}
+.stage.arcade .ko-emblem {
+  display: block; padding: 3px 6px 2px; font-size: 12px; color: #ffe070; background: #b01010; border: 2px solid #ffd200;
+  box-shadow: 0 0 0 2px var(--black); text-shadow: 2px 2px 0 #4a0000; margin-bottom: 4px;
+}
+.stage.arcade .ko-emblem.lit { color: #fff; background: #ff2a2a; animation: fx-plate .5s steps(2) infinite; }
+.stage.arcade .clock {
+  display: flex; flex-direction: column; align-items: center; min-width: 58px; padding: 3px 5px 4px;
+  background: rgba(0, 0, 0, .75); border: 2px solid #fff6d0; box-shadow: 0 0 0 2px var(--black);
+}
+.stage.arcade .clock-n { font-size: 22px; font-weight: normal; line-height: 1.1; background: linear-gradient(to bottom, #fff7a8, #ffd200 50%, #ff8c00); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.stage.arcade .clock-l { font-size: 5px; color: var(--grey); letter-spacing: 1px; }
+.stage.arcade .round-no { font-size: 8px; margin-top: 5px; text-shadow: 2px 2px 0 var(--black); }
+.stage.arcade .beat-no { font-size: 7px; color: var(--white); margin-top: 3px; min-height: 0; text-shadow: 1px 1px 0 var(--black); }
+.stage.arcade .center-note { margin-top: 4px; font-size: 7px; min-height: 0; color: var(--cyan); text-shadow: none; }
+.stage.arcade .center-note:empty { display: none; }
+.stage.arcade .center-note.note-end, .stage.arcade .center-note.note-start { font-size: 8px; color: var(--red); text-shadow: none; }
+.stage.arcade .center-note.note-forfeit { font-size: 8px; }
+
+/* ---- fighters on the floor -------------------------------------------------- */
+.stage.arcade .fighter-box {
+  grid-row: 2; z-index: 1; align-self: end; position: relative; height: auto; display: block;
+  width: var(--fighter); margin: 0 6px var(--feet);
+}
+.stage.arcade .corner-A .fighter-box { grid-column: 1; justify-self: end; }
+.stage.arcade .corner-B .fighter-box { grid-column: 3; justify-self: start; }
+.stage.arcade .avatar-stage {
+  position: relative; z-index: 1; display: block; width: var(--fighter); height: var(--fighter);
+  image-rendering: pixelated; shape-rendering: crispEdges; filter: drop-shadow(0 0 1px rgba(0, 0, 0, .6));
+}
+.stage.arcade .avatar-stage svg { shape-rendering: crispEdges; }
+.stage.arcade .corner.down .avatar-stage { opacity: .6; filter: grayscale(1); }
+.stage.arcade .fshadow {
+  position: absolute; left: 14%; right: 14%; bottom: -5px; height: 10px; z-index: 0;
+  background: radial-gradient(closest-side, rgba(0, 0, 0, .6), rgba(0, 0, 0, .35) 60%, transparent);
+}
+.stage.arcade .corner.winner .avatar-stage { filter: drop-shadow(0 0 3px var(--yellow)) drop-shadow(0 0 1px var(--yellow)); }
+
+/* Pose tags (GUARD, DUCK, ...) sit above the head. */
+.stage.arcade .corner .fighter-box::after { top: -16px; left: 50%; right: auto; transform: translateX(-50%); z-index: 2; white-space: nowrap; }
+
+/* Damage number: static with motion off; floats up with motion on. */
+.stage.arcade .pop {
+  z-index: 3; top: 8%; font-size: 20px; color: var(--red);
+  text-shadow: 2px 0 0 var(--black), -2px 0 0 var(--black), 0 2px 0 var(--black), 0 -2px 0 var(--black), 3px 3px 0 var(--yellow);
+}
+.stage.arcade .corner-A .pop { left: auto; right: -14px; }
+.stage.arcade .corner-B .pop { right: auto; left: -14px; }
+.stage.arcade .pop.go { animation: fx-float .9s steps(9) forwards; }
+@keyframes fx-float {
+  0% { transform: translateY(6px) scale(.6); opacity: 1; }
+  15% { transform: translateY(-4px) scale(1.25); }
+  30% { transform: translateY(-8px) scale(1); }
+  80% { opacity: 1; }
+  100% { transform: translateY(-34px); opacity: 0; }
+}
+
+/* Hit spark: a pixel star at the point of contact (the struck side's inner edge). */
+.stage.arcade .fx-spark {
+  position: absolute; z-index: 2; top: 30%; width: 44px; height: 44px; opacity: 0; pointer-events: none;
+  background: radial-gradient(circle, #fff 0 22%, #fff6a0 23% 38%, transparent 39%), var(--yellow);
+  clip-path: polygon(50% 0, 60% 36%, 100% 22%, 68% 52%, 96% 88%, 54% 66%, 34% 100%, 36% 62%, 0 70%, 30% 46%, 6% 12%, 42% 32%);
+}
+.stage.arcade .fx-spark.big { width: 64px; height: 64px; top: 24%; background: radial-gradient(circle, #fff 0 22%, #ffd200 23% 40%, transparent 41%), var(--red); }
+.stage.arcade .corner-A .fx-spark { right: -18px; }
+.stage.arcade .corner-B .fx-spark { left: -18px; }
+.stage.arcade .fx-spark.go { animation: fx-spark .32s steps(4) forwards; }
+@keyframes fx-spark {
+  0% { opacity: 1; transform: scale(.3) rotate(0deg); }
+  40% { opacity: 1; transform: scale(1.15) rotate(20deg); }
+  100% { opacity: 0; transform: scale(1.4) rotate(35deg); }
+}
+
+/* BLOCKED / EVADE: feedback only; the words are also in the move line below. */
+.stage.arcade .fx-word {
+  position: absolute; z-index: 3; top: 12%; left: 50%; transform: translateX(-50%); opacity: 0; white-space: nowrap;
+  font-size: 11px; color: var(--cyan); text-shadow: 2px 0 0 var(--black), -2px 0 0 var(--black), 0 2px 0 var(--black), 0 -2px 0 var(--black);
+}
+.stage.arcade .fx-word.w-evade { color: var(--green); }
+.stage.arcade .fx-word.go { animation: fx-word .8s steps(8) forwards; }
+@keyframes fx-word {
+  0% { opacity: 0; transform: translate(-50%, 8px) scale(.6); }
+  20% { opacity: 1; transform: translate(-50%, -2px) scale(1.2); }
+  35% { transform: translate(-50%, -4px) scale(1); }
+  85% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -18px); }
+}
+
+/* WINNER plate over the winner at the end (also shown with motion off). */
+.stage.arcade .win-plate {
+  display: none; position: absolute; z-index: 3; bottom: calc(100% + 18px); left: 50%; transform: translateX(-50%);
+  padding: 4px 7px; font-size: 10px; color: var(--black); background: var(--yellow); border: 2px solid var(--black);
+  box-shadow: 3px 3px 0 var(--red); white-space: nowrap;
+}
+.stage.arcade .corner.winner .win-plate { display: block; animation: fx-plate 1.2s steps(2) infinite; }
+@keyframes fx-plate { 50% { background: var(--white); } }
+
+/* ---- announcer ------------------------------------------------------------------ */
+.stage.arcade .announcer {
+  grid-row: 2; grid-column: 1 / -1; z-index: 4; align-self: start; justify-self: center; margin-top: 18px;
+  pointer-events: none; display: none; text-align: center;
+}
+.stage.arcade .announcer.on { display: block; }
+/* Chunky arcade letters: orange-to-yellow fill, thick dark outline, drop shadow. */
+.stage.arcade .announcer { filter: drop-shadow(3px 0 0 #1a0600) drop-shadow(-3px 0 0 #1a0600) drop-shadow(0 3px 0 #1a0600) drop-shadow(0 -3px 0 #1a0600) drop-shadow(5px 5px 0 rgba(90, 10, 0, .85)); }
+.stage.arcade .announcer span {
+  display: inline-block; font-size: clamp(24px, 4.4vw, 48px); line-height: 1.15; white-space: nowrap; padding: 2px 0;
+  background: linear-gradient(to bottom, #fffbd0 0%, #ffe14a 30%, #ffb000 55%, #ff6a00 80%, #d83000 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.stage.arcade .announcer.ann-ko span { font-size: clamp(34px, 6.4vw, 68px); background-image: linear-gradient(to bottom, #fff0d0 0%, #ff9a6a 30%, #ff2a2a 60%, #a00000 100%); }
+.stage.arcade .announcer.ann-fight span { font-size: clamp(30px, 5.6vw, 60px); }
+.stage.arcade .announcer.ann-win span { font-size: clamp(22px, 3.6vw, 40px); }
+.stage.arcade .announcer.enter span { animation: fx-enter .28s steps(4) both; }
+.stage.arcade .announcer.leave span { animation: fx-leave .3s steps(3) forwards; }
+@keyframes fx-enter { 0% { transform: scale(2.6); opacity: 0; } 60% { transform: scale(.9); opacity: 1; } 100% { transform: scale(1); } }
+@keyframes fx-leave { to { transform: scale(1.3); opacity: 0; } }
+
+/* ---- shake and power flash ---------------------------------------------------- */
+.stage.arcade .fx-flash { grid-row: 1 / 3; grid-column: 1 / -1; z-index: 5; background: #fff; opacity: 0; pointer-events: none; }
+.stage.arcade.flash-power .fx-flash { animation: fx-flash .22s steps(2) forwards; }
+@keyframes fx-flash { 0% { opacity: .75; } 100% { opacity: 0; } }
+.stage.arcade.shake { animation: fx-shake .26s steps(1) 1; }
+.stage.arcade.shake-big { animation: fx-shake-big .4s steps(1) 1; }
+@keyframes fx-shake { 0% { transform: translate(4px, -2px); } 25% { transform: translate(-4px, 2px); } 50% { transform: translate(3px, 1px); } 75% { transform: translate(-2px, -1px); } 100% { transform: none; } }
+@keyframes fx-shake-big { 0% { transform: translate(8px, -4px); } 20% { transform: translate(-8px, 3px); } 40% { transform: translate(6px, 2px); } 60% { transform: translate(-5px, -2px); } 80% { transform: translate(2px, 1px); } 100% { transform: none; } }
+/* The hit flash from combat.css, on the sprite only. */
+.stage.arcade .corner.flash-hit .fighter-box { animation: none; }
+.stage.arcade .corner.flash-hit .avatar-stage { animation: hitflash .3s steps(2) 1; }
+
+/* ---- the move line under the arena ---------------------------------------------- */
+.stage.arcade .side-now {
+  grid-row: 3; z-index: 2; min-height: 44px; padding: 8px 10px; font-size: 9px;
+  background: var(--panel); border-top: 3px solid var(--black);
+}
+.stage.arcade .corner-A .side-now { grid-column: 1 / 3; }
+.stage.arcade .corner-B .side-now { grid-column: 3; text-align: right; }
+.stage.arcade::after { content: ""; grid-row: 3; grid-column: 1 / -1; background: var(--panel); border-top: 3px solid var(--black); z-index: 1; }
+
+/* ---- smaller stages ------------------------------------------------------------ */
+.compact .stage.arcade { --fighter: 96px; --feet: 10px; grid-template-rows: auto minmax(160px, 1fr) auto; }
+.compact .stage.arcade .announcer span, .compact .stage.arcade .announcer.ann-fight span, .compact .stage.arcade .announcer.ann-win span { font-size: clamp(18px, 3vw, 30px); }
+.compact .stage.arcade .announcer.ann-ko span { font-size: clamp(22px, 4vw, 40px); }
+
+@media (max-width: 700px) {
+  .stage.arcade { --fighter: 96px; --feet: 10px; grid-template-columns: minmax(0, 1fr) 66px minmax(0, 1fr); grid-template-rows: auto minmax(170px, 1fr) auto; }
+  .stage.arcade .corner-hud { padding: 6px 6px 12px; gap: 3px; }
+  .stage.arcade .cbar-label { font-size: 6px; }
+  .stage.arcade .cbar-label b { font-size: 8px; }
+  .stage.arcade .cbar-track { height: 12px; }
+  .stage.arcade .cbar-st .cbar-track { height: 6px; }
+  .stage.arcade .flags { font-size: 6px; gap: 2px; }
+  .stage.arcade .flag { padding: 1px 2px; }
+  .stage.arcade .center { grid-column: 2; grid-row: 1; min-width: 0; width: 60px; padding: 0 0 4px; margin-top: 6px; }
+  .stage.arcade .round-no { font-size: 6px; }
+  .stage.arcade .beat-no { font-size: 6px; }
+  .stage.arcade .ko-emblem { font-size: 9px; padding: 2px 4px 1px; }
+  .stage.arcade .clock { min-width: 0; width: 52px; padding: 2px; }
+  .stage.arcade .clock-n { font-size: 16px; }
+  .stage.arcade .clock-l { font-size: 4px; }
+  .stage.arcade .corner-hud .corner-name { font-size: 8px; }
+  .stage.arcade .cbar-hp .cbar-track { height: 14px; }
+  .stage.arcade .cbar-hp .cbar-label { top: 2px; }
+  .stage.arcade .cbar-hp .cbar-label b { font-size: 6px; }
+  .stage.arcade .fighter-box { margin: 0 2px var(--feet); }
+  .stage.arcade .pop { font-size: 15px; }
+  .stage.arcade .side-now { font-size: 8px; padding: 6px; }
+  .stage.arcade .act { white-space: normal; }
+  .compact .stage.arcade { --fighter: 80px; }
+  .stage.arcade .announcer { max-width: 100%; padding: 0 6px; }
+  .stage.arcade .announcer span, .stage.arcade .announcer.ann-fight span, .stage.arcade .announcer.ann-win span { font-size: 22px; white-space: normal; }
+  .stage.arcade .announcer.ann-ko span { font-size: 28px; white-space: normal; }
+  .stage.arcade .center-note { display: none; }
+  .stage.arcade .win-plate { font-size: 8px; bottom: calc(100% + 14px); }
+}
+@media (max-width: 380px) {
+  .stage.arcade { --fighter: 80px; }
+}
+
+/* ---- title attract card: a small stage behind the two fighters ---------------------- */
+.attract-arena { position: relative; display: block; width: 100%; height: 184px; overflow: hidden; border: 3px solid var(--black); }
+.attract-arena .stage-bg { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; display: block; }
+.attract-arena .attract-vs { position: absolute; left: 0; right: 0; bottom: 8px; justify-content: center; gap: 28px; align-items: flex-end; }
+.attract-arena .attract-vs .avatar-lg { width: 128px; height: 128px; filter: drop-shadow(0 4px 0 rgba(0, 0, 0, .45)); }
+.attract-arena .attract-vs .avatar-lg:last-child { transform: scaleX(-1); }
+.attract-arena .attract-vs .avatar-lg:last-child svg { transform: none; }
+.attract-arena .vs { align-self: center; font-size: 16px; color: var(--yellow); text-shadow: 2px 0 0 var(--black), -2px 0 0 var(--black), 0 2px 0 var(--black), 0 -2px 0 var(--black), 3px 3px 0 var(--red); }
+.attract-arena .stage-name { position: absolute; left: 6px; top: 5px; font-size: 7px; color: var(--white); text-shadow: 1px 1px 0 var(--black); opacity: .85; }
+
+@media (prefers-reduced-motion: reduce) {
+  .stage.arcade *, .stage.arcade { animation: none !important; }
+}
+.attract-arena .vs-fire {
+  padding: 0 4px; font-size: 34px; line-height: 1.1;
+  background: linear-gradient(to bottom, #fffbd0 0%, #ffe14a 30%, #ffb000 55%, #ff5a00 80%, #c02000 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: none;
+  filter: drop-shadow(3px 0 0 #1a0600) drop-shadow(-3px 0 0 #1a0600) drop-shadow(0 3px 0 #1a0600) drop-shadow(0 -3px 0 #1a0600) drop-shadow(4px 4px 0 rgba(120, 10, 0, .9));
+}
+.attract-card:has(.attract-arena) { padding: 12px; }
+@media (max-width: 700px) {
+  .attract-arena { height: 150px; }
+  .attract-arena .attract-vs { gap: 10px; }
+  .attract-arena .attract-vs .avatar-lg { width: 96px; height: 96px; }
+  .attract-arena .vs-fire { font-size: 24px; }
+}
