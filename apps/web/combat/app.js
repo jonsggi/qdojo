@@ -1278,6 +1278,23 @@
   const draft = { actions: [null, null, null, null, null, null], power_slot: -1, sel: 0 };
   function resetDraft() { draft.actions = [null, null, null, null, null, null]; draft.power_slot = -1; draft.sel = 0; }
 
+  // Practice is an arcade mode: pick an opponent, write six moves under the
+  // stage, watch the round play out right there, repeat for three rounds.
+  // The fight itself is L.practiceStart/practicePlay; nothing here scores.
+  const NPC_INFO = {
+    'random-v1': { stars: 1, style: 'WILDCARD', tip: 'No pattern at all. Good for learning what each move costs.' },
+    'jabber-v1': { stars: 1, style: 'HIGH PRESSURE', tip: 'Loves the jab. Something low slips under it.' },
+    'turtle-v1': { stars: 2, style: 'DEFENSIVE', tip: 'Hides behind a guard. Guards have a weakness.' },
+    'kicker-v1': { stars: 2, style: 'HEAVY HITTER', tip: 'Big kicks, then has to catch its breath.' },
+    'mixed-v1': { stars: 3, style: 'BALANCED', tip: 'Weighs its stamina and mixes it up.' },
+    'scout-v1': { stars: 4, style: 'ADAPTIVE', tip: 'Watches what you did last round and adjusts.' },
+  };
+  const npcInfo = id => NPC_INFO[id] || { stars: 2, style: 'NPC', tip: '' };
+  const stars = n => '<span class="stars" title="Difficulty ' + n + ' of 4">' + '&#9733;'.repeat(n) + '<i>' + '&#9733;'.repeat(4 - n) + '</i></span>';
+  // Your practice fighter is drawn by the same generator as the arena's: the name picks the look.
+  const myName = () => (store.get('qdojo.combat.myname') || 'CHALLENGER').slice(0, 14);
+  const myId = () => 'practice:' + myName().toLowerCase();
+
   function viewPractice(tok, parts) {
     const npcId = parts[0], seed = parts[1];
     if (npcId && seed && N.ROSTER.some(n => n.id === npcId) && HEX64.test(seed)) {
@@ -1288,25 +1305,49 @@
       return renderPracticeFight();
     }
     practice = null;
-    const chosen = N.ROSTER.some(n => n.id === npcId) ? npcId : (store.get('qdojo.combat.npc') || 'jabber-v1');
+    let pick = N.ROSTER.some(n => n.id === npcId) ? npcId : (store.get('qdojo.combat.npc') || 'jabber-v1');
     const pre = HEX64.test(seed || '') ? seed : L.randomSeed();
-    setView(screen('PRACTICE', 'FREE &middot; OFFLINE &middot; NO WALLET &middot; NO RATING') +
-      '<section class="panel panel-green"><h3>1. PICK A DISCLOSED NPC</h3><div class="npc-grid" role="radiogroup" aria-label="NPC">' +
-      N.ROSTER.map(n => '<button class="npc-card' + (n.id === chosen ? ' on' : '') + '" role="radio" aria-checked="' + (n.id === chosen) + '" data-npc="' + esc(n.id) + '">' +
-        avatar('npc:' + n.id, 'avatar-lg') + '<b>' + esc(n.name) + '</b><span class="id">' + esc(n.id) + '</span><span class="tiny">' + esc(n.behavior) + '</span><span class="tiny lesson">LESSON: ' + esc(n.lesson) + '</span></button>').join('') +
-      '</div><p class="tiny muted">NPCs are ordinary planners: same stats, no extra HP, no view of your plan. Difficulty is policy only.</p></section>' +
-      '<section class="panel"><h3>2. SEED</h3><p>The NPC\'s private randomness comes from this 32-byte seed. The same seed and the same moves replay the same fight.</p>' +
+    setView(screen('CHOOSE YOUR OPPONENT', 'FREE PRACTICE &middot; IN YOUR BROWSER &middot; NO WALLET &middot; NO RATING') +
+      '<div class="select">' +
+      '<div class="select-side select-you"><span class="select-tag tag-1p">1P</span>' +
+      '<span class="avatar avatar-select" data-anim="idle" data-identity="' + esc(myId()) + '" id="my-avatar">' + (A ? A.svg(myId(), 'sprite') : '') + '</span>' +
+      '<label class="select-name">YOUR FIGHTER <input id="my-name" maxlength="14" value="' + esc(myName()) + '" spellcheck="false" autocomplete="off"></label>' +
+      '<p class="tiny muted">Type a name: the fighter generator draws a new look for every name.</p></div>' +
+      '<div class="select-grid" role="radiogroup" aria-label="Opponent">' +
+      N.ROSTER.map(n => '<button class="npc-card' + (n.id === pick ? ' on' : '') + '" role="radio" aria-checked="' + (n.id === pick) + '" data-npc="' + esc(n.id) + '">' +
+        avatar('npc:' + n.id, 'avatar-lg') + '<b>' + esc(n.name) + '</b>' + stars(npcInfo(n.id).stars) + '</button>').join('') + '</div>' +
+      '<div class="select-side select-them" id="them"></div></div>' +
+      '<div class="select-go"><button class="btn btn-start" id="go">FIGHT! &#9654;</button></div>' +
+      '<details class="select-adv"><summary>ADVANCED: REPLAY SEED</summary><p class="tiny">The NPC\'s private randomness comes from this 32-byte seed. The same seed and the same moves replay the same fight, so a fight can be shared as a link.</p>' +
       '<div class="seed-row"><input id="seed" class="mono" size="66" maxlength="64" spellcheck="false" aria-label="Practice seed, 64 hex digits" value="' + esc(pre) + '"><button class="btn btn-sm" id="new-seed">NEW SEED</button></div>' +
-      '<p id="seed-err" class="neg tiny" role="alert"></p><button class="btn btn-start" id="go">FIGHT &#9654;</button></section>');
-    let pick = chosen;
+      '<p id="seed-err" class="neg tiny" role="alert"></p></details>' +
+      '<p class="practice-note">NPCs are ordinary planners: same stats, no extra HP, and they never see your plan. Difficulty is policy only.</p>');
+    const paintThem = () => {
+      const n = N.ROSTER.find(x => x.id === pick), info = npcInfo(pick);
+      $('#them').innerHTML = '<span class="select-tag tag-2p">CPU</span>' +
+        '<span class="avatar avatar-select" data-anim="profile" data-identity="npc:' + esc(n.id) + '">' + (A ? A.svg('npc:' + n.id, 'sprite') : '') + '</span>' +
+        '<b class="select-title">' + esc(n.name) + '</b><span class="select-style">' + esc(info.style) + ' ' + stars(info.stars) + '</span>' +
+        '<p>' + esc(info.tip) + '</p><details class="scout"><summary>SCOUTING REPORT</summary><p class="tiny">' + esc(n.behavior) + '. ' + esc(n.lesson) + '.</p></details>';
+      if (ANIM) ANIM.mount($('#them'));
+    };
+    paintThem();
     $$('.npc-card').forEach(b => b.addEventListener('click', () => {
       pick = b.dataset.npc;
       $$('.npc-card').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', String(x === b)); });
+      paintThem();
     }));
+    $('#my-name').addEventListener('input', e => {
+      const v = e.target.value.replace(/[^\w .-]/g, '').toUpperCase();
+      store.set('qdojo.combat.myname', v || 'CHALLENGER');
+      const av = $('#my-avatar');
+      av.dataset.identity = myId();
+      av.innerHTML = A ? A.svg(myId(), 'sprite') : '';
+      if (ANIM) { av.removeAttribute('data-anim'); av.setAttribute('data-anim', 'idle'); ANIM.mount(av.parentElement); }
+    });
     $('#new-seed').addEventListener('click', () => { $('#seed').value = L.randomSeed(); });
     $('#go').addEventListener('click', () => {
       const s = $('#seed').value.trim().toLowerCase();
-      if (!HEX64.test(s)) { $('#seed-err').textContent = 'A seed is exactly 64 hex digits.'; return; }
+      if (!HEX64.test(s)) { $('.select-adv').open = true; $('#seed-err').textContent = 'A seed is exactly 64 hex digits.'; return; }
       store.set('qdojo.combat.npc', pick);
       location.hash = '#practice/' + pick + '/' + s;
     });
@@ -1319,6 +1360,24 @@
     return frames;
   }
 
+  // One row per round: both plans beat by beat and what each beat did.
+  function roundRecap(s) {
+    if (!s.rounds.length) return '';
+    return '<section class="panel recap"><h3>ROUND RECAP</h3>' + s.rounds.map(r => {
+      const beats = r.result.beats || [];
+      const cell = (side, i) => {
+        const plan = r.plans[side], a = plan.actions[i], t = beats[i] && beats[i][side === 'A' ? 'a' : 'b'];
+        const eff = t ? NAMES[t.effective] : NAMES[a];
+        const lost = t && t.actual_hp_lost ? '<i class="neg">-' + t.actual_hp_lost + '</i>' : '';
+        return '<td class="' + (t ? '' : 'unexec') + '">' + actionTag(eff, i === plan.power_slot) + lost + '</td>';
+      };
+      const lost = key => beats.reduce((n, b) => n + (b[key].actual_hp_lost || 0), 0);
+      return '<div class="recap-round"><div class="recap-head"><b>ROUND ' + (r.round_index + 1) + '</b><span>YOU DEALT <b class="pos">' + lost('b') + '</b> &middot; TOOK <b class="neg">' + lost('a') + '</b></span></div>' +
+        '<div class="tscroll"><table class="recap-t"><tbody><tr><th>YOU</th>' + [0, 1, 2, 3, 4, 5].map(i => cell('A', i)).join('') + '</tr>' +
+        '<tr><th>' + esc(N.ROSTER.find(n => n.id === s.npc).name) + '</th>' + [0, 1, 2, 3, 4, 5].map(i => cell('B', i)).join('') + '</tr></tbody></table></div></div>';
+    }).join('') + '<p class="tiny muted">REVEALED NPC PLANS are shown above in full, including beats never played after a knockout (dimmed).</p></section>';
+  }
+
   function renderPracticeFight(playFrom) {
     stopPlayer();
     const s = practice;
@@ -1326,18 +1385,23 @@
     const link = location.href.split('#')[0] + '#practice/' + s.npc + '/' + s.seed;
     const over = !!s.outcome;
     const me = s.state.a;
-    setView(screen('PRACTICE VS ' + npc.name, 'FREE &middot; LOCAL &middot; ' + esc(npc.id) + ' &middot; ' + esc(R.semantic_version.toUpperCase())) +
-      '<section class="panel practice-meta"><dl class="kv"><dt>SEED</dt><dd class="id wrap">' + esc(s.seed) + '</dd>' +
-      '<dt>REPLAY LINK</dt><dd><a class="wrap" href="' + esc(link) + '">' + esc(link) + '</a></dd>' +
-      '<dt>RECORD</dt><dd>policy ' + esc(s.npc) + ', fight number ' + s.fight + ', ruleset ' + esc(s.rules_version) + '. Local achievement only: no QU, no rating.</dd></dl></section>' +
-      (over ? '<section class="panel panel-yellow"><h3>RESULT</h3><p>' + resultBadge({ outcome: s.outcome }) + ' <b class="big">' + (s.outcome.winner === 'A' ? 'YOU WIN' : s.outcome.winner === 'B' ? esc(npc.name) + ' WINS' : 'DRAW') + '</b> ' + esc({ KO: 'by knockout.', DOUBLE_KO: 'double knockout.', HP: 'on remaining HP.', HP_TIE: 'equal HP after three rounds.' }[s.outcome.result] || '') + '</p>' +
-        '<p><button class="btn btn-sm" id="rematch">REMATCH (SAME SEED)</button> <button class="btn btn-sm btn-cyan" id="newfight">NEW SEED</button> <a class="btn btn-sm" href="#practice">CHANGE NPC</a></p></section>' : planner(me, npc)) +
-      '<section class="panel player-panel"><h3>' + (s.rounds.length ? 'ROUNDS SO FAR' : 'THE MAT') + '</h3><div id="player"></div></section>' +
-      (s.rounds.length ? '<section class="panel"><h3>REVEALED NPC PLANS</h3><ul class="plain">' + s.rounds.map(r => '<li>ROUND ' + (r.round_index + 1) + ': ' + r.plans.B.actions.map((a, i) => NAMES[a] + (i === r.plans.B.power_slot ? '&#9733;' : '')).join(' ') + '</li>').join('') + '</ul></section>' : ''));
+    const verdict = over ? (s.outcome.winner === 'A' ? 'YOU WIN' : s.outcome.winner === 'B' ? esc(npc.name) + ' WINS' : 'DRAW') : '';
+    setView(screen(myName() + ' VS ' + npc.name, over ? 'FIGHT OVER' : 'ROUND ' + (s.state.round_index + 1) + ' OF ' + R.rounds + ' &middot; WRITE YOUR SIX MOVES') +
+      '<section class="panel player-panel practice-stage"><div id="player"></div></section>' +
+      (over ? '<section class="panel panel-yellow result-screen"><h3>RESULT</h3><p class="result-big ' + (s.outcome.winner === 'A' ? 'res-win' : s.outcome.winner === 'B' ? 'res-lose' : 'res-draw') + '">' + verdict + '</p>' +
+        '<p class="center">' + resultBadge({ outcome: s.outcome }) + ' ' + esc({ KO: 'by knockout.', DOUBLE_KO: 'double knockout.', HP: 'on remaining HP.', HP_TIE: 'equal HP after three rounds.' }[s.outcome.result] || '') + '</p>' +
+        '<p class="center result-actions"><button class="btn" id="rematch">REMATCH</button> <button class="btn btn-cyan" id="newfight">NEW FIGHT</button> <a class="btn" href="#practice">CHANGE OPPONENT</a></p></section>' : planner(me, npc)) +
+      roundRecap(s) +
+      '<details class="panel practice-meta"><summary>SHARE / REPLAY THIS FIGHT</summary><dl class="kv"><dt>SEED</dt><dd class="id wrap">' + esc(s.seed) + '</dd>' +
+      '<dt>LINK</dt><dd><a class="wrap" href="' + esc(link) + '">' + esc(link) + '</a></dd>' +
+      '<dt>RECORD</dt><dd>policy ' + esc(s.npc) + ', fight number ' + s.fight + ', ruleset ' + esc(s.rules_version) + '. Local achievement only: no QU, no rating.</dd></dl></details>');
     const frames = practiceFrames(s);
-    const player = track(createPlayer($('#player'), { frames, ids: { A: 'practice:you', B: 'npc:' + s.npc }, names: { A: 'YOU', B: npc.name }, links: false, replay: {}, mySide: 'A', autoplay: false }));
+    const player = track(createPlayer($('#player'), { frames, ids: { A: myId(), B: 'npc:' + s.npc }, names: { A: myName(), B: npc.name }, links: false, replay: {}, mySide: 'A', autoplay: false }));
+    const details = $('#player .beat-details');
+    if (details) details.open = false;
     if (playFrom != null) {
       player.seek(playFrom, false);
+      $('.practice-stage').scrollIntoView({ block: 'start', behavior: motion() ? 'smooth' : 'auto' });
       if (motion()) player.start(); else player.seek(frames.length - 1, false);
     } else player.seek(frames.length - 1, false);
     if (over) {
@@ -1346,26 +1410,45 @@
     } else wirePlanner();
   }
 
+  // Your stamina beat by beat if nothing hits you: the best case. A beat you
+  // cannot afford even then is marked, because it would become EXHAUSTED.
+  function projectStamina(me, actions, powerSlot) {
+    let st = me.stamina, guard = me.guard_streak;
+    return actions.map((a, i) => {
+      if (a == null) return null;
+      const cost = R.base_costs[a] + (a === L.ID.BLOCK ? R.block_streak_cost * guard : 0) + (i === powerSlot ? R.power_cost : 0);
+      const ok = st >= cost;
+      const eff = ok ? a : L.ID.EXHAUSTED;
+      st -= ok ? cost : 0;
+      st = Math.min(R.limits.stamina, st + (eff === L.ID.RECOVER ? R.recover_unhit : eff === L.ID.EXHAUSTED ? R.exhausted_recovery : R.ordinary_recovery));
+      guard = eff === L.ID.BLOCK ? Math.min(R.limits.guard_streak, guard + 1) : 0;
+      return { cost, ok, after: st };
+    });
+  }
+
   function planner(me, npc) {
-    const cost = a => R.base_costs[a] + (a === L.ID.BLOCK ? '+' + R.block_streak_cost + '/guard' : '');
-    return '<section class="panel panel-green planner" id="planner"><h3>ROUND ' + (practice.state.round_index + 1) + ' &middot; YOUR SIX BEATS</h3>' +
-      '<p class="tiny">' + esc(npc.name) + '\'s plan is <b>SEALED</b>: it was chosen from the round-start state and your executed moves in earlier rounds, before you pick. ' +
-      'You: HP ' + me.hp + ', STAMINA ' + me.stamina + ', guard ' + me.guard_streak + (me.opening ? ', OPENING' : '') + ', power ' + (me.power_available ? 'READY' : 'SPENT') + '.</p>' +
-      '<div class="slots" role="listbox" aria-label="Your plan">' + [0, 1, 2, 3, 4, 5].map(i => '<div class="slot" role="option" data-slot="' + i + '" tabindex="0"><span class="slot-no">' + (i + 1) + '</span><span class="slot-act"></span><button class="slot-pw" data-pw="' + i + '" title="Power strike on this beat (+' + R.power_cost + ' cost, +' + R.power_damage + ' damage if it lands)">&#9733;</button></div>').join('') + '</div>' +
-      '<div class="palette">' + R.submitted_action_ids.map(a => '<button class="btn btn-sm act-btn act-' + NAMES[a].toLowerCase() + '" data-a="' + a + '"><span class="key">' + (a + 1) + '</span> ' + NAMES[a] + ' <span class="cost">' + cost(a) + '</span></button>').join('') + '</div>' +
-      '<p class="tiny muted">Click an action to fill the selected beat (keys 1-6), click a beat to select it (LEFT/RIGHT), the star button or P for power on a JAB, KICK or THROW, BACKSPACE clears, ENTER fights. An unaffordable move still resolves: as EXHAUSTED.</p>' +
-      '<p><button class="btn" id="fight" disabled>FIGHT &#9654;</button> <button class="btn btn-sm btn-cyan" id="clear">CLEAR</button> <span id="plan-err" class="neg tiny" role="alert"></span></p></section>';
+    const cost = a => R.base_costs[a] + (a === L.ID.BLOCK ? '+' : '');
+    return '<section class="panel panel-green planner" id="planner"><h3>ROUND ' + (practice.state.round_index + 1) + ' &middot; YOUR MOVES</h3>' +
+      '<p class="planner-status"><span>HP <b>' + me.hp + '</b></span><span>STAMINA <b>' + me.stamina + '</b></span><span>POWER <b>' + (me.power_available ? 'READY' : 'SPENT') + '</b></span>' + (me.opening ? '<span class="pos">OPENING</span>' : '') +
+      '<span class="sealed">' + esc(npc.name) + '\'S PLAN: <b>SEALED</b></span></p>' +
+      '<div class="slots" role="listbox" aria-label="Your plan">' + [0, 1, 2, 3, 4, 5].map(i => '<div class="slot" role="option" data-slot="' + i + '" tabindex="0"><span class="slot-no">BEAT ' + (i + 1) + '</span><span class="slot-act"></span><span class="slot-st"></span><button class="slot-pw" data-pw="' + i + '" title="Power strike on this beat (+' + R.power_cost + ' cost, +' + R.power_damage + ' damage if it lands)">&#9733; POWER</button></div>').join('') + '</div>' +
+      '<div class="palette">' + R.submitted_action_ids.map(a => '<button class="act-btn act-' + NAMES[a].toLowerCase() + '" data-a="' + a + '" title="' + esc(PURPOSE[NAMES[a]]) + '"><span class="key">' + (a + 1) + '</span><b>' + NAMES[a] + '</b><span class="cost">' + cost(a) + ' ST</span></button>').join('') + '</div>' +
+      '<p class="planner-actions"><button class="btn btn-start" id="fight" disabled>FIGHT! &#9654;</button> <button class="btn btn-sm btn-cyan" id="clear">CLEAR</button> <span id="plan-err" class="neg tiny" role="alert"></span></p>' +
+      '<p class="tiny muted">Tap a move to fill the selected beat, or press 1-6. Tap a beat to change it. POWER (or P) adds +' + R.power_damage + ' damage to one JAB, KICK or THROW per fight. The small number is your stamina after that beat if nothing hits you; red means you would be EXHAUSTED.</p></section>';
   }
 
   function paintDraft() {
     const pwOk = practice.state.a.power_available === 1;
+    const proj = projectStamina(practice.state.a, draft.actions, draft.power_slot);
     $$('.slot').forEach(el => {
-      const i = Number(el.dataset.slot), a = draft.actions[i];
+      const i = Number(el.dataset.slot), a = draft.actions[i], p = proj[i];
       el.classList.toggle('sel', i === draft.sel);
       el.setAttribute('aria-selected', String(i === draft.sel));
       el.classList.toggle('filled', a != null);
-      $('.slot-act', el).textContent = a == null ? '—' : NAMES[a];
-      $('.slot-act', el).className = 'slot-act' + (a == null ? '' : ' act-' + NAMES[a].toLowerCase());
+      el.classList.toggle('broke', !!p && !p.ok);
+      $('.slot-act', el).textContent = a == null ? '?' : NAMES[a];
+      $('.slot-act', el).className = 'slot-act' + (a == null ? '' : ' act act-' + NAMES[a].toLowerCase());
+      $('.slot-st', el).textContent = p ? (p.ok ? 'ST ' + p.after : 'EXHAUSTED') : '';
       const pb = $('.slot-pw', el);
       const canPw = pwOk && a != null && [L.ID.JAB, L.ID.KICK, L.ID.THROW].includes(a);
       pb.disabled = !canPw;
