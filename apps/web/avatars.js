@@ -113,9 +113,9 @@ const QDojoAvatars = (() => {
     ['Honey', ['#5c321c', '#aa6a3a', '#d79c66', '#ecbd88', '#f9dcb0']],
     ['Olive', ['#4a2f1d', '#8f613a', '#bd8b58', '#d6ab77', '#edcda0']],
     ['Bronze', ['#42241a', '#80492b', '#aa6e45', '#c79062', '#e3b48a']],
-    ['Umber', ['#301a10', '#5f3722', '#865233', '#a6714b', '#c4926b']],
-    ['Deep', ['#22110b', '#472717', '#673c26', '#865639', '#a57353']],
-    ['Ebony', ['#190c08', '#341b11', '#4d2e1e', '#6a442f', '#8a5e46']],
+    ['Umber', ['#301a10', '#603822', '#8a5434', '#b07a50', '#d49f74']],
+    ['Deep', ['#22110b', '#4a2918', '#6d4128', '#936342', '#bb8a62']],
+    ['Ebony', ['#190c08', '#381e13', '#553422', '#7c5539', '#a67c5a']],
   ];
   const HAIRS = [
     ['Jet black', '#231f2a'], ['Dark brown', '#4b2e21'], ['Chestnut', '#7c4424'], ['Auburn', '#a4432a'],
@@ -179,21 +179,29 @@ const QDojoAvatars = (() => {
     let hairstyle;
     if (masked) hairstyle = female ? 'Armoured braid' : null;
     else if (kit === 4) hairstyle = 'Topknot';
-    else if (kit === 9) hairstyle = female ? 'Long braid' : 'Bald';
+    else if (kit === 9) hairstyle = female ? 'Long braid' : ['Bald', 'Topknot', 'Tied-back', 'Buzzed'][pick(id, 'hairstyle', 4)];
     else hairstyle = female ? FEMALE_HAIR[pick(id, 'hairstyle', FEMALE_HAIR.length)] : MALE_HAIR[pick(id, 'hairstyle', MALE_HAIR.length)];
+    // Originality guards: the genre's archetypes are fair game, but a few
+    // combinations would read as one famous character. Steer them away.
+    if (kit === 7 && hairstyle === 'Twin buns') hairstyle = 'High ponytail';
+    if (kit === 6 && hairstyle === 'Flat-top') hairstyle = 'Crew cut';
+    if (kit === 6 && headgear === 'Beret' && hairstyle === 'Long braid') hairstyle = 'Combat bob';
+    if (kit === 5 && hairstyle === 'Mohawk') hairstyle = 'Buzzed';
     const faceShown = !masked && !FACE_COVERED.has(kit);
     const armsBare = kit !== 2 && kit !== 0;
     let marking = MARKINGS[weighted(id, 'marking', [6, 2, 2, 2, 2])];
     if ((marking === 'Face paint' || marking === 'Cheek stripes') && !faceShown) marking = 'None';
     if (marking === 'Chest tattoo' && !(BARE_CHEST.has(kit) && !female)) marking = 'None';
     if (marking === 'Arm tattoo' && !armsBare) marking = 'None';
+    if (kit === 4 && (marking === 'Face paint' || marking === 'Cheek stripes')) marking = 'None';
     const gloves = kit === 2 ? 'Armoured gauntlets' : kit === 10 ? 'Boxing gloves' : kit === 11 ? 'Hand wraps'
       : kit === 7 ? 'Spiked bracelets' : GLOVE_FREE.has(kit) ? GLOVES[pick(id, 'gloves', GLOVES.length)] : 'Bare fists';
     const shoulders = kit === 2 ? 'Pauldron' : PAD_KITS.has(kit) ? SHOULDERS[weighted(id, 'shoulders', [5, 3, 2])] : 'None';
     const pattern = PATTERNS[pick(id, 'pattern', PATTERNS.length)];
     const pal = PALETTES[pick(id, 'palette', PALETTES.length)];
     const skin = pick(id, 'skin', SKINS.length);
-    const hair = pick(id, 'hair', HAIRS.length);
+    let hair = pick(id, 'hair', HAIRS.length);
+    if (kit === 0 && pal[0] === 'Crimson' && (hair === 4 || hair === 5)) hair += 2; // no blond fighter in a red gi
     const L = {
       kit, K, female, build, headgear, hairstyle, faceShown, marking, gloves, shoulders, pattern,
       stance: pick(id, 'stance', 3), skin, hair, palette: pal[0],
@@ -518,6 +526,9 @@ const QDojoAvatars = (() => {
       const whole = or(M(), thigh); or(whole, shin);
       c.fill(whole, R(pants), { band: 2, sep: side === 1 });
       const along = (t, a = knee, b = ankle) => [Math.round(a[0] + (b[0] - a[0]) * t), Math.round(a[1] + (b[1] - a[1]) * t)];
+      // Shorts, trunks and wraps cover the top of the thigh.
+      const hem = { 5: 0.25, 9: 0.6, 10: 0.55, 11: 0.5 }[kit];
+      if (hem) c.fill(cap(M(), hip[0], hip[1], ...along(hem, hip, knee), B.thigh + (kit === 11 ? 1.2 : 0.6)), R(shorts), { band: 2, sep: true });
       if (pants !== S) {
         // Cloth folds behind the knee and at the hip crease.
         const k = along(0, knee, knee);
@@ -677,10 +688,14 @@ const QDojoAvatars = (() => {
         t(-5, 25, 1); t(-4, 26, 1);
       } else if (kit === 8 && female) { // capoeira crop top
         c.fill(rows(M(), x0 - 8, y0 + 17, [[1, 17], [0, 18], [0, 18], [0, 18], [0, 18], [1, 17], [2, 16]]), Sc, { band: 1 });
-      } else if (kit === 9) { // mystic: bare lean chest, prayer beads
-        if (female) c.fill(rows(M(), x0 - 7, y0 + 17, [[1, 15], [0, 16], [0, 16], [0, 16], [0, 16], [1, 15]]), Mn, { band: 1 });
+      } else if (kit === 9) { // mystic: a robe draped over one shoulder, prayer beads
+        if (female) c.fill(rows(M(), x0 - 7, y0 + 17, [[1, 15], [0, 16], [0, 16], [0, 16], [0, 16], [1, 15]]), Sc, { band: 1 });
+        const drape = and(cap(M(), x0 - 6, y0 + 15, x0 + 7, y0 + 30, 2.6), torsoMask());
+        c.fill(drape, Mn, { band: 1, sep: true });
+        for (let k = 0; k < 4; k++) { t(-3 + k * 3, 19 + k * 3, 1); t(-2 + k * 3, 20 + k * 3, 3); }
         const beads = [[-4, 16], [-4, 18], [-3, 20], [-2, 22], [0, 23], [2, 24], [4, 23], [6, 22], [7, 20], [7, 18], [6, 16]];
-        for (const [x, y] of beads) { s(x, y, LEATHER, 2); s(x + 1, y, LEATHER, 3); s(x, y + 1, LEATHER, 1); }
+        const WOOD = ramp('#b9824a');
+        for (const [x, y] of beads) { s(x, y, WOOD, 3); s(x + 1, y, WOOD, 2); s(x, y + 1, WOOD, 1); s(x + 1, y + 1, WOOD, 0); }
         s(2, 25, Tr, 3); s(3, 25, Tr, 2); s(2, 26, Tr, 1); s(3, 26, Tr, 1);
       } else if ((kit === 10 || kit === 11) && female) { // tank / sports top
         c.fill(rows(M(), x0 - 8, y0 + 17, [[2, 16], [0, 18], [0, 18], [0, 18], [0, 18], [0, 18], [1, 17], [2, 16]]), kit === 10 ? Mn : Sc, { band: 1 });
@@ -688,7 +703,8 @@ const QDojoAvatars = (() => {
         // bare chest, already shaded
       }
       if (L.marking === 'Chest tattoo') {
-        for (const [x, y] of [[-4, 19], [-3, 18], [-2, 19], [-3, 20], [-4, 21], [-2, 21], [-3, 22]]) s(x, y, INK === INK ? S : S, 0);
+        const TAT = mixHex(S[1], '#1c2a48', 0.6);
+        for (const [x, y] of [[-4, 19], [-3, 18], [-2, 19], [-3, 20], [-4, 21], [-2, 21], [-3, 22]]) s(x, y, TAT);
       }
       // Outfit pattern on the main garment: trim edge, side stripes, emblem.
       const garment = kit === 0 || kit === 3 || kit === 6 || kit === 7 || (kit === 1) || (kit === 2);
@@ -715,7 +731,7 @@ const QDojoAvatars = (() => {
       const x0 = CX + bx, y0 = by, w = B.waist + (B.belly ? 1 : 0);
       const s = (x, y, r, l) => c.set(x0 + x, y0 + y, r, l);
       let r = Tr, top = 28, h = 2;
-      if (kit === 0) r = L.sash % 2 ? Sc : DARK;
+      if (kit === 0) r = L.sash % 2 ? Sc : toHsl(L.Mn[2])[2] < 0.3 ? Tr : DARK;
       if (kit === 1 || kit === 6) { r = LEATHER; }
       if (kit === 2) { r = DARK; h = 3; }
       if (kit === 4) { r = Mn; top = 27; h = 5; }
@@ -782,7 +798,8 @@ const QDojoAvatars = (() => {
         const mid = [Math.round((sh[0] + el[0]) / 2), Math.round((sh[1] + el[1]) / 2)];
         c.tone(mid[0] + 1, mid[1], 3); c.tone(mid[0] + 1, mid[1] - 1, 3);
         if (L.marking === 'Arm tattoo' && side === 1) {
-          for (let k = -1; k <= 1; k++) c.set(mid[0] + k, mid[1] + 1 + (k & 1), S, 0);
+          const TAT = mixHex(S[1], '#1c2a48', 0.6);
+          for (let k = -1; k <= 1; k++) { c.set(mid[0] + k, mid[1] + 1, TAT); c.set(mid[0] + k, mid[1] + 2 + (k & 1), TAT); }
         }
       }
       if (kit === 0) { // gi sleeve over the shoulder
@@ -901,7 +918,7 @@ const QDojoAvatars = (() => {
       if (!L.faceShown) return;
       // Facial hair.
       const f = L.facial, stub = mixHex(S[1], H[0], 0.3);
-      if (f === 1) for (let y = 8; y <= 11; y++) for (let x = 4; x <= 12; x++) if ((x + y) % 2 === 0 && y + x > 13 && c.filled(HX + x, HY + y) && !(y === 9 && x >= 9)) hd(x, y, stub);
+      if (f === 1) for (let y = 8; y <= 11; y++) for (let x = 4; x <= 12; x++) if ((x + y) % 2 === 0 && y + x > 14 && (y > 9 || x > 8) && c.filled(HX + x, HY + y) && !(y === 9 && x >= 9 && x <= 10)) hd(x, y, stub);
       if (f === 2 || f === 3) { hd(9, 8, H, 1); hd(10, 8, H, 2); hd(11, 8, H, 2); hd(12, 8, H, 3); }
       if (f === 3) { hd(9, 10, H, 1); hd(10, 10, H, 2); hd(10, 11, H, 1); hd(9, 11, H, 1); hd(8, 10, H, 1); }
       if (f === 4) {
@@ -924,6 +941,13 @@ const QDojoAvatars = (() => {
       if (!st) return;
       if (L.hairstyle === 'Bald') { hd(5, 1, S, 4); hd(6, 1, S, 4); hd(4, 2, S, 3); return; }
       const hm = rows(M(), HX, HY + st.top, st.rows);
+      const covered = ['Bandana', 'Backwards cap', 'Beret', 'Head guard'].includes(L.headgear);
+      if (covered) { // no spikes or buns poking through a cap
+        if (HY > 0) minus(hm, rect(M(), 0, 0, SIZE, HY));
+        if (st.crest || st.buzz) return;
+        if (st.rows.length) c.fill(hm, H, { band: 2 });
+        return;
+      }
       if (st.spikes) for (const [tx, ty, a, b, y] of st.spikes) tri(hm, HX + tx, HY + ty, HX + a, HX + b, HY + y);
       if (st.bun) ell(hm, HX + st.bun[0], HY + st.bun[1], st.bun[2], st.bun[3]);
       if (st.buns) { ell(hm, HX + 0, HY - 1, 2.3, 2.1); ell(hm, HX + 7, HY - 2, 2.3, 2.1); }
@@ -957,7 +981,7 @@ const QDojoAvatars = (() => {
           c.fill(t, r, { band: 1 });
         }
       };
-      if (g === 'Hachimaki') band(2, 2, L.pattern === 'Trim' ? WRAP : Tr, true);
+      if (g === 'Hachimaki') band(2, 2, L.palette === 'Classic white' ? Sc : L.pattern === 'Trim' ? WRAP : Tr, true); // never white gi + red band
       else if (g === 'Headband') band(2, 1, Tr, kit !== 6);
       else if (g === 'Mongkhon') {
         band(2, 1, Tr, false);
@@ -985,13 +1009,17 @@ const QDojoAvatars = (() => {
       } else if (g === 'Forehead mark') {
         hd(9, 2, Tr, 2); hd(9, 3, Tr, 1);
       } else if (g === 'Visor helmet' || g === 'Crested helmet') {
-        const m = rows(M(), HX, HY - 2, [[3, 9], [1, 11], [0, 12], [-1, 12], [-1, 12], [-1, 12], [-1, 13], [-1, 14], [-1, 13], [-1, 13], [0, 13], [1, 12], [2, 11], [4, 10]]);
+        const m = rows(M(), HX, HY - 1, [[3, 9], [1, 11], [0, 12], [-1, 12], [-1, 13], [-1, 13], [-1, 13], [-1, 13], [-1, 13], [-1, 12], [0, 12], [1, 12], [3, 11]]);
         c.fill(m, Mt, { band: 2 });
-        const v = rect(M(), HX + 5, HY + 4, 10, 2); c.fill(v, Ac, { band: 1, max: 3, min: 2 });
-        hd(13, 4, WHITE, 3); hd(12, 4, Ac, 4);
-        for (let x = 6; x <= 12; x++) c.tone(HX + x, HY + 7, 1);
-        hd(8, 8, Mt, 0); hd(10, 8, Mt, 0); hd(12, 8, Mt, 0);
-        hd(3, 5, Mt, 0); hd(3, 6, Mt, 0); hd(2, 5, Mt, 3);
+        // Faceplate with a mouth grille, a glowing visor under a brow ridge,
+        // an ear disc and a ridge over the crown.
+        c.fill(rows(M(), HX, HY + 5, [[7, 13], [7, 13], [7, 12], [8, 12], [8, 11]]), Mt, { band: 1, max: 2 });
+        for (let x = 9; x <= 11; x++) { c.tone(HX + x, HY + 7, 0); c.tone(HX + x, HY + 9, 0); }
+        for (let x = 5; x <= 13; x++) { c.tone(HX + x, HY + 1, 4); c.tone(HX + x, HY + 2, 0); }
+        c.fill(rect(M(), HX + 5, HY + 3, 9, 2), Ac, { band: 1, min: 2 });
+        hd(12, 3, WHITE, 3); hd(13, 3, Ac, 4); hd(5, 4, Ac, 1);
+        hd(1, 4, Mt, 0); hd(2, 4, Mt, 1); hd(1, 5, Mt, 1); hd(2, 5, Ac, 3); hd(1, 6, Mt, 0); hd(2, 6, Mt, 1);
+        for (let x = 2; x <= 8; x += 2) c.tone(HX + x, HY - 1, 4);
         if (g === 'Crested helmet') { const cr = tri(M(), HX + 1, HY - 4, HX + 3, HX + 9, HY - 2); c.fill(cr, Tr, { band: 1, sep: true }); }
       } else if (g === 'Cyber eye') {
         const p = rows(M(), HX, HY + 2, [[8, 12], [7, 12], [7, 13], [8, 12]]);
@@ -1063,11 +1091,17 @@ const QDojoAvatars = (() => {
       for (const x of [5, 9, 55]) { r(x, 6, 2, 44, '#2f5a3a'); for (let y = 10; y < 50; y += 7) r(x, y, 2, 1, '#1f3a28'); r(x + 2, 12 + x % 5, 3, 1, '#3f7a4a'); }
       r(2, floorY, 60, 11, '#2c2848'); for (let x = 2; x < 62; x += 6) r(x, floorY + 1 + (x % 4), 4, 1, '#3a3660');
     } else if (kit === 4) { // Clay ring under a hanging roof
-      r(2, 2, 60, 48, '#3a2418'); for (let x = 2; x < 62; x += 6) r(x, 12, 1, 38, '#2e1c12');
-      r(2, 2, 60, 6, '#24160f'); r(4, 8, 56, 3, '#5a2a6a'); for (let x = 6; x < 60; x += 6) r(x, 11, 3, 2, '#5a2a6a');
-      r(4, 8, 2, 8, '#d23a2a'); r(58, 8, 2, 8, '#2a4ad2'); r(4, 16, 2, 2, '#b82a1e'); r(58, 16, 2, 2, '#1e36a8');
-      r(10, 30, 44, 20, '#c9975e'); r(8, 44, 48, 6, '#b27f4a');
-      r(2, floorY, 60, 11, '#c9975e'); r(6, floorY + 1, 52, 2, '#e8d49a'); r(6, floorY + 3, 52, 1, '#b8a468');
+      // Warm hall, a hanging roof with bunting and corner tassels, a raised
+      // clay ring edged with straw bales.
+      r(2, 2, 60, 48, '#3a2418'); for (let x = 4; x < 62; x += 6) r(x, 14, 2, 26, '#2e1c12');
+      for (let x = 8; x < 60; x += 12) { r(x, 18, 4, 6, '#e8b860'); r(x + 1, 19, 2, 4, '#fff0b8'); r(x + 1, 24, 2, 1, '#8a5a2a'); }
+      r(2, 2, 60, 5, '#24160f'); r(2, 7, 60, 2, '#4a2c1c'); r(4, 9, 56, 3, '#5a2a6a'); for (let x = 6; x < 60; x += 8) r(x, 12, 4, 2, '#5a2a6a');
+      r(4, 9, 56, 1, '#7a4a8a');
+      r(4, 12, 2, 8, '#d23a2a'); r(58, 12, 2, 8, '#2a4ad2'); r(3, 20, 4, 3, '#b82a1e'); r(57, 20, 4, 3, '#1e36a8');
+      r(2, 40, 60, 10, '#8a5a36'); r(2, 40, 60, 1, '#a8744a');
+      r(6, 42, 52, 8, '#c9975e'); r(4, 44, 56, 6, '#c9975e'); r(6, 42, 52, 1, '#e0b27a');
+      r(2, floorY, 60, 11, '#b27f4a'); r(2, floorY, 60, 1, '#d2a066');
+      for (let x = 3; x < 61; x += 5) { r(x, floorY + 2, 4, 3, '#e8d49a'); r(x, floorY + 4, 4, 1, '#b8a468'); r(x + 1, floorY + 2, 1, 1, '#f8ecc0'); }
     } else if (kit === 5) { // Arena lights: spotlights, crowd, ropes
       r(2, 2, 60, 48, '#150f22');
       for (let y = 2; y < 50; y++) { const w = 4 + (y >> 2); r(20 - (w >> 1), y, w, 1, '#231a36'); r(44 - (w >> 1), y, w, 1, '#231a36'); }
@@ -1115,6 +1149,8 @@ const QDojoAvatars = (() => {
       r(2, floorY, 60, 11, '#c8b890'); r(2, floorY, 60, 1, '#e8d8b0');
     }
     // Ground shadow under the fighter, then the fighter at 1:1.
+    const shadow = ['#6c4228', '#2a2c3e', '#1a2030', '#221e3a', '#9a6a3a', '#b6b2bc', '#6a5a38', '#3a2c2c', '#6a4e34', '#7a7266', '#2a4a90', '#a89870'][kit];
+    r(18, floorY + 1, 30, 1, shadow); r(15, floorY, 36, 1, shadow);
     parts.push(`<g transform="translate(8 5)">${body}</g>`);
     // Frame: dark outer line, accent bevel, blank name plate.
     r(0, 0, 64, 2, INK); r(0, 62, 64, 2, INK); r(0, 0, 2, 64, INK); r(62, 0, 2, 64, INK);

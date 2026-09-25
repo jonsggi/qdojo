@@ -150,8 +150,8 @@ test('the public roster includes female and male fighters', () => {
 test('versioned preview fixtures cover both character variants', () => {
   assert.equal(avatars.version, 'qdojo-fighters-v4-preview');
   for (const [id, character, expected] of [
-    [identity, 'Female', 'c10b7684605c4e723de65ac490f914362b16b1d2cf7ec46b677a13c0a3b45bf7'],
-    ['fixture-0', 'Male', '1d0ea0e7f02c0f2aa8015213a8ba0f8f662541050294328e4b0634293e0a58c0'],
+    [identity, 'Female', '7ed73fdbc877ccc95d407ba3cd19153da3ff34c55a481ea14114d04d10ce3b0b'],
+    ['fixture-0', 'Male', 'd91665b8bf0c460ed484827c4044f98b58e99716b1fd48587be8fc9961211fde'],
   ]) {
     assert.equal(avatars.traits(id).character, character);
     assert.equal(sha(avatars.svg(id)), expected, id);
@@ -224,4 +224,19 @@ test('the identity cache is bounded and eviction does not change the art', () =>
   const t0 = process.hrtime.bigint();
   for (let i = 0; i < 100; i++) avatars.svg(`speed-${i}`);
   assert.ok(Number(process.hrtime.bigint() - t0) / 1e6 < 2000);
+});
+
+test('originality guards keep famous character looks out of the trait space', () => {
+  for (let i = 0; i < 20000; i++) {
+    const t = avatars.traits(`guard-${i}`);
+    if (t.archetype === 'Dojo striker' && t.palette === 'Crimson') assert.ok(!['Golden', 'Platinum'].includes(t.hairColour));
+    if (t.archetype === 'Kung-fu master') assert.notEqual(t.hairstyle, 'Twin buns');
+    if (t.archetype === 'Commando') assert.notEqual(t.hairstyle, 'Flat-top');
+    if (t.archetype === 'Commando' && t.headgear === 'Beret') assert.notEqual(t.hairstyle, 'Long braid');
+    if (t.archetype === 'Pro wrestler') assert.notEqual(t.hairstyle, 'Mohawk');
+    if (t.archetype === 'Sumo wrestler') assert.ok(!['Face paint', 'Cheek stripes'].includes(t.markings));
+  }
+  // A white gi never gets a red headband: the band takes the dark second colour.
+  const id = find({ archetype: 'Dojo striker', palette: 'Classic white', headgear: 'Hachimaki' }, 200000);
+  assert.doesNotMatch(avatars.svg(id, 'sprite'), /fill="#c8343c"/);
 });
