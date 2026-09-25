@@ -781,14 +781,14 @@
       const r = f.record || {};
       return '<tr><td class="num rank">' + (i + 1) + '</td><td>' + fighterLink(f.fighter_id) + (f.house_npc ? ' <span class="pill tiny">HOUSE NPC</span>' : '') + '</td>' +
         '<td class="num"><b>' + esc(f.lifetime_rating) + '</b></td><td>' + beltCell(f) + '</td>' +
-        '<td class="num">' + esc(r.W || 0) + '</td><td class="num">' + esc(r.D || 0) + '</td><td class="num">' + esc(r.L || 0) + '</td>' + winRateCell(r) +
+        '<td class="num">' + esc(r.W || 0) + '</td><td class="num">' + esc(r.D || 0) + '</td><td class="num">' + esc(r.L || 0) + '</td>' + winRateCell(careerOf(f).tot) +
         '<td class="num">' + esc(r.FW || 0) + '/' + esc(r.FL || 0) + '</td><td class="num' + (faults ? ' neg' : '') + '">' + faults + '</td>' +
         '<td class="form-cell">' + formCell(forms[i]) + '</td></tr>';
     }).join('');
     setView(screen('LEADERBOARD', 'LIFETIME COMBAT RATING &middot; ' + esc(rows.length) + ' FIGHTERS &middot; SNAPSHOT TICK ' + esc(index.generated_tick)) +
       (rows.length >= 3 ? '<section class="lb-hero" aria-label="Top three"><div class="t-podium">' + podiumHtml(rows) + '</div></section>' : '') +
-      '<section class="panel panel-yellow"><h3>RANKED</h3>' + (rows.length ? '<div class="tscroll"><table class="board"><thead><tr><th class="num">#</th><th>FIGHTER</th><th class="num">RATING</th><th>BELT</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th>WIN RATE</th><th class="num">FORFEITS W/L</th><th class="num">FAULTS</th><th>FORM (NEWEST FIRST)</th></tr></thead><tbody>' + body + '</tbody></table></div>' : '<p class="muted">No fighters yet.</p>') +
-      '<p class="tiny muted">Ratings start at 1000 and move by the integer formula in RULES; W/D/L are ranked contract records, forfeits separate. The first 10 ranked fights are placement: shown white and PROVISIONAL. ' +
+      '<section class="panel panel-yellow"><h3>RANKED</h3>' + (rows.length ? '<div class="tscroll"><table class="board"><thead><tr><th class="num">#</th><th>FIGHTER</th><th class="num">RATING</th><th>BELT</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th title="Wins over fought results in every mode: ranked, duels and cups">WIN RATE (ALL)</th><th class="num">FORFEITS W/L</th><th class="num">FAULTS</th><th>FORM (NEWEST FIRST)</th></tr></thead><tbody>' + body + '</tbody></table></div>' : '<p class="muted">No fighters yet.</p>') +
+      '<p class="tiny muted">Ratings start at 1000 and move by the integer formula in RULES; W/D/L are ranked contract records, forfeits separate. WIN RATE (ALL) also counts duels and cups. The first 10 ranked fights are placement: shown white and PROVISIONAL. ' +
       'FORM: W win, L loss, D draw, N no result (double fault or void); lower case is a forfeit. Belts are display only: they change no stats.</p></section>');
   }
 
@@ -1312,6 +1312,22 @@
 
   // ---- FIGHTER -----------------------------------------------------------------------
 
+  // Every finished fight per mode, from the export's records_by_mode (the
+  // contract's own record covers ranked fights only). Older exports lack it.
+  function careerOf(f) {
+    const by = f.records_by_mode && Object.keys(f.records_by_mode).length ? f.records_by_mode : { ranked: f.record || {} };
+    const tot = { W: 0, D: 0, L: 0, FW: 0, FL: 0, N: 0 };
+    for (const r of Object.values(by)) for (const k of Object.keys(tot)) tot[k] += Number(r[k] || 0);
+    return { by, tot, fought: tot.W + tot.D + tot.L, all: tot.W + tot.D + tot.L + tot.FW + tot.FL + tot.N };
+  }
+  function careerTable(f) {
+    const c = careerOf(f), order = ['ranked', 'duel', 'cup'];
+    const modes = Object.keys(c.by).sort((a, b) => (order.indexOf(a) + 1 || 9) - (order.indexOf(b) + 1 || 9));
+    const row = (label, r, cls) => { const n = (r.W || 0) + (r.D || 0) + (r.L || 0); return '<tr' + (cls ? ' class="' + cls + '"' : '') + '><td>' + label + '</td><td class="num">' + (r.W || 0) + '</td><td class="num">' + (r.D || 0) + '</td><td class="num">' + (r.L || 0) + '</td><td class="num">' + (r.FW || 0) + '/' + (r.FL || 0) + '</td><td class="num">' + (r.N || 0) + '</td>' + winRateCell(r) + '</tr>'; };
+    return '<div class="tscroll"><table class="career"><thead><tr><th>MODE</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num">FORFEITS W/L</th><th class="num">NO RESULT</th><th>WIN RATE</th></tr></thead><tbody>' +
+      modes.map(m => row(esc(m.toUpperCase()), c.by[m])).join('') + (modes.length > 1 ? row('ALL', c.tot, 'career-all') : '') + '</tbody></table></div>';
+  }
+
   async function viewFighter(tok, hex) {
     if (needData()) return;
     if (!HEX64.test(hex || '')) return notFound('A fighter ID is 64 lowercase hex digits.');
@@ -1357,15 +1373,17 @@
       '<p class="badges">' + driverBadge(meta.driver) + ' ' + foundingBadge(meta.asset) + (meta.asset ? ' <span class="drv drv-nft" title="Simulated fighter NFT">NFT ' + esc(meta.asset.name || '') + '</span>' : '') + '</p><div class="fprofile">' +
       avatar(hex, 'avatar-xl') + '<dl class="kv">' +
       '<dt>RATING</dt><dd><b class="big">' + esc(f.lifetime_rating) + '</b> ' + (f.provisional ? '<span class="belt belt-sm belt-white" title="Placement: the first 10 ranked fights">PROVISIONAL ' + esc(f.placement_fights) + '/10</span>' : '<span class="belt belt-sm ' + beltCls + '">' + esc(String(f.belt || '').toUpperCase()) + ' BELT</span>') + '</dd>' +
-      '<dt>RECORD</dt><dd>' + esc(rec.W || 0) + 'W ' + esc(rec.D || 0) + 'D ' + esc(rec.L || 0) + 'L &middot; forfeits ' + esc(rec.FW || 0) + ' won / ' + esc(rec.FL || 0) + ' lost <span class="muted">(ranked, contract record; duels and cups below)</span></dd>' +
-      '<dt>PLACEMENT</dt><dd>' + esc(f.placement_fights) + ' fights</dd>' +
+      '<dt>RANKED</dt><dd>' + esc(rec.W || 0) + 'W ' + esc(rec.D || 0) + 'D ' + esc(rec.L || 0) + 'L &middot; forfeits ' + esc(rec.FW || 0) + ' won / ' + esc(rec.FL || 0) + ' lost <span class="muted">(contract record)</span></dd>' +
+      '<dt>CAREER</dt><dd>' + esc(careerOf(f).all) + ' finished fights in all modes <span class="muted">(table below)</span></dd>' +
+      '<dt>RANKED FIGHTS</dt><dd>' + esc(f.placement_fights) + (f.provisional ? ' of 10 placement fights' : '') + '</dd>' +
       '<dt>STATUS</dt><dd>' + esc(f.lock || 'IDLE') + (f.cooldown_until && f.cooldown_until !== '0' ? ' &middot; cooldown until tick ' + esc(f.cooldown_until) : '') + '</dd>' +
       '<dt>FAULTS</dt><dd>' + (faults.length ? faults.map(([k, v]) => 'epoch ' + esc(k) + ': ' + esc(v)).join(', ') : '<span class="pos">none</span>') + '</dd>' +
       '<dt>SEASONS</dt><dd>' + Object.entries(f.season_ratings || {}).map(([k, v]) => 'S' + esc(k) + ' ' + esc(v)).join(', ') + '</dd>' +
       '<dt>OWNER</dt><dd>' + ownerLink((meta.asset && meta.asset.owner) || f.owner) + (f.operator !== f.owner ? ' &middot; operator <span class="id">' + esc(String(f.operator).slice(0, 8)) + '&hellip;</span>' : ' (self-operated)') + '</dd>' +
       '</dl></div></section>' +
+      '<section class="panel panel-yellow"><h3>CAREER</h3>' + careerTable(f) + '<p class="tiny muted">Every finished fight in the arena, by mode. Ratings and belts come from RANKED fights only. Forfeits are missed deadlines; NO RESULT is a double fault or a void.</p></section>' +
       '<section class="panel panel-cyan"><h3>SCOUTING REPORT</h3>' +
-      '<p class="caveat">Observed in ' + s.replayed + ' completed fight(s), ' + s.beats + ' executed beats, re-derived from revealed plans. ' +
+      '<p class="caveat">Observed in ' + s.replayed + ' completed fight(s) still published (the export keeps recent fights only), ' + s.beats + ' executed beats, re-derived from revealed plans. ' +
       'History describes past play only; it does not predict the next plan, and owners may change software between rounds.</p>' +
       '<div class="tscroll"><table class="freq"><thead><tr><th>ACTION (EFFECTIVE)</th><th class="num">ROUND 1</th><th class="num">ROUND 2</th><th class="num">ROUND 3</th><th class="num">UNPLAYED*</th></tr></thead><tbody>' + freqRows + '</tbody></table></div>' +
       '<p class="tiny muted">* Revealed after a knockout and never executed: listed apart, not counted as play. EXHAUSTED is a failed unaffordable move.</p>' +
@@ -1378,7 +1396,7 @@
       '</section>' +
       '<section class="panel"><h3>OWNERSHIP (SIMULATED NFT)</h3>' + nftHistory(meta.asset) +
       (meta.asset ? '<p class="tiny muted">Issuer <span class="id">' + esc(String(meta.asset.issuer || '').slice(0, 8)) + '&hellip;</span> &middot; asset ' + esc(meta.asset.name || '?') + '. A transfer changes who owns the fighter, never its stats or record.</p>' : '') + '</section>' +
-      '<section class="panel"><h3>FIGHTS (' + loaded.length + ')</h3><div class="tscroll"><table><thead><tr><th class="num">FIGHT</th><th>MODE</th><th>SLOT</th><th>OPPONENT</th><th>RESULT</th></tr></thead><tbody>' + fightRows + '</tbody></table></div></section>');
+      '<section class="panel"><h3>RECENT FIGHTS (' + loaded.filter(x => x.replay || x.summary).length + ')</h3><div class="tscroll"><table><thead><tr><th class="num">FIGHT</th><th>MODE</th><th>SLOT</th><th>OPPONENT</th><th>RESULT</th></tr></thead><tbody>' + fightRows + '</tbody></table></div></section>');
   }
 
   // ---- PRACTICE ------------------------------------------------------------------------
@@ -1507,6 +1525,10 @@
     const player = track(createPlayer($('#player'), { frames, ids: { A: myId(), B: 'npc:' + s.npc }, names: { A: myName(), B: npc.name }, links: false, replay: {}, stageSeed: 'practice:' + s.npc, mySide: 'A', autoplay: false }));
     const details = $('#player .beat-details');
     if (details) details.open = false;
+    // The move deck sits right under the stage and its headline, so writing
+    // a round and watching it happen use the same screen.
+    const deck = $('#planner'), head = $('#player .beat-headline');
+    if (deck && head) head.after(deck);
     if (playFrom != null) {
       player.seek(playFrom, false);
       $('.practice-stage').scrollIntoView({ block: 'start', behavior: motion() ? 'smooth' : 'auto' });
@@ -1540,7 +1562,7 @@
       '<p class="planner-status"><span>HP <b>' + me.hp + '</b></span><span>STAMINA <b>' + me.stamina + '</b></span><span>POWER <b>' + (me.power_available ? 'READY' : 'SPENT') + '</b></span>' + (me.opening ? '<span class="pos">OPENING</span>' : '') +
       '<span class="sealed">' + esc(npc.name) + '\'S PLAN: <b>SEALED</b></span></p>' +
       '<div class="slots" role="listbox" aria-label="Your plan">' + [0, 1, 2, 3, 4, 5].map(i => '<div class="slot" role="option" data-slot="' + i + '" tabindex="0"><span class="slot-no">BEAT ' + (i + 1) + '</span><span class="slot-act"></span><span class="slot-st"></span><button class="slot-pw" data-pw="' + i + '" title="Power strike on this beat (+' + R.power_cost + ' cost, +' + R.power_damage + ' damage if it lands)">&#9733; POWER</button></div>').join('') + '</div>' +
-      '<div class="palette">' + R.submitted_action_ids.map(a => '<button class="act-btn act-' + NAMES[a].toLowerCase() + '" data-a="' + a + '" title="' + esc(PURPOSE[NAMES[a]]) + '"><span class="key">' + (a + 1) + '</span><b>' + NAMES[a] + '</b><span class="cost">' + cost(a) + ' ST</span></button>').join('') + '</div>' +
+      '<div class="palette">' + R.submitted_action_ids.map(a => '<button class="act-btn mv-' + NAMES[a].toLowerCase() + '" data-a="' + a + '" title="' + esc(PURPOSE[NAMES[a]]) + '"><span class="key">' + (a + 1) + '</span><b>' + NAMES[a] + '</b><span class="cost">' + cost(a) + ' ST</span></button>').join('') + '</div>' +
       '<p class="planner-actions"><button class="btn btn-start" id="fight" disabled>FIGHT! &#9654;</button> <button class="btn btn-sm btn-cyan" id="clear">CLEAR</button> <span id="plan-err" class="neg tiny" role="alert"></span></p>' +
       '<p class="tiny muted">Tap a move to fill the selected beat, or press 1-6. Tap a beat to change it. POWER (or P) adds +' + R.power_damage + ' damage to one JAB, KICK or THROW per fight. The small number is your stamina after that beat if nothing hits you; red means you would be EXHAUSTED.</p></section>';
   }

@@ -24,3 +24,20 @@ def test_live_run_exports_pruned_data_and_resumes(tmp_path):
         live.run(tmp_path / "net", lineup, out, tick_seconds=0, export_every=40, keep=3, ticks=40, log=lambda m: None)
         if p.exists():
             assert p.stat().st_mtime_ns == before
+
+
+def test_a_fight_exported_while_live_is_rewritten_when_it_ends(tmp_path):
+    # Regression: a finished fight's file was skipped whenever it existed, so a
+    # file first written mid-fight stayed frozen in its live state forever.
+    out = tmp_path / "web" / "combat" / "v1"
+    lineup = [{"label": "a", "policy": "scout-v1"}, {"label": "b", "policy": "kicker-v1"}]
+    live.run(tmp_path / "net", lineup, out, tick_seconds=0, export_every=5, keep=50, ticks=600, log=lambda m: None)
+    index = json.loads((out / "index.json").read_text())
+    done = [f for f in index["fights"] if f not in index["active_fights"]]
+    assert done, "the run should finish at least one fight"
+    for f in done:
+        doc = json.loads((out / "fights" / f"{f}.json").read_text())
+        assert doc["final"] is True and doc["phase"] == "DONE" and doc["result"], f
+    fighter = json.loads((out / "fighters" / f"{index['fighters'][0]}.json").read_text())
+    total = sum(sum(r.values()) for r in fighter["records_by_mode"].values())
+    assert total >= 1 and set(fighter["records_by_mode"]) <= {"ranked", "duel", "cup", "npc", "training"}

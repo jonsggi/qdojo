@@ -102,7 +102,29 @@ def fight_summary(c: CombatContract, fight_id: int) -> dict:
     return _envelope(c, "fight", view)
 
 
-def fighter(c: CombatContract, fid: bytes) -> dict:
+def records_by_mode(c: CombatContract) -> dict:
+    """Finished fights per fighter and mode: W/D/L for fought results, FW/FL
+    for forfeits, N for no result (double fault or void). `record` on the
+    fighter is the contract's ranked record; duel and cup fighters need these
+    to show what they have done."""
+    out: dict = {}
+    for x in c.fights.values():
+        if x.phase != "DONE" or not x.result:
+            continue
+        mode = codec.Mode(x.context.mode).name.lower()
+        kind, winner = x.result.get("kind"), x.result.get("winner")
+        for side, p in (("A", x.context.participant_a), ("B", x.context.participant_b)):
+            r = out.setdefault(p.fighter_id, {}).setdefault(mode, {"W": 0, "D": 0, "L": 0, "FW": 0, "FL": 0, "N": 0})
+            if kind == "COMBAT":
+                r["W" if winner == side else "D" if winner is None else "L"] += 1
+            elif kind == "FORFEIT":
+                r["FW" if winner == side else "FL"] += 1
+            else:
+                r["N"] += 1
+    return out
+
+
+def fighter(c: CombatContract, fid: bytes, by_mode: dict | None = None) -> dict:
     f = c.fighters[fid]
     placed = f.placement >= PLACEMENT_FIGHTS
     return _envelope(c, "fighter", {
@@ -110,6 +132,7 @@ def fighter(c: CombatContract, fid: bytes) -> dict:
         "auth_version": f.auth_version, "house_npc": f.house_npc, "lock": f.lock,
         "lifetime_rating": f.lifetime, "provisional": not placed, "belt": belt(f.lifetime, placed),
         "placement_fights": f.placement, "record": f.record,
+        "records_by_mode": (by_mode if by_mode is not None else records_by_mode(c)).get(fid, {}),
         "faults_by_epoch": {str(k): v for k, v in f.faults.items()}, "cooldown_until": str(f.cooldown_until),
         "season_ratings": {str(k): v for k, v in f.season_rating.items()},
         "fights": [str(x.fight_id) for x in c.fights.values()
@@ -234,6 +257,13 @@ def _write(path: Path, doc: dict):
     os.replace(tmp, path)
 
 
+def _written_final(path: Path) -> bool:
+    try:
+        return json.loads(path.read_text(encoding="utf-8")).get("final") is True
+    except (OSError, ValueError):
+        return False
+
+
 def export_all(c: CombatContract, root: Path, keep: int | None = None, deployment: dict | None = None) -> list[Path]:
     """Write every public file; returns the paths written.
 
@@ -278,17 +308,23 @@ def export_all(c: CombatContract, root: Path, keep: int | None = None, deploymen
     put("npcs.json", npc_list())
     for fid in fight_ids:
         fight = c.fights[fid]
-        # A finished fight never changes again: write it once, so a live export
-        # does not rewrite hundreds of files for a new generated_tick.
+        # A finished fight never changes again: write it once in its final
+        # state, so a live export does not rewrite hundreds of files for a new
+        # generated_tick. Only a file that was itself written final is kept: a
+        # file written while the fight was live must be replaced when it ends
+        # (it used to be kept, freezing finished fights mid-round on the site).
         final = fight.phase == "DONE" and c.contests[fight.contest_id].status == "DONE"
-        if final and (root / f"fights/{fid}.json").exists():
+        if final and _written_final(root / f"fights/{fid}.json"):
             continue
-        put(f"fights/{fid}.json", fight_summary(c, fid))
+        doc = fight_summary(c, fid)
+        doc["final"] = final
+        put(f"fights/{fid}.json", doc)
         if fight.rounds or fight.result:
             put(f"fights/{fid}/replay.json", fight_replay(c, fid))
     meta = (deployment or {}).get("fighters", {})
+    by_mode = records_by_mode(c)
     for fid in c.fighters:
-        doc = fighter(c, fid)
+        doc = fighter(c, fid, by_mode)
         doc.update(meta.get(fid.hex(), {}))     # name, driver, simulated asset and its ownership history
         put(f"fighters/{fid.hex()}.json", doc)
     put("events/latest.json", events(c, max(0, c.event_seq - PAGE)))
