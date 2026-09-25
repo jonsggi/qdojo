@@ -127,9 +127,13 @@ def run_fight(a: Contestant, b: Contestant, seed: bytes, fight_number: int = 1,
             else:
                 obs = observation(rules, ctx, state, slot, ids, prior, who.budget_ms)
                 ran, err = planner.run_or_fallback(who.command, obs, who.budget_ms, who.fallback)
-                plans[slot] = ran.plan
+                # As the bot does before it commits: a plan the contract would
+                # reject at reveal (a spent power slot) never reaches the round.
+                me = state.a if slot == "A" else state.b
+                plans[slot], adjusted = planner.legal_plan(rules, me, ran.plan, who.fallback)
                 who.diagnostics.append({"round_index": state.round_index, "elapsed_ms": ran.elapsed_ms,
-                                        "stderr": ran.stderr[-2000:], "error": err.code if err else None})
+                                        "stderr": ran.stderr[-2000:], "error": err.code if err else None,
+                                        **({"adjusted": adjusted} if adjusted else {})})
                 if err:
                     fallbacks.append({"slot": slot, "round_index": state.round_index,
                                       "code": "FALLBACK_PLAN_USED", "cause": err.code})

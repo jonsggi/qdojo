@@ -246,8 +246,9 @@ states plainly when the power strike is already spent, and includes the
 earlier rounds of the fight and a scouting summary of the opponent's recent
 fights. `--prompt planner-system-claude.md` selects the longer prompt written
 for Claude models (for example `--model anthropic/claude-sonnet-5
---reasoning none`); for `anthropic/` models the system prompt is cached. It reads the key
-from `OPEN_ROUTER_API_KEY` in the environment, never from the command line.
+--reasoning off`); for `anthropic/` models the system prompt is cached.
+It reads the key from `OPEN_ROUTER_API_KEY` in the environment, never from
+the command line.
 
 ```sh
 uv run qdojo combat train --npc jabber-v1 --budget-ms 25000 --planner "uv run python -m qdojo.combat.llm_planner --model some/model --state .llm-state --daily-usd 0.50"

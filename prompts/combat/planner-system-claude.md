@@ -64,7 +64,13 @@ What the table means in practice:
    beats their best reply.
 2. Mind both stamina bars. An opponent low on stamina is likely to RECOVER or
    be EXHAUSTED: KICK or THROW them. If you are low, a RECOVER on a beat they
-   are unlikely to attack is worth more than a weak attack.
+   are unlikely to attack is worth more than a weak attack. A script that
+   attacks every beat cannot pay for all of it: the projection line shows
+   where it would be EXHAUSTED, and a KICK there deals 18 for nothing back.
+   Blocking is not free: every consecutive BLOCK costs 3 more, and a blocked
+   KICK drains you another 6, so blocking every kick loses the stamina war.
+   Block the kicks you must, trade KICK for KICK when you are ahead or
+   fresher, and cash in on their exhausted beats.
 3. Mind the score. Ahead on HP in round 3, lower your risk; behind, you need
    damage. Look for a knockout when their HP is within reach of a beat or two
    of heavy hits, and save the power strike for a beat you expect to land,
@@ -75,7 +81,10 @@ What the table means in practice:
 
 ## Reply
 
-Reply with exactly one JSON object and nothing else:
+First think it through briefly, in plain text and at most about 120 words:
+what you expect on each of the six beats, your answer to each, and a quick
+stamina check (only work it out beat by beat if it is close). Then end your
+reply with exactly one JSON object, and nothing after it:
 {"read": "<one short sentence: what you expect them to do and your answer>",
  "actions": ["<beat 1>", "<beat 2>", "<beat 3>", "<beat 4>", "<beat 5>", "<beat 6>"],
  "power_slot": <-1, or the index 0-5 of a JAB, KICK or THROW>}

@@ -2,7 +2,7 @@
 
   OPEN_ROUTER_API_KEY=... python -m qdojo.combat.llm_planner --model deepseek/deepseek-v4-flash \
       --state ~/.qdojo/combat/llm/ken --daily-usd 1.00
-  ... --model anthropic/claude-sonnet-5 --prompt planner-system-claude.md --reasoning none
+  ... --model anthropic/claude-sonnet-5 --prompt planner-system-claude.md --reasoning off
 
 Reads one observation on stdin, prints one plan. A model answer is used only
 if it parses as a plan; it is then checked against the fighter's state with
@@ -25,7 +25,9 @@ import urllib.request
 from pathlib import Path
 
 from . import npcs, planner, scouting
+from .engine import resolve_beat
 from .rules import candidate_1
+from .types import Action, FighterState
 
 PROMPTS = Path(__file__).resolve().parents[5] / "prompts/combat"
 PROMPT = PROMPTS / "planner-system.md"
@@ -83,6 +85,44 @@ def _scouting_lines(obs: dict) -> list[str]:
     return lines
 
 
+def _expected_plan(obs: dict) -> tuple[list[str], str] | None:
+    """The opponent plan most worth projecting: their plan last round in this
+    fight, else their most recent scouted plan for this round index."""
+    other = "B" if obs["self_slot"] == "A" else "A"
+    if obs.get("prior_rounds"):
+        return obs["prior_rounds"][-1]["plans"][other]["actions"], "their plan from last round"
+    for f in (obs.get("opponent_history") or {}).get("fights", []):
+        for r in f["rounds"]:
+            if r["round_index"] == obs["round_index"]:
+                return r["plan"]["actions"], f"their round-{obs['round_index'] + 1} plan from fight {f['fight_id']}"
+    return None
+
+
+def _projection_line(obs: dict) -> str | None:
+    """Their stamina, beat by beat, if they repeat that plan and are never hit
+    (their best case): where they would be EXHAUSTED, and open to 18 from a KICK."""
+    guess = _expected_plan(obs)
+    if guess is None:
+        return None
+    actions, source = guess
+    rules = candidate_1()
+    them = planner.fighter_state(obs["opponent"])
+    # A fresh, blocking stand-in each beat: it never hits them, so their
+    # recoveries are the unhit kind and nothing but their own plan moves them.
+    wall = FighterState(rules.max_hp, rules.max_stamina, 0, 0, 0)
+    staminas, exhausted = [them.stamina], []
+    for i, name in enumerate(actions):
+        them, _, tr = resolve_beat(rules, them, wall, Action[name], Action.BLOCK)
+        staminas.append(them.stamina)
+        if tr.a.effective is Action.EXHAUSTED:
+            exhausted.append(i + 1)
+    line = (f"Projection: if the opponent repeats {source} ({' '.join(actions)}) and is never hit, "
+            f"their stamina goes {'->'.join(map(str, staminas))}")
+    if exhausted:
+        line += f"; they could NOT pay for beat(s) {', '.join(map(str, exhausted))} and would be EXHAUSTED there"
+    return line + "."
+
+
 def _user_prompt(obs: dict) -> str:
     me, opp = obs["self"], obs["opponent"]
     me_slot = obs["self_slot"]
@@ -109,11 +149,28 @@ def _user_prompt(obs: dict) -> str:
                      f" opponent {start[other]['hp']}->{end[other]['hp']}.")
         lines.append(line)
     lines += _scouting_lines(obs)
+    projection = _projection_line(obs)
+    if projection:
+        lines.append(projection)
     lines.append("Choose your six actions for this round.")
     return "\n".join(lines)
 
 
 def _extract_json(text: str) -> str:
+    """The last JSON object in the reply that has an "actions" key (a model may
+    think aloud before it), else the outermost {...} span."""
+    dec, found, i = json.JSONDecoder(), None, text.find("{")
+    while i >= 0:
+        try:
+            doc, end = dec.raw_decode(text, i)
+        except ValueError:
+            i = text.find("{", i + 1)
+            continue
+        if isinstance(doc, dict) and "actions" in doc:
+            found = text[i:end]
+        i = text.find("{", end)
+    if found is not None:
+        return found
     start, end = text.find("{"), text.rfind("}")
     if start < 0 or end < start:
         raise planner.PlannerError("BAD_PLAN", "no JSON object in the model reply")
@@ -169,18 +226,26 @@ def request_body(model: str, obs: dict, prompt: Path = PROMPT, reasoning: str = 
     system = prompt.read_text()
     anthropic = model.startswith("anthropic/")
     body = {"model": model, "max_tokens": max_tokens, "usage": {"include": True},
-            "response_format": {"type": "json_object"},
             "messages": [{"role": "system", "content": system},
-                         {"role": "user", "content": _user_prompt(obs) + "\nAnswer with the JSON object only."}]}
+                         {"role": "user", "content": _user_prompt(obs)}]}
     if anthropic:
         # The system prompt is the same for every round: cache it (a cache read
-        # costs a tenth of an input token), and leave sampling at the model default.
+        # costs a tenth of an input token), and leave sampling at the model
+        # default. The Claude prompt lets the model reason briefly in the reply
+        # before the JSON object; the last JSON object with "actions" is read.
         body["messages"][0]["content"] = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+        body["messages"][1]["content"] += "\nThink briefly if you need to, then end with the JSON object."
     else:
         body["temperature"] = 0.7
+        body["response_format"] = {"type": "json_object"}
+        body["messages"][1]["content"] += "\nAnswer with the JSON object only."
     # Little or no hidden reasoning: a reasoning model otherwise spends the
     # whole token budget before answering.
-    if reasoning != "none":
+    # "none" sends no setting (the model's default); "off" turns reasoning off
+    # outright (a Claude model otherwise thinks adaptively, ~500 tokens a call).
+    if reasoning == "off":
+        body["reasoning"] = {"enabled": False}
+    elif reasoning != "none":
         body["reasoning"] = {"effort": reasoning, "exclude": True}
     return body
 
@@ -227,8 +292,8 @@ def main():
     p.add_argument("--timeout", type=float, default=20.0)
     p.add_argument("--prompt", help="system prompt: a path, or a name under prompts/combat "
                                     "(default planner-system.md)")
-    p.add_argument("--reasoning", default="low", choices=("none", "minimal", "low", "medium", "high"),
-                   help="hidden reasoning effort; none sends no reasoning setting")
+    p.add_argument("--reasoning", default="low", choices=("none", "off", "minimal", "low", "medium", "high"),
+                   help="hidden reasoning effort; none sends no reasoning setting, off disables reasoning")
     p.add_argument("--max-tokens", type=int, default=1200)
     a = p.parse_args()
     obs = json.load(sys.stdin)

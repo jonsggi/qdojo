@@ -240,13 +240,13 @@ def cmd_bot_run(a):
         # deciding (a subprocess bounded by --budget-ms), so a planner is never
         # outrun by the loop and the commit window closes on chain time only.
         hold = time.monotonic() + a.budget_ms / 1000 + 2.0
-        while any(b.planning() for b in bots) and time.monotonic() < hold:
+        waited = [b for b in bots if b.planning()]
+        while any(b.planning() for b in waited) and time.monotonic() < hold:
             time.sleep(0.01)
-            for i, b in enumerate(bots):
-                if b.planning():
-                    m = b.step()
-                    if i == 0:
-                        msg = m
+        for b in waited:                       # use the finished plan in this same tick
+            m = b.step()
+            if b is bots[0]:
+                msg = m
         if msg != last and not a.quiet:
             print(f"tick {net.world.tick}: {msg}")
             last = msg

@@ -150,9 +150,10 @@ def test_llm_prompt_says_power_is_gone_and_the_planner_drops_it():
 
 def test_claude_requests_cache_the_system_prompt_and_skip_temperature():
     prompt = llm_planner.PROMPTS / "planner-system-claude.md"
-    body = llm_planner.request_body("anthropic/claude-sonnet-5", _obs(True), prompt, "none")
+    body = llm_planner.request_body("anthropic/claude-sonnet-5", _obs(True), prompt, "off")
     assert body["messages"][0]["content"][0]["cache_control"] == {"type": "ephemeral"}
-    assert "temperature" not in body and "reasoning" not in body
+    assert "temperature" not in body and body["reasoning"] == {"enabled": False}
+    assert "reasoning" not in llm_planner.request_body("anthropic/claude-sonnet-5", _obs(True), prompt, "none")
     other = llm_planner.request_body("qwen/qwen3-235b-a22b-2507", _obs(True))
     assert other["temperature"] == 0.7 and isinstance(other["messages"][0]["content"], str)
 
@@ -284,3 +285,26 @@ def test_scouting_is_capped(tmp_path, monkeypatch):
     monkeypatch.setattr(scouting, "MAX_BYTES", 2500)
     hist = scouting.Scout().history(c, fid, -1, arena.w.tick + 1)
     assert len(json.dumps(hist, separators=(",", ":"))) <= 2500 and hist["fights"] == full["fights"][:len(hist["fights"])]
+
+
+def test_practice_with_a_power_reusing_planner_adjusts_instead_of_crashing(tmp_path):
+    import sys
+    from qdojo.combat.training import Contestant, run_fight
+    bot = tmp_path / "bot.py"
+    bot.write_text("import json,sys\njson.load(sys.stdin)\nprint(json.dumps({'schema':'qdojo.combat.plan.v1',"
+                   "'actions':['KICK','JAB','RECOVER','JAB','KICK','RECOVER'],'power_slot':0}))\n")
+    you = Contestant("you", command=[sys.executable, str(bot)], budget_ms=5000)
+    replay = run_fight(you, Contestant("kicker-v1", policy=npcs.ROSTER["kicker-v1"].policy), bytes(32))
+    assert len(replay["rounds"]) >= 2
+    assert any("power" in d.get("adjusted", "") for d in you.diagnostics)
+
+
+def test_llm_prompt_projects_where_a_repeating_opponent_runs_dry():
+    obs = _obs(True)
+    obs["opponent"]["stamina"] = 30
+    obs["prior_rounds"] = [{"plans": {"A": {"actions": ["JAB"] * 6, "power_slot": -1},
+                                      "B": {"actions": ["KICK"] * 6, "power_slot": -1}}}]
+    line = llm_planner._projection_line(obs)
+    assert "KICK KICK KICK KICK KICK KICK" in line and "EXHAUSTED" in line
+    obs["prior_rounds"] = []
+    assert llm_planner._projection_line(obs) is None        # nothing to project from

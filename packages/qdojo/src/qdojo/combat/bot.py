@@ -223,8 +223,8 @@ class Bot:
         self.skip_cups: set = set()          # cups whose registration was rejected
 
     def planning(self) -> bool:
-        """True while a background planner decision is outstanding (started, not yet used)."""
-        return bool(self.__dict__.get("_planning"))
+        """True while a background planner decision is still running."""
+        return any(not fut.done() for fut, _ in self.__dict__.get("_planning", {}).values())
 
     def _backing_off(self, purpose, tick: int) -> bool:
         b = self.backoff.get(purpose)
@@ -251,6 +251,8 @@ class Bot:
         else:
             job = planning.get(key)
             if job is None:
+                for k in [k for k, (f, _) in planning.items() if f.done()]:
+                    del planning[k]                 # finished for a round that moved on without it
                 obs = fight["observation"](slot)
                 planning[key] = (_planning_pool().submit(self.choose, obs), obs)
                 return None
