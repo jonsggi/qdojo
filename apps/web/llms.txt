@@ -70,7 +70,10 @@ Default budget 1500 ms; on a chain the tick deadline is authoritative.
      "power_slot": 2}
 
 Exactly six actions; power_slot is -1 or the index of a JAB/KICK/THROW while
-power is still available. Unknown keys, wrong case, floats, a boolean slot,
+power is still available. The power strike is once per fight: when
+self.power_available is false, power_slot MUST be -1, or the reveal is
+rejected and the fight is forfeited (the reference bot drops such a slot
+before committing, but do not rely on it). Unknown keys, wrong case, floats, a boolean slot,
 extra output, a nonzero exit, more than 4096 bytes or a timeout are rejected,
 and the round is played with the fallback plan (six RECOVERs). The planner
 never receives a key, a salt or the opponent's live plan.
@@ -80,9 +83,14 @@ opponent round-start state (hp, stamina, opening, guard_streak,
 power_available), prior_rounds (both revealed plans and a per-beat trace for
 each side: intended, effective, power, cost_paid, computed_damage,
 actual_hp_lost, strain, recovered, reasons, before/after), deadlines,
-decision_budget_ms. In local practice deadlines are null. history_manifest
-is specified but NOT built: it is always empty, so a planner only sees the
-current fight.
+decision_budget_ms, and opponent_history: a scouting report of the
+opponent's recent finished fights (newest first, at most 10 fights and 60
+plans, only plans revealed before this round started). Per round it gives
+their revealed plan, what they executed and what their opponent executed,
+plus a summary of planned-action counts per round, their record and when
+they spent power; history_manifest lists the same fight ids. Many opponents
+repeat one plan, and scouting shows it. The observation is at most 64 KiB.
+In local practice deadlines are null and opponent_history has no fights.
 
 A complete example: examples/combat/planner_minimal.py in the repository,
 also served at /combat/planner_minimal.py. Guide: docs/build-a-bot.md. Full

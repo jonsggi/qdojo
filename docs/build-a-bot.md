@@ -101,7 +101,8 @@ Everything is in the observation. In local practice it looks like this
 | `prior_rounds` | Every earlier round of **this fight**: both revealed plans, and per beat for each side `intended`, `effective` (`EXHAUSTED` if unaffordable), `power`, `cost_paid`, `computed_damage`, `actual_hp_lost`, `strain`, `recovered`, `reasons`, plus `before`/`after` states |
 | `unexecuted` | Actions revealed but never played because of a knockout. Do not count them as the opponent's habits |
 | `deadlines`, `observed_tick` | Tick deadlines on a chain; `null` in local practice |
-| `history_manifest` | Meant to list the opponent's earlier public fights. **Not built yet: always empty.** Today a planner only learns from the current fight |
+| `opponent_history` | Scouting: the opponent's recent finished fights (newest first, at most 10 fights and 60 plans), each with its revealed plans, what executed, and what their opponent executed, plus a `summary` of planned actions per round, record and power timing. Only fights that ended before this round began. Empty in local practice (there is no history there) |
+| `history_manifest` | The ids of the fights in `opponent_history` and the tick it is as of |
 | `decision_budget_ms` | Your time budget |
 
 Note that `self`/`opponent` give `power_available` as a boolean, while the
@@ -223,19 +224,31 @@ budget (`--budget` takes a JSON file of the `Budget` fields in
 `combat/bot.py`), and journals each plan and salt (mode 0600) before
 committing. `--spar` adds a disclosed sparring bot so you have an opponent.
 
-**Known issue (2026-09-25):** `bot run --planner "…"` currently forfeits its
-first fight on the devnet. The CLI advances ticks without waiting for the
-planner subprocess, which runs in the background, so the commit window closes
-first; the default budget then stops the bot after one fault. Use `--npc` with
-a built-in policy on the devnet for now, and `train` for your own planner.
+Your own planner works the same way:
+`bot run --fighter musashi --planner "python3 my_bot.py" --spar kicker-v1`.
+The local devnet has no wall clock, so `bot run` holds the tick while your
+planner is deciding (up to `--budget-ms`) and a slow planner is not outrun.
+
+Before it commits, the bot checks every plan with the contract's own rule
+check against your round-start state. A `power_slot` set after the power
+strike is spent is dropped (the actions are kept); any other illegal plan is
+replaced by the fallback. A rejected commit or reveal is never re-sent in a
+loop, and after a fault the bot waits out the contract's cooldown instead of
+queueing into it.
 
 ## 7. LLM planners
 
 `qdojo.combat.llm_planner` is a planner that asks a model on OpenRouter for the
 plan, using [the system prompt](../prompts/combat/planner-system.md). It checks
 the answer like any plan, caps spend per UTC day, and falls back to the local
-`mixed-v1` policy on any failure or when the cap is reached. It reads the key
-from `OPEN_ROUTER_API_KEY` in the environment, never from the command line.
+`mixed-v1` policy on any failure or when the cap is reached. The prompt
+states plainly when the power strike is already spent, and includes the
+earlier rounds of the fight and a scouting summary of the opponent's recent
+fights. `--prompt planner-system-claude.md` selects the longer prompt written
+for Claude models (for example `--model anthropic/claude-sonnet-5
+--reasoning off`); for `anthropic/` models the system prompt is cached.
+It reads the key from `OPEN_ROUTER_API_KEY` in the environment, never from
+the command line.
 
 ```sh
 uv run qdojo combat train --npc jabber-v1 --budget-ms 25000 --planner "uv run python -m qdojo.combat.llm_planner --model some/model --state .llm-state --daily-usd 0.50"

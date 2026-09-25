@@ -12,6 +12,7 @@ import os
 import shlex
 import stat
 import sys
+import time
 from pathlib import Path
 
 from . import engine, evaluate as E, export, npcs, planner
@@ -235,6 +236,17 @@ def cmd_bot_run(a):
         msg = bots[0].step()
         for b in bots[1:]:
             b.step()
+        # The local devnet has no wall clock: hold the tick while a planner is
+        # deciding (a subprocess bounded by --budget-ms), so a planner is never
+        # outrun by the loop and the commit window closes on chain time only.
+        hold = time.monotonic() + a.budget_ms / 1000 + 2.0
+        waited = [b for b in bots if b.planning()]
+        while any(b.planning() for b in waited) and time.monotonic() < hold:
+            time.sleep(0.01)
+        for b in waited:                       # use the finished plan in this same tick
+            m = b.step()
+            if b is bots[0]:
+                msg = m
         if msg != last and not a.quiet:
             print(f"tick {net.world.tick}: {msg}")
             last = msg

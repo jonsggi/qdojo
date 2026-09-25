@@ -14,12 +14,17 @@ import subprocess
 from dataclasses import dataclass
 
 from .. import portable
-from .types import Action, Plan, PlanError
+from .engine import validate_plan
+from .types import NO_POWER, Action, FighterState, Plan, PlanError
 
 OBSERVATION_SCHEMA = "qdojo.combat.observation.v1"
 PLAN_SCHEMA = "qdojo.combat.plan.v1"
 DEFAULT_BUDGET_MS = 1500
 STDOUT_CAP = 4096
+# The observation written to a planner's stdin stays under this. Opponent
+# scouting (opponent_history) is the only unbounded-looking part and is trimmed
+# to fit well inside it (scouting.MAX_BYTES).
+OBSERVATION_CAP = 64 * 1024
 STDERR_CAP = 64 * 1024
 FALLBACK = Plan.of([Action.RECOVER] * 6)
 
@@ -69,6 +74,40 @@ def plan_json(plan: Plan) -> dict:
     return {"schema": PLAN_SCHEMA, **plan.to_json()}
 
 
+def fighter_state(side: dict) -> FighterState:
+    """The FighterState of an observation's "self" or "opponent" object."""
+    return FighterState(side["hp"], side["stamina"], side["opening"], side["guard_streak"],
+                        int(side["power_available"]))
+
+
+def legal_plan(rules, state: FighterState, plan: Plan, fallback: Plan = FALLBACK) -> tuple[Plan, str | None]:
+    """The plan the contract will accept for this round-start state, and why it changed.
+
+    Runs the engine's own validate_plan (the check the contract makes at reveal).
+    A plan that is legal except for a power slot after the power strike was
+    spent keeps its actions and loses the power slot; any other illegal plan is
+    replaced by `fallback` (or six RECOVERs if the fallback is illegal too).
+    A committed plan the contract rejects at reveal is a forfeit, so nothing
+    the bot can know in advance may reach a commitment."""
+    try:
+        validate_plan(rules, state, plan)
+        return plan, None
+    except PlanError as exc:
+        error = exc
+    if isinstance(plan, Plan) and plan.power_slot != NO_POWER and not state.power_available:
+        stripped = Plan(plan.actions, NO_POWER)
+        try:
+            validate_plan(rules, state, stripped)
+            return stripped, "power strike already spent: power_slot dropped, actions kept"
+        except PlanError:
+            pass
+    try:
+        validate_plan(rules, state, fallback)
+    except PlanError:
+        fallback = FALLBACK
+    return fallback, f"illegal plan ({error}): fallback plan used"
+
+
 @dataclass(frozen=True)
 class PlannerRun:
     plan: Plan
@@ -80,9 +119,12 @@ def run(command: list[str], observation: dict, budget_ms: int = DEFAULT_BUDGET_M
     """Run once. Raises PlannerError with a stable code; never returns a repaired plan."""
     import time
     resolved = portable.resolve_command(command)
+    stdin = json.dumps(observation).encode("utf-8")
+    if len(stdin) > OBSERVATION_CAP:
+        raise PlannerError("OBSERVATION_TOO_LONG", f"observation is {len(stdin)} bytes; the cap is {OBSERVATION_CAP}")
     started = time.monotonic()
     try:
-        p = subprocess.run(resolved, input=json.dumps(observation).encode("utf-8"),
+        p = subprocess.run(resolved, input=stdin,
                            capture_output=True, timeout=budget_ms / 1000, check=False)
     except subprocess.TimeoutExpired:
         raise PlannerError("TIMEOUT", f"no plan within {budget_ms} ms") from None

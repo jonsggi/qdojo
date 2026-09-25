@@ -57,11 +57,22 @@ ISSUER_LABEL = "qdojo-sim-issuer"
 RESERVE_FLOOR, RESERVE_TOPUP = 20_000, 200_000
 
 
-def _budget(rules, entry) -> Budget:
+# A demo bot stops paid entry after this many faults (missed commits/reveals)
+# within one epoch's worth of ticks, then resumes by itself once they age out.
+# It matches the contract's own ranked suspension (faults_per_epoch = 3), so a
+# bot that keeps faulting sits out instead of donating stakes and spamming
+# rejected entries; one stray timeout never benches it. A lineup entry may set
+# "stop_after_faults" and "fault_window_ticks" itself.
+DEMO_STOP_AFTER_FAULTS = 3
+
+
+def _budget(rules, entry, epoch_ticks: int = 2400) -> Budget:
     stake = int(entry.get("max_stake", 5000))
     return Budget(ruleset_digest=rules.digest.hex(), max_stake=stake, max_total_escrow=4 * stake,
                   max_fights_per_day=100_000, max_daily_committed=10**12, max_daily_net_loss=10**12,
-                  stop_after_faults=10**6)
+                  stop_after_faults=int(entry.get("stop_after_faults", DEMO_STOP_AFTER_FAULTS)),
+                  fault_window_ticks=int(entry.get("fault_window_ticks", epoch_ticks)),
+                  min_ticks_between_fights=int(entry.get("min_ticks_between_fights", 0)))
 
 
 class Arena:
@@ -144,19 +155,29 @@ class Arena:
             llm = entry["llm"]
             cmd = [sys.executable, "-m", "qdojo.combat.llm_planner", "--model", llm["model"],
                    "--state", str(self.dir / "llm" / entry["label"]), "--daily-usd", str(llm.get("daily_usd", 1.0))]
-            return planner_chooser(cmd, int(llm.get("budget_ms", 25000)))
+            for key in ("prompt", "reasoning", "max_tokens", "timeout"):
+                if key in llm:
+                    cmd += ["--" + key.replace("_", "-"), str(llm[key])]
+            return planner_chooser(cmd, int(llm.get("budget_ms", 25000)), log=self._bot_log(entry["label"]))
         if "planner" in entry:
-            return planner_chooser(shlex.split(entry["planner"]), int(entry.get("budget_ms", 1500)))
+            return planner_chooser(shlex.split(entry["planner"]), int(entry.get("budget_ms", 1500)),
+                                   log=self._bot_log(entry["label"]))
         seed = (sha256(b"qdojo/arena-policy/v1\0", str(self.state["seed"]).encode(), entry["label"].encode())
                 if self.deterministic else secrets.token_bytes(32))
         return policy_chooser(self.rules, E.policy_by_name(entry["policy"]), seed)
+
+    def _bot_log(self, label: str):
+        return lambda m: self.log(f"tick {self.w.tick}: bot {label}: {m}")
 
     def _make_bot(self, fid: bytes):
         entry = self.labels[fid]
         owner = self.registry.assets[fid].owner
         client = SimQubicClient(self.chain, owner, DevnetClient(self.net, owner))
-        bot = Bot(client, self.rules, fid, owner, owner, self._chooser(entry), _budget(self.rules, entry),
-                  self.dir / "bots" / entry["label"] / owner.hex()[:12])
+        label = entry["label"]
+        bot = Bot(client, self.rules, fid, owner, owner, self._chooser(entry),
+                  _budget(self.rules, entry, self.net.m.ticks_per_epoch),
+                  self.dir / "bots" / label / owner.hex()[:12],
+                  log=self._bot_log(label))
         bot.play_cups = bool(entry.get("cups"))
         bot.accept_duels = bool(entry.get("duels"))
         bot.ranked = entry.get("ranked", True)

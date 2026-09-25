@@ -78,6 +78,10 @@ def cmd_train(a):
         print("\nWhere it cost you:")
         for line in lines:
             print("  " + line)
+    for d in you.diagnostics:
+        if d.get("adjusted"):
+            print(f"\nround {d['round_index'] + 1}: your plan was illegal and would forfeit on a chain; "
+                  f"{d['adjusted']}")
     for f in replay["fallbacks"]:
         print(f"\nround {f['round_index'] + 1}: your planner failed ({f['cause']}); six RECOVERs were used")
         tail = you.diagnostics[f["round_index"]]["stderr"].strip()
