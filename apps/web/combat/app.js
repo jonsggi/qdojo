@@ -726,10 +726,25 @@
         '<a class="btn btn-sm" href="#fight/' + esc(s.fight_id) + '">REPLAY</a></li>';
     }).join('');
     setView(screen('RESULTS', esc(done.length) + ' FINISHED &middot; ' + esc(active.length) + ' LIVE &middot; SNAPSHOT TICK ' + esc(index.generated_tick)) +
-      (active.length ? '<section class="panel panel-cyan"><h3>LIVE NOW (' + active.length + ')</h3><p>' + active.map(s => '<a href="#fight/' + esc(s.fight_id) + '">#' + esc(s.fight_id) + '</a> ' + phaseBadge(s)).join('<br>') + '</p><p><a href="#arena">WATCH IN THE ARENA &#9654;</a></p></section>' : '') +
+      liveNowPanel(active) +
       '<p class="sub-links"><a href="#duels">DUELS &#9654;</a> &middot; <a href="#cups">CUPS &#9654;</a> &middot; <a href="#season">SEASON &#9654;</a></p>' +
       '<section class="panel"><h3>HISTORY</h3>' + (feed ? '<ol class="feed">' + feed + '</ol>' : '<p class="muted">No finished fight yet.</p>') +
       (missing || ids.length >= 200 ? '<p class="tiny muted">The export keeps the most recent fights only' + (missing ? '; ' + missing + ' listed file(s) were not available' : '') + '.</p>' : '') + '</section>');
+  }
+
+  // Running fights up front as versus chips; fights whose deadline passed and
+  // that wait for the referee's advance fold away, with what that means.
+  function liveNowPanel(active) {
+    if (!active.length) return '';
+    const overdue = active.filter(s => L.livePhase(s, D.tick).overdue), running = active.filter(s => !L.livePhase(s, D.tick).overdue);
+    const chip = s => '<a class="live-chip" href="#fight/' + esc(s.fight_id) + '"><span class="lc-id">#' + esc(s.fight_id) + '</span>' +
+      '<span class="lc-vs">' + avatar(s.fighters.A.fighter_id, 'avatar-sm') + '<b>' + esc(short(s.fighters.A.fighter_id)) + '</b><i>VS</i><b>' + esc(short(s.fighters.B.fighter_id)) + '</b>' + avatar(s.fighters.B.fighter_id, 'avatar-sm') + '</span>' +
+      '<span class="lc-state">R' + (s.round_index + 1) + '/' + R.rounds + ' ' + phaseBadge(s).replace(/<span class="tiny muted">.*?<\/span>/, '') + '</span></a>';
+    return '<section class="panel panel-cyan"><h3>LIVE NOW (' + running.length + ')</h3>' +
+      (running.length ? '<div class="live-chips">' + running.map(chip).join('') + '</div>' : '<p class="muted">No round is open right now.</p>') +
+      '<p><a class="btn btn-sm" href="#arena">WATCH IN THE ARENA &#9654;</a></p>' +
+      (overdue.length ? '<details class="overdue"><summary>WAITING FOR THE REFEREE (' + overdue.length + ')</summary><p class="tiny muted">A deadline passed and the fight waits for the next advance, which settles the round or scores a timeout. Nothing more can be submitted.</p><div class="live-chips">' + overdue.map(chip).join('') + '</div></details>' : '') +
+      '</section>';
   }
 
   // ---- LEADERBOARD -------------------------------------------------------------------

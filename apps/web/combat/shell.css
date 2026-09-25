@@ -286,3 +286,25 @@ h2.screen-title small { -webkit-text-stroke: 0; background: none; color: #ffd98a
 .btn { background: linear-gradient(180deg, #ffe46a, #ffb400); box-shadow: 4px 4px 0 #c8141b; }
 .btn-cyan { background: linear-gradient(180deg, #8fd4ff, #3a8fe0); box-shadow: 4px 4px 0 #0a1e50; }
 .foot { border-top-color: #ffc619; box-shadow: 0 -4px 0 #c8141b; }
+
+/* ---- results ----------------------------------------------------------- */
+.live-chips { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); margin: 4px 0 14px; }
+.live-chip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 10px; border: 2px solid #2a3380; background: rgba(0, 0, 0, .35); color: var(--white); font-size: 9px; }
+.live-chip:hover { border-color: #ffc619; text-decoration: none; background: rgba(255, 198, 25, .06); }
+.lc-id { color: var(--cyan); }
+.lc-vs { display: inline-flex; align-items: center; gap: 6px; flex: 1 1 auto; }
+.lc-vs i { font-style: normal; color: #e8141b; }
+.lc-state { width: 100%; font-size: 8px; color: var(--grey); }
+.overdue summary { cursor: pointer; font-size: 9px; color: var(--orange); padding: 6px 0; }
+.feed { list-style: none; padding: 0; margin: 0; }
+.feed-row { display: grid; grid-template-columns: 70px 72px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 10px 6px; border-bottom: 2px solid #1b2360; }
+.feed-row:hover { background: rgba(255, 198, 25, .05); }
+.feed-row .feed-how, .feed-row .feed-tick { display: none; }
+.feed-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 10px; }
+.feed-line .beat { color: #e8141b; font-size: 8px; }
+.feed-mode { font-size: 8px; color: var(--grey); }
+@media (max-width: 640px) {
+  .feed-row { grid-template-columns: 1fr auto; }
+  .feed-row .feed-mode { display: none; }
+  .feed-line { grid-column: 1 / -1; order: 3; }
+}
