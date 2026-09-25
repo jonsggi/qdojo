@@ -21,7 +21,7 @@ const scriptsOf = html => [...html.matchAll(/<script src="([a-z0-9_/-]+\.js)"/g)
 const stylesOf = html => [...html.matchAll(/<link rel="stylesheet" href="([a-z0-9_/-]+\.css)"/g)].map(m => m[1]);
 
 for (const name of ['app.js', 'dash.js', 'anim.js', 'avatars.js', 'combat/engine.js', 'combat/ruleset.js',
-  'combat/npcs.js', 'combat/logic.js', 'combat/app.js', 'tests/e2e/run.cjs']) {
+  'combat/npcs.js', 'combat/logic.js', 'combat/stages.js', 'combat/app.js', 'tests/e2e/run.cjs']) {
   test(`${name} parses as a whole file`, () => {
     // a leading #! line is valid for node but not for vm.Script
     assert.doesNotThrow(() => new vm.Script(read(name).replace(/^#!.*/, ''), { filename: name }), `${name} has a syntax error`);
@@ -40,7 +40,8 @@ test('every page loads only scripts and styles that exist', () => {
 test('index.html is the combat site: engine before its users', () => {
   const scripts = scriptsOf(read('index.html'));
   const at = n => scripts.indexOf(n);
-  for (const n of ['avatars.js', 'anim.js', 'combat/ruleset.js', 'combat/engine.js', 'combat/npcs.js', 'combat/logic.js', 'combat/app.js']) assert.ok(at(n) >= 0, n);
+  for (const n of ['avatars.js', 'anim.js', 'combat/ruleset.js', 'combat/engine.js', 'combat/npcs.js', 'combat/logic.js', 'combat/stages.js', 'combat/app.js']) assert.ok(at(n) >= 0, n);
+  assert.ok(at('combat/stages.js') < at('combat/app.js'), 'stages before the app that mounts them');
   assert.ok(at('combat/engine.js') < at('combat/npcs.js') && at('combat/npcs.js') < at('combat/logic.js') && at('combat/logic.js') < at('combat/app.js'));
   assert.equal(at('app.js'), -1, 'the riddle app.js belongs to legacy.html only');
   assert.match(read('index.html'), /href="legacy\.html"/, 'the riddle history stays reachable');
