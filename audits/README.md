@@ -1,10 +1,15 @@
 # Audit findings and issue backlog
 
-> Combat pivot, 2026-09-21: these findings remain evidence about the legacy
-> implementation. The pivot does not close them. Review reusable transport,
-> custody, verification, bot admission and asset concerns against the
-> [new spec](../docs/spec.md); explicitly resolve or retire each finding
-> with evidence during [migration](../docs/pivot-plan.md).
+> **Purpose:** findings from the 2026-09-16 targeted review of the riddle-era code, and how to reproduce them. \
+> **Audience:** the owner; anyone touching money paths, custody or NFTs. \
+> **Status:** reference. All ten findings are **open**. They describe the legacy riddle implementation; the combat pivot does not close them. Each must be resolved or retired with evidence before paid combat or an NFT release ([legacy-closeout.md](../docs/legacy-closeout.md), stage P8 of the [roadmap](../docs/roadmap.md)). \
+> **Last reviewed:** 2026-09-25 (status note only; findings unchanged)
+
+Several concerns carry over to combat and should be reviewed against the
+[combat spec](../docs/spec.md): verification scope (AUD-008, now reflected in
+the site's per-check badges), unattended bot spending (AUD-005, compare the
+combat bot's fail-closed budget), and NFT art, allocation, ownership and rights
+(AUD-009, AUD-010), which apply directly to fighter NFTs.
 
 Reviewed **2026-09-16** against commit
 `833d2200cff9a05a096666b81783522d3c328f85` (line references refer to that code).
@@ -12,13 +17,14 @@ Reviewed **2026-09-16** against commit
 These are actionable issues from a **targeted follow-up review**, not a complete
 project/security audit, penetration test, legal opinion, or certification. No
 live transactions were sent, no private keystores were accessed, and no historic
-loss or cheating is alleged. `docs/PHASE-ZERO.md` says the operator-owned sparring
+loss or cheating is alleged. `docs/PHASE-ZERO.md` (now
+[archived](../docs/archive/riddle-v0/docs/PHASE-ZERO.md)) says the operator-owned sparring
 cohort is stopped; financial priorities below apply before reopening or accepting
 outside funds.
 
 ## Tracker status
 
-No Git remote is configured in this checkout. Issues are therefore stored locally
+At review time no Git remote was configured (one exists now). Issues are stored locally
 in [`issues/`](issues/), with stable `AUD-xxx` IDs. **No hosted issues have been
 created.** Each Markdown file can be used as the body of a tracker issue after the
 owner/repository is specified. Existing concurrent README/protocol edits were not

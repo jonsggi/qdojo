@@ -4,8 +4,7 @@ Snapshot of the repository documentation immediately before the combat pivot
 on 2026-09-21. These are historical specifications/measurements and legacy
 operation references, not the active release plan.
 
-Read [the active spec](../../spec.md) and [pivot plan](../../pivot-plan.md)
-for new work. Files retain their original directory layout and contents,
+For current work start at [the docs index](../../README.md). Files retain their original directory layout and contents,
 including dated statements, command examples, historical handoffs and any old
 signed-document provenance. Relative references to source files outside this
 snapshot refer to the original repository layout. Do not execute old instructions

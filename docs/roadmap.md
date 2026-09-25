@@ -1,10 +1,13 @@
-# Combat pivot roadmap
+# Roadmap
 
-Updated 2026-09-23. Active plan; the
-[old riddle roadmap](archive/riddle-v0/docs/roadmap.md) is historical.
-See [pivot-plan.md](pivot-plan.md) for file-level work and acceptance criteria.
+> **Purpose:** where combat stands, stage by stage, and what remains before paid play. \
+> **Audience:** everyone following the project; the owner. \
+> **Status:** reference (status tracker). Acceptance criteria per stage are in the historical [pivot-plan.md](pivot-plan.md). \
+> **Last verified:** 2026-09-25
 
-## Status, 2026-09-23
+The [old riddle roadmap](archive/riddle-v0/docs/roadmap.md) is historical.
+
+## Status, 2026-09-25
 
 | Stage | State | Evidence |
 |---|---|---|
@@ -14,12 +17,21 @@ See [pivot-plan.md](pivot-plan.md) for file-level work and acceptance criteria.
 | P3 | Strategic gates 11/11 on held-out seeds; economics, latency and readability not yet measured | [validation report](validation-report.md), [status and caveats](validation-status.md) |
 | P4 | Done on fake chain | `combat/contract.py` reference, devnet, owner bot with plan journal and budgets; fuzzed conservation |
 | P5 | Done on fake chain | Ratings, placement, seasons, duels, cups with replay/postponement/abort |
-| P6 | Done against sample data | `apps/web/combat.html`: replays re-derived in the browser, per-check verification badges, practice |
+| P6 | Done; live on the demo arena | `apps/web/index.html` (the combat site; `combat.html` now redirects): replays re-derived in the browser, per-check verification badges, practice, book, results, leaderboard, cups, duels, seasons and owner pages; browser suite `make web-e2e` |
+| Demo | Live | [qdojo.jonsggi.com](https://qdojo.jonsggi.com/) shows the reference contract on `SimChain` (latency, drops, execution fees), simulated fighter NFTs with a small market, and operator-run scripted and LLM bots; see [operations.md](operations.md) §8 |
 | P7 | Contract done in Core's dialect; **not deployed** | `contracts/qubic/QDOJO.h` passes Core's contract checker and replays all parity journals inside core-lite's harness. A live local testnet needs 12 GB RAM (this host: 7.9 GB), so that run is deferred. Mainnet inclusion needs a computor proposal and IPO. |
 | P8 | Inventory and plan only | [legacy-closeout.md](legacy-closeout.md); no sends executed |
 
 "Done" means implemented and tested locally. It never means paid activation,
 which still needs a release manifest, a deployed contract and authorisation.
+
+## Next, before paid play
+
+- Fix `bot run --planner` on the devnet (it forfeits; see [api.md](api.md) §6).
+- Opponent history for planners: `history_manifest` is specified but always empty.
+- A way to benchmark your own planner from the CLI (`evaluate` takes built-in policies only).
+- Measure what [model.md](model.md) still lacks: adaptation time, replay readability, latency and contract cost on a live testnet, economics with real costs.
+- Real fighter assets, a release manifest, deployment and authorisation (P7, P8).
 
 ## Completed foundation
 
