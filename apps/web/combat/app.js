@@ -22,6 +22,7 @@
   // avatars.js and anim.js declare top-level consts, not window properties.
   const A = typeof QDojoAvatars !== 'undefined' ? QDojoAvatars : null;
   const ANIM = typeof QDojoAnim !== 'undefined' ? QDojoAnim : null;
+  const STAGES = typeof QDojoStages !== 'undefined' ? QDojoStages : null;
   const NAMES = L.NAMES;
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -357,12 +358,17 @@
       const out = summaryOutcome(s);
       box.innerHTML = '<a class="attract-card" href="#fight/' + esc(s.fight_id) + '">' +
         '<span class="attract-kicker">' + (s.phase === 'DONE' ? 'RESULT' : '<b class="live-dot">LIVE</b>') + ' &middot; FIGHT #' + esc(s.fight_id) + ' &middot; ' + esc(String(s.mode || '').toUpperCase()) + '</span>' +
-        '<span class="attract-vs">' + avatar(s.fighters.A.fighter_id, 'avatar-lg') + '<span class="vs">VS</span>' + avatar(s.fighters.B.fighter_id, 'avatar-lg') + '</span>' +
+        '<span class="attract-arena"><canvas class="stage-bg" aria-hidden="true"></canvas><span class="stage-name" aria-hidden="true"></span>' +
+        '<span class="attract-vs">' + standee(s.fighters.A.fighter_id) + '<span class="vs vs-fire">VS</span>' + standee(s.fighters.B.fighter_id) + '</span></span>' +
         '<span class="attract-names">' + esc(short(s.fighters.A.fighter_id)) + ' &middot; ' + esc(short(s.fighters.B.fighter_id)) + '</span>' +
         miniBars(stateAB(s)) +
         '<span class="attract-state">' + (s.phase === 'DONE' ? resultBadge(out) + ' ' + esc(L.outcomeLabel(out).text) : 'ROUND ' + (s.round_index + 1) + '/' + R.rounds + ' &middot; ' + phaseBadge(s)) + '</span></a>' +
         '<p class="attract-nav"><button class="chip" data-att="-1" aria-label="Previous fight">&#9664;</button> ' + ((i % list.length) + 1) + '/' + list.length + ' <button class="chip" data-att="1" aria-label="Next fight">&#9654;</button></p>';
+      // The fight's own stage behind a VS splash, at a low frame rate.
+      if (STAGES) $('.stage-name', box).textContent = STAGES.mount($('.stage-bg', box), { seed: s.fight_id, fps: 8, scale: 2 }).stage.name.toUpperCase();
+      if (ANIM) ANIM.mount(box);
     };
+    const standee = id => '<span class="avatar avatar-lg" data-anim="idle" data-identity="' + esc(id) + '" aria-hidden="true">' + (A ? A.svg(id, 'sprite') : '') + '</span>';
     box.addEventListener('click', e => { const b = e.target.closest('[data-att]'); if (b) { i = (i + list.length + Number(b.dataset.att)) % list.length; show(); } });
     show();
     // Cycling is the attract mode; with motion off it waits for the buttons.
@@ -424,7 +430,7 @@
       const fresh = seenRounds.get(s.fight_id) !== rounds;
       seenRounds.set(s.fight_id, rounds);
       const names = { A: 'A ' + short(s.fighters.A.fighter_id), B: 'B ' + short(s.fighters.B.fighter_id) };
-      const p = track(createPlayer(host, { frames, ids: { A: s.fighters.A.fighter_id, B: s.fighters.B.fighter_id }, names, links: true, replay: rp || {}, compact: true, startAt: fresh ? startAt : frames.length - 1, autoplay: fresh && rounds > 0 }));
+      const p = track(createPlayer(host, { frames, ids: { A: s.fighters.A.fighter_id, B: s.fighters.B.fighter_id }, names, links: true, replay: rp || {}, stageSeed: s.fight_id, compact: true, startAt: fresh ? startAt : frames.length - 1, autoplay: fresh && rounds > 0 }));
       if (!fresh) p.seek(frames.length - 1, false);
     }
   }
@@ -887,10 +893,13 @@
     const corner = s => {
       const id = opts.ids[s];
       const head = opts.links && HEX64.test(id) ? '<a class="corner-name" href="#fighter/' + id + '">' + esc(names[s]) + '</a>' : '<span class="corner-name">' + esc(names[s]) + '</span>';
-      return '<div class="corner corner-' + s + '" data-side="' + s + '">' + head +
-        '<div class="fighter-box"><span class="avatar avatar-stage" data-anim="manual" data-identity="' + esc(id) + '">' + (A ? A.svg(id, 'sprite') : '') + '</span><span class="pop" aria-hidden="true"></span></div>' +
-        cbar('hp', 'HP') + cbar('st', 'STAMINA') +
-        '<div class="flags"><span class="flag flag-power"></span><span class="flag flag-opening">OPENING</span><span class="flag flag-guard"></span></div>' +
+      // The corner is one element (tests and ARIA find everything under it);
+      // CSS places its HUD, fighter and move line into the stage grid.
+      return '<div class="corner corner-' + s + '" data-side="' + s + '">' +
+        '<div class="corner-hud">' + head + cbar('hp', 'HP') + cbar('st', 'STAMINA') + '<span class="rmarks"></span>' +
+        '<div class="flags"><span class="flag flag-power"></span><span class="flag flag-opening">OPENING</span><span class="flag flag-guard"></span></div></div>' +
+        '<div class="fighter-box"><span class="fshadow" aria-hidden="true"></span><span class="avatar avatar-stage" data-anim="manual" data-identity="' + esc(id) + '">' + (A ? A.svg(id, 'sprite') : '') + '</span>' +
+        '<span class="pop" aria-hidden="true"></span><span class="fx-spark" aria-hidden="true"></span><span class="fx-word" aria-hidden="true"></span><span class="win-plate" aria-hidden="true">WINNER</span></div>' +
         '<div class="side-now"></div></div>';
     };
     const rows = frames.map((f, i) => {
@@ -912,8 +921,10 @@
       return '<tr class="' + cls + '" data-i="' + i + '" tabindex="-1"><td>' + (f.round + 1) + '</td><td></td><td colspan="7" class="note">' + esc(text) + '</td></tr>';
     }).join('');
     root.innerHTML =
-      '<div class="stage">' + corner('A') +
-      '<div class="center"><div class="round-no"></div><div class="beat-no"></div><div class="center-note"></div></div>' + corner('B') + '</div>' +
+      '<div class="stage arcade' + (opts.compact ? ' stage-compact' : '') + '"><canvas class="stage-bg" aria-hidden="true"></canvas>' + corner('A') +
+      '<div class="center"><span class="ko-emblem" aria-hidden="true">KO</span><div class="clock" aria-hidden="true"><b class="clock-n"></b><small class="clock-l"></small></div>' +
+      '<div class="round-no"></div><div class="beat-no"></div><div class="center-note"></div></div>' + corner('B') +
+      '<div class="announcer" aria-hidden="true"><span></span></div><div class="fx-flash" aria-hidden="true"></div></div>' +
       '<div class="controls" role="group" aria-label="Replay controls">' +
       '<button class="chip" data-act="first" title="First (Home)">|&#9664;</button>' +
       '<button class="chip" data-act="prev" title="Previous beat (Left)">&#9664;</button>' +
@@ -932,9 +943,23 @@
     const els = {};
     for (const s of ['A', 'B']) {
       const c = $('.corner-' + s, root);
-      els[s] = { corner: c, avatar: $('.avatar', c), hp: $('.cbar-hp', c), st: $('.cbar-st', c), power: $('.flag-power', c), opening: $('.flag-opening', c), guard: $('.flag-guard', c), now: $('.side-now', c), pop: $('.pop', c), cap: $('.cap-' + s, root) };
+      els[s] = { corner: c, avatar: $('.avatar', c), hp: $('.cbar-hp', c), st: $('.cbar-st', c), power: $('.flag-power', c), opening: $('.flag-opening', c), guard: $('.flag-guard', c), now: $('.side-now', c), pop: $('.pop', c), spark: $('.fx-spark', c), word: $('.fx-word', c), marks: $('.rmarks', c), lost: $('.cbar-hp .cbar-lost', c), cap: $('.cap-' + s, root) };
     }
     if (ANIM) ANIM.mount(root);
+    const stageEl = $('.stage', root), announcer = $('.announcer span', root);
+    // The arena behind the fighters: chosen by fight ID, decoration only.
+    if (STAGES) STAGES.mount($('.stage-bg', root), { seed: opts.stageSeed != null ? opts.stageSeed : opts.replay && opts.replay.fight_id != null ? opts.replay.fight_id : names.A + names.B, fps: opts.compact ? 8 : 12 });
+    let fxToken = 0;
+    // Round markers: after each finished round (a break, or the end), the side
+    // ahead on HP gets a medal. Display only: a fight is decided by K.O. or
+    // by final HP, never by counting these.
+    const leads = [];
+    frames.forEach((f, i) => {
+      if (f.kind !== 'break' && f.kind !== 'end') return;
+      if (f.kind === 'end' && leads.some(x => x.round === f.round)) return;
+      leads.push({ i, round: f.round, lead: f.a.hp > f.b.hp ? 'A' : f.b.hp > f.a.hp ? 'B' : null });
+    });
+    const clockN = $('.clock-n', root), clockL = $('.clock-l', root), koEmblem = $('.ko-emblem', root);
     const play = $('[data-act=play]', root);
     const msEl = $('.beat-ms', root), posEl = $('.pos', root);
     const table = $('table.beats', root);
@@ -976,6 +1001,17 @@
           x.cap.innerHTML = '';
         }
       }
+      for (const s of ['A', 'B']) {
+        const won = leads.filter(x => x.i <= idx && x.lead === s);
+        els[s].marks.innerHTML = won.map(x => '<i class="rmark" title="Ahead on HP after round ' + (x.round + 1) + ' (display only)">&#9733;</i>').join('');
+        els[s].marks.setAttribute('aria-label', won.length ? names[s] + ' ahead on HP after ' + won.length + ' round' + (won.length === 1 ? '' : 's') : '');
+        els[s].pop.classList.remove('go'); els[s].spark.classList.remove('go'); els[s].word.classList.remove('go'); els[s].lost.classList.remove('drain');
+      }
+      // The round box counts beats left in the round (never a fake timer).
+      const left = f.kind === 'beat' || f.kind === 'unexecuted' ? R.beats_per_round - f.beat - 1 : f.kind === 'start' || f.kind === 'round' ? R.beats_per_round : null;
+      clockN.textContent = left == null ? (f.kind === 'break' ? '--' : 'END') : String(left);
+      clockL.textContent = left == null ? '' : 'BEATS LEFT';
+      koEmblem.classList.toggle('lit', (st.a.hp === 0 || st.b.hp === 0));
       const rnd = $('.round-no', root), bn = $('.beat-no', root), note = $('.center-note', root);
       rnd.textContent = 'ROUND ' + Math.min(f.round + 1, R.rounds) + '/' + R.rounds;
       bn.textContent = f.kind === 'beat' || f.kind === 'unexecuted' ? 'BEAT ' + (f.beat + 1) + '/' + R.beats_per_round : '';
@@ -996,6 +1032,14 @@
         : f.kind === 'forfeit' ? L.outcomeLabel(opts.replay).text
         : f.kind === 'round' ? 'Round ' + (f.round + 1) + ' begins from the state above.' : 'Both fighters start at HP ' + st.a.hp + ' and stamina ' + st.a.stamina + '.';
       note.className = 'center-note note-' + f.kind;
+      // Announcer and winner plate: derived from the frame alone, so motion
+      // off shows the same words, only without the entrance.
+      const ann = announce(f);
+      announcer.textContent = ann.text;
+      announcer.parentNode.className = 'announcer' + (ann.text ? ' on ann-' + ann.kind : '');
+      const winner = f.kind === 'end' ? f.outcome.winner : f.kind === 'forfeit' && opts.replay && opts.replay.result ? opts.replay.result.winner : null;
+      for (const s of ['A', 'B']) els[s].corner.classList.toggle('winner', winner === s);
+      stageEl.classList.remove('shake', 'shake-big', 'flash-power');
       if (f.kind === 'forfeit') {
         els.A.cap.innerHTML = '<p>' + esc(L.outcomeLabel(opts.replay).text) + '</p>' + (!f.played ? '<p class="muted">No round was played; the bars show the start state at the deadline, not a result.</p>' : '<p class="muted">Bars show the re-derived state at the deadline (round ' + (f.round + 1) + '). No beat is invented for the missing reveal.</p>');
       }
@@ -1013,8 +1057,72 @@
       const top = row.offsetTop, h = row.offsetHeight;
       if (box.scrollHeight > box.clientHeight && (top < box.scrollTop + 30 || top + h > box.scrollTop + box.clientHeight)) box.scrollTop = Math.max(0, top - 60);
     }
+    function announce(f) {
+      if (f.kind === 'start') return { text: 'ROUND 1', kind: 'round' };
+      if (f.kind === 'round') return { text: 'ROUND ' + (f.round + 1), kind: 'round' };
+      if (f.kind === 'forfeit') return { text: 'TIME OUT', kind: 'timeout' };
+      if (f.kind === 'end') {
+        const r = f.outcome.result;
+        return { text: r === 'KO' ? 'K.O.' : r === 'DOUBLE_KO' ? 'DOUBLE K.O.' : r === 'HP_TIE' ? 'DRAW' : r === 'HP' ? 'DECISION' : String(r || ''), kind: r === 'KO' || r === 'DOUBLE_KO' ? 'ko' : 'end' };
+      }
+      return { text: '', kind: '' };
+    }
+    // Restart a CSS animation class on an element.
+    function replay(el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
+    // Arcade juice for one frame: sparks, floating numbers, shake, flash,
+    // BLOCKED / EVADE, the announcer's entrance. Reads the frame, changes nothing.
+    function juice(f) {
+      const token = ++fxToken;
+      const ann = announcer.parentNode;
+      if (f.kind === 'start' || f.kind === 'round') {
+        replay(ann, 'enter');
+        setTimeout(() => {
+          if (token !== fxToken || !root.isConnected) return;
+          announcer.textContent = 'FIGHT!';
+          ann.classList.add('ann-fight');
+          replay(ann, 'enter');
+          setTimeout(() => { if (token === fxToken) ann.classList.add('leave'); }, Math.max(250, 500 / speed));
+        }, Math.max(300, 700 / speed));
+      } else if (f.kind === 'end' || f.kind === 'forfeit') {
+        replay(ann, 'enter');
+        const w = f.kind === 'end' ? f.outcome.winner : (opts.replay && opts.replay.result || {}).winner;
+        if (w) {
+          const perfect = f.kind === 'end' && (w === 'A' ? f.a : f.b).hp === R.limits.hp;
+          setTimeout(() => {
+            if (token !== fxToken || !root.isConnected) return;
+            announcer.textContent = perfect ? 'PERFECT' : opts.mySide ? (opts.mySide === w ? 'YOU WIN' : 'YOU LOSE') : names[w].replace(/^[AB] /, '') + ' WINS';
+            ann.className = 'announcer on ann-win';
+            replay(ann, 'enter');
+          }, Math.max(600, 1100 / speed));
+        }
+      }
+      if (f.kind !== 'beat') return;
+      let big = 0, power = false;
+      for (const s of ['A', 'B']) {
+        const t = f.trace[s], o = f.trace[s === 'A' ? 'B' : 'A'], x = els[s];
+        const oEff = NAMES[o.effective];
+        if (t.actual_hp_lost > 0) {
+          big = Math.max(big, t.actual_hp_lost);
+          if (o.power && ['JAB', 'KICK', 'THROW'].includes(oEff)) power = true;
+          x.spark.className = 'fx-spark' + (t.actual_hp_lost >= 12 ? ' big' : '');
+          replay(x.spark, 'go');
+          replay(x.pop, 'go');
+          replay(x.lost, 'drain');
+          x.word.textContent = '';
+        } else if (t.effective === L.ID.BLOCK && [L.ID.JAB, L.ID.KICK].includes(o.effective)) {
+          x.word.textContent = 'BLOCKED'; x.word.className = 'fx-word w-block'; replay(x.word, 'go');
+        } else if (o.computed_damage === 0 && [L.ID.JAB, L.ID.KICK, L.ID.THROW].includes(o.effective) && t.effective === L.ID.DUCK) {
+          x.word.textContent = 'EVADE'; x.word.className = 'fx-word w-evade'; replay(x.word, 'go');
+        } else {
+          x.word.textContent = '';
+        }
+      }
+      if (big >= 12) replay(stageEl, big >= 20 ? 'shake-big' : 'shake');
+      if (power) replay(stageEl, 'flash-power');
+    }
     function animateFrame(f) {
       if (!motion()) return;
+      juice(f);
       for (const s of ['A', 'B']) ANIM.rate(els[s].avatar, speed);
       if (f.kind === 'beat') {
         for (const s of ['A', 'B']) {
@@ -1147,7 +1255,7 @@
       '<section class="panel player-panel"><h3>REPLAY &middot; RE-DERIVED FROM REVEALED PLANS</h3><div id="player"></div></section>' +
       '<section class="panel verify-panel" id="verify"><h3>VERIFICATION</h3><p class="muted">Recomputing digests and commitments&hellip;</p></section>' +
       plansPanel(replay));
-    track(createPlayer($('#player'), { frames, ids: { A: fighters.A.fighter_id, B: fighters.B.fighter_id }, names, links: true, replay, autoplay: true }));
+    track(createPlayer($('#player'), { frames, ids: { A: fighters.A.fighter_id, B: fighters.B.fighter_id }, names, links: true, replay, stageSeed: id, autoplay: true }));
     seriesLink(id, replay.mode).then(html => { if (tok === viewToken && $('#series-slot')) $('#series-slot').innerHTML = html; }).catch(() => {});
     markScrollers($('#view'));
     const v = await L.verifyReplay(replay, { rules: R, manifest: D.manifest, sha256: SHA }).catch(e => ({ checks: [{ id: 'error', label: 'Verification', status: 'FAIL', evidence: e.message, details: [] }], level: 'FAILED' }));
@@ -1308,7 +1416,7 @@
       '<section class="panel player-panel"><h3>' + (s.rounds.length ? 'ROUNDS SO FAR' : 'THE MAT') + '</h3><div id="player"></div></section>' +
       (s.rounds.length ? '<section class="panel"><h3>REVEALED NPC PLANS</h3><ul class="plain">' + s.rounds.map(r => '<li>ROUND ' + (r.round_index + 1) + ': ' + r.plans.B.actions.map((a, i) => NAMES[a] + (i === r.plans.B.power_slot ? '&#9733;' : '')).join(' ') + '</li>').join('') + '</ul></section>' : ''));
     const frames = practiceFrames(s);
-    const player = track(createPlayer($('#player'), { frames, ids: { A: 'practice:you', B: 'npc:' + s.npc }, names: { A: 'YOU', B: npc.name }, links: false, replay: {}, mySide: 'A', autoplay: false }));
+    const player = track(createPlayer($('#player'), { frames, ids: { A: 'practice:you', B: 'npc:' + s.npc }, names: { A: 'YOU', B: npc.name }, links: false, replay: {}, stageSeed: 'practice:' + s.npc, mySide: 'A', autoplay: false }));
     if (playFrom != null) {
       player.seek(playFrom, false);
       if (motion()) player.start(); else player.seek(frames.length - 1, false);
