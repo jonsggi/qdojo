@@ -332,7 +332,7 @@ async function main() {
     await page.waitForSelector('#planner');
     for (const k of ['4', '1', '2', '6', '5', '1']) await page.keyboard.press(k);
     await page.click('#fight');
-    await page.waitForSelector('tr.fr-beat');
+    await page.waitForSelector('tr.fr-beat', { state: 'attached' });   // the beat table is folded in practice
     await must((await page.locator('tr.fr-beat').count()) >= 1, 'resolved beats');
     await must(/REVEALED NPC PLANS/.test(await text(page, '#view')), 'the NPC plan revealed after the round');
     await page.waitForTimeout(600 * 3);
