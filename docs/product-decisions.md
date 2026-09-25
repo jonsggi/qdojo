@@ -1,8 +1,11 @@
-# Combat pivot decisions
+# Product decisions
 
-Date: 2026-09-21. Active release direction replaces the
-[previous riddle product decisions](archive/riddle-v0/docs/product-decisions.md).
-This is a build specification, not an assertion of implemented functionality.
+> **Purpose:** the decisions behind combat, what changed from the riddle plan, and the open values that block paid launch. \
+> **Audience:** the owner; reviewers; anyone proposing a product change. \
+> **Status:** reference (decision register, written 2026-09-21). It records decisions, not implemented functionality; for what runs, see the [roadmap](roadmap.md). \
+> **Last reviewed:** 2026-09-25
+
+The [previous riddle product decisions](archive/riddle-v0/docs/product-decisions.md) are archived.
 
 ## Product direction
 
@@ -80,7 +83,7 @@ approved registration prices, payout promises or evidence of profitability.
 | Live stake tiers/rake/recipients | Cost/economics report and release manifest | Development fake-fund profile only |
 | Timing windows/capacity | Measured network and worst-case cost report | Candidate profile in simulator/test environment |
 | Season start epoch | Published release schedule | No official season accrual |
-| Hostname, TLS, public availability and archiving | Operations release work | Local preview labelled legacy/planned |
+| Hostname, TLS, public availability and archiving | Operations release work | Public demo arena at qdojo.jonsggi.com, labelled simulated; no availability or archive promise |
 | Shareholder pool distribution identity/integration | Existing shareholder-product owner and audited accounting interface | Accrue only in test ledger; never guess a recipient |
 
 The allocation to a shareholder pool is defined; distributing that pool among

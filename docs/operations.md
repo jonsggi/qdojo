@@ -1,8 +1,13 @@
-# Operating combat qdojo
+# Operating QDOJO combat
 
-Status: planned combat operations. Current riddle deployment/commands are
-documented in [the historical runbook](archive/riddle-v0/docs/operations.md).
-Do not run legacy house settlement against a combat state directory.
+> **Purpose:** runtime authority, the production runbook for paid play, and the runbook for today's public demo arena. \
+> **Audience:** operators. \
+> **Status:** guide. §1–7 are the planned production runbook and are not in effect (nothing is deployed). §8 describes the demo arena that runs today. \
+> **Last verified:** 2026-09-25 (§8 against the systemd units, `combat/live.py`, `combat/devnet.py` and the `Dockerfile`)
+
+The riddle deployment is documented in
+[the historical runbook](archive/riddle-v0/docs/operations.md). Do not run
+legacy house settlement against a combat state directory.
 
 ## 1. Runtime responsibilities
 
@@ -104,11 +109,23 @@ NFTs and operator-run demo bots, labelled as such on every page.
 
 | Piece | Where |
 |---|---|
-| Arena runner | systemd user unit `qdojo-combat-live` on the ops host; `qdojo combat live` from `~/src/qdojo-live` |
+| Arena runner | systemd user unit `qdojo-combat-live` on the ops host: `qdojo combat live --profile demo --tick-seconds 1.5 --export-every 6` from the `~/src/qdojo-live` checkout, under `infisical run` so LLM bots get their OpenRouter key from the environment |
 | Arena state | `~/.qdojo/combat/arena/` (devnet journal, assets.json, chain.json, bot plan journals) |
-| Lineup | `~/.qdojo/combat/lineup.json` (label, policy / planner / llm, founding, cups, duels, ranked, reliability) |
+| Lineup | `~/.qdojo/combat/lineup-arena.json` (label, policy / planner / llm, founding, cups, duels, ranked, reliability); without `--lineup`, eight built-in demo bots |
 | Public export | `~/.qdojo/combat/public/combat/v1/`, served on the tailnet by `qdojo-combat-data` (port 8790) |
 | Site | Dokploy builds `Dockerfile`; nginx proxies `/data/combat/v1/` to the data server and falls back to the baked copy |
+
+The `demo` profile differs from the specified development values so a small
+bot population keeps fighting and seasons turn over quickly: 2,400-tick epochs
+(about an hour at 1.5 s per tick, so a four-epoch season lasts about four
+hours), up to 6 rated starts per pair per epoch (specified: 2) and a 60-tick
+rematch gap (specified: 120). The export's manifest and deployment label say
+which profile produced the data.
+
+The chain is `SimChain`: transactions land 1–3 ticks later, about 2% are
+dropped, execution fees burn a reserve the operator tops up, and fighter NFTs
+come from the simulated `AssetRegistry`, including an occasional market sale of
+an idle fighter.
 
 **Operate:**
 

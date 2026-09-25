@@ -1,8 +1,20 @@
 # Competition, progression and events
 
-Version: combat-v1 candidate 1. Planned behavior; replaces riddle-based
-progression and season scoring. Combat rounds and series fights are different:
-every fight has at most three dependent combat rounds.
+> **Purpose:** rating, belts, faults, seasons, duels and cups. \
+> **Audience:** players and spectators who want the standings explained; contract reviewers. \
+> **Status:** normative (combat-v1 candidate 1). Implemented in `combat/rating.py`, `combat/series.py` and the reference contract; running on the simulated chain in the demo arena. Replaces riddle-era progression and season scoring. \
+> **Last reviewed:** 2026-09-25 (header, status and links; rules text unchanged)
+
+Combat rounds and series fights are different: every fight has at most three dependent combat rounds.
+
+## Contents
+
+- [1. Rating and belts](#1-rating-and-belts)
+- [2. Faults and admission cooldown](#2-faults-and-admission-cooldown)
+- [3. Seasons and championship](#3-seasons-and-championship)
+- [4. Standalone duels](#4-standalone-duels)
+- [5. Cups](#5-cups)
+- [6. Required event tests](#6-required-event-tests)
 
 ## 1. Rating and belts
 

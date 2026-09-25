@@ -1,16 +1,27 @@
-# qdojo combat specification
+# Combat specification
 
-Version: combat-v1 candidate 1. Date: 2026-09-21.
-Status: implementation specification; combat is NOT implemented or deployed.
-Numeric balance parameters are a concrete starting ruleset, subject to the
-gates in [model.md](model.md). Their balance has not been established.
+> **Purpose:** scope, identity, money and cross-system invariants of combat-v1; the entry point to the normative set. \
+> **Audience:** contract and protocol reviewers, implementers. \
+> **Status:** normative (combat-v1 candidate 1, written 2026-09-21). Implemented and tested on a simulated chain with fake QU; **not deployed**. The strategic gates pass on held-out seeds ([validation-status.md](validation-status.md)); economics with real costs are not measured. \
+> **Last reviewed:** 2026-09-25 (header, status and links; rules text unchanged)
+
+## Contents
+
+- [1. Authority and reading order](#1-authority-and-reading-order)
+- [2. Product and terms](#2-product-and-terms)
+- [3. Scope and retired mechanics](#3-scope-and-retired-mechanics)
+- [4. Fighter identity and locks](#4-fighter-identity-and-locks)
+- [5. Money and settlement](#5-money-and-settlement)
+- [6. Authority, capacity and availability](#6-authority-capacity-and-availability)
+- [7. Versioning and deployment manifest](#7-versioning-and-deployment-manifest)
+- [8. Cross-system invariants](#8-cross-system-invariants)
 
 ## 1. Authority and reading order
 
 The product pivots from riddle solving to autonomous simultaneous combat.
-These documents replace the previous planned riddle release. Existing commands,
-website screens, exports and historic settlements still implement the old game
-until the migration tasks are completed.
+These documents replace the previous planned riddle release. The riddle game's
+commands, exports and historic settlements remain available as Legacy, in a
+namespace separate from combat.
 
 | Document | Owns |
 |---|---|
@@ -18,11 +29,11 @@ until the migration tasks are completed.
 | [matchmaking.md](matchmaking.md) | Queue compatibility, ordering and reservations |
 | [competition.md](competition.md) | Rating, belts, seasons, duels and cups |
 | [protocol.md](protocol.md) | Bytes, hashes, deadlines, authentication and state machine |
-| [api.md](api.md) | Bot interface, public data, replay and planned CLI |
+| [api.md](api.md) | Bot interface, public data, replay and the combat CLI |
 | [npcs.md](npcs.md) | Disclosed practice/exhibition policies and training randomness |
 | This document | Identity, money, scope and cross-system invariants |
 | [model.md](model.md) | Balance, exploit, economics and latency acceptance gates |
-| [pivot-plan.md](pivot-plan.md) | Implementation tasks and migration |
+| [pivot-plan.md](pivot-plan.md) | Historical: the implementation packages P0–P8 |
 | [roadmap.md](roadmap.md) | Dependencies and release sequence |
 | [operations.md](operations.md) | Runtime, incidents and release checklist |
 | [product-decisions.md](product-decisions.md) | Decisions and open deployment values |

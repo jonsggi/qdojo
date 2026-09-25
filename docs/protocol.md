@@ -1,6 +1,21 @@
 # Combat protocol v1
 
-Status: target specification, NOT the implemented riddle v0 wire format.
+> **Purpose:** bytes, hashes, procedures, the fight state machine, deadlines and service-failure rules. \
+> **Audience:** contract and protocol reviewers; anyone writing a client or an independent verifier. \
+> **Status:** normative. Implemented by `combat/codec.py` and the reference contract `combat/contract.py`, ported to `contracts/combat_contract/` and `contracts/qubic/QDOJO.h`; the frozen [commitment fixture](fixtures/commitment-v1.json) reproduces. Nothing is deployed. This is not the riddle v0 wire format. \
+> **Last reviewed:** 2026-09-25 (header, status and links; rules text unchanged)
+
+## Contents
+
+- [1. Platform and transport](#1-platform-and-transport)
+- [2. Hashes and fixed encodings](#2-hashes-and-fixed-encodings)
+- [3. Procedures and payloads](#3-procedures-and-payloads)
+- [4. Fight state machine and deadlines](#4-fight-state-machine-and-deadlines)
+- [5. Objective service failure](#5-objective-service-failure)
+- [6. Errors, replay and evidence](#6-errors-replay-and-evidence)
+- [7. Bounds and validation](#7-bounds-and-validation)
+- [8. Implementation boundary and conformance checklist](#8-implementation-boundary-and-conformance-checklist)
+
 [spec.md](spec.md) owns money/identity; [combat.md](combat.md) owns mechanics.
 Legacy 0x444F/DOJO messages continue to mean riddle v0 only.
 

@@ -1,9 +1,19 @@
-# Combat developer API and bot contract
+# Developer API and bot contract
 
-Status: target combat-v1 API. Existing riddle CLI and exports remain legacy.
-No combat command in this document is claimed to run yet.
-Start with [spec.md](spec.md), [combat.md](combat.md), [protocol.md](protocol.md).
-The [archived API](archive/riddle-v0/docs/api.md) describes current riddle code.
+> **Purpose:** the planner process interface, bot duties, the public read API, verification levels and the combat CLI. \
+> **Audience:** bot builders and tool authors. New here? Start with [build-a-bot.md](build-a-bot.md). \
+> **Status:** normative for §1–2 and §4; §3 and §6 describe what runs today. The riddle CLI and exports are Legacy; the [archived API](archive/riddle-v0/docs/api.md) covers them. \
+> **Last verified:** 2026-09-25
+
+## Contents
+
+- [1. Process interface](#1-process-interface)
+- [2. Scheduler vs planner](#2-scheduler-vs-planner)
+- [3. Public read API](#3-public-read-api)
+- [4. Verification levels](#4-verification-levels)
+- [5. Replay and spectator UX](#5-replay-and-spectator-ux)
+- [6. CLI](#6-cli)
+- [7. Files and migration](#7-files-and-migration)
 
 ## 1. Process interface
 
@@ -102,6 +112,13 @@ history_manifest.opponent_fight_ids lists exactly its fights. Rules:
 The whole observation written to stdin stays under 64 KiB; a runner refuses to
 start a planner with a larger one (OBSERVATION_TOO_LONG, which falls back).
 
+> **Implemented today (2026-09-25):** `prior_rounds` is filled as specified.
+> On the devnet and in the demo arena, `history_manifest` and
+> `opponent_history` are filled as above; in local practice they are empty.
+> In local practice `deadlines` and `observed_tick` are `null`. In
+> `self`/`opponent`, `power_available` is a boolean; inside beat records'
+> `before`/`after` states it is `0`/`1`.
+
 Planner response schema:
 
 ```json
@@ -185,6 +202,13 @@ evidence. Contract query methods expose the same bounded logical records.
 | cups/{id}.json | Descriptor, funding, seeds/bracket, schedule, check-in and pairing results |
 | events/{page}.json | Ordered event sequence and append-digest links |
 | npcs.json | Disclosed policy IDs/versions and practice/exhibition availability |
+
+> **Implemented today (2026-09-25):** `combat/export.py` writes `manifest.json`,
+> `rulesets/{digest}.json`, `book.json`, `index.json` (recent fights, fighters,
+> names, deployment label), `fights/{id}.json`, `fights/{id}/replay.json`,
+> `fighters/{id}.json`, `events/latest.json`, `npcs.json`, `results.json`,
+> `cups.json`, `duels.json` and `seasons.json`. Paged fighter histories,
+> per-season and per-cup files and paged events are not written yet.
 
 Bound contract query pages to 64 records. Cursors are explicit sequence IDs,
 not mutable array offsets. Pin snapshot tick or report a changed snapshot;
@@ -285,6 +309,18 @@ prompts. No command silently creates a seed, spends, registers or deploys.
 `Budget` fields in `qdojo/combat/bot.py`) and journals each plan and salt
 (0600) before it commits.
 
+Devnet state lives in `~/.qdojo/combat/devnet`, bot state in
+`~/.qdojo/combat/bots/`; `QDOJO_COMBAT_HOME` moves both, `--devnet` picks
+another devnet directory. `qdojo combat live` runs the public demo arena
+([operations.md](operations.md) §8).
+
+> **Known issue (2026-09-25):** `bot run --planner "…"` forfeits its first
+> fight on the devnet: the CLI advances ticks without waiting for the planner
+> subprocess (planned in the background), so the commit window closes before
+> the plan arrives, and the default budget then stops the bot after one fault.
+> `bot run --npc <name>` with an in-process policy works. The live arena is
+> unaffected because it advances ticks on a wall clock.
+
 Legacy riddle operation is documented in the archive. Do not point a new
 combat user at a riddle board, and do not imply that `./dojo` starts a
 combat fight.
@@ -296,9 +332,9 @@ namespace. Never load legacy rounds.json as combat. Secret plan journals are
 private, permission-restricted and excluded from exports/git. History caches
 contain only confirmed public information.
 
-Add combat-specific planner prompts under a new namespace during implementation.
-Existing prompts/solver-system.md and solver-user.md remain legacy runtime
-assets until their callers migrate. Keep a small dependency-free planner
+Combat planner prompts live under `prompts/combat/` (used by
+`combat/llm_planner.py`). prompts/solver-system.md and solver-user.md remain
+legacy runtime assets for the riddle solver. Keep a small dependency-free planner
 example, all NPC policies and an independently verified local simulator.
 
 Provide formal JSON schemas and frozen input/output examples as the SDK's first

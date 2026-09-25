@@ -1,12 +1,21 @@
 # Combat validation and economics
 
-Version: combat-v1 candidate 1. This document defines required measurements.
-It contains NO claim that combat balance, profitability or retention has
-already been demonstrated. Historic riddle experiments are
-[archived](archive/riddle-v0/docs/model.md) and are not combat evidence.
+> **Purpose:** the acceptance gates combat must pass: correctness, exploits, optimisation reward, fight shape, readability, timing, money and farming. \
+> **Audience:** reviewers deciding whether the ruleset is fit to launch. \
+> **Status:** normative (the gates). It defines measurements and claims none. Results so far are in [validation-status.md](validation-status.md): mechanical correctness and the 11 strategic gates measured so far pass on held-out seeds. Not measured: adaptation time against a style-switching opponent, §3 readability, §4 timing and contract cost, and economics with real costs. \
+> **Last reviewed:** 2026-09-25 (header, status and links; rules text unchanged)
 
-Local checks actually run are recorded in [validation-status.md](validation-status.md).
-They cover candidate arithmetic and a small smoke sample, not the release gates below.
+Historic riddle experiments are [archived](archive/riddle-v0/docs/model.md) and are not combat evidence.
+
+## Contents
+
+- [1. What success must mean](#1-what-success-must-mean)
+- [2. Required experiments](#2-required-experiments)
+- [3. Human readability and bot development](#3-human-readability-and-bot-development)
+- [4. Timing and compute](#4-timing-and-compute)
+- [5. Money model](#5-money-model)
+- [6. Farming and adversarial participation](#6-farming-and-adversarial-participation)
+- [7. Acceptance report](#7-acceptance-report)
 
 ## 1. What success must mean
 

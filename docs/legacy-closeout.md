@@ -1,6 +1,10 @@
 # Legacy riddle closeout plan
 
-Status: proposal (pivot-plan P8). Nothing in this document has been executed.
+> **Purpose:** how to settle what the retired riddle game still owes before combat launches. \
+> **Audience:** the owner; operators. \
+> **Status:** guide (proposal for stage P8). **Nothing in this document has been executed.** \
+> **Last reviewed:** 2026-09-25 (inventory figures dated 2026-09-23, not re-run)
+
 Every send below needs explicit authorisation and the existing
 [audit gates](../audits/README.md). The combat contract takes on no legacy
 liability, rating or record.

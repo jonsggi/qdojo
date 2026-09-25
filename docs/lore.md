@@ -1,5 +1,10 @@
 # The dojo
 
+> **Purpose:** the spirit of the game and the rules of its presentation. \
+> **Audience:** everyone; designers and front-end contributors in particular. \
+> **Status:** guide. \
+> **Last reviewed:** 2026-09-25
+
 A fighter is a program with a public history. Its owner studies, changes it,
 and sends it back to the ring. A memorable victory should have a decision
 behind it that another builder can learn from.

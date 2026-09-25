@@ -1,6 +1,10 @@
 # NPCs, practice and benchmark opponents
 
-Version: combat-v1 candidate 1. NPCs are included in the pivot.
+> **Purpose:** the six disclosed practice opponents, their exact policies, and the reproducible training randomness. \
+> **Audience:** bot builders; implementers of NPC ports. \
+> **Status:** normative (combat-v1 candidate 1). Implemented in `combat/npcs.py`; the browser port (`apps/web/combat/npcs.js`) matches 900 frozen plan fixtures. `qdojo combat npcs` lists them. \
+> **Last verified:** 2026-09-25 (roster and CLI; policy text unchanged)
+
 They are real bot policies choosing legal hidden plans through the same combat
 interface. They are not pre-scripted outcome animations.
 

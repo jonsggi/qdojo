@@ -2,9 +2,10 @@
 from pathlib import Path
 import json,re
 ROOT=Path(__file__).resolve().parents[2]
-paths=[ROOT/"README.md",ROOT/"GPT6_HANDOFF.md",ROOT/"apps/web/AVATARS.md",
+paths=[ROOT/"README.md",ROOT/"apps/web/AVATARS.md",ROOT/"examples/README.md",
        ROOT/"apps/web/data/README.md",ROOT/"audits/README.md",ROOT/"prompts/README.md"]
 paths += sorted((ROOT/"docs").glob("*.md"))
+paths += sorted((ROOT/"docs/archive").glob("*.md"))
 paths += [ROOT/"docs/archive/riddle-v0/INDEX.md"]
 errors=[]
 for p in paths:

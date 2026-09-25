@@ -1154,8 +1154,11 @@
       if (f.kind === 'beat') {
         for (const s of ['A', 'B']) {
           const t = f.trace[s];
-          const clip = { JAB: 'jab', KICK: 'kick', THROW: 'jab', DUCK: 'bow', EXHAUSTED: 'hit' }[NAMES[t.effective]];
-          if (clip) ANIM.play(els[s].avatar, clip);
+          // Every combat action has its own clip; a fighter who loses HP while
+          // not attacking or blocking shows the hit reaction instead.
+          const clip = { JAB: 'jab', KICK: 'kick', THROW: 'throw', DUCK: 'duck', BLOCK: 'block', RECOVER: 'recover', EXHAUSTED: 'exhausted' }[NAMES[t.effective]];
+          const struck = t.actual_hp_lost && (clip === 'duck' || clip === 'recover' || clip === 'exhausted');
+          if (clip && !struck) ANIM.play(els[s].avatar, clip);
           else if (t.actual_hp_lost) ANIM.play(els[s].avatar, 'hit', 80 / speed);
           if (t.actual_hp_lost) {
             const c = els[s].corner;

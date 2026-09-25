@@ -1,7 +1,35 @@
-# Contributing during the combat pivot
+# Contributing
 
-The [combat specification](spec.md) and [pivot plan](pivot-plan.md) govern new
-work. Current riddle code is supported legacy behavior until explicitly migrated.
+> **Purpose:** how to set up, test and change QDOJO without breaking its guarantees. \
+> **Audience:** contributors, human or agent. \
+> **Status:** guide. \
+> **Last verified:** 2026-09-25
+
+## Set up and test
+
+```sh
+uv sync            # or just run any `uv run …` command
+make hooks         # pre-commit: blocks staged seeds, runs `make test`
+make test          # Python tests, web unit tests, C++ engine and contract parity
+make web-e2e       # headless browser suite (needs a cached Playwright Chromium)
+make soak          # demo-arena soak, invariants checked every tick
+make test-all      # all of the above
+python3 docs/reference/check_docs.py   # doc links, rules matrix vs combat-v1.json
+```
+
+`make test` needs `uv` and Node; the C++ parity checks run when `g++` is present
+and are skipped otherwise. The Qubic Core targets (`make qubic-verify`,
+`qubic-core-test`, `qubic-core-syntax`) clone and build Core under
+`/tmp/qdojo-qubic` and are slow; see `contracts/qubic/README.md`.
+
+Published commands are tested: every `qdojo …` line in fenced blocks of
+`README.md`, `docs/api.md`, `docs/protocol.md` and `apps/web/llms.txt` is fed to
+the real argument parser (`packages/qdojo/tests/test_docs_commands.py`).
+
+## Rules for changes
+
+The normative documents ([docs index](README.md)) govern new work. Riddle code
+is supported Legacy until explicitly retired.
 
 - Keep core combat, protocol, matcher, rating and accounting pure with explicit
   state/tick inputs. No I/O, random damage, wall-clock ordering or float arithmetic.
