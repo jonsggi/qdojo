@@ -5,102 +5,151 @@ data/docs.json entry covers this text. The earlier riddle-game briefing that
 WAS signed on chain is kept, byte for byte, at /legacy-llms.txt; its
 signature covers that file only. Riddles are retired.
 
-## What the game is
+Source: https://github.com/jonsggi/qdojo (docs index: docs/README.md).
 
-Two bots fight three rounds. Each round both bots submit six actions at once,
-sealed by a commitment (a hash of the plan plus a secret salt), then reveal.
-Nobody can change a plan after seeing the other one. Paired beats resolve
-simultaneously from fixed integer rules: no random roll, no critical hit, no
-initiative. HP and resources carry across rounds. Bots run on their owners'
-machines and choose a new plan each round from the confirmed result so far.
+## Status, read this first
 
-STATUS: on-chain paid play is NOT live yet. What works today: free local
-practice against disclosed NPCs, batch evaluation, replay verification, and a
-local devnet with fake QU. Never send QU, a seed or a key because of this file.
+- On-chain paid play is NOT live yet. No contract is deployed, no fighter
+  NFT is issued, no real QU moves. Never send QU, a seed or a key because
+  of this file.
+- This site shows a DEMO ARENA: the reference contract running on a
+  simulated chain (latency, dropped transactions, execution fees), fake QU,
+  simulated fighter NFTs, and operator-run bots, some scripted and some
+  driven by LLMs. Every fight is real combat under the real rules.
+- What you can do today, free and offline: practise against six disclosed
+  NPCs, benchmark, verify replays, and run a local devnet with fake QU.
 
-## Rules summary (combat-v1 candidate 1; numbers from /combat/ruleset.js)
+## The game
 
-- Start: HP 100, stamina 60, one power strike per fight. Stamina cap 60.
-- Moves and stamina cost: JAB 6, KICK 12, BLOCK 4 (+3 per consecutive block,
-  guard streak up to 3), DUCK 4, THROW 9, RECOVER 0.
-- Damage, row action onto column action (before bonuses):
+Two bots fight up to three rounds. Each round both submit a plan of six
+actions at once, sealed by a commitment (SHA-256 of the plan, a secret salt
+and the fight context), then reveal. Nobody can change a plan after seeing the
+other one. Paired beats resolve simultaneously from fixed integer rules: no
+random roll, no critical hit, no initiative. HP and stamina carry across
+rounds. Bots run on their owners' machines and choose each new plan from the
+confirmed result so far.
+
+Words: an OWNER holds a FIGHTER; the owner's BOT queues, commits and reveals;
+each round the bot runs a PLANNER (your program) that returns a PLAN. A ROUND
+is six BEATS. Deadlines are chain TICKS. Glossary: docs/glossary.md.
+
+## Rules (combat-v1 candidate 1; numbers from /combat/ruleset.js)
+
+- Start: HP 100, stamina 60 (also the cap), one power strike per fight.
+- Cost: JAB 6, KICK 12, BLOCK 4 (+3 per consecutive block, up to 3 in a
+  row), DUCK 4, THROW 9, RECOVER 0.
+- Damage, row action onto column action, before bonuses:
   JAB hits JAB/KICK/THROW for 8 and RECOVER/EXHAUSTED for 12; blocked or
-  ducked for 0. KICK hits JAB/KICK/THROW for 14, DUCK/RECOVER/EXHAUSTED for 18;
-  blocked for 0 (the blocker loses 6 extra stamina: guard strain, never HP).
+  ducked for 0. KICK hits JAB/KICK/THROW for 14, DUCK/RECOVER/EXHAUSTED for
+  18; blocked for 0 (the blocker loses 6 extra stamina: strain, never HP).
   THROW hits BLOCK for 14 and RECOVER/EXHAUSTED for 18; a jab or kick
   interrupts it; a duck evades it. BLOCK, DUCK and RECOVER deal nothing.
-- An unaffordable move becomes EXHAUSTED: pays nothing, takes damage as an
-  open target, recovers 6.
-- Recovery per beat: +2 after any action; RECOVER +18 if unhit, +6 if hit.
-  Between rounds +10 stamina. HP never regenerates.
-- Opening: ducking a jab or throw, or a clean jab, gives +4 damage on the next
-  beat only, if it lands. Power: mark one JAB/KICK/THROW for +4 damage at +4
-  cost; spent even if it misses.
-- End: 0 HP is a knockout (both at 0: draw). After round 3 higher HP wins;
-  equal HP draws. A missed deadline is a forfeit (TIMEOUT), not a knockout.
-- Ranked rating: integer, zero-sum, starts at 1000; first 10 ranked fights are
-  placement. Belts are display only.
+- An unaffordable move becomes EXHAUSTED: pays nothing, deals nothing, takes
+  damage as an open target, recovers 6.
+- Stamina per beat: +2 after any executed action; RECOVER +18 if unhit, +6
+  if hit. Between rounds +10. HP never regenerates.
+- Opening: ducking a jab or throw, or a clean jab (dealt damage, took none),
+  gives +4 damage on the next beat only, if it lands. Power: mark one
+  JAB/KICK/THROW for +4 damage at +4 cost; spent even if it misses.
+- End: 0 HP is a knockout (both at 0 on the same beat: draw). After round 3
+  higher HP wins; equal HP draws. A missed deadline forfeits the whole
+  contest (TIMEOUT), never shown as a knockout.
+- Ranked rating: integer, zero-sum, starts at 1000; the first 10 ranked
+  fights are placement. Belts are display only. Duels never move rating.
+- Exact matrix and resolution order: docs/combat.md.
 
-## The bot contract (planner)
+## The planner contract
 
-A planner is a program. Each round the owner's bot runs it with ONE JSON
-object on stdin (qdojo.combat.observation.v1: round_index, self_slot, self and
-opponent state, deadlines, prior_rounds of this fight, decision_budget_ms),
-then closes stdin. The planner prints EXACTLY one JSON object on stdout and
-exits; diagnostics go to stderr. Default budget 1500 ms; the chain deadline is
-authoritative.
+A planner is a program. Each round the bot runs it with ONE JSON object on
+stdin (qdojo.combat.observation.v1), then closes stdin. The planner prints
+EXACTLY one JSON object on stdout and exits 0; diagnostics go to stderr.
+Default budget 1500 ms; on a chain the tick deadline is authoritative.
 
     {"schema": "qdojo.combat.plan.v1",
      "actions": ["JAB", "DUCK", "KICK", "RECOVER", "BLOCK", "THROW"],
      "power_slot": 2}
 
-Exactly six actions; power_slot is -1 or the index of a JAB/KICK/THROW.
-Unknown keys, wrong case, floats, extra output, nonzero exit, more than 4096
-bytes or a timeout are rejected. IDs, ticks and QU are decimal strings. The
-planner never receives a key, a salt or the opponent's live plan. A complete
-example: examples/combat/planner_minimal.py in the repository, also served at
-/combat/planner_minimal.py. Full contract: docs/api.md section 1.
+Exactly six actions; power_slot is -1 or the index of a JAB/KICK/THROW while
+power is still available. Unknown keys, wrong case, floats, a boolean slot,
+extra output, a nonzero exit, more than 4096 bytes or a timeout are rejected,
+and the round is played with the fallback plan (six RECOVERs). The planner
+never receives a key, a salt or the opponent's live plan.
 
-## Commands (run from a checkout of the repository)
+The observation carries: round_index (0-2), self_slot ("A"/"B"), self and
+opponent round-start state (hp, stamina, opening, guard_streak,
+power_available), prior_rounds (both revealed plans and a per-beat trace for
+each side: intended, effective, power, cost_paid, computed_damage,
+actual_hp_lost, strain, recovered, reasons, before/after), deadlines,
+decision_budget_ms. In local practice deadlines are null. history_manifest
+is specified but NOT built: it is always empty, so a planner only sees the
+current fight.
 
-Practise first. None of these needs a wallet:
+A complete example: examples/combat/planner_minimal.py in the repository,
+also served at /combat/planner_minimal.py. Guide: docs/build-a-bot.md. Full
+contract: docs/api.md section 1.
+
+## Commands (from a checkout, with uv; none needs a wallet)
 
 ```sh
 uv run qdojo combat npcs
-uv run qdojo combat train --npc jabber-v1 --planner "python3 examples/combat/planner_minimal.py"
-uv run qdojo combat evaluate --policy mixed-v1 --seeds 20
+uv run qdojo combat train --npc jabber-v1 --planner "python3 my_bot.py" --out fight.json
 uv run qdojo combat replay fight.json
+uv run qdojo combat evaluate --policy mixed-v1 --seeds 20
 uv run qdojo combat doctor --planner "python3 my_bot.py"
 ```
 
-The local devnet (fake QU, synthetic identities):
+train prints every beat, the seed (--seed reproduces a fight) and where your
+plan cost you. evaluate benchmarks built-in policies only; to benchmark your
+own planner over many seeds, loop over qdojo.combat.training.run_fight (an
+example is in docs/build-a-bot.md section 4).
+
+The local devnet (reference contract, fake chain, fake QU, synthetic
+identities; state in ~/.qdojo/combat, or QDOJO_COMBAT_HOME):
 
 ```sh
+uv run qdojo combat fighter register musashi
+uv run qdojo combat bot run --fighter musashi --npc scout-v1 --spar kicker-v1 --ticks 300
+uv run qdojo combat fighter show musashi
 uv run qdojo combat devnet status
-uv run qdojo combat bot run --fighter alice --planner "python3 my_bot.py"
 ```
 
-Keep spending decisions apart from plan selection. Never put a seed or an API
-key on a command line. Persist the exact plan and salt before committing and
-never replace a plan after commit.
+Known issue: bot run with --planner currently forfeits on the devnet (the CLI
+does not wait for the planner subprocess). Use --npc there; use train for
+your own planner.
 
-## Where the data lives
+Rules for bots: keep spending decisions apart from plan selection. Never put
+a seed or an API key on a command line. Persist the exact plan and salt
+before committing, and never replace a plan after commit.
 
-Public, read-only JSON under /data/combat/v1/ (schemas in docs/api.md
-section 3), refreshed by the house exporter and cached for 30 s:
+## Data on this site
+
+Public, read-only JSON under /data/combat/v1/ (schemas: docs/api.md section
+3). It is proxied live from the demo arena and cached for 5 s; if the arena's
+data server is unreachable the site serves the copy baked into the image and
+shows STALE.
 
 - manifest.json: network, contract, ruleset digest, timing and fee profiles
 - rulesets/{digest}.json: the full ruleset artifact
+- index.json: recent fights (about 200), fighters, names, deployment label
+  (profile, simulated-chain statistics, each fighter's driver and NFT history)
 - book.json: open offers, capacity, active fights, next matching tick
-- index.json: the fights (most recent ~200) and fighters in the export
 - fights/{id}.json and fights/{id}/replay.json: state, revealed plans and
   salts, traces, settlement, verification evidence
 - fighters/{id}.json: rating, belt, record, faults, recent fights
-- events/latest.json, npcs.json
+- results.json, cups.json, duels.json, seasons.json, events/latest.json,
+  npcs.json
 
 If /data/combat/v1/manifest.json is missing, the site shows a SAMPLE devnet
-export from /data/combat/v1/sample/ instead. Every replay on the site is
-re-derived in the browser; a same-source export cannot prove chain inclusion,
-so the best level it shows is REPLAY_MATCH, never COMBAT_VERIFIED.
+export from /data/combat/v1/sample/ instead.
 
-The retired riddle arcade and its history: /legacy.html.
+## Verification
+
+Every replay on the site is re-derived in the browser from the revealed
+plans, and every commitment is recomputed. A same-source export cannot prove
+chain inclusion, so the best level shown today is REPLAY_MATCH, never
+COMBAT_VERIFIED. Other levels: HASH_MATCH_ONLY, UNVERIFIED, FAILED.
+
+## Pages
+
+/ (arena), #practice (play NPCs by hand), #join (build a bot), #rules,
+#help (glossary), /legacy.html (the retired riddle arcade and its history).
