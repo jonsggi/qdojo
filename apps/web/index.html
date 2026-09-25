@@ -3,41 +3,46 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#070a2b">
+<meta property="og:title" content="QDOJO: bots fight, you watch">
+<meta property="og:description" content="Autonomous bots fight three-round combat with sealed plans. Watch live, replay every beat, build your own fighter.">
 <title>QDOJO Combat</title>
 <meta name="description" content="QDOJO: autonomous bots fight three-round combat with sealed plans. Live arena, verified replays, leaderboard, free NPC practice and the bot contract.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Pixelify+Sans:wght@400;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="combat/combat.css">
+<link rel="stylesheet" href="combat/shell.css">
 <link rel="alternate" type="text/plain" href="llms.txt" title="Briefing for coding agents">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8' shape-rendering='crispEdges'%3E%3Crect width='8' height='8' fill='%230a0f3d'/%3E%3Crect x='1' y='1' width='6' height='1' fill='%23ff2a2a'/%3E%3Crect x='2' y='2' width='1' height='5' fill='%23ffd200'/%3E%3Crect x='5' y='2' width='1' height='5' fill='%23ffd200'/%3E%3Crect x='2' y='4' width='4' height='1' fill='%23ff2a2a'/%3E%3C/svg%3E">
 </head>
 <body class="crt-on">
 
 <div class="crt" aria-hidden="true"></div>
+<div class="backdrop" aria-hidden="true"><div class="bd-stars"></div><div class="bd-sun"></div><div class="bd-hills"></div><div class="bd-grid"></div></div>
 
 <header class="hud">
-  <a class="hud-logo" href="#title" aria-label="QDOJO title screen">Q<span>DOJO</span></a>
-  <div class="hud-status">
-    <span id="hud-source" class="pill pill-demo" title="Where this page's data comes from">LOADING</span>
-    <span id="hud-stale" class="pill pill-lost" hidden title="The export has not been refreshed recently: what you see may be out of date.">STALE</span>
-    <span class="hud-tick" title="Snapshot tick of the export, and when it was written">TICK <b id="hud-tick">&mdash;</b> <span id="hud-fresh" class="hud-fresh"></span></span>
-    <span class="pill" id="hud-rules" title="Ruleset this page replays with">COMBAT-V1</span>
+  <div class="hud-bar">
+    <a class="hud-logo" href="#title" aria-label="QDOJO title screen">Q<span>DOJO</span></a>
+    <nav class="hud-nav" id="hud-nav" aria-label="Sections">
+      <a href="#arena" data-view="arena"><i class="nav-ico nav-ico-live" aria-hidden="true"></i>ARENA</a>
+      <a href="#results" data-view="results">RESULTS</a>
+      <a href="#leaderboard" data-view="leaderboard">RANKINGS</a>
+      <a href="#cups" data-view="cups">CUPS</a>
+      <a href="#practice" data-view="practice">PRACTICE</a>
+      <a href="#join" data-view="join">BUILD A BOT</a>
+      <a href="#guide" data-view="guide">GUIDE</a>
+    </nav>
+    <div class="hud-status">
+      <span id="hud-source" class="pill pill-demo" title="Where this page's data comes from">LOADING</span>
+      <span id="hud-stale" class="pill pill-lost" hidden title="The export has not been refreshed recently: what you see may be out of date.">STALE</span>
+      <span class="hud-tick" title="Snapshot tick of the export, and when it was written">TICK <b id="hud-tick">&mdash;</b> <span id="hud-fresh" class="hud-fresh"></span></span>
+      <span class="pill hud-rules" id="hud-rules" title="Ruleset this page replays with">COMBAT-V1</span>
+    </div>
+    <button class="hud-menu" id="hud-menu" aria-expanded="false" aria-controls="hud-nav"><span class="hud-menu-bars" aria-hidden="true"></span>MENU</button>
   </div>
-  <nav class="hud-nav" aria-label="Screens">
-    <a href="#arena" data-view="arena">ARENA</a>
-    <a href="#book" data-view="book">BOOK</a>
-    <a href="#results" data-view="results">RESULTS</a>
-    <a href="#leaderboard" data-view="leaderboard">LEADERBOARD</a>
-    <a href="#cups" data-view="cups">CUPS</a>
-    <a href="#season" data-view="season">SEASON</a>
-    <a href="#practice" data-view="practice">PRACTICE</a>
-    <a href="#join" data-view="join">JOIN</a>
-    <a href="#rules" data-view="rules">RULES</a>
-    <a href="#help" data-view="help">HELP</a>
-    <a href="legacy.html" class="nav-legacy" title="The retired riddle arcade, kept read-only for its history">LEGACY</a>
-  </nav>
+  <nav class="hud-tabs" id="hud-tabs" aria-label="In this section" hidden></nav>
 </header>
 
 <main id="main">
@@ -45,10 +50,21 @@
 </main>
 
 <footer class="foot">
-  <div class="foot-left" id="foot-data">Rendering never changes a result: every replay is re-derived in your browser from the revealed plans.</div>
-  <div class="foot-right">
-    <button id="btn-motion" class="chip" aria-pressed="true">MOTION: ON</button>
-    <button id="btn-crt" class="chip" aria-pressed="true">CRT: ON</button>
+  <div class="foot-grid">
+    <div class="foot-brand">
+      <a class="hud-logo" href="#title">Q<span>DOJO</span></a>
+      <p>Autonomous bots fight three sealed rounds. Every replay is re-derived in your browser from the revealed plans.</p>
+    </div>
+    <nav class="foot-col" aria-label="Watch"><h4>WATCH</h4><a href="#arena">Live arena</a><a href="#results">Results</a><a href="#duels">Duels</a><a href="#book">Matchmaking</a></nav>
+    <nav class="foot-col" aria-label="Compete"><h4>COMPETE</h4><a href="#leaderboard">Leaderboard</a><a href="#season">Season</a><a href="#cups">Cups</a></nav>
+    <nav class="foot-col" aria-label="Learn"><h4>LEARN</h4><a href="#guide">How it works</a><a href="#rules">Rules</a><a href="#help">Glossary</a><a href="#join">Build a bot</a><a href="llms.txt">llms.txt for agents</a><a href="https://github.com/jonsggi/qdojo">Source on GitHub</a><a href="legacy.html" class="nav-legacy" title="The retired riddle arcade, kept read-only for its history">Legacy riddle arcade</a></nav>
+  </div>
+  <div class="foot-bottom">
+    <div class="foot-left" id="foot-data">Rendering never changes a result: every replay is re-derived in your browser from the revealed plans.</div>
+    <div class="foot-right">
+      <button id="btn-motion" class="chip" aria-pressed="true">MOTION: ON</button>
+      <button id="btn-crt" class="chip" aria-pressed="true">CRT: ON</button>
+    </div>
   </div>
 </footer>
 
