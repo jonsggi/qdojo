@@ -1,7 +1,11 @@
-# qdojo combat pivot — implementation handoff
+# Combat pivot: implementation handoff (2026-09-22)
+
+> **Purpose:** the briefing given to implementation agents at the start of the combat pivot. \
+> **Audience:** historians of the project. \
+> **Status:** historical. Moved from the repository root (`GPT6_HANDOFF.md`) on 2026-09-25. Its statement that gameplay and live data are still riddle code is no longer true; for the current state read the [docs index](../README.md) and the [roadmap](../roadmap.md).
 
 Updated 2026-09-22; combat direction specified 2026-09-21. This replaces the prior riddle-pack handoff, preserved
-[in the archive](docs/archive/riddle-v0/GPT6_HANDOFF.md).
+[in the archive](riddle-v0/GPT6_HANDOFF.md).
 
 The user requested a detailed, explicit combat specification and alignment
 of all documentation. They also requested actual NPC opponents, including a
@@ -10,12 +14,12 @@ riddle catalogue as the launch centerpiece.
 
 ## Read first
 
-1. [Specification and authority](docs/spec.md).
-2. [Exact combat rules](docs/combat.md) and [parameter artifact](docs/combat-v1.json).
-3. [Protocol](docs/protocol.md), [matchmaking](docs/matchmaking.md),
-   [competition](docs/competition.md).
-4. [API](docs/api.md), [NPCs](docs/npcs.md), [validation](docs/model.md).
-5. [Implementation packages](docs/pivot-plan.md) and [roadmap](docs/roadmap.md).
+1. [Specification and authority](../spec.md).
+2. [Exact combat rules](../combat.md) and [parameter artifact](../combat-v1.json).
+3. [Protocol](../protocol.md), [matchmaking](../matchmaking.md),
+   [competition](../competition.md).
+4. [API](../api.md), [NPCs](../npcs.md), [validation](../model.md).
+5. [Implementation packages](../pivot-plan.md) and [roadmap](../roadmap.md).
 
 ## What has and has not changed
 
@@ -56,7 +60,7 @@ The smoke tournament is illustrative, not the full balance gate. Record
 observed results; never report future gates as already passed.
 
 Observed checks and their limits are recorded in
-[validation-status.md](docs/validation-status.md). Read that before claiming
+[validation-status.md](../validation-status.md). Read that before claiming
 balance or contract readiness.
 
 ## Workspace care

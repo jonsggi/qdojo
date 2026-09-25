@@ -1,6 +1,20 @@
 # Automatic matchmaking
 
-Version: combat-v1 candidate 1. Status: implementation specification.
+> **Purpose:** the public book, offer compatibility, deterministic pairing order, races and autonomous budgets. \
+> **Audience:** contract reviewers; bot builders who automate queue entry. \
+> **Status:** normative (combat-v1 candidate 1). Implemented in `combat/matchmaking.py` and the reference contract on the simulated chain. The public demo arena loosens the per-pair limits and says so in its export ([operations.md](operations.md) §8). \
+> **Last reviewed:** 2026-09-25 (header, status and links; rules text unchanged)
+
+## Contents
+
+- [1. Public book and admission](#1-public-book-and-admission)
+- [2. Compatibility predicate](#2-compatibility-predicate)
+- [3. Exact ordering and work bounds](#3-exact-ordering-and-work-bounds)
+- [4. Races and lifecycle](#4-races-and-lifecycle)
+- [5. Autonomous budgets](#5-autonomous-budgets)
+- [6. Public UX and abuse boundaries](#6-public-ux-and-abuse-boundaries)
+- [7. Required scenarios](#7-required-scenarios)
+
 Fight mechanics live in [combat.md](combat.md); money/identity in [spec.md](spec.md).
 
 ## 1. Public book and admission

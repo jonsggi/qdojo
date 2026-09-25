@@ -1,7 +1,9 @@
-# Implementation handoff: riddle game to combat
+# Implementation plan: riddle game to combat
 
-Date: 2026-09-21. This is a documentation/specification change.
-No production combat engine, contract, command or UI is delivered by these docs.
+> **Purpose:** the original work packages P0–P8 for the combat pivot, with their acceptance criteria. \
+> **Audience:** reviewers checking what each stage was meant to prove. \
+> **Status:** historical (written 2026-09-21). P0–P7 are done on a simulated chain and the module layout in §3 now exists; current state is in the [roadmap](roadmap.md). Kept in place because code and contract READMEs cite its package numbers. \
+> **Last reviewed:** 2026-09-25
 
 ## 1. Start here
 

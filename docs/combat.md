@@ -1,7 +1,22 @@
-# Combat engine: combat-v1 candidate 1
+# Combat rules: combat-v1 candidate 1
 
-Owner of all mechanical rules. Read [spec.md](spec.md) for scope and money.
-Status: implemented in Python, C++ and browser engines that agree on 10,000 frozen fights; numerical balance must still pass [model.md](model.md).
+> **Purpose:** every mechanical rule: state, actions, the damage matrix, exact beat resolution and hand-checkable vectors. \
+> **Audience:** bot builders who want exact numbers; implementers; reviewers. Scope and money are in [spec.md](spec.md). \
+> **Status:** normative. Implemented in Python (`combat/engine.py`), C++ (`contracts/combat_core/`) and the browser (`apps/web/combat/engine.js`); all three agree on 10,000 frozen fights. The §5 matrix is machine-checked against [combat-v1.json](combat-v1.json) by `docs/reference/check_docs.py`. Balance: see [validation-status.md](validation-status.md). \
+> **Last verified:** 2026-09-25 (§8 vectors run in the test suite; rules text unchanged)
+
+## Contents
+
+- [1. Design contract](#1-design-contract)
+- [2. State and constants](#2-state-and-constants)
+- [3. Plan format](#3-plan-format)
+- [4. Moves](#4-moves)
+- [5. Complete damage matrix](#5-complete-damage-matrix)
+- [6. Exact beat resolution](#6-exact-beat-resolution)
+- [7. Exact round and fight pseudocode](#7-exact-round-and-fight-pseudocode)
+- [8. Hand-checkable acceptance vectors](#8-hand-checkable-acceptance-vectors)
+- [9. Trace and explanation requirements](#9-trace-and-explanation-requirements)
+- [10. Bot optimization and uncertainty](#10-bot-optimization-and-uncertainty)
 
 ## 1. Design contract
 
