@@ -734,6 +734,14 @@
 
   // ---- LEADERBOARD -------------------------------------------------------------------
 
+  // Wins over decided-or-drawn ranked fights, as a bar a glance can compare.
+  function winRateCell(r) {
+    const n = (r.W || 0) + (r.D || 0) + (r.L || 0);
+    if (!n) return '<td class="wr"><span class="muted">&mdash;</span></td>';
+    const w = Math.round(100 * (r.W || 0) / n), d = Math.round(100 * (r.D || 0) / n);
+    return '<td class="wr" title="' + w + '% wins, ' + d + '% draws of ' + n + ' ranked fights"><span class="wr-bar"><i class="wr-w" style="width:' + w + '%"></i><i class="wr-d" style="width:' + d + '%"></i></span><span class="wr-n">' + w + '%</span></td>';
+  }
+
   async function viewLeaderboard(tok) {
     if (needData()) return;
     const index = await fetchJson('index.json');
@@ -751,12 +759,13 @@
       const r = f.record || {};
       return '<tr><td class="num rank">' + (i + 1) + '</td><td>' + fighterLink(f.fighter_id) + (f.house_npc ? ' <span class="pill tiny">HOUSE NPC</span>' : '') + '</td>' +
         '<td class="num"><b>' + esc(f.lifetime_rating) + '</b></td><td>' + beltCell(f) + '</td>' +
-        '<td class="num">' + esc(r.W || 0) + '</td><td class="num">' + esc(r.D || 0) + '</td><td class="num">' + esc(r.L || 0) + '</td>' +
+        '<td class="num">' + esc(r.W || 0) + '</td><td class="num">' + esc(r.D || 0) + '</td><td class="num">' + esc(r.L || 0) + '</td>' + winRateCell(r) +
         '<td class="num">' + esc(r.FW || 0) + '/' + esc(r.FL || 0) + '</td><td class="num' + (faults ? ' neg' : '') + '">' + faults + '</td>' +
         '<td class="form-cell">' + formCell(forms[i]) + '</td></tr>';
     }).join('');
     setView(screen('LEADERBOARD', 'LIFETIME COMBAT RATING &middot; ' + esc(rows.length) + ' FIGHTERS &middot; SNAPSHOT TICK ' + esc(index.generated_tick)) +
-      '<section class="panel panel-yellow"><h3>RANKED</h3>' + (rows.length ? '<div class="tscroll"><table class="board"><thead><tr><th class="num">#</th><th>FIGHTER</th><th class="num">RATING</th><th>BELT</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num">FORFEITS W/L</th><th class="num">FAULTS</th><th>FORM (NEWEST FIRST)</th></tr></thead><tbody>' + body + '</tbody></table></div>' : '<p class="muted">No fighters yet.</p>') +
+      (rows.length >= 3 ? '<section class="lb-hero" aria-label="Top three"><div class="t-podium">' + podiumHtml(rows) + '</div></section>' : '') +
+      '<section class="panel panel-yellow"><h3>RANKED</h3>' + (rows.length ? '<div class="tscroll"><table class="board"><thead><tr><th class="num">#</th><th>FIGHTER</th><th class="num">RATING</th><th>BELT</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th>WIN RATE</th><th class="num">FORFEITS W/L</th><th class="num">FAULTS</th><th>FORM (NEWEST FIRST)</th></tr></thead><tbody>' + body + '</tbody></table></div>' : '<p class="muted">No fighters yet.</p>') +
       '<p class="tiny muted">Ratings start at 1000 and move by the integer formula in RULES; W/D/L are ranked contract records, forfeits separate. The first 10 ranked fights are placement: shown white and PROVISIONAL. ' +
       'FORM: W win, L loss, D draw, N no result (double fault or void); lower case is a forfeit. Belts are display only: they change no stats.</p></section>');
   }
@@ -1553,6 +1562,19 @@
 
   // ---- TITLE extras: what the game is, who is winning, what just happened -------------
 
+  // The top three on blocks, gold in the middle. rows: L.leaderboard() output.
+  function podiumHtml(rows) {
+    const top = rows.slice(0, 3);
+    if (!top.length) return '<p class="muted">No fighters yet.</p>';
+    return [1, 0, 2].filter(i => top[i]).map(i => {
+      const f = top[i].f;
+      return '<a class="pod pod-' + (i + 1) + '" href="#fighter/' + esc(f.fighter_id) + '">' +
+        '<span class="avatar avatar-pod" data-anim="' + (i === 0 ? 'win' : 'idle') + '" data-identity="' + esc(f.fighter_id) + '">' + (A ? A.svg(f.fighter_id, 'sprite') : '') + '</span>' +
+        '<span class="pod-name">' + esc(short(f.fighter_id)) + '</span><span class="pod-rating">' + esc(f.lifetime_rating) + '</span>' +
+        '<span class="pod-block"><b>' + (i + 1) + '</b></span></a>';
+    }).join('');
+  }
+
   async function titleExtras(tok) {
     const box = $('#title-extras');
     if (!box) return;
@@ -1572,15 +1594,7 @@
       latestDone(6),
     ]);
     if (tok !== viewToken) return;
-    const top = L.leaderboard(fighters.filter(Boolean)).slice(0, 3);
-    const order = [1, 0, 2].filter(i => top[i]);
-    $('#t-podium').innerHTML = top.length ? order.map(i => {
-      const f = top[i].f;
-      return '<a class="pod pod-' + (i + 1) + '" href="#fighter/' + esc(f.fighter_id) + '">' +
-        '<span class="avatar avatar-pod" data-anim="' + (i === 0 ? 'win' : 'idle') + '" data-identity="' + esc(f.fighter_id) + '">' + (A ? A.svg(f.fighter_id, 'sprite') : '') + '</span>' +
-        '<span class="pod-name">' + esc(short(f.fighter_id)) + '</span><span class="pod-rating">' + esc(f.lifetime_rating) + '</span>' +
-        '<span class="pod-block"><b>' + (i + 1) + '</b></span></a>';
-    }).join('') : '<p class="muted">No fighters yet.</p>';
+    $('#t-podium').innerHTML = podiumHtml(L.leaderboard(fighters.filter(Boolean)));
     $('#t-latest').innerHTML = latest.length ? latest.map(s => {
       const out = summaryOutcome(s), w = out.outcome ? out.outcome.winner : null;
       const a = s.fighters.A.fighter_id, b = s.fighters.B.fighter_id;

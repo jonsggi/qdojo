@@ -17,38 +17,36 @@
   --hud-h: 58px;
 }
 
-/* ---- backdrop: night sky, sun, hills, grid floor ------------------------ */
-html { background: var(--sky-1); }
+/* ---- backdrop: a castle rooftop at night, the classic versus stage ------- */
+html { background: #0a0820; }
 body { background: transparent; }
 .backdrop { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none;
-  background: linear-gradient(180deg, var(--sky-1) 0%, var(--sky-2) 48%, var(--sky-3) 72%, #12051f 100%); }
-.bd-stars { position: absolute; inset: 0 0 35% 0; opacity: .75;
+  background: linear-gradient(180deg, #06051a 0%, #120e3a 45%, #2b1a4a 75%, #3d1f38 100%); }
+.bd-stars { position: absolute; inset: 0 0 40% 0; opacity: .7;
   background-image:
-    radial-gradient(1px 1px at 12% 18%, #fff 99%, transparent), radial-gradient(1px 1px at 27% 42%, #9fe9ff 99%, transparent),
-    radial-gradient(2px 2px at 41% 12%, #fff 99%, transparent), radial-gradient(1px 1px at 58% 33%, #ffd9f0 99%, transparent),
-    radial-gradient(1px 1px at 69% 9%, #fff 99%, transparent), radial-gradient(2px 2px at 83% 27%, #9fe9ff 99%, transparent),
-    radial-gradient(1px 1px at 91% 48%, #fff 99%, transparent), radial-gradient(1px 1px at 5% 55%, #fff 99%, transparent),
-    radial-gradient(1px 1px at 35% 64%, #ffd9f0 99%, transparent), radial-gradient(1px 1px at 76% 58%, #fff 99%, transparent);
-  background-size: 480px 360px; image-rendering: pixelated; animation: twinkle 4s steps(2) infinite; }
+    radial-gradient(1px 1px at 12% 18%, #fff 99%, transparent), radial-gradient(1px 1px at 27% 42%, #cfd8ff 99%, transparent),
+    radial-gradient(2px 2px at 41% 12%, #fff 99%, transparent), radial-gradient(1px 1px at 58% 33%, #fff2c0 99%, transparent),
+    radial-gradient(1px 1px at 69% 9%, #fff 99%, transparent), radial-gradient(1px 1px at 83% 27%, #cfd8ff 99%, transparent),
+    radial-gradient(1px 1px at 91% 48%, #fff 99%, transparent), radial-gradient(1px 1px at 5% 55%, #fff 99%, transparent);
+  background-size: 520px 380px; animation: twinkle 5s steps(2) infinite; }
 @keyframes twinkle { 50% { opacity: .45; } }
-/* A striped synthwave sun sitting on the hills. */
-.bd-sun { position: absolute; left: 50%; bottom: 26vh; width: min(46vw, 460px); aspect-ratio: 1; transform: translateX(-50%);
-  border-radius: 50%; opacity: .55;
-  background: linear-gradient(180deg, #ffd200 0%, #ff8c00 45%, #ff3cac 80%);
-  -webkit-mask: repeating-linear-gradient(180deg, #000 0 14px, transparent 14px 18px), linear-gradient(#000 0 0);
-  -webkit-mask-composite: source-in; mask: repeating-linear-gradient(180deg, #000 0 14px, transparent 14px 18px); }
-.bd-hills { position: absolute; left: 0; right: 0; bottom: 22vh; height: 16vh; min-height: 90px;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 24' preserveAspectRatio='none' shape-rendering='crispEdges'%3E%3Cpath fill='%2312062a' d='M0 24V14h6v-2h4v-3h3v-2h4v2h3v3h5v-4h3V5h4v3h3v3h6v2h4v-3h3V7h3V4h4v3h2v2h5v3h4v2h6v-3h3V8h4V6h3v3h4v2h3v3h5v-2h4V9h3v2h4v3h6v-4h3V7h3v3h4v2h5v2h3v10z'/%3E%3Cpath fill='%23240a45' d='M0 24v-5h8v-2h6v-2h7v2h9v-3h8v2h10v2h7v-3h9v2h8v2h9v-2h8v-3h9v3h10v2h8v-2h7v2h9v-3h8v2h10v5z'/%3E%3C/svg%3E") center bottom / 100% 100% no-repeat;
-  image-rendering: pixelated; }
-.bd-grid { position: absolute; left: -50%; right: -50%; bottom: 0; height: 22vh;
+/* A big pale moon, stepped like a sprite, with a warm halo. */
+.bd-sun { position: absolute; right: 12%; top: 12vh; width: min(22vw, 220px); aspect-ratio: 1; border-radius: 50%;
+  background: radial-gradient(circle at 38% 36%, #fffbe6 0 30%, #f4e7b8 30% 55%, #e0cd8e 55% 100%);
+  box-shadow: 0 0 0 10px rgba(255, 230, 160, .06), 0 0 0 24px rgba(255, 230, 160, .04), 0 0 90px rgba(255, 214, 120, .35); }
+.bd-sun::after { content: ""; position: absolute; inset: 0; border-radius: 50%;
+  background: radial-gradient(circle at 62% 58%, rgba(170, 150, 90, .55) 0 9%, transparent 10%),
+              radial-gradient(circle at 34% 64%, rgba(170, 150, 90, .45) 0 6%, transparent 7%),
+              radial-gradient(circle at 55% 28%, rgba(170, 150, 90, .4) 0 5%, transparent 6%); }
+/* Clouds drift across the moon. */
+.bd-grid { position: absolute; left: 0; right: 0; top: 18vh; height: 20vh; opacity: .8;
   background:
-    linear-gradient(180deg, rgba(255, 60, 172, .0) 0%, rgba(18, 5, 31, .0) 100%),
-    repeating-linear-gradient(90deg, rgba(255, 60, 172, .45) 0 2px, transparent 2px 64px),
-    repeating-linear-gradient(0deg, rgba(36, 230, 255, .35) 0 2px, transparent 2px 28px),
-    #12051f;
-  transform: perspective(240px) rotateX(58deg); transform-origin: 50% 0;
-  animation: gridrun 1.6s linear infinite; }
-@keyframes gridrun { from { background-position: 0 0, 0 0, 0 0; } to { background-position: 0 0, 0 0, 0 28px; } }
+    radial-gradient(60px 14px at 20% 40%, #2d2560 98%, transparent), radial-gradient(90px 16px at 28% 55%, #251e52 98%, transparent),
+    radial-gradient(80px 12px at 70% 30%, #2d2560 98%, transparent), radial-gradient(120px 16px at 80% 50%, #251e52 98%, transparent);
+  background-size: 1400px 100%; animation: drift 90s linear infinite; }
+@keyframes drift { to { background-position: 1400px 0; } }
+.bd-hills { position: absolute; left: 0; right: 0; bottom: 0; height: 34vh; min-height: 200px;
+  background: url("backdrop.svg") center bottom / cover no-repeat; image-rendering: pixelated; }
 body.still .bd-grid, body.still .bd-stars { animation: none; }
 @media (prefers-reduced-motion: reduce) { .bd-grid, .bd-stars { animation: none; } }
 
@@ -231,3 +229,60 @@ body.still .title-logo { animation: none; }
 .pod-block b { color: var(--black); font-weight: normal; }
 .hud-status .pill { white-space: nowrap; }
 .t-steps li::before { left: -6px; }
+
+/* ---- leaderboard -------------------------------------------------------- */
+.lb-hero { margin: 0 auto 26px; max-width: 620px; padding: 16px 16px 0; background: var(--panel-glass); border: 3px solid #2a3380; box-shadow: 5px 5px 0 rgba(0, 0, 0, .8); }
+.lb-hero .t-podium { min-height: 0; }
+.lb-hero .pod-block { border-bottom: 0; }
+table.board tbody tr:nth-child(1) .rank { color: var(--yellow); }
+table.board tbody tr:nth-child(2) .rank { color: #d7dbef; }
+table.board tbody tr:nth-child(3) .rank { color: var(--orange); }
+table.board tbody tr:hover td { background: rgba(255, 210, 0, .06); }
+.wr { min-width: 120px; white-space: nowrap; }
+.wr-bar { display: inline-flex; width: 70px; height: 10px; background: var(--red); border: 2px solid #000; vertical-align: middle; margin-right: 8px; }
+.wr-bar i { display: block; height: 100%; }
+.wr-w { background: var(--green); }
+.wr-d { background: #d7dbef; }
+.wr-n { font-size: 9px; color: var(--white); }
+@media (max-width: 1500px) { .hud-rules { display: none; } }
+
+/* ---- versus-screen lettering and palette ------------------------------- */
+/* Warmer, less neon than the old cabinet: steel blue, arcade green, fire. */
+:root { --cyan: #5cc8ff; --green: #52dd5f; --magenta: #ff5a8a; --panel-glass: rgba(9, 8, 30, .95); }
+.fire-text, h2.screen-title, .title-logo, .t-h, .win b {
+  background: linear-gradient(180deg, #fffbd0 0%, #ffe14a 30%, #ffa400 58%, #ff5a00 78%, #c81800 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  -webkit-text-stroke: 1px #2a0800; text-shadow: none;
+  filter: drop-shadow(2px 2px 0 #2a0800) drop-shadow(3px 3px 0 #000);
+}
+h2.screen-title { transform: skewX(-8deg); font-size: clamp(20px, 4vw, 34px); letter-spacing: 2px; }
+h2.screen-title small { -webkit-text-stroke: 0; background: none; color: #ffd98a; filter: none; transform: none; text-shadow: 2px 2px 0 #000; }
+.title-logo { -webkit-text-stroke: 2px #2a0800; filter: drop-shadow(4px 4px 0 #2a0800) drop-shadow(6px 6px 0 #000); transform: skewX(-8deg); letter-spacing: 6px; }
+.title-q { color: transparent; }
+.title-sub { color: #ffd98a; text-shadow: 2px 2px 0 #000; }
+.t-h { font-size: 14px; -webkit-text-stroke: .5px #2a0800; }
+.win-ko b { background-image: linear-gradient(180deg, #fff 0%, #ff8a8a 35%, #ff1a1a 65%, #8a0000 100%); }
+.win-dec b { background-image: linear-gradient(180deg, #fffbd0 0%, #ffe14a 40%, #ffa400 100%); }
+.win-to b { background-image: linear-gradient(180deg, #fff 0%, #ffc070 40%, #ff7a00 100%); }
+
+/* Header: a red and gold marquee instead of neon. */
+.hud { border-bottom: 4px solid #ffc619; box-shadow: 0 4px 0 #c8141b; }
+.hud-nav a.on { color: #fffbd0; background: #c8141b; border-color: #ffc619; box-shadow: 3px 3px 0 #000; }
+.hud-nav a:hover, .hud-nav a:focus-visible { color: #ffc619; background: rgba(200, 20, 27, .18); }
+.hud-tabs { background: #120d28; }
+.hud-tabs a.on { color: #ffc619; border-bottom-color: #c8141b; }
+.hud-logo { color: #ffc619; text-shadow: 2px 2px 0 #c8141b, 4px 4px 0 #000; }
+.hud-logo span { color: #fff; }
+
+/* Panels: dark blue boards with gold trim, headers like a select screen. */
+.panel { border-color: #d9dcef; }
+.panel-cyan { border-color: #3a8fe0; } .panel-cyan h3 { background: linear-gradient(180deg, #2f7fe0, #16429a); color: #fff; text-shadow: 2px 2px 0 #06163f; }
+.panel-green { border-color: #3fae4a; } .panel-green h3 { background: linear-gradient(180deg, #7ae06a, #2f9a3a); color: #fff; text-shadow: 2px 2px 0 #0b3a10; }
+.panel-yellow { border-color: #ffc619; } .panel-yellow h3 { background: linear-gradient(180deg, #ffe46a, #ffb400); color: #2a0800; }
+.panel-red { border-color: #e8141b; } .panel-red h3 { background: linear-gradient(180deg, #ff5a5a, #c8141b); color: #fff; text-shadow: 2px 2px 0 #4a0000; }
+.panel:not(.panel-cyan):not(.panel-green):not(.panel-yellow):not(.panel-red) > h3 { background-image: linear-gradient(180deg, #ffffff, #c9cde6); }
+.t-steps li::before { background: #c8141b; color: #fffbd0; }
+.t-steps li, .t-top, .t-latest, .lb-hero, .doc-toc { border-color: #3a3f8a; }
+.btn { background: linear-gradient(180deg, #ffe46a, #ffb400); box-shadow: 4px 4px 0 #c8141b; }
+.btn-cyan { background: linear-gradient(180deg, #8fd4ff, #3a8fe0); box-shadow: 4px 4px 0 #0a1e50; }
+.foot { border-top-color: #ffc619; box-shadow: 0 -4px 0 #c8141b; }
