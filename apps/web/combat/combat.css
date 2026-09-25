@@ -216,7 +216,7 @@ body.still *, body.still *::before, body.still *::after { animation: none !impor
 @media (max-width: 700px) {
   .stage { grid-template-columns: 1fr 1fr; }
   .stage .center { grid-column: 1 / -1; grid-row: 1; padding-top: 0; }
-  .avatar-stage { width: 64px; height: 64px; }
+  .avatar-stage { width: 72px; height: 72px; }
   .fighter-box { height: 72px; }
   .corner-A .fighter-box::after { left: 68px; }
   .corner-B .fighter-box::after { right: 68px; }
@@ -238,7 +238,7 @@ body.still *, body.still *::before, body.still *::after { animation: none !impor
 .attract-card:hover, .attract-card:focus-visible { text-decoration: none; border-color: var(--yellow); }
 .attract-kicker { font-size: 9px; color: var(--cyan); letter-spacing: 1px; }
 .attract-vs { display: flex; align-items: center; gap: 18px; }
-.attract-vs .avatar-lg { width: 80px; height: 80px; }
+.attract-vs .avatar-lg { width: 72px; height: 72px; }
 .attract-vs .avatar-lg:last-child svg { transform: scaleX(-1); }
 .attract-names { font-size: 9px; color: var(--yellow); }
 .attract-state { font-size: 9px; }
@@ -338,7 +338,7 @@ table.board td.rank { color: var(--yellow); }
 .bk-score { margin-left: auto; color: var(--yellow); font-weight: normal; font-size: 11px; }
 .bk-fights { font-size: 8px; margin-top: 4px; }
 .champ-line { font-size: 12px; }
-.champ .avatar-sm { width: 32px; height: 32px; }
+.champ .avatar-sm { width: 48px; height: 48px; }
 
 /* ---- duels ------------------------------------------------------------ */
 .duel-score { display: flex; align-items: center; justify-content: center; gap: 24px; flex-wrap: wrap; }
