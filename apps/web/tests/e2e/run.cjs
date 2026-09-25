@@ -326,6 +326,7 @@ async function main() {
   await step('practice', async (page, base) => {
     await go(page, base, '#practice', '.npc-card');
     await page.click('[data-npc="jabber-v1"]');
+    await page.click('.select-adv summary');   // the seed sits under ADVANCED
     await page.fill('#seed', 'ab'.repeat(32));
     await page.click('#go');
     await page.waitForSelector('#planner');
