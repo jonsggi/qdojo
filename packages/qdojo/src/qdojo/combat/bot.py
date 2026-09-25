@@ -8,6 +8,14 @@ Rules this module keeps (docs/api.md §2, matchmaking.md §5):
   read state, balance or settings means DENY, never allow.
 - A planner failure inside a fight falls back to six RECOVERs so a slow model
   does not become a missed reveal.
+- Every chosen plan is checked with the engine's validate_plan against the
+  fighter's round-start state before it is journalled: a spent power slot is
+  dropped, any other illegal plan becomes the fallback. The contract would
+  reject it at reveal, which is a forfeit.
+- A call the contract rejected for good (a bad plan, a late reveal) is never
+  re-sent; a rejection that may clear (wrong phase, a busy fighter) is retried
+  with exponential backoff; the bot observes its fault cooldown and ranked
+  suspension instead of queueing into a rejection every tick.
 - Salts come from `secrets`, never from the training PRNG.
 """
 from __future__ import annotations
@@ -22,8 +30,9 @@ from typing import Callable, Protocol
 
 from . import codec, npcs, planner
 from .codec import Code, Op
+from .engine import resolve_round
 from .rules import Ruleset
-from .types import FighterState, Plan
+from .types import Action, FighterState, FightState, Plan, RoundResult
 
 JOURNAL = "secret-plans.jsonl"
 BUDGET_STATE = "budget.json"
@@ -61,6 +70,7 @@ class Budget:
     max_fights_per_day: int = 20
     min_ticks_between_fights: int = 0
     stop_after_faults: int = 1
+    fault_window_ticks: int = 0       # count faults over this many recent ticks; 0 = over the bot's lifetime
     min_wallet_reserve: int = 0
     max_rating_gap: int = 200
     offer_lifetime: int = 240
@@ -82,19 +92,28 @@ class BudgetState:
     spends: list[Spend] = field(default_factory=list)
     faults: int = 0
     last_entry_tick: int = -10**9
+    fault_ticks: list[int] = field(default_factory=list)   # tick each fault was seen (newest last)
 
     @classmethod
     def load(cls, path: Path) -> "BudgetState":
         if not path.exists():
             return cls()
         raw = json.loads(path.read_text())
-        return cls([Spend(**s) for s in raw["spends"]], raw["faults"], raw["last_entry_tick"])
+        return cls([Spend(**s) for s in raw["spends"]], raw["faults"], raw["last_entry_tick"],
+                   list(raw.get("fault_ticks", [])))
 
     def save(self, path: Path):
         tmp = path.with_suffix(".tmp")
         tmp.write_text(json.dumps({"spends": [asdict(s) for s in self.spends], "faults": self.faults,
-                                   "last_entry_tick": self.last_entry_tick}))
+                                   "last_entry_tick": self.last_entry_tick,
+                                   "fault_ticks": self.fault_ticks[-64:]}))
         os.replace(tmp, path)
+
+    def recent_faults(self, tick: int, window: int) -> int:
+        """Faults that count against stop_after_faults: all of them, or those in the last `window` ticks."""
+        if window <= 0:
+            return self.faults
+        return sum(1 for t in self.fault_ticks if tick - t < window)
 
 
 def decide(budget: Budget, st: BudgetState, day: str, tick: int, stake: int, tier: int,
@@ -104,8 +123,10 @@ def decide(budget: Budget, st: BudgetState, day: str, tick: int, stake: int, tie
         return False, "wallet balance unreadable"
     if not budget.ruleset_digest or budget.ruleset_digest != rules_digest:
         return False, "ruleset not pinned to this contract's"
-    if st.faults >= budget.stop_after_faults:
-        return False, f"stopped after {st.faults} protocol fault(s)"
+    faults = st.recent_faults(tick, budget.fault_window_ticks)
+    if faults >= budget.stop_after_faults:
+        within = f" in the last {budget.fault_window_ticks} ticks" if budget.fault_window_ticks > 0 else ""
+        return False, f"stopped after {faults} protocol fault(s){within}"
     if tier not in budget.allowed_tiers or stake > budget.max_stake:
         return False, "tier or stake not allowed"
     outstanding = sum(s.stake for s in st.spends if s.returned is None)
@@ -165,6 +186,11 @@ class PlanJournal:
 
 Choose = Callable[[dict], Plan]
 
+# A rejection that may clear by itself: retry later, with backoff. Every other
+# rejection of a commit or reveal is final for that round and is not re-sent.
+RETRYABLE = frozenset({Code.WRONG_PHASE, Code.FULL, Code.NONCE_CONFLICT})
+BACKOFF_FIRST, BACKOFF_MAX = 4, 240
+
 
 @dataclass
 class Bot:
@@ -192,26 +218,54 @@ class Bot:
         # purpose ("enter", ("commit", key), ("reveal", key)); a synchronous
         # client's result counts as included at once.
         self.inflight: dict = {}
+        # Backoff after a rejection that may clear: purpose -> (not before tick, delay).
+        self.backoff: dict = {}
+        self.skip_cups: set = set()          # cups whose registration was rejected
+
+    def planning(self) -> bool:
+        """True while a background planner decision is outstanding (started, not yet used)."""
+        return bool(self.__dict__.get("_planning"))
+
+    def _backing_off(self, purpose, tick: int) -> bool:
+        b = self.backoff.get(purpose)
+        return b is not None and tick < b[0]
+
+    def _back_off(self, purpose, tick: int):
+        delay = min(BACKOFF_MAX, 2 * self.backoff[purpose][1]) if purpose in self.backoff else BACKOFF_FIRST
+        self.backoff[purpose] = (tick + delay, delay)
 
     def _plan(self, key, fight, slot) -> Plan | None:
-        """The plan for this round. A slow chooser (a planner process, maybe a
-        model call) runs in the background: None means "not ready yet", so one
-        slow bot never stalls the others or the tick. A crashed planner yields
-        the fallback plan, as a timed-out one does."""
-        if not getattr(self.choose, "slow", False):
-            return self.choose(fight["observation"](slot))
+        """The plan for this round, checked against this fighter's round-start
+        state. A slow chooser (a planner process, maybe a model call) runs in
+        the background: None means "not ready yet", so one slow bot never stalls
+        the others or the tick. A crashed planner yields the fallback plan, as a
+        timed-out one does."""
         planning = self.__dict__.setdefault("_planning", {})
-        fut = planning.get(key)
-        if fut is None:
-            planning[key] = _planning_pool().submit(self.choose, fight["observation"](slot))
-            return None
-        if not fut.done():
-            return None
-        del planning[key]
-        try:
-            return fut.result()
-        except Exception:
-            return planner.FALLBACK
+        if not getattr(self.choose, "slow", False):
+            obs = fight["observation"](slot)
+            try:
+                plan = self.choose(obs)
+            except Exception as exc:            # a policy bug must not become a missed commit
+                self.log(f"fight {fight['fight_id']} round {fight['round_index']}: chooser failed ({exc}); fallback")
+                plan = planner.FALLBACK
+        else:
+            job = planning.get(key)
+            if job is None:
+                obs = fight["observation"](slot)
+                planning[key] = (_planning_pool().submit(self.choose, obs), obs)
+                return None
+            fut, obs = job
+            if not fut.done():
+                return None
+            del planning[key]
+            try:
+                plan = fut.result()
+            except Exception:
+                plan = planner.FALLBACK
+        plan, why = planner.legal_plan(self.rules, planner.fighter_state(obs["self"]), plan)
+        if why:
+            self.log(f"fight {fight['fight_id']} round {fight['round_index']}: {why}")
+        return plan
 
     def _submit(self, purpose, op: Op, amount: int = 0, extra=None, **fields):
         r = self.client.send(op, amount, **fields)
@@ -243,12 +297,15 @@ class Bot:
         drained = self._drain_entry()
         if drained is not None and "enter" in self.inflight:
             return drained                                  # still waiting: don't act on stale state
-        self._settle_known()
+        self._settle_known(tick)
         if me["lock"] == "CONTEST":
             return self._fight_step(me, tick)
         if me["lock"] == "TOURNAMENT":
             return self._tournament_step(me, tick)
         if me["lock"] == "IDLE":
+            cooldown = int(me.get("cooldown_until") or 0)
+            if tick < cooldown:                             # every paid entry would be rejected
+                return f"cooling down after a fault until tick {cooldown}"
             if self.accept_duels:
                 done = self._maybe_accept_duel(me, tick)
                 if done:
@@ -257,7 +314,11 @@ class Bot:
                 done = self._maybe_join_cup(me, tick)
                 if done:
                     return done
-            return self._maybe_enter(me, tick) if self.ranked else "idle"
+            if not self.ranked:
+                return "idle"
+            if me.get("suspended"):
+                return "ranked admission suspended for this epoch"
+            return self._maybe_enter(me, tick)
         return f"waiting ({me['lock']})"
 
     # -- duels and cups -------------------------------------------------------
@@ -315,9 +376,11 @@ class Bot:
             if st == "dropped" or st.code.name not in ("OK", "DUPLICATE"):
                 extra.returned = extra.stake
                 self.bstate.save(self.bpath)
+                if st != "dropped":
+                    self.skip_cups.add(int(extra.contest_or_offer.split(":")[1]))
             return None if st == "dropped" else f"cup entry {st.code.name}"
         for k in getattr(self.client, "open_cups", lambda: [])():
-            if k["entries"] >= k["max_entrants"]:
+            if k["entries"] >= k["max_entrants"] or k["cup_id"] in self.skip_cups:
                 continue
             ok, why, day = self._spend_allowed(tick, k["entry_fee"])
             if not ok:
@@ -333,6 +396,7 @@ class Bot:
             if r.code.name not in ("OK", "DUPLICATE"):
                 spend.returned = spend.stake
                 self.bstate.save(self.bpath)
+                self.skip_cups.add(k["cup_id"])
             return f"cup entry {r.code.name}"
         return None
 
@@ -358,7 +422,9 @@ class Bot:
         if r.code not in (Code.OK, Code.DUPLICATE):
             spend.returned = spend.stake                    # rejected: the attachment came back as credit
             self.bstate.save(self.bpath)
+            self._back_off("enter", self.client.tick())     # do not re-queue into the same rejection
             return f"entry rejected: {r.code.name}"
+        self.backoff.pop("enter", None)
         spend.contest_or_offer = f"offer:{r.data['offer_id']}"
         self.bstate.save(self.bpath)
         return f"entered offer {r.data['offer_id']}"
@@ -379,7 +445,9 @@ class Bot:
     def _maybe_enter(self, me: dict, tick: int) -> str:
         if "enter" in self.inflight:
             return "entry waiting for inclusion"
-        stake =self.client.tier_amount(self.tier) if hasattr(self.client, "tier_amount") else None
+        if self._backing_off("enter", tick):
+            return f"entry backing off until tick {self.backoff['enter'][0]}"
+        stake = self.client.tier_amount(self.tier) if hasattr(self.client, "tier_amount") else None
         if stake is None:
             return "deny: tier price unknown"
         try:
@@ -403,7 +471,7 @@ class Bot:
             return "entry sent"
         return self._entry_result(r, spend)
 
-    def _settle_known(self):
+    def _settle_known(self, tick: int | None = None):
         changed = False
         for s in self.bstate.spends:
             if s.returned is not None or s.contest_or_offer == "pending":
@@ -419,6 +487,8 @@ class Bot:
             s.returned = value
             if kind == "fault":
                 self.bstate.faults += 1
+                self.bstate.fault_ticks.append(self.client.tick() if tick is None else tick)
+                self.log(f"fault in {s.contest_or_offer}: {self.bstate.faults} in total")
             changed = True
         if changed:
             self.bstate.save(self.bpath)
@@ -458,6 +528,11 @@ class Bot:
             st, _ = self._poll(("commit", key))
             if st == "pending":
                 return "commit waiting for inclusion"
+            if st is not None and st != "dropped" and st.code not in (Code.OK, Code.DUPLICATE):
+                return self._rejected("commit", key, rec, st, tick)
+            held = self._holding("commit", key, rec, tick)
+            if held:
+                return held
             # Not committed yet and nothing in flight (or it was dropped): send. A
             # resend carries the same commitment, which the contract treats as a
             # harmless duplicate, so retrying is always safe.
@@ -466,6 +541,8 @@ class Bot:
                              auth_version=fight["auth_version"][slot],
                              round_state_digest=bytes.fromhex(rec["round_state_digest"]),
                              commitment=bytes.fromhex(rec["commitment"]))
+            if r is not None and r.code not in (Code.OK, Code.DUPLICATE):
+                return self._rejected("commit", key, rec, r, tick)
             status = "sent" if r is None else r.code.name
             self.journal.put({**rec, "status": f"commit:{status}"})
             return f"commit {status}" + (" (resent after a drop)" if st == "dropped" else "")
@@ -477,34 +554,88 @@ class Bot:
             st, _ = self._poll(("reveal", key))
             if st == "pending":
                 return "reveal waiting for inclusion"
+            if st is not None and st != "dropped" and st.code not in (Code.OK, Code.DUPLICATE):
+                return self._rejected("reveal", key, rec, st, tick)
+            held = self._holding("reveal", key, rec, tick)
+            if held:
+                return held
             r = self._submit(("reveal", key), Op.REVEAL, fight_id=fight["fight_id"],
                              round_index=fight["round_index"], fighter_id=self.fighter_id,
                              auth_version=fight["auth_version"][slot],
                              round_state_digest=bytes.fromhex(rec["round_state_digest"]),
                              salt=bytes.fromhex(rec["salt"]), plan=codec.decode_plan(bytes.fromhex(rec["plan"])))
+            if r is not None and r.code not in (Code.OK, Code.DUPLICATE):
+                return self._rejected("reveal", key, rec, r, tick)
             status = "sent" if r is None else r.code.name
             self.journal.put({**rec, "status": f"reveal:{status}"})
             return f"reveal {status}" + (" (resent after a drop)" if st == "dropped" else "")
         return fight["phase"]
 
+    def _holding(self, what: str, key, rec: dict, tick: int) -> str | None:
+        """Why not to send `what` now: rejected for good, or backing off."""
+        if rec.get("status", "").startswith(f"{what}:rejected:"):
+            return f"{what} was rejected ({rec['status'].rsplit(':', 1)[1]}); not re-sending"
+        if self._backing_off((what, key), tick):
+            return f"{what} backing off until tick {self.backoff[(what, key)][0]}"
+        return None
+
+    def _rejected(self, what: str, key, rec: dict, result, tick: int) -> str:
+        """A commit or reveal the contract refused. Retry later only if it may clear."""
+        code = result.code
+        detail = getattr(result, "detail", "") or ""
+        if code in RETRYABLE:
+            self._back_off((what, key), tick)
+            return f"{what} {code.name}; retrying from tick {self.backoff[(what, key)][0]}"
+        self.journal.put({**rec, "status": f"{what}:rejected:{code.name}"})
+        self.log(f"fight {key[2]} round {key[3]}: {what} rejected {code.name}"
+                 + (f" ({detail})" if detail else "") + "; not re-sending")
+        return f"{what} rejected: {code.name}"
+
+
+def prior_results(rules: Ruleset, prior_rounds: list[dict]) -> tuple[RoundResult, ...]:
+    """This fight's completed rounds as engine RoundResults, re-derived from the
+    observation's confirmed round-start states and revealed plans. A round that
+    does not re-derive to the recorded trace is not trusted, and history stops there."""
+    out = []
+    for r in prior_rounds:
+        start = FightState(r["start"]["round_index"], *(FighterState(**{k: int(v) for k, v in r["start"][s].items()})
+                                                         for s in "AB"))
+        plans = [Plan.of(r["plans"][s]["actions"], r["plans"][s]["power_slot"]) for s in "AB"]
+        res = resolve_round(rules, start, *plans)
+        if [b.to_json() for b in res.beats] != r["beats"]:
+            break
+        out.append(res)
+    return tuple(out)
+
 
 def policy_chooser(rules: Ruleset, policy: npcs.Policy, seed: bytes) -> Choose:
-    """Adapt an in-process policy to the observation dict."""
+    """Adapt an in-process policy to the observation dict, history included:
+    history-based policies (reader-v1, repeat-last-winner, search-v1) read
+    `prior`, scouting ones read `opponent_history`."""
     def choose(obs: dict) -> Plan:
-        me, opp = obs["self"], obs["opponent"]
-        s = FighterState(me["hp"], me["stamina"], me["opening"], me["guard_streak"], int(me["power_available"]))
-        o = FighterState(opp["hp"], opp["stamina"], opp["opening"], opp["guard_streak"], int(opp["power_available"]))
+        s, o = planner.fighter_state(obs["self"]), planner.fighter_state(obs["opponent"])
         other = "B" if obs["self_slot"] == "A" else "A"
-        from .types import Action
         history = tuple(tuple(Action[b[other]["effective"]] for b in r["beats"]) for r in obs["prior_rounds"])
-        view = npcs.Observation(obs["round_index"], s, o, history, obs["self_slot"])
+        prior = prior_results(rules, obs["prior_rounds"])
+        view = npcs.Observation(obs["round_index"], s, o, history, obs["self_slot"], prior)
         return policy(rules, view, npcs.Stream(seed, int(obs["fight_id"]), obs["round_index"]))
     return choose
 
 
-def planner_chooser(command: list[str], budget_ms: int = planner.DEFAULT_BUDGET_MS) -> Choose:
+def planner_chooser(command: list[str], budget_ms: int = planner.DEFAULT_BUDGET_MS,
+                    log: Callable[[str], None] | None = None) -> Choose:
+    """A planner subprocess. With `log`, a failed run and the planner's own
+    fallback/adjustment notes (stderr lines starting "fallback" or "adjusted")
+    are reported, so an operator can see them."""
     def choose(obs: dict) -> Plan:
         ran, err = planner.run_or_fallback(command, obs, budget_ms)
+        if log is not None:
+            where = f"fight {obs.get('fight_id')} round {obs.get('round_index')}"
+            if err is not None:
+                log(f"{where}: planner {err}; six RECOVERs")
+            for line in ran.stderr.splitlines():
+                if line.startswith(("fallback", "adjusted")):
+                    log(f"{where}: planner {line[:200]}")
         return ran.plan
     choose.slow = True          # a subprocess (maybe a model call): plan in the background
     return choose

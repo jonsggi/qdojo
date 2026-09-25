@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ..hashing import sha256
-from . import codec, npcs, planner
+from . import codec, npcs, planner, scouting
 from .engine import new_fight, resolve_beat, resolve_round
 from .rules import Ruleset, candidate_1
 from .types import SUBMITTED, Action, FighterState, FightState, Plan, Reason, RoundResult
@@ -94,6 +94,7 @@ def observation(rules, ctx, state: FightState, slot: str, ids, prior: list[dict]
         "deadlines": None, "observed_tick": None,
         "prior_rounds": prior,
         "history_manifest": {"opponent_fight_ids": [], "as_of_tick": None},
+        "opponent_history": scouting.empty(opp_id),
         "decision_budget_ms": budget_ms,
     }
 

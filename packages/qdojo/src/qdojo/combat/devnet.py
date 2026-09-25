@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from . import codec, export
+from . import codec, export, scouting
 from .codec import Code, Op
 from .contract import Manifest, development_manifest
 from .rules import candidate_1
@@ -69,6 +69,7 @@ class Devnet:
                                           "profile": self.profile,
                                           "note": "fake QU, synthetic identities; not a deployment"}))
         self._saved = len(self.world.journal)
+        self.scout = scouting.Scout()
 
     def save(self):
         new = self.world.journal[self._saved:] if (self.dir / JOURNAL).exists() else self.world.journal
@@ -143,8 +144,10 @@ class DevnetClient:
                    "checkin_ticks": k.descriptor["checkin_ticks"],
                    "pairing_id": pairing.pairing_id if pairing else None,
                    "checked_in": bool(pairing and fid in pairing.checked)}
+        t = self.tick()
         return {"lock": f.lock, "auth_version": f.auth_version, "active_fight": active,
-                "lifetime": f.lifetime, "operator": f.operator, "cup": cup}
+                "lifetime": f.lifetime, "operator": f.operator, "cup": cup,
+                "cooldown_until": f.cooldown_until, "suspended": f.suspended_epoch == self.net.m.epoch(t)}
 
     def open_cups(self) -> list[dict]:
         t = self.tick()
@@ -169,6 +172,9 @@ class DevnetClient:
             other = "B" if slot == "A" else "A"
             me, opp = (fight.state.a, fight.state.b) if slot == "A" else (fight.state.b, fight.state.a)
             replay = export.fight_replay(self.c, fight_id)
+            # Scouting as of this round's start, so every call in a round sees the same history.
+            scout = getattr(self.net, "scout", None) or self.__dict__.setdefault("_scout", scouting.Scout())
+            scouted = scout.history(self.c, parts[other].fighter_id, fight_id, fight.start_tick)
             return {
                 "schema": "qdojo.combat.observation.v1", "mode": codec.Mode(ctx.mode).name.lower(),
                 "network_id": self.network_id.hex(), "contract_id": self.contract_id.hex(),
@@ -185,7 +191,9 @@ class DevnetClient:
                               "reveal_last_tick": str(fight.reveal_last)},
                 "observed_tick": str(self.tick()),
                 "prior_rounds": replay["rounds"],
-                "history_manifest": {"opponent_fight_ids": [], "as_of_tick": str(self.tick())},
+                "history_manifest": {"opponent_fight_ids": [f["fight_id"] for f in scouted["fights"]],
+                                     "as_of_tick": scouted["as_of_tick"]},
+                "opponent_history": scouted,
                 "decision_budget_ms": 1500,
             }
         return {"fight_id": fight_id, "phase": fight.phase, "round_index": fight.state.round_index,

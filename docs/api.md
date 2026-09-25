@@ -47,7 +47,25 @@ Observation schema qdojo.combat.observation.v1:
   "deadlines": {"commit_last_tick": "1234", "reveal_first_tick": "1235", "reveal_last_tick": "1246"},
   "observed_tick": "1211",
   "prior_rounds": [],
-  "history_manifest": {"opponent_fight_ids": [], "as_of_tick": "1210"},
+  "history_manifest": {"opponent_fight_ids": ["40", "37"], "as_of_tick": "1188"},
+  "opponent_history": {
+    "schema": "qdojo.combat.scouting.v1",
+    "fighter_id": "32-byte lowercase hex",
+    "as_of_tick": "1188",
+    "fights": [
+      {"fight_id": "40", "mode": "ranked", "slot": "B", "opponent_id": "32-byte lowercase hex",
+       "outcome": "W", "result": "KO",
+       "rounds": [
+         {"round_index": 0, "start": {"hp": 100, "stamina": 60, "power_available": true},
+          "plan": {"actions": ["KICK", "JAB", "RECOVER", "KICK", "BLOCK", "RECOVER"], "power_slot": -1},
+          "executed": ["KICK", "JAB", "RECOVER", "KICK", "BLOCK", "RECOVER"],
+          "versus": ["JAB", "JAB", "KICK", "DUCK", "THROW", "RECOVER"]}
+       ]}
+    ],
+    "summary": {"fights": 2, "record": {"L": 1, "W": 1},
+                "plan_actions_by_round": {"0": {"JAB": 3, "KICK": 5, "BLOCK": 1, "DUCK": 0, "THROW": 1, "RECOVER": 2}},
+                "power": {"used_in_round": {"2": 1}, "never": 1}}
+  },
   "decision_budget_ms": 1500
 }
 ```
@@ -62,6 +80,27 @@ prior_rounds contains accepted plans, executed traces, break recovery and
 confirmed source tick. history_manifest references completed public fights.
 SDK fetches histories before invoking the planner; no hot-path dependency
 on the official website. Owner may cache historical analysis locally.
+
+opponent_history is the opponent scouting report the bot attaches, and
+history_manifest.opponent_fight_ids lists exactly its fights. Rules:
+
+- Only information public before this round started: fights that finished
+  (phase DONE) strictly before the current round's start tick (as_of_tick),
+  and the plans those fights revealed. Never the current fight (its earlier
+  rounds are in prior_rounds), never a live or sealed plan.
+- Newest first by fight id; at most 10 fights and 60 revealed plans of the
+  scouted fighter, and at most 24 KiB of JSON (oldest fights dropped first).
+  The same contract state and round always give the same report.
+- Per fight: mode, the scouted fighter's slot, its outcome (W, L, D, FW/FL
+  won/lost by forfeit, DF double fault, VOID), the result code, and per round
+  its round-start HP/stamina/power, its revealed plan, what it executed and
+  what its opponent executed. A forfeit has no invented rounds.
+- summary counts the scouted fighter's planned actions per round index,
+  its record, and in which round it spent its power strike.
+- Practice fights have no history: fights is empty.
+
+The whole observation written to stdin stays under 64 KiB; a runner refuses to
+start a planner with a larger one (OBSERVATION_TOO_LONG, which falls back).
 
 Planner response schema:
 
@@ -78,6 +117,16 @@ unknown enums, wrong case, NaN/floats, malformed JSON, extra output, nonzero
 exit, too-long output or timeout. Limit stdout to 4096 bytes; stderr captured
 with a separate 64 KiB cap and secret filtering. No wallet/signing authority
 is passed to a planner. Owner can run a plain script or model-backed planner.
+
+A plan must also be legal for the fighter's round-start state, which the
+contract checks at reveal (engine.validate_plan): six submitted actions and a
+power_slot of -1 or a JAB/KICK/THROW, and a power_slot only while
+self.power_available is true. The power strike is spent even if the powered
+attack misses, so a plan that sets power_slot after power_available became
+false is rejected at reveal with BAD_PLAN, and the fighter forfeits. The
+reference bot validates every plan before it commits: it drops a spent power
+slot and keeps the actions, and replaces any other illegal plan with the
+fallback. A planner should still never produce one.
 
 ## 2. Scheduler vs planner
 
@@ -102,6 +151,19 @@ does not authorize a substitute; disclose local failure and stop future entry.
 A send is not confirmation. Poll independent node/contract state within bounds;
 a delayed indexer cannot prove absence. A retry must use the same intended
 operation and idempotency identity. Confirm final result/withdrawal state.
+
+Do not retry into a rejection. A commit or reveal rejected for a reason that
+cannot clear (BAD_PLAN, BAD_COMMITMENT, LATE, STALE_AUTH, ...) is recorded
+and never re-sent; only WRONG_PHASE, FULL and NONCE_CONFLICT are retried,
+with exponential backoff (4 ticks doubling to 240). A dropped transaction is
+re-sent at once. After a terminal fault the contract imposes a cooldown
+(cooldown_until) and, at faults_per_epoch faults, a ranked suspension for the
+epoch; the bot reads both from the fighter record and sends no paid entry
+until they have passed. A rejected queue entry backs off the same way, and a
+rejected cup registration is not repeated for that cup. The owner's
+stop_after_faults limit counts faults over the bot's lifetime by default, or
+over the last fault_window_ticks ticks when that is set (the demo arena:
+3 faults per 2,400-tick epoch).
 
 ## 3. Public read API
 

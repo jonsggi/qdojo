@@ -15,14 +15,20 @@ Other rules:
 - Every other action you execute regains 2 stamina.
 - If you cannot afford an action, you are EXHAUSTED for that beat: you
   deal nothing, take full damage, and regain 6 stamina.
+- Opening: ducking a JAB or THROW, or landing a JAB while taking no damage,
+  gives +4 damage on your next beat only, if that beat hits.
 - Once per fight you may power one JAB, KICK or THROW: +4 cost, +4 damage.
+  The power strike is spent even if that attack misses or is blocked. If the
+  state says "power_available: false", you have ALREADY USED your power
+  strike and power_slot MUST be -1.
 - Between rounds each fighter gets +10 stamina.
 - At 0 HP a fighter is knocked out; if both fall on the same beat, it is a
   draw.
 - After three rounds, the higher HP wins.
 
 Budget your stamina. Anticipate the opponent's pattern from the rounds
-already played in this fight, and punish predictable play.
+already played in this fight and from the scouting report of their recent
+fights, and punish predictable play.
 
 Reply with exactly one JSON object and nothing else:
 {"actions": [<six action names, beat 1 to beat 6>], "power_slot": <-1 or 0-5>}

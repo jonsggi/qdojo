@@ -114,6 +114,11 @@ def test_bot_stops_after_a_fault(tmp_path):
     assert b.bstate.spends and a.bstate.faults == 0
     b.step()
     assert b.bstate.faults == 1
+    # The contract's fault cooldown is observed first (no entry sent into a rejection) ...
+    assert b.step().startswith("cooling down after a fault")
+    while net.world.tick < net.world.contract.fighters[b.fighter_id].cooldown_until:
+        net.world.end()
+    # ... and afterwards the owner's stop-after-faults limit still holds.
     assert b.step().startswith("deny: stopped after 1")
 
 
