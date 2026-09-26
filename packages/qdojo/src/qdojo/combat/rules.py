@@ -18,6 +18,13 @@ TAG_RULES = b"qdojo/combat/rules/v1\0"
 RULESET_DIR = Path(__file__).resolve().parent / "rulesets"
 CANDIDATE_1 = "combat-v1-candidate-1"
 CANDIDATE_1_DIGEST = "12085c86a61ffd106430b6690acbd522c5a94f90ed8024585817f4939fe4842c"
+# Candidate 2 (docs/combat.md "Candidate 2"): the same engine and action table
+# with rebalanced numbers. Candidate 1 stays loadable: journals and replays
+# bound to its digest must keep verifying.
+CANDIDATE_2 = "combat-v1-candidate-2"
+CANDIDATE_2_DIGEST = "c90da811dc1e5275d09c8e09d25d15c548866b9c01907c4f1878ca321b9e4650"
+# Every packaged ruleset, by semantic version, with the digest its file must hash to.
+KNOWN = {CANDIDATE_1: CANDIDATE_1_DIGEST, CANDIDATE_2: CANDIDATE_2_DIGEST}
 
 _KEYS = {
     "semantic_version", "rounds", "beats_per_round", "initial", "limits",
@@ -129,6 +136,34 @@ def load_file(path: Path, expect_digest: str | None = None) -> Ruleset:
 
 
 @cache
+def by_version(version: str) -> Ruleset:
+    """A packaged ruleset by semantic version, refusing to load if its bytes drifted."""
+    if version not in KNOWN:
+        raise RulesetError(f"unknown ruleset {version!r}; known: {', '.join(KNOWN)}")
+    return load_file(RULESET_DIR / f"{version}.json", KNOWN[version])
+
+
+def by_digest(digest: str | bytes) -> Ruleset:
+    """A packaged ruleset by its digest (hex or bytes); how a replay or journal
+    bound to a digest finds its rules."""
+    hexd = digest.hex() if isinstance(digest, (bytes, bytearray)) else str(digest)
+    for version, d in KNOWN.items():
+        if d == hexd:
+            return by_version(version)
+    raise RulesetError(f"no packaged ruleset has digest {hexd}")
+
+
+def artifact(version: str) -> dict:
+    """The packaged JSON document of a ruleset (what an export publishes)."""
+    by_version(version)                       # checks the digest
+    return json.loads((RULESET_DIR / f"{version}.json").read_text(encoding="ascii"))
+
+
 def candidate_1() -> Ruleset:
     """The frozen combat-v1 candidate 1, refusing to load if its bytes drifted."""
-    return load_file(RULESET_DIR / f"{CANDIDATE_1}.json", CANDIDATE_1_DIGEST)
+    return by_version(CANDIDATE_1)
+
+
+def candidate_2() -> Ruleset:
+    """combat-v1 candidate 2: the rebalanced numbers of docs/combat.md "Candidate 2"."""
+    return by_version(CANDIDATE_2)

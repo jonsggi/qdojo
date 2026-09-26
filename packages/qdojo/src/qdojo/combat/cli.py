@@ -13,7 +13,7 @@ import sys
 
 from . import evaluate as E
 from . import npcs, planner
-from .rules import candidate_1
+from .rules import CANDIDATE_1, KNOWN, by_version
 from .training import Contestant, explain, run_fight, summary, verify_replay
 
 
@@ -33,13 +33,13 @@ def _seed(text: str | None) -> bytes:
     return raw
 
 
-def _contestant(name: str, npc: str | None, planner_cmd: str | None, budget: int) -> Contestant:
+def _contestant(name: str, npc: str | None, planner_cmd: str | None, budget: int, rules=None) -> Contestant:
     if planner_cmd:
         return Contestant(name, command=shlex.split(planner_cmd), budget_ms=budget)
     if npc in npcs.ROSTER:
         return Contestant(name, npc=npc)
     try:
-        return Contestant(name, policy=E.policy_by_name(npc), policy_id=npc)
+        return Contestant(name, policy=E.policy_by_name(npc, rules), policy_id=npc)
     except KeyError as exc:
         raise CombatCliError(str(exc)) from None
 
@@ -56,9 +56,9 @@ def cmd_npcs(a):
 def cmd_train(a):
     """One free local fight. Without --planner, --as picks which policy you watch."""
     seed = _seed(a.seed)
-    you = _contestant("you", a.as_policy, a.planner, a.budget_ms)
-    them = _contestant(a.npc, a.npc, None, a.budget_ms)
-    replay = run_fight(you, them, seed, a.fight)
+    you = _contestant("you", a.as_policy, a.planner, a.budget_ms, by_version(a.ruleset))
+    them = _contestant(a.npc, a.npc, None, a.budget_ms, by_version(a.ruleset))
+    replay = run_fight(you, them, seed, a.fight, by_version(a.ruleset))
     slot = "A" if replay["fighters"]["A"]["name"] == "you" else "B"
     if a.out:
         with open(a.out, "w", encoding="utf-8") as f:
@@ -120,23 +120,26 @@ def cmd_replay(a):
 
 def cmd_evaluate(a):
     """Side-swapped paired benchmark on seeds separate from training."""
+    rules = by_version(a.ruleset)
     try:
-        policy = E.policy_by_name(a.policy)
+        policy = E.policy_by_name(a.policy, rules)
     except KeyError as exc:
         raise CombatCliError(str(exc)) from None
-    all_pools = E.pools()
+    all_pools = E.pools(rules)
     if a.pool not in all_pools:
         raise CombatCliError(f"unknown pool {a.pool!r}; known: {', '.join(all_pools)}")
     pool = all_pools[a.pool]
     if a.opponent:
-        pool = {n: E.policy_by_name(n) for n in a.opponent}
+        pool = {n: E.policy_by_name(n, rules) for n in a.opponent}
     say = (lambda m: print(m, file=sys.stderr)) if not a.json else None
-    rows = E.evaluate(policy, pool, a.seeds, suite=a.suite, policy_id=a.policy, progress=say)
+    rows = E.evaluate(policy, pool, a.seeds, suite=a.suite, policy_id=a.policy, progress=say, rules=rules)
     if a.json:
         print(json.dumps({"policy": a.policy, "pool": a.pool, "seeds": a.seeds, "suite": a.suite,
-                          "ruleset_digest": candidate_1().digest.hex(), "rows": rows}, indent=1))
+                          "ruleset_digest": rules.digest.hex(), "semantic_version": rules.semantic_version,
+                          "rows": rows}, indent=1))
     else:
-        print(E.markdown(f"{a.policy} vs {a.pool} ({a.seeds} paired seeds, suite {a.suite})", rows))
+        print(E.markdown(f"{a.policy} vs {a.pool} ({a.seeds} paired seeds, suite {a.suite}, "
+                         f"{rules.semantic_version})", rows))
 
 
 def add_parser(sub):
@@ -156,6 +159,8 @@ def add_parser(sub):
     d.add_argument("--fight", type=int, default=1, help="fight number within the seed")
     d.add_argument("--budget-ms", type=int, default=planner.DEFAULT_BUDGET_MS)
     d.add_argument("--out", help="write the replay JSON here")
+    d.add_argument("--ruleset", default=CANDIDATE_1, choices=tuple(KNOWN),
+                   help="packaged ruleset to fight under (default: %(default)s)")
     d.add_argument("--json", action="store_true")
     d.set_defaults(fn=cmd_train)
 
@@ -171,6 +176,8 @@ def add_parser(sub):
     d.add_argument("--opponent", action="append", help="evaluate only against these, repeatable")
     d.add_argument("--seeds", type=int, default=100, help="paired seeds per opponent (two fights each)")
     d.add_argument("--suite", default="test", help="seed namespace; keep training and test suites apart")
+    d.add_argument("--ruleset", default=CANDIDATE_1, choices=tuple(KNOWN),
+                   help="packaged ruleset to fight under (default: %(default)s)")
     d.add_argument("--json", action="store_true")
     d.set_defaults(fn=cmd_evaluate)
 

@@ -1,0 +1,118 @@
+{
+  "semantic_version": "combat-v1-candidate-2",
+  "rounds": 3,
+  "beats_per_round": 6,
+  "initial": {
+    "hp": 120,
+    "stamina": 60,
+    "opening": 0,
+    "guard_streak": 0,
+    "power_available": 1
+  },
+  "limits": {
+    "hp": 120,
+    "stamina": 60,
+    "guard_streak": 3
+  },
+  "action_names": [
+    "JAB",
+    "KICK",
+    "BLOCK",
+    "DUCK",
+    "THROW",
+    "RECOVER",
+    "EXHAUSTED"
+  ],
+  "submitted_action_ids": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "base_costs": [
+    6,
+    12,
+    4,
+    4,
+    9,
+    0,
+    0
+  ],
+  "block_streak_cost": 3,
+  "block_strain": 6,
+  "ordinary_recovery": 2,
+  "recover_unhit": 18,
+  "recover_hit": 6,
+  "exhausted_recovery": 6,
+  "break_recovery": 10,
+  "opening_damage": 8,
+  "power_damage": 12,
+  "power_cost": 4,
+  "damage": [
+    [
+      8,
+      10,
+      0,
+      0,
+      8,
+      12,
+      12
+    ],
+    [
+      4,
+      14,
+      0,
+      18,
+      14,
+      18,
+      18
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      4,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      20,
+      0,
+      0,
+      18,
+      18
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  ]
+}
