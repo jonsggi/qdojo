@@ -38,13 +38,14 @@ while x<W:
 # dead billboard: a neon "OPEN" whose N burnt out long ago
 FONT = {'O': ['111', '101', '101', '101', '111'], 'P': ['111', '101', '111', '100', '100'],
         'E': ['111', '100', '110', '100', '111'], 'N': ['101', '111', '111', '111', '101']}
-rect(58, 40, 36, 15, '#101516'); rect(59, 41, 34, 13, '#1e2a2b')
+BX = 4   # far left: out of the way of centred content, cropped away on phones
+rect(BX, 40, 36, 15, '#101516'); rect(BX + 1, 41, 34, 13, '#1e2a2b')
 for i, ch in enumerate('OPEN'):
     col = '#3a2a33' if ch == 'N' else SIGN
     for yy, row in enumerate(FONT[ch]):
         for xx, bit in enumerate(row):
-            if bit == '1': rect(62 + i * 7 + xx * 2 - (xx > 0) * 1, 44 + yy, 2 if xx == 1 else 1, 1, col)
-rect(70, 55, 2, 11, '#101516'); rect(84, 55, 2, 11, '#101516')
+            if bit == '1': rect(BX + 4 + i * 7 + xx * 2 - (xx > 0) * 1, 44 + yy, 2 if xx == 1 else 1, 1, col)
+rect(BX + 12, 55, 2, 11, '#101516'); rect(BX + 26, 55, 2, 11, '#101516')
 # smokestack
 rect(130,30,6,40,MID); rect(129,30,8,2,RUST)
 # near: rubble, wrecked car, fence
