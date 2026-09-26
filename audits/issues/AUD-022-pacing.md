@@ -1,6 +1,6 @@
 # AUD-022 — A ranked fight takes twice the target time
 
-- **Status:** Open
+- **Status:** Open (profile wiring done; timing values belong to the balance track)
 - **Priority:** P2 — spectator experience
 - **Type:** Timing
 - **Evidence:** 123 s per ranked fight against a 60 s median target; each round is about 42 s, mostly the fixed 24-tick commit window
@@ -12,7 +12,7 @@ Spectators wait about 40 s per round for six beats that land at once ([simulatio
 
 ## Acceptance criteria
 
-- [ ] A demo timing profile (for example commit 8 / reveal 6 ticks).
+- [ ] A demo timing profile (for example commit 8 / reveal 6 ticks). Wiring done: `devnet.DEMO_TIMING` (today 24/12) and `qdojo combat live --timing C,R` for a new arena; a devnet records its timing in devnet.json; cup level windows follow from the timing. The values are left to the balance track.
 - [ ] Per-beat playback during the next commit window (site side done).
 
 **Source:** [2026-09-25 combat review](../reports/2026-09-25-simulation-audit.md).

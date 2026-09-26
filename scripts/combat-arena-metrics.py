@@ -220,8 +220,24 @@ def analyse(arena, col: Collector, ticks: int, runtime: float) -> dict:
                                                       if r["fighter_id"] == f), False)) for f in rated[:3]],
                         "qualified": sum(1 for r in st["standings"] if r["qualified"])})
 
+    # House net per fight by mode: its rake share from that mode's pots, less
+    # the average execution cost per fight, less sponsorship for cups.
+    exec_fight = burned / fights if fights else 0
+    by_mode_house = collections.Counter()
+    for x in done:
+        if x["mode"] in ("ranked", "duel") and x["winner"] is not None and x["kind"] in ("COMBAT", "FORFEIT"):
+            by_mode_house[x["mode"]] += 2 * x["stake"] * fee.rake_bps // 10_000 * fee.house_bps // 10_000
+    for k in col.cups.values():
+        if k["status"] == "COMPLETE":
+            f2 = m.fees[k["fee_profile_id"]]
+            by_mode_house["cup"] += sum(k["entries"].values()) * f2.rake_bps // 10_000 * f2.house_bps // 10_000
+            by_mode_house["cup"] -= k["sponsorship"]
+    house_by_mode = {mode: round(by_mode_house[mode] / n - exec_fight, 1) for mode, n in by_mode.items() if n}
+
     out = {
         "ticks": ticks, "runtime_s": round(runtime, 1), "profile": arena.net.profile,
+        "tier_stake": getattr(arena, "tier_stake", m.tiers[min(m.tiers)]),
+        "ranked_house_net": house_by_mode.get("ranked"), "house_net_by_mode": house_by_mode,
         "fights": fights, "fights_by_mode": dict(by_mode), "contests": len(done),
         "money": {"house_rake": house, "dev": dev, "share": share, "execution_fees": burned,
                   "sponsorship_paid": sponsorship, "market_fees": market_fees, "house_pnl": house_pnl,
@@ -287,7 +303,7 @@ def table(res: dict) -> str:
              f"- house P&L {m['house_pnl']:+,} QU = rake {m['house_rake']:,} + market {m['market_fees']:,} "
              f"- execution {m['execution_fees']:,} - sponsorship {m['sponsorship_paid']:,}; "
              f"per fight {m['house_pnl_per_fight']:+} (rake {m['house_rake_per_fight']}, exec {m['exec_per_fight']}, "
-             f"{m['calls_per_fight']} calls)",
+             f"{m['calls_per_fight']} calls); by mode {res.get('house_net_by_mode')}",
              f"- EV by strength: " + "; ".join(f"{b}: {v['net_per_fight']:+} QU/fight ({v['fighters']} fighters)"
                                                 for b, v in res["ev_by_strength"].items()),
              f"- cups: {res['cups']['complete']} complete, top {res['cups']['top']} share {res['cups']['top_share']}",

@@ -81,7 +81,7 @@ EVENTS = {
     "duel_stake": {0: 1, 1: 2, 2: 3},
     "cup_entry": 2,                  # cup entry fee
     "cup_fee_profile": 2,            # fee profile for cup entries, when the manifest has it (else 1)
-    "cup_sponsorship": 0.2,          # house sponsorship per cup...
+    "cup_sponsorship": 0.1,          # house sponsorship per cup...
     # ...paid only while no fighter won more than sponsor_max_wins of the last
     # sponsor_window sponsored cups: one bot cannot capture the house's money.
     "sponsor_window": 6, "sponsor_max_wins": 2,
@@ -137,10 +137,11 @@ def _budget(rules, entry, epoch_ticks: int = 2400, tier_stake: int = 1000) -> Bu
 class Market:
     """A simulated secondary market for fighter NFTs (AUD-023), priced.
 
-    Every `every` ticks: owners of idle, non-founding fighters may list them
-    with an ask above the fighter's value; unsold asks come down a little; a
-    collector arrives with a bid around the value of the listing that looks
-    cheapest, and buys when the bid meets the ask. The buyer pays the ask, the
+    Every `every` ticks: owners of non-founding fighters may list them with an
+    ask above the fighter's value; unsold asks come down a little; a collector
+    arrives with a bid around the value of the listing that looks cheapest,
+    and buys when the bid meets the ask. The transfer completes the first tick
+    the fighter is idle (not queued or fighting). The buyer pays the ask, the
     seller receives it less a market fee (FEE_BPS), which goes to the house.
     Payments move external fake QU and are journalled ("xfer"), so balances
     replay. The value model is deliberately simple and public: rating, record
@@ -167,27 +168,37 @@ class Market:
         return int(20 * self.a.tier_stake * 2 ** ((f.lifetime - 1000) / 250) * (0.5 + score) * experience)
 
     def step(self):
-        a, rng, c = self.a, self.a.rng, self.a.w.contract
-        idle = {f.hex(): f for f in a.bots if c.fighters[f].lock == "IDLE" and not a.registry.assets[f].founding}
+        a, rng = self.a, self.a.rng
+        sellable = {f.hex(): f for f in a.bots if not a.registry.assets[f].founding}
         for hx in list(self.listings):
-            if hx not in idle or self.listings[hx]["seller"] != a.registry.assets[idle[hx]].owner.hex():
-                del self.listings[hx]                   # busy now, or it changed hands: withdrawn
+            if hx not in sellable or self.listings[hx]["seller"] != a.registry.assets[sellable[hx]].owner.hex():
+                del self.listings[hx]                   # changed hands: withdrawn
                 continue
             lst = self.listings[hx]
-            lst["ask"] = max(int(0.85 * self.value(idle[hx])), int(lst["ask"] * 0.95))
-        for hx, fid in idle.items():
+            if "buyer_bid" not in lst:
+                lst["ask"] = max(int(0.85 * self.value(sellable[hx])), int(lst["ask"] * 0.95))
+        for hx, fid in sellable.items():
             if hx not in self.listings and rng.random() < self.LIST_P:
                 self.listings[hx] = {"ask": int(self.value(fid) * rng.uniform(1.05, 1.5)), "since": a.w.tick,
                                      "seller": a.registry.assets[fid].owner.hex()}
         for _ in range(self.BUYERS):
-            if not self.listings:
+            open_ = [h for h in self.listings if "buyer_bid" not in self.listings[h]]
+            if not open_:
                 break
-            hx = min(self.listings, key=lambda h: self.listings[h]["ask"] / max(1, self.value(idle[h])))
-            fid, ask = idle[hx], self.listings[hx]["ask"]
-            bid = int(self.value(fid) * rng.uniform(0.8, 1.15))
-            if bid >= ask:
-                self._sell(fid, ask, bid)
-                del self.listings[hx]
+            hx = min(open_, key=lambda h: self.listings[h]["ask"] / max(1, self.value(sellable[h])))
+            bid = int(self.value(sellable[hx]) * rng.uniform(0.8, 1.15))
+            if bid >= self.listings[hx]["ask"]:
+                self.listings[hx]["buyer_bid"] = bid    # agreed: settles when the fighter is next idle
+        self.settle()
+
+    def settle(self):
+        """Complete agreed sales whose fighter is idle (a transfer needs an idle fighter)."""
+        a, c = self.a, self.a.w.contract
+        for hx in [h for h, x in self.listings.items() if "buyer_bid" in x]:
+            fid = bytes.fromhex(hx)
+            if c.fighters[fid].lock == "IDLE":
+                lst = self.listings.pop(hx)
+                self._sell(fid, lst["ask"], lst["buyer_bid"])
 
     def _sell(self, fid: bytes, price: int, bid: int):
         a = self.a
@@ -213,13 +224,14 @@ class Market:
         prices = [x["price"] for x in self.sales]
         return {"sales": len(prices), "volume": sum(prices), "fees": self.fees_collected(),
                 "median_price": sorted(prices)[len(prices) // 2] if prices else None,
+                "min_price": min(prices) if prices else None, "max_price": max(prices) if prices else None,
                 "listings": len(self.listings)}
 
     def doc(self) -> dict:
         names = {f.hex(): e["label"] for f, e in self.a.labels.items()}
         c = self.a.w.contract
         listings = [{"fighter_id": hx, "name": names.get(hx), "ask": str(x["ask"]), "since_tick": str(x["since"]),
-                     "seller": x["seller"], "value": str(self.value(bytes.fromhex(hx))),
+                     "seller": x["seller"], "value": str(self.value(bytes.fromhex(hx))), "sold": "buyer_bid" in x,
                      "rating": c.fighters[bytes.fromhex(hx)].lifetime}
                     for hx, x in sorted(self.listings.items(), key=lambda kv: int(kv[1]["ask"]))]
         sales = [{**x, "name": names.get(x["fighter_id"]), "tick": str(x["tick"]), "price": str(x["price"]),
@@ -420,10 +432,14 @@ class Arena:
         self.log(f"tick {self.w.tick}: duel challenge {self.labels[a]['label']} -> {self.labels[b]['label']} ({stake} QU)")
 
     def _maybe_market(self):
-        """Now and then owners list idle fighters and collectors buy them (Market)."""
-        if self.market_every <= 0 or self.w.tick % self.market_every:
+        """Now and then owners list fighters and collectors bid (Market); an
+        agreed sale completes on the first tick its fighter is idle."""
+        if self.market_every <= 0:
             return
-        self.market.step()
+        if self.w.tick % self.market_every == 0:
+            self.market.step()
+        elif self.market.listings:
+            self.market.settle()
 
     def _reserve(self):
         if self.chain.fees is not None and (self.chain.reserve or 0) < RESERVE_FLOOR:

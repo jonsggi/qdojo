@@ -1,6 +1,6 @@
 # AUD-018 — House economics do not close
 
-- **Status:** Open
+- **Status:** Mitigated in the demo arena (new arenas); production values still need measured Qubic costs
 - **Priority:** P1 — paid launch gate
 - **Type:** Economics
 - **Evidence:** Over 34.8 h simulated execution fees burned 1.06 M QU against 361 k of rake (216 k to the house) plus 140 k sponsorship: about −986 k
@@ -12,8 +12,8 @@ At a 1,000 QU stake a ranked fight costs about 180–200 QU in execution fees ag
 
 ## Acceptance criteria
 
-- [ ] Re-run the economics including execution cost and choose tiers, rake and entry fees so the house at least breaks even per fight.
-- [ ] Measure real Qubic execution costs before fixing values.
-- [ ] Document the target (house margin, player expected value) in `docs/product-decisions.md`.
+- [x] Re-run the economics including execution cost and choose tiers, rake and entry fees so the house at least breaks even per fight. `combat-economics.py` now includes the simulated fee model and a break-even table; the demo profile uses 5,000/20,000 QU tiers, 500 bps ranked rake, a 1,000 bps cup fee profile and tier-scaled duel stakes and cup entries. Demo arena, 10,000 ticks, same lineup and seed: house P&L per fight **−156.5 → +84.5 QU** (ranked +93.8, duel +53.9, cup −4.4 before halving sponsorship); see [economics report](../../docs/economics-report.md) for the 20,000-tick pair.
+- [ ] Measure real Qubic execution costs before fixing values. Open: the fee model is a candidate. The break-even stake scales linearly with it (about 3,100 QU at 187 QU per fight).
+- [x] Document the target (house margin, player expected value) in `docs/product-decisions.md` ("Demo arena economics (2026-09-26)").
 
 **Source:** [2026-09-25 combat review](../reports/2026-09-25-simulation-audit.md).

@@ -67,7 +67,10 @@ DEMO_FEES = {1: {"rake_bps": 500, "house_bps": 6000, "dev_bps": 1000, "share_bps
 PROFILES = {
     "dev": {},
     "demo": {"ticks_per_epoch": 2400, "season_epochs": 4, "season_closeout_ticks": 300,
-             "pair_starts_per_epoch": 6, "pair_rematch_ticks": 60,
+             # At most 3 rated starts per pair per epoch (was 6): in a small field
+             # the two best fighters otherwise spend most of their fights on each
+             # other (AUD-020). Spec value: 2.
+             "pair_starts_per_epoch": 3, "pair_rematch_ticks": 60,
              "timing": {1: DEMO_TIMING}, "tiers": {1: 5000, 2: 20000}, "fees": DEMO_FEES},
 }
 

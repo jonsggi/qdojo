@@ -216,3 +216,69 @@ def test_index_json_carries_bounded_ownership_history(tmp_path):
     idx = export.index_deployment(dep)["fighters"]["aa"]["asset"]
     assert len(idx["history"]) == export.INDEX_HISTORY and idx["transfers"] == 9 and idx["history_truncated"]
     assert idx["history"][-1]["to"] == "o9" and len(dep["fighters"]["aa"]["asset"]["history"]) == 10
+
+
+# ---- AUD-018/019/020/023: event economics, filters, qualification, market ----
+
+def test_duel_accept_filters(tmp_path):
+    arena = _arena(tmp_path, [{"label": "d", "policy": "mixed-v1", "duels": True, "ranked": False}])
+    bot = next(iter(arena.bots.values()))
+    me = {"lifetime": 1000}
+    other = b"\x07" * 32
+    offer = {"offer_id": 1, "stake": arena.tier_stake, "challenger": other, "challenger_rating": 1150}
+    assert bot._duel_declined(me, offer) is None
+    assert "above us" in bot._duel_declined(me, {**offer, "challenger_rating": 1250})
+    assert "duel limit" in bot._duel_declined(me, {**offer, "stake": 10**9})
+    bot.bstate.duel_h2h[other.hex()] = [0, 1, 2]                  # 3 series, score 1/6
+    assert "series" in bot._duel_declined(me, offer)
+    bot.bstate.duel_h2h[other.hex()] = [1, 0, 2]                  # score 1/3 < 0.34: still declined
+    assert bot._duel_declined(me, offer)
+    bot.bstate.duel_h2h[other.hex()] = [2, 0, 2]
+    assert bot._duel_declined(me, offer) is None
+
+
+def test_event_prices_follow_the_tier_and_the_sponsorship_cap(tmp_path):
+    arena = _arena(tmp_path)
+    assert arena.tier_stake == 5000                             # a new demo arena
+    assert arena._stake(live.EVENTS["duel_stake"][2]) == 15000
+    assert arena.sponsorship() == arena._stake(live.EVENTS["cup_sponsorship"])
+    from qdojo.combat import store
+    h = store.history(arena.w.contract)
+    champ = b"\x01" * 32
+    for i in range(3):                                           # one fighter wins 3 of the last sponsored cups
+        h.cups[100 + i] = ("COMPLETE", champ, 500, 0, 0, 1, ())
+    assert arena.sponsorship() == 0
+    h.cups[200] = ("COMPLETE", b"\x02" * 32, 500, 0, 0, 1, ())
+    h.cups[201] = ("COMPLETE", b"\x03" * 32, 500, 0, 0, 1, ())
+    h.cups[202] = ("COMPLETE", b"\x04" * 32, 500, 0, 0, 1, ())
+    h.cups[203] = ("COMPLETE", b"\x05" * 32, 500, 0, 0, 1, ())   # champ now has 2 of the last 6
+    assert arena.sponsorship() > 0
+
+
+def test_population_scaled_qualification():
+    from qdojo.combat.contract import Qualification
+    spec, demo = Qualification(), Qualification(scale=True)
+    assert spec.thresholds(8) == {"fights": 12, "opponents": 4, "defeated": 3, "final_epoch_fights": 3}
+    assert demo.thresholds(8)["opponents"] == 2 and demo.thresholds(8)["defeated"] == 1
+    assert demo.thresholds(15)["opponents"] == 3 and demo.thresholds(30) == spec.thresholds(30)
+
+
+def test_the_market_sells_at_a_price_and_payments_replay(tmp_path):
+    from qdojo.combat import devnet
+    lineup = [{"label": "a", "policy": "scout-v1"}, {"label": "b", "policy": "kicker-v1"},
+              {"label": "c", "policy": "mixed-v1"}, {"label": "d", "policy": "jabber-v1"}]
+    out = tmp_path / "web" / "combat" / "v1"
+    arena = live.run(tmp_path / "net", lineup, out, tick_seconds=0, export_every=10, keep=50, ticks=1500,
+                     log=lambda m: None, seed=4, deterministic=True, market_every=100)
+    sales = arena.market.sales
+    assert sales and all(s["price"] > 0 and s["fee"] == s["price"] * live.Market.FEE_BPS // 10_000 for s in sales)
+    assert invariants.check(arena.w) == []
+    doc = json.loads((out / "market.json").read_text())
+    assert doc["schema"] == "qdojo.combat.market.v1" and len(doc["sales"]) == len(sales)
+    econ = json.loads((out / "economics.json").read_text())
+    assert econ["tiers"]["1"]["stake"] == "5000" and float(econ["tiers"]["1"]["break_even_win_share"]) > 0.5
+    net_dir = tmp_path / "net"
+    for name in (devnet.SNAPSHOT, devnet.SNAPSHOT_PREV):
+        (net_dir / name).unlink(missing_ok=True)
+    replayed = devnet.Devnet(net_dir)
+    assert replayed.world.balances == arena.w.balances           # "xfer" records replay the payments
