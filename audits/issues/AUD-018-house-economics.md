@@ -1,6 +1,6 @@
 # AUD-018 — House economics do not close
 
-- **Status:** Mitigated in the demo arena (new arenas); production values still need measured Qubic costs
+- **Status:** Mitigated in `f27a972` for the demo arena (new arenas); production values still need measured Qubic costs
 - **Priority:** P1 — paid launch gate
 - **Type:** Economics
 - **Evidence:** Over 34.8 h simulated execution fees burned 1.06 M QU against 361 k of rake (216 k to the house) plus 140 k sponsorship: about −986 k

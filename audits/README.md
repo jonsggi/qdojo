@@ -126,9 +126,9 @@ Seven findings were fixed and deployed on 2026-09-25; the rest are open.
 | [AUD-015](issues/AUD-015-opponent-scouting-empty.md) | **Fixed** 0918949 | P1 / builder experience | Planners could not scout their opponent |
 | [AUD-016](issues/AUD-016-bot-run-planner-forfeit.md) | **Fixed** 66c0951 | P1 / builder onboarding | `qdojo combat bot run --planner` forfeited its first local fight |
 | [AUD-017](issues/AUD-017-records-ranked-only.md) | **Fixed** d688257 | P1 / public correctness | Fighter records showed ranked fights only |
-| [AUD-018](issues/AUD-018-house-economics.md) | Mitigated (demo) 65ac7b8 | P1 / paid launch gate | House economics do not close |
-| [AUD-019](issues/AUD-019-player-ev-and-event-farming.md) | **Mitigated** 65ac7b8 | P1 / fairness / outside stakes | Honest players lose money; cups and duels were farmed |
-| [AUD-020](issues/AUD-020-ratings-and-seasons.md) | **Mitigated** 65ac7b8 | P2 / competition quality | Ratings do not converge and season titles are noisy |
+| [AUD-018](issues/AUD-018-house-economics.md) | Mitigated (demo) f27a972 | P1 / paid launch gate | House economics do not close |
+| [AUD-019](issues/AUD-019-player-ev-and-event-farming.md) | **Mitigated** f27a972 | P1 / fairness / outside stakes | Honest players lose money; cups and duels were farmed |
+| [AUD-020](issues/AUD-020-ratings-and-seasons.md) | **Mitigated** f27a972 | P2 / competition quality | Ratings do not converge and season titles are noisy |
 | [AUD-021](issues/AUD-021-balance-kick-duck.md) | Open | P2 / strategic depth | Kick dominates; duck and throw are near useless |
 | [AUD-022](issues/AUD-022-pacing.md) | Open (profile wiring 67f10c1) | P2 / spectator experience | A ranked fight takes twice the target time |
 | [AUD-023](issues/AUD-023-market-without-prices.md) | **Fixed** 65ac7b8 | P2 / NFT readiness | The simulated market has no prices |

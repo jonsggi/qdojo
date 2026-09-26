@@ -1,6 +1,6 @@
 # AUD-020 — Ratings do not converge and season titles are noisy
 
-- **Status:** Mitigated (not yet deployed); see the economics report
+- **Status:** Mitigated in `f27a972` (not yet deployed); see the economics report
 - **Priority:** P2 — competition quality
 - **Type:** Matchmaking / ratings
 - **Evidence:** Rating spread widened 545 to 1,300 points; the top two bots mostly fought each other (210 times) and failed the distinct-opponent rule; a season went to a 754-rated fighter

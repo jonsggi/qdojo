@@ -1,6 +1,6 @@
 # AUD-019 — Honest players lose money; cups and duels were farmed
 
-- **Status:** Mitigated (not yet deployed); see the economics report
+- **Status:** Mitigated in `f27a972` (not yet deployed); see the economics report
 - **Priority:** P1 — fairness / outside stakes
 - **Type:** Economics / competition design
 - **Evidence:** An average honest bot loses about 70–100 QU per 1,000 QU fight; oni took 25 of 27 cups (+388 k), tengu went 138–5 in duels (+241 k)

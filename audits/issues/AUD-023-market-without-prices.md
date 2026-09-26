@@ -1,6 +1,6 @@
 # AUD-023 — The simulated market has no prices
 
-- **Status:** Fixed (not yet deployed)
+- **Status:** Fixed in `65ac7b8` (not yet deployed)
 - **Priority:** P2 — NFT readiness
 - **Type:** Market simulation
 - **Evidence:** A sale transfers the fighter to a new collector identity and no price is paid
