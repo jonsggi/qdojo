@@ -579,3 +579,4 @@ img.sensei { width: 128px; height: 160px; image-rendering: pixelated; display: b
   .band { grid-template-columns: 1fr 70px; } .band .band-bar { grid-column: 1 / -1; order: 3; } .band-n { display: none; }
 }
 .kpi b .qu { font-size: inherit; color: inherit; }
+@media (max-width: 640px) { .kpis { grid-template-columns: 1fr 1fr; gap: 10px; } .kpi { padding: 10px 12px; } .kpi b { font-size: 14px; } }
