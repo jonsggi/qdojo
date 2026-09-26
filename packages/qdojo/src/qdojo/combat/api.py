@@ -20,6 +20,7 @@ from __future__ import annotations
 import email.utils
 import gzip
 import hashlib
+import ipaddress
 import json
 import mimetypes
 import os
@@ -42,6 +43,22 @@ MAX_BODY = 8192
 LIVE_CACHE = "public, max-age=5"
 FINAL_CACHE = "public, max-age=86400"
 DEFAULT_ORIGINS = ("https://qdojo.jonsggi.com",)
+
+# Direct peers allowed to name the client (the site's nginx reaches the API
+# over the tailnet or a private network). Exact CIDRs, not string prefixes.
+TRUSTED_PROXIES = tuple(ipaddress.ip_network(n) for n in (
+    "127.0.0.0/8", "::1/128", "100.64.0.0/10", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"))
+
+
+def _trusted_peer(peer: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(peer)
+    except ValueError:
+        return False
+    if ip.version == 6 and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    return any(ip in n for n in TRUSTED_PROXIES)
+
 
 
 class ApiError(Exception):
@@ -391,11 +408,20 @@ class Handler(BaseHTTPRequestHandler):
                               "error": {"status": e.status, "code": e.code, "message": e.message}}, "no-store")
 
     def client_ip(self) -> str:
-        """The peer, or the first X-Forwarded-For entry when the peer is a local or tailnet proxy."""
+        """The client address for per-IP limits.
+
+        Only the site's nginx is trusted to name the client: it resolves the
+        real address (walking X-Forwarded-For through known proxy and
+        Cloudflare ranges only) and overwrites X-Real-Client-IP with it. That
+        header is read only when the direct peer is inside TRUSTED_PROXIES;
+        anything else a client sends, X-Forwarded-For included, is ignored."""
         peer = self.client_address[0]
-        fwd = self.headers.get("X-Forwarded-For", "")
-        if fwd and (peer.startswith(("127.", "100.", "::1", "10.", "172.", "192.168."))):
-            return fwd.split(",")[0].strip()[:64]
+        named = self.headers.get("X-Real-Client-IP", "").strip()
+        if named and _trusted_peer(peer):
+            try:
+                return str(ipaddress.ip_address(named))
+            except ValueError:
+                return peer
         return peer
 
     # -- verbs -------------------------------------------------------------------

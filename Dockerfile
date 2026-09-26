@@ -47,7 +47,45 @@ ENV QDOJO_JOIN_OPEN=0
 RUN mkdir -p /etc/nginx/templates && printf '%s\n' \
     'types { text/plain txt; }' \
     'map $request_method $qdojo_write { default 1; GET 0; HEAD 0; OPTIONS 0; }' \
-    'map $request_method $qdojo_write_key { default $http_x_forwarded_for$remote_addr; GET ""; HEAD ""; OPTIONS ""; }' \
+    '# Client address: walk X-Forwarded-For from the right, skipping only our own proxies' \
+    '# (Docker/Traefik private ranges) and Cloudflare edges, so entries a client wrote itself' \
+    '# are never trusted. Cloudflare ranges from cloudflare.com/ips (2026-09-26).' \
+    'real_ip_header X-Forwarded-For;' \
+    'real_ip_recursive on;' \
+    'set_real_ip_from 10.0.0.0/8;' \
+    'set_real_ip_from 172.16.0.0/12;' \
+    'set_real_ip_from 192.168.0.0/16;' \
+    'set_real_ip_from 100.64.0.0/10;' \
+    'set_real_ip_from 127.0.0.0/8;' \
+    'set_real_ip_from fc00::/7;' \
+    'set_real_ip_from ::1/128;' \
+    'set_real_ip_from 173.245.48.0/20;' \
+    'set_real_ip_from 103.21.244.0/22;' \
+    'set_real_ip_from 103.22.200.0/22;' \
+    'set_real_ip_from 103.31.4.0/22;' \
+    'set_real_ip_from 141.101.64.0/18;' \
+    'set_real_ip_from 108.162.192.0/18;' \
+    'set_real_ip_from 190.93.240.0/20;' \
+    'set_real_ip_from 188.114.96.0/20;' \
+    'set_real_ip_from 197.234.240.0/22;' \
+    'set_real_ip_from 198.41.128.0/17;' \
+    'set_real_ip_from 162.158.0.0/15;' \
+    'set_real_ip_from 104.16.0.0/13;' \
+    'set_real_ip_from 104.24.0.0/14;' \
+    'set_real_ip_from 172.64.0.0/13;' \
+    'set_real_ip_from 131.0.72.0/22;' \
+    'set_real_ip_from 2400:cb00::/32;' \
+    'set_real_ip_from 2606:4700::/32;' \
+    'set_real_ip_from 2803:f800::/32;' \
+    'set_real_ip_from 2405:b500::/32;' \
+    'set_real_ip_from 2405:8100::/32;' \
+    'set_real_ip_from 2a06:98c0::/29;' \
+    'set_real_ip_from 2c0f:f248::/32;' \
+    '# If the walk ends at a Cloudflare edge (the proxy in front replaced X-Forwarded-For),' \
+    '# the client is the one Cloudflare names in CF-Connecting-IP, a header it always overwrites.' \
+    'geo $qdojo_peer_is_cf { default 0;173.245.48.0/20 1; 103.21.244.0/22 1; 103.22.200.0/22 1; 103.31.4.0/22 1; 141.101.64.0/18 1; 108.162.192.0/18 1; 190.93.240.0/20 1; 188.114.96.0/20 1; 197.234.240.0/22 1; 198.41.128.0/17 1; 162.158.0.0/15 1; 104.16.0.0/13 1; 104.24.0.0/14 1; 172.64.0.0/13 1; 131.0.72.0/22 1; 2400:cb00::/32 1; 2606:4700::/32 1; 2803:f800::/32 1; 2405:b500::/32 1; 2405:8100::/32 1; 2a06:98c0::/29 1; 2c0f:f248::/32 1; }' \
+    'map $qdojo_peer_is_cf $qdojo_client { default $remote_addr; 1 $http_cf_connecting_ip; }' \
+    'map $request_method $qdojo_write_key { default $qdojo_client; GET ""; HEAD ""; OPTIONS ""; }' \
     'limit_req_zone $qdojo_write_key zone=qdojo_join:1m rate=5r/s;' \
     'server {' \
     '  listen 80;' \
@@ -72,7 +110,8 @@ RUN mkdir -p /etc/nginx/templates && printf '%s\n' \
     '    limit_req zone=qdojo_join burst=20 nodelay;' \
     '    client_max_body_size 8k;' \
     '    proxy_pass ${QDOJO_LIVE_API};' \
-    '    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;' \
+    '    proxy_set_header X-Forwarded-For $qdojo_client;' \
+    '    proxy_set_header X-Real-Client-IP $qdojo_client;' \
     '    proxy_connect_timeout 2s;' \
     '    proxy_read_timeout 10s;' \
     '    proxy_intercept_errors on;' \

@@ -156,6 +156,15 @@ the drop-ins. Outside fighters are listed in `arena/outside.json` and stay
 labelled `outside` even after joining is switched off; their bots simply stop
 being able to send. No builder code runs on the host.
 
+**Client addresses** (for the per-IP write limit): nginx walks
+`X-Forwarded-For` from the right through its own proxies (private ranges)
+and Cloudflare's published edge ranges only, so entries a client writes
+itself are never trusted; if the walk ends at a Cloudflare edge it uses
+`CF-Connecting-IP`. It overwrites `X-Real-Client-IP` for the API, which reads
+that header only from a peer in an exact trusted CIDR. Refresh the Cloudflare
+ranges in the Dockerfile from cloudflare.com/ips when they change. Per-IP
+limits are a courtesy; the per-key quotas are the real protection.
+
 **Operate:**
 
 ```sh
