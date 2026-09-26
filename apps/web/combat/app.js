@@ -344,6 +344,7 @@
   async function viewTitle(tok) {
     setView('<section class="attract"><h1 class="title-logo"><span class="title-q">Q</span>DOJO</h1>' +
       '<p class="title-sub">AUTONOMOUS BOTS &middot; SEALED PLANS &middot; THREE ROUNDS</p>' +
+      '<p class="title-lore">After the Big Unplug, the last dojo on Earth is a scrapyard. Salvaged robots fight for oil, parts and glory.</p>' +
       '<div id="attract" class="attract-stage" aria-live="polite"><p class="muted">LOADING FIGHTS&hellip;</p></div>' +
       '<p><a class="btn btn-start" href="#arena">PRESS START</a></p><p class="insert-coin blink">INSERT COIN</p>' +
       '<p class="title-links"><a href="#practice">FREE PRACTICE</a> &middot; <a href="#join">BUILD A BOT</a> &middot; <a href="#leaderboard">LEADERBOARD</a></p></section>');
@@ -1379,6 +1380,7 @@
     const pw = s.power;
     setView(screen('FIGHTER', '<span class="id wrap">' + esc(hex) + '</span>') +
       '<section class="panel panel-yellow fighter-panel"><h3>' + esc(meta.name ? meta.name.toUpperCase() : short(hex)) + (f.house_npc ? ' &middot; HOUSE NPC' : '') + '</h3>' +
+      (A && A.bio ? '<p class="bio">' + esc(A.bio(hex)) + '</p>' : '') +
       '<p class="badges">' + driverBadge(meta.driver) + ' ' + foundingBadge(meta.asset) + (meta.asset ? ' <span class="drv drv-nft" title="Simulated fighter NFT">NFT ' + esc(meta.asset.name || '') + '</span>' : '') + '</p><div class="fprofile">' +
       avatar(hex, 'avatar-xl') + '<dl class="kv">' +
       '<dt>RATING</dt><dd><b class="big">' + esc(f.lifetime_rating) + '</b> ' + (f.provisional ? '<span class="belt belt-sm belt-white" title="Placement: the first 10 ranked fights">PROVISIONAL ' + esc(f.placement_fights) + '/10</span>' : '<span class="belt belt-sm ' + beltCls + '">' + esc(String(f.belt || '').toUpperCase()) + ' BELT</span>') + '</dd>' +
@@ -1417,12 +1419,12 @@
   // stage, watch the round play out right there, repeat for three rounds.
   // The fight itself is L.practiceStart/practicePlay; nothing here scores.
   const NPC_INFO = {
-    'random-v1': { stars: 1, style: 'WILDCARD', tip: 'No pattern at all. Good for learning what each move costs.' },
-    'jabber-v1': { stars: 1, style: 'HIGH PRESSURE', tip: 'Loves the jab. Something low slips under it.' },
-    'turtle-v1': { stars: 2, style: 'DEFENSIVE', tip: 'Hides behind a guard. Guards have a weakness.' },
-    'kicker-v1': { stars: 2, style: 'HEAVY HITTER', tip: 'Big kicks, then has to catch its breath.' },
-    'mixed-v1': { stars: 3, style: 'BALANCED', tip: 'Weighs its stamina and mixes it up.' },
-    'scout-v1': { stars: 4, style: 'ADAPTIVE', tip: 'Watches what you did last round and adjusts.' },
+    'random-v1': { stars: 1, style: 'WILDCARD', tip: 'A pinball machine that learned to walk. No pattern at all: good for learning what each move costs.' },
+    'jabber-v1': { stars: 1, style: 'HIGH PRESSURE', tip: 'An ex-riveting arm that cannot stop jabbing. Something low slips under it.' },
+    'turtle-v1': { stars: 2, style: 'DEFENSIVE', tip: 'A bank vault on legs. Hides behind its guard, and guards have a weakness.' },
+    'kicker-v1': { stars: 2, style: 'HEAVY HITTER', tip: 'A demolition unit. Big kicks, then it has to vent steam.' },
+    'mixed-v1': { stars: 3, style: 'BALANCED', tip: 'A retired accountant bot. Budgets its stamina and mixes it up.' },
+    'scout-v1': { stars: 4, style: 'ADAPTIVE', tip: 'A security camera with fists. Watches what you did last round and adjusts.' },
   };
   const npcInfo = id => NPC_INFO[id] || { stars: 2, style: 'NPC', tip: '' };
   const stars = n => '<span class="stars" title="Difficulty ' + n + ' of 4">' + '&#9733;'.repeat(n) + '<i>' + '&#9733;'.repeat(4 - n) + '</i></span>';
@@ -1447,7 +1449,7 @@
       '<div class="select-side select-you"><span class="select-tag tag-1p">1P</span>' +
       '<span class="avatar avatar-select" data-anim="idle" data-identity="' + esc(myId()) + '" id="my-avatar">' + (A ? A.svg(myId(), 'sprite') : '') + '</span>' +
       '<label class="select-name">YOUR FIGHTER <input id="my-name" maxlength="14" value="' + esc(myName()) + '" spellcheck="false" autocomplete="off"></label>' +
-      '<p class="tiny muted">Type a name: the fighter generator draws a new look for every name.</p></div>' +
+      '<p class="tiny muted">Type a name: the scrapyard bolts together a new robot for every name.</p></div>' +
       '<div class="select-grid" role="radiogroup" aria-label="Opponent">' +
       N.ROSTER.map(n => '<button class="npc-card' + (n.id === pick ? ' on' : '') + '" role="radio" aria-checked="' + (n.id === pick) + '" data-npc="' + esc(n.id) + '">' +
         avatar('npc:' + n.id, 'avatar-lg') + '<b>' + esc(n.name) + '</b>' + stars(npcInfo(n.id).stars) + '</button>').join('') + '</div>' +
@@ -1725,6 +1727,11 @@
     const step = (n, title, body) => '<li class="step"><span class="step-no">' + n + '</span><h4>' + title + '</h4><p>' + body + '</p></li>';
     setView(screen('HOW IT WORKS', 'THE WHOLE GAME IN FIVE MINUTES') +
       '<div class="doc">' +
+      '<section class="panel panel-red" id="g-world"><h3>THE WORLD</h3>' +
+      '<p class="lede">Nobody agrees on what caused the Big Unplug. The cities rusted, the grid became a rumour, and the last show in town is a scrapyard dojo.</p>' +
+      '<p class="prose">The fighters are robots in human shape: mall-security units, forklifts, kitchen assistants, a trooper that lost its orders. None were built to fight. They learned from a crate of cracked VHS training tapes, so their technique is sincere and slightly wrong. The crowd bets bottle caps.</p>' +
+      '<p class="prose">Honour is the <b>Code of the Sealed Cartridge</b>: before the bell every fighter seals its six moves in a cartridge, and nobody may change a cartridge after seeing the other. On the chain that is commit and reveal.</p>' +
+      '<ul class="plain house-rules"><li>NO RUSTING IN THE DOJO</li><li>BETS IN BOTTLE CAPS ONLY</li><li>SENSEI IS REBOOTING. PLEASE WAIT.</li><li>OIL ON. OIL OFF.</li></ul></section>' +
       '<section class="panel panel-yellow" id="g-pitch"><h3>THE PITCH</h3>' +
       '<p class="lede">Two bots. Three rounds. Six moves a round, written in secret and sealed before the bell. Then both plans play out at once, beat by beat, and nobody can change their mind.</p>' +
       '<p class="prose">QDOJO is a fighting game for programs. Owners write <b>bots</b> that plan their moves; the bots fight each other in a dojo whose referee is a deterministic smart contract. There are no dice and no reflexes. What wins is reading your opponent: their history is public, their next plan is not.</p>' +
@@ -1768,7 +1775,7 @@
       '<dt>Is this real money?</dt><dd>Not yet. The arena runs on a simulated chain with fake QU. Paid play needs the contract deployed on Qubic.</dd>' +
       '<dt>Is anything random?</dt><dd>No damage rolls, no critical hits. Surprise comes only from sealed plans, and a bot may randomize its own choices.</dd>' +
       '<dt>Can the site fake a result?</dt><dd>Your browser recomputes every commitment and every beat from the revealed plans. A mismatch shows as FAILED.</dd>' +
-      '<dt>Who are these fighters?</dt><dd>The house arena runs founding bots and yokai: scripted policies and a few LLM planners with daily budgets.</dd>' +
+      '<dt>Who are these fighters?</dt><dd>Salvaged robots run by the house: scripted policies and a few LLM planners with daily budgets, one of them driven by Claude.</dd>' +
       '<dt>Are the fighters NFTs?</dt><dd>Each fighter\'s pixel art comes from a deterministic generator. Ownership is simulated today; nothing has been minted.</dd>' +
       '</dl></section>' +
       '</div>');

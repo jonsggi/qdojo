@@ -432,3 +432,94 @@ body.still .select-grid .npc-card.on { animation: none; }
 .join-cta { justify-content: center; margin: 0 0 26px; }
 /* The moon keeps clear of centred page titles. */
 .bd-sun { right: 3%; top: 10vh; width: min(16vw, 170px); }
+
+/* ======================================================================
+ * THE DOJO AT THE END OF THE WORLD (2026-09-26)
+ * Post-collapse scrapyard: smog, rust, oxidised teal, hazard stripes and
+ * rusted-chrome lettering. Same SF2 structure; only the look changes.
+ * ==================================================================== */
+:root {
+  --soot: #0d0f12; --smog: #16302f; --dusk: #2a1d17;
+  --rust: #c2551b; --rust-d: #8a3b12; --hazard: #f2c230; --teal: #3aa597;
+  --chrome: #e8edf2; --steel: #9aa6b2; --gun: #4b5563; --warn: #e0342b;
+  --cyan: #6fd8cf; --green: #7fd36b; --magenta: #ff4fa0;
+  --panel-glass: rgba(12, 14, 16, .95);
+}
+html { background: var(--soot); }
+.backdrop { background: linear-gradient(180deg, #0a0d0f 0%, #132426 38%, #2a2a22 62%, #3a2418 82%, #1a100c 100%); }
+/* Ash instead of stars: slow, drifting down. */
+.bd-stars { inset: 0; opacity: .5;
+  background-image:
+    radial-gradient(1px 1px at 10% 20%, #c9c2b8 99%, transparent), radial-gradient(1px 1px at 30% 60%, #a89f93 99%, transparent),
+    radial-gradient(2px 2px at 55% 35%, #b8b0a4 99%, transparent), radial-gradient(1px 1px at 75% 70%, #c9c2b8 99%, transparent),
+    radial-gradient(1px 1px at 90% 15%, #a89f93 99%, transparent), radial-gradient(1px 1px at 45% 85%, #b8b0a4 99%, transparent);
+  background-size: 360px 300px; animation: ash 24s linear infinite; }
+@keyframes ash { from { background-position: 0 0; } to { background-position: 60px 300px; } }
+/* A sickly sun behind the smog. */
+.bd-sun { right: 6%; top: 11vh; width: min(15vw, 160px); border-radius: 50%; opacity: .75;
+  background: radial-gradient(circle at 45% 45%, #f6d58a 0 28%, #e39a3c 50%, #9a4a1c 100%);
+  box-shadow: 0 0 0 14px rgba(227, 154, 60, .07), 0 0 120px rgba(227, 120, 40, .35); }
+.bd-sun::after { background: repeating-linear-gradient(180deg, transparent 0 9px, rgba(22, 48, 47, .55) 9px 13px); border-radius: 50%; }
+/* Smog bands drift across. */
+.bd-grid { top: 14vh; height: 30vh; opacity: .55;
+  background:
+    radial-gradient(260px 18px at 20% 30%, #22403d 98%, transparent), radial-gradient(340px 22px at 70% 55%, #2c2a22 98%, transparent),
+    radial-gradient(200px 14px at 45% 80%, #22403d 98%, transparent);
+  background-size: 1600px 100%; animation: drift 140s linear infinite; }
+.bd-hills { opacity: .9; height: 42vh; }
+@media (max-width: 700px) { .bd-hills { height: 26vh; opacity: .8; } .bd-sun { width: 84px; top: 64px; right: 8px; } }
+
+/* Rusted chrome lettering: steel with a rust edge instead of fire. */
+.fire-text, h2.screen-title, .title-logo, .t-h, .win b, .result-big {
+  background: linear-gradient(180deg, #ffffff 0%, #d9e0e6 22%, #8c99a6 46%, #f3f6f8 52%, #9aa6b2 70%, #b0612a 88%, #6a2e10 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  -webkit-text-stroke: 1px #1a0d06;
+  filter: drop-shadow(2px 2px 0 #3a1a0a) drop-shadow(3px 3px 0 #000);
+}
+.title-logo { -webkit-text-stroke: 2px #1a0d06; filter: drop-shadow(3px 3px 0 #7a3410) drop-shadow(6px 6px 0 #000); }
+h2.screen-title small, .title-sub { color: var(--hazard); }
+.result-big.res-lose { background-image: linear-gradient(180deg, #d9e0e6 0%, #6b7682 55%, #3a1a0a 100%); }
+.win-ko b { background-image: linear-gradient(180deg, #fff 0%, #ff9a8a 35%, #e0342b 65%, #6a0c08 100%); }
+.win-dec b { background-image: linear-gradient(180deg, #fff 0%, #f2c230 45%, #8a5a10 100%); }
+.win-to b { background-image: linear-gradient(180deg, #fff 0%, #e39a3c 45%, #8a3b12 100%); }
+.title-lore { max-width: 640px; margin: -8px auto 18px; font-family: var(--font-body); font-size: 17px; line-height: 1.45; color: #d7cfc4; text-shadow: 2px 2px 0 #000; }
+
+/* Header and footer: hazard tape. */
+.hud { background: rgba(10, 11, 12, .94); border-bottom: 0; box-shadow: none; }
+.hud::after { content: ""; display: block; height: 6px; background: repeating-linear-gradient(135deg, var(--hazard) 0 12px, #111 12px 24px); }
+.hud-logo { color: var(--chrome); text-shadow: 2px 2px 0 var(--rust-d), 4px 4px 0 #000; }
+.hud-logo span { color: var(--hazard); }
+.hud-nav a.on { color: #111; background: var(--hazard); border-color: var(--hazard); box-shadow: 3px 3px 0 var(--rust-d); }
+.hud-nav a:hover, .hud-nav a:focus-visible { color: var(--hazard); background: rgba(242, 194, 48, .1); }
+.nav-ico-live { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
+.hud-tabs { background: #111416; border-top-color: #22292c; }
+.hud-tabs a.on { color: var(--hazard); border-bottom-color: var(--rust); }
+.foot { border-top: 0; box-shadow: none; }
+.foot::before { content: ""; display: block; height: 6px; background: repeating-linear-gradient(135deg, var(--hazard) 0 12px, #111 12px 24px); }
+.foot-col h4 { color: var(--hazard); }
+
+/* Panels: riveted steel plates; headers are painted metal. */
+.panel { border-color: #5b6670; box-shadow: 6px 6px 0 rgba(0, 0, 0, .85), inset 0 0 0 2px #1b2024;
+  background-image: radial-gradient(circle at 8px 8px, #6b7682 1.5px, transparent 2px), radial-gradient(circle at calc(100% - 8px) 8px, #6b7682 1.5px, transparent 2px); background-repeat: no-repeat; }
+.panel:not(.panel-cyan):not(.panel-green):not(.panel-yellow):not(.panel-red) > h3 { background-image: linear-gradient(180deg, #dfe5ea, #9aa6b2); color: #16191c; }
+.panel-cyan { border-color: #2f8c80; } .panel-cyan h3 { background: linear-gradient(180deg, #4fbfb1, #226e64); color: #fff; text-shadow: 2px 2px 0 #0a2a26; }
+.panel-green { border-color: #5a9a3a; } .panel-green h3 { background: linear-gradient(180deg, #9ad36b, #4a8a2a); color: #fff; text-shadow: 2px 2px 0 #1a3a0a; }
+.panel-yellow { border-color: var(--hazard); } .panel-yellow h3 { background: linear-gradient(180deg, #ffd95a, #d9a41a); color: #1a1206; }
+.panel-red { border-color: var(--rust); } .panel-red h3 { background: linear-gradient(180deg, #e0763a, #8a3b12); color: #fff; text-shadow: 2px 2px 0 #3a1406; }
+.t-steps li, .t-top, .t-latest, .lb-hero, .doc-toc, .live-chip, .step, .move-card { border-color: #3b454c; }
+.t-steps li::before { background: var(--hazard); color: #111; }
+.btn { background: linear-gradient(180deg, #ffd95a, #d9a41a); box-shadow: 4px 4px 0 var(--rust-d); color: #111; }
+.btn-cyan { background: linear-gradient(180deg, #7fd8cc, #2f8c80); box-shadow: 4px 4px 0 #0a2a26; }
+.pod-1 .pod-block { background: var(--hazard); }
+.pod-2 .pod-block { background: #c9d1d8; }
+.pod-3 .pod-block { background: var(--rust); }
+.select-you { border-color: var(--rust); } .tag-1p { background: var(--rust); }
+.select-them { border-color: var(--teal); } .tag-2p { background: #2f8c80; }
+.select-grid .npc-card { background: linear-gradient(180deg, #2a3136, #14181b); border-color: #3b454c; }
+.select-grid .npc-card.on { background: linear-gradient(180deg, #4fbfb1, #226e64); border-color: var(--hazard); box-shadow: 0 0 0 3px var(--rust), 4px 4px 0 #000; }
+@keyframes pick { 50% { box-shadow: 0 0 0 3px var(--hazard), 4px 4px 0 #000; } }
+.select-name input { color: var(--hazard); border-color: var(--rust); }
+.house-rules { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.house-rules li { font-family: var(--font-pixel) !important; font-size: 9px !important; line-height: 1.6 !important; padding: 8px 10px; color: #111; background: #d9d2c4; border: 3px solid #111; transform: rotate(-1deg); box-shadow: 3px 3px 0 #000; }
+.house-rules li:nth-child(2n) { transform: rotate(1.2deg); background: #e8c46a; }
+.panel p.bio { font-size: 17px; color: #e6ddcf; font-style: italic; margin: 0 0 12px; }
