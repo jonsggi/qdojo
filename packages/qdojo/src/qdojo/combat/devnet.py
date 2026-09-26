@@ -118,6 +118,16 @@ def manifest(profile: str = "dev", params: dict | None = None) -> Manifest:
     return dataclasses.replace(m, **changes) if changes else m
 
 
+def recorded(meta: dict) -> tuple[str, dict, Manifest]:
+    """(profile, params, manifest) a devnet replays with, from its devnet.json:
+    the recorded values, or for a devnet from before they were recorded the
+    legacy profile values. Every reader of a journal must use this (the
+    arena, the read model), never the current profile defaults."""
+    profile = meta.get("profile", "dev")
+    params = meta.get("params", params_json(LEGACY_PROFILES.get(profile, PROFILES[profile])))
+    return profile, params, manifest(profile, params)
+
+
 # ---- journal replay and snapshots -------------------------------------------
 
 STATE_MODULES = ("contract", "ledger", "matchmaking", "series", "rating", "engine", "codec", "types", "rules",
@@ -229,11 +239,9 @@ class Devnet:
             stored = meta.get("profile", "dev")
             if profile is not None and profile != stored:
                 raise StoreError(f"{self.dir} is a {stored!r} devnet; its rules cannot change to {profile!r}")
-            self.profile = stored
-            self.params = meta.get("params", params_json(LEGACY_PROFILES.get(stored, PROFILES[stored])))
+            self.profile, self.params, self.m = recorded(meta)
             if params is not None and params_json({**PROFILES[stored], **params}) != self.params:
                 raise StoreError(f"{self.dir} was created with other manifest values; they cannot change")
-            self.m = manifest(stored, self.params)
             if meta.get("schema") != SCHEMA or meta.get("ruleset_digest") != self.m.ruleset.digest.hex():
                 raise StoreError(f"{self.dir} is not a devnet for this ruleset")
             started = time.monotonic()

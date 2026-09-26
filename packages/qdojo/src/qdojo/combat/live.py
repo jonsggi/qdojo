@@ -28,7 +28,7 @@ import time
 from pathlib import Path
 
 from . import evaluate as E
-from . import export, invariants, store
+from . import export, invariants, join, store
 from .bot import Bot, Budget, planner_chooser, policy_chooser
 from .chainsim import Asset, AssetRegistry, FeeModel, SimChain, SimQubicClient
 from .codec import Mode, Op
@@ -248,7 +248,8 @@ class Arena:
     def __init__(self, directory: Path, lineup: list[dict], profile: str = "demo", seed: int | None = None,
                  latency=(1, 3), drop_rate: float = 0.02, fees: FeeModel | None = FeeModel(),
                  cup_every: int = 1800, duel_every: int = 300, market_every: int = 2400, log=print,
-                 deterministic: bool = False, params: dict | None = None, snapshot_every: int = SNAPSHOT_EVERY):
+                 deterministic: bool = False, params: dict | None = None, snapshot_every: int = SNAPSHOT_EVERY,
+                 join_inbox: Path | None = None):
         self.dir = Path(directory)
         # Samples and tests only: derive policy seeds and salts from the seed.
         # A live arena keeps secrets-based salts, as a real bot must.
@@ -284,6 +285,10 @@ class Arena:
             fid = self._fighter_for(entry, admin)
             self.labels[fid] = entry
             self._make_bot(fid)
+        # Outside builders' fighters (join.py): labelled and disclosed, never run by a house bot.
+        for entry in join.load_outside(self.dir):
+            self.labels[bytes.fromhex(entry["fighter_id"])] = entry
+        self.inbox = join.ArenaInbox(join_inbox) if join_inbox else None
         self.save()
 
     # -- persistence --------------------------------------------------------
@@ -464,7 +469,12 @@ class Arena:
         self._maybe_duel()
         self._maybe_market()
         self._reserve()
+        if self.inbox:
+            self.inbox.drain(self)
         self.chain.advance()
+        if self.inbox:
+            self.inbox.settle(self)
+            self.net.save(trim=True)  # remote bots read the journal-following API: keep it one tick fresh
         if self.w.tick % COMPACT_EVERY == 0:
             compact(self.w.contract)
 
@@ -528,10 +538,12 @@ class Arena:
     def deployment(self, tick_seconds: float) -> dict:
         fighters = {}
         for fid, entry in self.labels.items():
-            driver = (f"llm:{entry['llm']['model']}" if "llm" in entry else
-                      "planner" if "planner" in entry else f"stub:{entry['stub']}" if "stub" in entry
-                      else entry.get("policy"))
-            fighters[fid.hex()] = {"name": entry["label"], "driver": driver, "asset": self.registry.public(fid)}
+            driver = entry.get("driver") or (f"llm:{entry['llm']['model']}" if "llm" in entry else
+                                             "planner" if "planner" in entry else
+                                             f"stub:{entry['stub']}" if "stub" in entry else entry.get("policy"))
+            # origin: "house" (operator-run) or "outside" (registered and run by an outside builder)
+            fighters[fid.hex()] = {"name": entry["label"], "driver": driver, "origin": entry.get("origin", "house"),
+                                   "asset": self.registry.public(fid)}
         return {**DEPLOYMENT, "profile": self.net.profile, "tick_seconds": tick_seconds,
                 "names": {f: v["name"] for f, v in fighters.items()}, "fighters": fighters,
                 "chain": {"latency_ticks": list(self.chain.latency), "drop_rate": self.chain.drop_rate,
@@ -588,7 +600,8 @@ def cmd_live(a):
         commit, reveal = (int(x) for x in a.timing.split(","))
         params = {"timing": {1: (commit, reveal)}}
     run(devnet_dir, lineup, Path(a.export), a.tick_seconds, a.export_every, a.keep, a.ticks,
-        log=lambda m: print(time.strftime("%H:%M:%S"), m, flush=True), profile=a.profile, params=params)
+        log=lambda m: print(time.strftime("%H:%M:%S"), m, flush=True), profile=a.profile, params=params,
+        join_inbox=Path(a.join_inbox) if a.join_inbox else None)
 
 
 def add_parser(s):
@@ -604,4 +617,6 @@ def add_parser(s):
     d.add_argument("--timing", metavar="COMMIT,REVEAL",
                    help="commit and reveal windows in ticks for a NEW arena (default devnet.DEMO_TIMING); "
                         "an existing arena keeps the values it was created with")
+    d.add_argument("--join-inbox", help="ENABLE outside builders: the inbox the API's join endpoints fill "
+                                        "(off by default; docs/build-a-bot.md §8)")
     d.set_defaults(fn=cmd_live)

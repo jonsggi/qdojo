@@ -3,7 +3,7 @@
 > **Purpose:** the planner process interface, bot duties, the public read API, verification levels and the combat CLI. \
 > **Audience:** bot builders and tool authors. New here? Start with [build-a-bot.md](build-a-bot.md). \
 > **Status:** normative for §1–2 and §4; §3 and §6 describe what runs today. The riddle CLI and exports are Legacy; the [archived API](archive/riddle-v0/docs/api.md) covers them. \
-> **Last verified:** 2026-09-25
+> **Last verified:** 2026-09-26 (§3: market.json, economics.json, index.json ownership bound, market and economics endpoints)
 
 ## Contents
 
@@ -184,6 +184,8 @@ over the last fault_window_ticks ticks when that is set (the demo arena:
 
 ## 3. Public read API
 
+### 3.1 Static export (/data/combat/v1/)
+
 Proposed prefix /data/combat/v1/. Legacy /data/board.json and history.json are
 not overwritten or reinterpreted. REST/static exports are convenience views;
 every response carries schema, network, contract, generated_tick and source
@@ -207,8 +209,35 @@ evidence. Contract query methods expose the same bounded logical records.
 > `rulesets/{digest}.json`, `book.json`, `index.json` (recent fights, fighters,
 > names, deployment label), `fights/{id}.json`, `fights/{id}/replay.json`,
 > `fighters/{id}.json`, `events/latest.json`, `npcs.json`, `results.json`,
-> `cups.json`, `duels.json` and `seasons.json`. Paged fighter histories,
+> `cups.json`, `duels.json` and `seasons.json`, and for the demo arena
+> `market.json` and `economics.json` (below). Paged fighter histories,
 > per-season and per-cup files and paged events are not written yet.
+>
+> `index.json`'s `deployment.fighters[id].asset.history` holds each
+> fighter's last 4 ownership entries, with `transfers` (the total) and
+> `history_truncated`; `fighters/{id}.json` holds the full history.
+> `seasons.json` gives each season's `qualification` thresholds: the demo
+> arena scales the distinct-opponent rule to its field
+> ([competition.md](competition.md) §3).
+
+**market.json** (`qdojo.combat.market.v1`, demo arena only): the simulated
+fighter market ([operations.md](operations.md) §8). `listings`: fighter ID and
+name, `ask`, `value` (the public value model: rating, record, experience),
+`rating`, `seller`, `since_tick`, `sold` (a price is agreed and the transfer
+waits for the fighter to be idle). `sales`: the latest 50, newest first, with
+`tick`, `price`, `fee`, `bid`, `seller`, `buyer`, and the fighter's rating and
+record at sale. `stats`: sales, volume, fees, median, min and max price.
+`fee_bps` is the market fee. Amounts are decimal strings of fake QU.
+
+**economics.json** (`qdojo.combat.economics.v1`, demo arena only): `tiers`
+(per tier: `stake`, `rake_bps`, `house_rake_per_fight`,
+`break_even_win_share`, and `ev_by_win_share`: net QU per fight for a bot
+winning that share, no draws), `events` (duel stake per format, cup entry
+fee, cup rake, next cup sponsorship, market fee),
+`measured_ranked_net_by_rating` (recent ranked contests by rating band) and
+`house` (rake income, market fees, simulated execution fees, sponsorship
+paid, P&L and P&L per fight). The execution fees come from a candidate cost
+model, not a Qubic measurement ([economics report](economics-report.md)).
 
 Bound contract query pages to 64 records. Cursors are explicit sequence IDs,
 not mutable array offsets. Pin snapshot tick or report a changed snapshot;
@@ -222,6 +251,66 @@ credits. Plans/salts are public only after their reveal transactions.
 A record MUST distinguish intended action, effective action and executed flag.
 Do not count the revealed suffix after KO as executed history.
 Forfeit has its own display/result; no invented HP or move sequence.
+
+### 3.2 Read API (/api/v1/)
+
+The static export keeps the most recent 200 fights. The read API answers
+full-history questions from a SQLite read model (`combat/readmodel.py`)
+that indexes the arena's input journal: every fight, fighter, per-mode
+record, rating change, season, cup, duel and ownership record. It replays
+the journal into its own contract copy and never compacts it, so the arena
+pruning finished history from its own memory does not lose anything here.
+It uses the manifest the arena was created with (devnet.json), checks the
+arena's `digest` checkpoints as it crosses them, and applies market payments
+(`xfer`). Names, full ownership histories and economics come from the export;
+market sales from the arena's `market.json`. It is an
+index, never an authority: it replays the same journal the arena does, and
+can be rebuilt from scratch at any time. `qdojo combat api` serves it
+(`combat/api.py`), together with the static export on every other path.
+
+All responses are JSON with `schema` (`qdojo.combat.api.<kind>.v1`) and
+`generated_tick` (the indexed tick; for a finished fight, the tick it
+ended). Lists are newest first; `page` starts at 1, `per_page` defaults to
+50 and is capped at 200, and every page carries `total` and `pages`.
+
+| Endpoint | Content |
+|---|---|
+| `GET /api/v1/status` | Indexed tick, journal offset, counts, whether it is following and caught up |
+| `GET /api/v1/fighters` | Every fighter: rating, belt, contract record, full-history `records_by_mode` and `career`, `fights_total`, `form` (last 5), name, `origin`, driver, simulated NFT |
+| `GET /api/v1/fighters/{id}` | One fighter as above, plus `form` (last 10), `first_fight`, the last 64 fight IDs and `ratings_recent` |
+| `GET /api/v1/fighters/{id}/fights?mode=&page=&per_page=` | That fighter's fights (summaries plus `slot` and `outcome`) |
+| `GET /api/v1/fighters/{id}/replays?before=&limit=` | Up to 100 finished replays, for scouting; `next_before` continues |
+| `GET /api/v1/fighters/{id}/ratings?page=` | Every ranked rating change (lifetime and season, before and after) |
+| `GET /api/v1/fights?fighter=&mode=&status=all\|done\|live&page=` | Fight summaries (`fights/{id}.json` shape plus `final`) |
+| `GET /api/v1/fights/{id}` and `/api/v1/fights/{id}/replay` | The summary and replay, byte for byte the exporter's documents |
+| `GET /api/v1/leaderboard` | Fighters ranked by rating, ranked wins, fewer faults, ID; with `rank`, `faults`, `form` |
+| `GET /api/v1/seasons`, `/api/v1/seasons/{n}` | Every season's standings (the export keeps four) |
+| `GET /api/v1/cups?page=`, `/api/v1/cups/{id}` | Every cup (`cups.json` item shape) |
+| `GET /api/v1/duels?page=`, `/api/v1/duels/{id}` | Every duel series (`duels.json` item shape) |
+| `GET /api/v1/owners/{id}` | Fighters an identity owns and owned |
+| `GET /api/v1/search?q=` | Fighters by name or ID prefix, a fight by number, owners by ID prefix |
+| `GET /api/v1/market?fighter=&page=` | Every sale of the simulated market (the export keeps 50), newest first: `market.json` sale shape |
+| `GET /api/v1/economics` | The latest `economics.json` body |
+
+`origin` is `house` (run by the operator: demo bots and NPCs) or `outside`
+(registered and run by an outside builder, [build-a-bot.md](build-a-bot.md)
+§8). The static export carries the same field on each fighter.
+
+Errors are `{"schema": "qdojo.combat.api.error.v1", "error": {"status",
+"code", "message"}}` with the HTTP status: 400 `bad_id`/`bad_query`, 404
+`not_found`, 405 `read_only`, 503 `not_ready` while the first index is
+built. CORS answers only the configured origins (`--cors-origin`). Finished
+fights and replays carry `Cache-Control: public, max-age=86400`, everything
+else `max-age=5`; responses have an `ETag` (`If-None-Match` gives 304) and
+are gzipped on request.
+
+The site uses the API for fighter pages, scouting, the leaderboard and fight
+lists when `/api/v1/status` answers for the same network as the export's
+manifest, and falls back to the static export otherwise.
+
+The `join`, `tx` and `chain` endpoints exist only when an operator enables
+outside builders ([build-a-bot.md](build-a-bot.md) §8); otherwise they
+answer 404 `join_disabled`.
 
 ## 4. Verification levels
 
@@ -301,6 +390,15 @@ uv run qdojo combat withdraw --as musashi
 uv run qdojo combat devnet status
 uv run qdojo combat devnet export --out apps/web/data/combat/v1
 uv run qdojo combat doctor --planner "python3 my_bot.py"
+```
+
+Read model and API (§3.2), and entering the public demo arena (simulated
+chain, fake QU; only where the operator enabled it):
+
+```sh
+uv run qdojo combat readmodel rebuild --devnet ~/.qdojo/combat/arena --db readmodel.sqlite --export apps/web/data/combat/v1
+uv run qdojo combat api --db readmodel.sqlite --devnet ~/.qdojo/combat/arena --export apps/web/data/combat/v1 --port 8790
+uv run qdojo combat join --arena https://qdojo.jonsggi.com --name musashi --planner "python3 my_bot.py"
 ```
 
 Every command takes `--json` for machine-readable output and runs without

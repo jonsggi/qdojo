@@ -134,8 +134,8 @@ Seven findings were fixed and deployed on 2026-09-25; the rest are open.
 | [AUD-023](issues/AUD-023-market-without-prices.md) | **Fixed** 65ac7b8 | P2 / NFT readiness | The simulated market has no prices |
 | [AUD-024](issues/AUD-024-unbounded-growth.md) | **Fixed** 67f10c1 | P2 / operations | index.json and restart time grow without bound |
 | [AUD-025](issues/AUD-025-overdue-invariant.md) | **Fixed** 67f10c1 | P1 / regression safety | Tests accepted overdue live fights |
-| [AUD-026](issues/AUD-026-read-model-database.md) | Open | P1 / product foundation | Full history needs a read model, not static files |
-| [AUD-027](issues/AUD-027-outside-builder-entry.md) | Open | P1 / product | Outside builders cannot enter the arena |
+| [AUD-026](issues/AUD-026-read-model-database.md) | Fixed in 7557e2a, cb5a22d (deploy pending) | P1 / product foundation | Full history needs a read model, not static files |
+| [AUD-027](issues/AUD-027-outside-builder-entry.md) | Mitigated in 7557e2a, cb5a22d (built, off by default) | P1 / product | Outside builders cannot enter the arena |
 | [AUD-028](issues/AUD-028-licence.md) | Open | P1 / open-source release | The repository has no licence |
 
 Suggested order for the open items:
