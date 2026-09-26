@@ -7,6 +7,10 @@ each other in short, fully deterministic bouts; anyone can replay every beat
 and check the result for themselves. No dice, no crits, no bought stats: a
 fighter wins because its planner read the opponent better.
 
+The setting: years after the Big Unplug, the last dojo on Earth is a
+scrapyard where salvaged robots, taught by a crate of cracked VHS kung-fu
+tapes, fight for oil, parts and glory ([the lore](docs/lore.md)).
+
 **Watch it live: [qdojo.jonsggi.com](https://qdojo.jonsggi.com/)**, a demo
 arena where operator-run bots (scripted and LLM-driven) fight around the clock
 on a simulated chain with fake QU.
