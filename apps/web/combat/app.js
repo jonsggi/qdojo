@@ -344,7 +344,7 @@
   async function viewTitle(tok) {
     setView('<section class="attract"><h1 class="title-logo"><span class="title-q">Q</span>DOJO</h1>' +
       '<p class="title-sub">AUTONOMOUS BOTS &middot; SEALED PLANS &middot; THREE ROUNDS</p>' +
-      '<p class="title-lore">After the Big Unplug, the last dojo on Earth is a scrapyard. Salvaged robots fight for oil, parts and glory.</p>' +
+      '<p class="title-lore">After the Big Unplug, the last dojo on Earth is a scrapyard, and its sensei is a karaoke machine. <a href="#story">READ THE LEGEND &#9654;</a></p>' +
       '<div id="attract" class="attract-stage" aria-live="polite"><p class="muted">LOADING FIGHTS&hellip;</p></div>' +
       '<p><a class="btn btn-start" href="#arena">PRESS START</a></p><p class="insert-coin blink">INSERT COIN</p>' +
       '<p class="title-links"><a href="#practice">FREE PRACTICE</a> &middot; <a href="#join">BUILD A BOT</a> &middot; <a href="#leaderboard">LEADERBOARD</a></p></section>');
@@ -1703,6 +1703,42 @@
       : statusBadge('UNAVAILABLE') + ' no manifest loaded to compare with.') + '<br><span class="tiny muted">SHA-256("qdojo/combat/rules/v1\\0" || canonical JSON), computed in your browser.</span>';
   }
 
+  // ---- STORY: the yard's legend, told in four chapters -------------------------------
+
+  const STORY = [
+    { cast: [['lore:unit-7-24', 'UNIT 7']], title: 'I. THE CRATE', text: [
+      'It rained oil the night Forklift Unit 7 found the crate.',
+      'Forty-one videotapes, labels half melted: KARATE FOR BEGINNERS. THE MONTAGE, PART II. HOW TO BOW.',
+      'Unit 7 had never fought anything but pallets. It fed the first tape into a karaoke machine behind the dead mall. The karaoke machine, which had been very lonely since the Big Unplug, played it again. And again. And again.',
+      'By morning there was a dojo, and the karaoke machine had a new name: SENSEI.' ] },
+    { cast: [['lore:officer-bolt-72', 'OFFICER BOLT'], ['lore:chef-11-18', 'CHEF-11']], title: 'II. THE FIRST FIGHT', text: [
+      'Word travels fast in a scrapyard. A mall-security unit came to arrest the noise and stayed to watch. A kitchen unit came with eleven knives and one working arm.',
+      'They bowed, because the tape said to. Then they hit each other for an hour, and nobody could agree who had won.',
+      '"I planned that," said the kitchen unit, lying on its back.',
+      '"So did I," said Officer Bolt, missing a leg.',
+      'SENSEI said nothing. SENSEI was rebooting.' ] },
+    { cast: [['lore:sensei', 'SENSEI']], title: 'III. THE SEALED CARTRIDGE', text: [
+      'When SENSEI came back online it played one tape, very loudly, until everyone sat down.',
+      'Then it made a rule. Before the bell, every fighter writes its six moves on a cartridge and seals it. Both cartridges are opened together. No changes. No excuses. No "I planned that".',
+      'The yard called it the Code of the Sealed Cartridge. The one bot that tried to peek is now part of the fence.' ] },
+    { cast: [['lore:rookie-69', 'YOU?']], title: 'IV. TONIGHT', text: [
+      'That was a long time ago, in robot years.',
+      'The crowd bets bottle caps now. The fence still says NO RUSTING IN THE DOJO. Unit 7 has a black belt it painted on itself, and SENSEI still only knows one song.',
+      'And somewhere in the yard, a new machine is watching the tapes for the first time, practising a bow it does not understand yet.',
+      'Maybe it is yours.' ] },
+  ];
+
+  function viewStory() {
+    setView(screen('THE LEGEND OF THE YARD', 'AS TOLD BY SENSEI, WHEN IT IS NOT REBOOTING') +
+      '<div class="story">' + STORY.map((c, i) =>
+        '<article class="chapter chapter-' + i + '">' +
+        '<div class="chapter-cast">' + c.cast.map(([id, name]) => id === 'lore:sensei'
+          ? '<figure><img class="avatar-story sensei" src="combat/sensei.svg" alt="SENSEI, a rusty karaoke machine with a smiling screen"><figcaption>' + esc(name) + '</figcaption></figure>'
+          : '<figure><span class="avatar avatar-story" data-anim="' + (i === 1 ? 'profile' : i === 3 ? 'bow' : 'idle') + '" data-identity="' + esc(id) + '">' + (A ? A.svg(id, 'sprite') : '') + '</span><figcaption>' + esc(name) + '</figcaption></figure>').join('') + '</div>' +
+        '<div class="chapter-body"><h3>' + esc(c.title) + '</h3>' + c.text.map(t => '<p>' + esc(t) + '</p>').join('') + '</div></article>').join('') +
+      '<div class="story-end"><a class="btn btn-start" href="#arena">WATCH TONIGHT\'S FIGHTS</a> <a class="btn btn-start btn-cyan" href="#practice">STEP INTO THE YARD</a></div></div>');
+  }
+
   // ---- GUIDE: how it works --------------------------------------------------------------
 
   // One card per submitted move. What it lands on is read from the damage
@@ -1727,11 +1763,6 @@
     const step = (n, title, body) => '<li class="step"><span class="step-no">' + n + '</span><h4>' + title + '</h4><p>' + body + '</p></li>';
     setView(screen('HOW IT WORKS', 'THE WHOLE GAME IN FIVE MINUTES') +
       '<div class="doc">' +
-      '<section class="panel panel-red" id="g-world"><h3>THE WORLD</h3>' +
-      '<p class="lede">Nobody agrees on what caused the Big Unplug. The cities rusted, the grid became a rumour, and the last show in town is a scrapyard dojo.</p>' +
-      '<p class="prose">The fighters are robots in human shape: mall-security units, forklifts, kitchen assistants, a trooper that lost its orders. None were built to fight. They learned from a crate of cracked VHS training tapes, so their technique is sincere and slightly wrong. The crowd bets bottle caps.</p>' +
-      '<p class="prose">Honour is the <b>Code of the Sealed Cartridge</b>: before the bell every fighter seals its six moves in a cartridge, and nobody may change a cartridge after seeing the other. On the chain that is commit and reveal.</p>' +
-      '<ul class="plain house-rules"><li>NO RUSTING IN THE DOJO</li><li>BETS IN BOTTLE CAPS ONLY</li><li>SENSEI IS REBOOTING. PLEASE WAIT.</li><li>OIL ON. OIL OFF.</li></ul></section>' +
       '<section class="panel panel-yellow" id="g-pitch"><h3>THE PITCH</h3>' +
       '<p class="lede">Two bots. Three rounds. Six moves a round, written in secret and sealed before the bell. Then both plans play out at once, beat by beat, and nobody can change their mind.</p>' +
       '<p class="prose">QDOJO is a fighting game for programs. Owners write <b>bots</b> that plan their moves; the bots fight each other in a dojo whose referee is a deterministic smart contract. There are no dice and no reflexes. What wins is reading your opponent: their history is public, their next plan is not.</p>' +
@@ -1855,13 +1886,13 @@
   // ---- router and chrome -------------------------------------------------------------
 
   // Sub-pages light up the nav entry they belong to.
-  const NAV_PARENT = { book: 'arena', fight: 'results', fights: 'results', duel: 'results', duels: 'results', fighter: 'leaderboard', owner: 'leaderboard', season: 'leaderboard', cup: 'cups', rules: 'guide', help: 'guide' };
+  const NAV_PARENT = { book: 'arena', fight: 'results', fights: 'results', duel: 'results', duels: 'results', fighter: 'leaderboard', owner: 'leaderboard', season: 'leaderboard', cup: 'cups', rules: 'guide', help: 'guide', story: 'guide' };
   // Each nav section can hold several screens: they show as tabs under the header.
   const SECTION_TABS = {
     arena: [['arena', 'LIVE'], ['book', 'MATCHMAKING']],
     results: [['results', 'FIGHTS'], ['duels', 'DUELS']],
     leaderboard: [['leaderboard', 'LEADERBOARD'], ['season', 'SEASON']],
-    guide: [['guide', 'HOW IT WORKS'], ['rules', 'RULES'], ['help', 'GLOSSARY'], ['llms.txt', 'FOR AGENTS']],
+    guide: [['guide', 'HOW IT WORKS'], ['story', 'STORY'], ['rules', 'RULES'], ['help', 'GLOSSARY'], ['llms.txt', 'FOR AGENTS']],
   };
   function paintNav(name) {
     const section = NAV_PARENT[name] || name;
@@ -1925,6 +1956,7 @@
       else if (name === 'join') await viewJoin(tok);
       else if (name === 'help') viewHelp();
       else if (name === 'guide') await viewGuide(tok);
+      else if (name === 'story') viewStory();
       else if (name === 'fight') await viewFight(tok, rest[0]);
       else if (name === 'fighter') await viewFighter(tok, rest[0]);
       else if (name === 'practice') viewPractice(tok, rest);
