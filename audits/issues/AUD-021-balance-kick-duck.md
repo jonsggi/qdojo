@@ -1,6 +1,6 @@
 # AUD-021 — Kick dominates; duck and throw are near useless
 
-- **Status:** Fixed by combat-v1 candidate 2 (digest `231607f8…`) in code; the live arena still runs candidate 1 until the orchestrator starts a `demo-c2` arena
+- **Status:** Mitigated by combat-v1 candidate 2 (digest `231607f8…`), implemented in every engine; campaign 10/11 gates (the resource-ablation gate fails at a ceiling, [model.md §8.1](../../docs/model.md#81-gates-campaign-same-seeds)); the live arena still runs candidate 1 until the orchestrator starts a `demo-c2` arena
 - **Priority:** P2 — strategic depth
 - **Type:** Rules balance
 - **Evidence:** Net HP per beat in the live field: KICK +7.5, DUCK −4.8, THROW −0.1; power and opening add about 4 HP per fight
@@ -22,31 +22,41 @@ Measured in a field where half the bots played blind (AUD-014); may shift once h
   `231607f823153747f4c922fd5976c1ac06622542cd5a39eab088874d886b8b74`
   ([combat.md §11](../../docs/combat.md#11-candidate-2)); results in
   [model.md §8](../../docs/model.md#8-balance-measurements-candidate-1-and-candidate-2).
+  Campaign on the same seeds (`holdout-20260926b`): candidate 1 passes 11/11,
+  candidate 2 10/11. Candidate 2 fails the resource/opening ablation on the
+  predictable pool (−0.002) because both reader variants score 0.98-0.99
+  there; on the competent pool the gap is +0.055 (LB +0.018; candidate 1
+  +0.094). History value rises from +0.106 to +0.351; KO rate in the
+  competent pool falls from 72.5% to 43.9%; power and opening bonus from
+  3.6 to 12.7 HP per fighter and fight.
 
 ## Resolution
 
 Candidate 2 changes numbers only (same engine, actions, plan bytes):
 jab out-trades kick 10 to 4 (was 8 to 14), duck counters a jab for 4, throw
 breaks a block for 20 (was 14), opening +8 (was 4), power +12 (was 4), HP 120
-(was 100). It was chosen over about forty variants measured with a fast
-simulator of the live field and confirmed with the model.md campaign.
+(was 100), stamina 48 (was 60). It was chosen over about fifty variants
+measured with a fast simulator of the live field, then checked with the
+model.md campaign; the stamina cap was added after a 60-stamina trial failed
+the resource-ablation gate.
 
 | Field measure (11 policies, 4,400 fights) | Candidate 1 | Candidate 2 |
 |---|---:|---:|
-| KICK / JAB / THROW net HP per beat | +7.2 / +1.5 / +1.9 | +5.4 / +4.1 / +2.7 |
-| DUCK / BLOCK net HP per beat | −5.6 / −1.3 | −3.6 / −2.0 |
+| KICK / JAB / THROW net HP per beat | +7.2 / +1.5 / +1.9 | +5.4 / +4.2 / +3.2 |
+| DUCK / BLOCK net HP per beat | −5.6 / −1.3 | −3.3 / −2.0 |
 | One-beat equilibrium support | KICK, BLOCK | JAB, KICK, BLOCK, DUCK |
-| Opening + power bonus per fighter and fight | 2.9 HP | 12.3 HP |
-| KO / decision / draw | 82% / 17% / 5% | 68% / 32% / 5% |
-| Fights reaching round 3 | 54% | 83% |
+| Opening + power bonus per fighter and fight | 2.9 HP | 12.5 HP |
+| KO / decision / draw | 82% / 17% / 5% | 64% / 35% / 2% |
+| Fights reaching round 3 | 54% | 89% |
 | Trailer after round 1 wins | 20% | 26% |
-| History value (reader minus history-blind reader) | +0.05 | +0.23 |
-| Best fixed script against the field | 0.84 (top of the field) | 0.62 (fifth) |
+| History value (reader minus history-blind reader) | +0.05 | +0.31 |
+| Best fixed script against the field | 0.84 (top of the field) | 0.64 (fifth) |
 
-Not improved: the leader after round 2 still wins about 83% (84% before),
-and close finishes (margin ≤ 8 HP) are 16% (18% before). BLOCK and THROW stay
-situational: THROW is the hindsight-best reply on 30% of beats (against blocks
-and recoveries) but is chosen on 7-14%; BLOCK is the safe hedge the one-beat
+Not improved: the leader after round 2 still wins 86% (84% before), and
+close finishes (margin ≤ 8 HP) are 14% (18% before): the better planners
+win more clearly. BLOCK and THROW stay situational: THROW is the
+hindsight-best reply on 29% of beats (against blocks and recoveries) but is
+chosen on 6-14%; BLOCK is the safe hedge the one-beat
 equilibrium plays 35% of the time.
 
 ### Shape and new-move proposals (not adopted)

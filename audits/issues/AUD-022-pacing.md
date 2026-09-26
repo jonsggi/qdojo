@@ -14,7 +14,7 @@ Spectators wait about 40 s per round for six beats that land at once ([simulatio
 
 - [x] A demo timing profile: devnet profile `demo-c2`, timing profile 1 = **commit 9 / reveal 6 ticks**
   (`combat/devnet.py`, `DEMO_TIMING`). Measured on the simulated chain with candidate 2:
-  ranked median 38 ticks = **57 s**, p95 39 ticks = 58.5 s (112 fights); 10/6 gives 60/63 s, 8/6 gives 51/54 s.
+  ranked median 37 ticks = **55.5 s**, p95 39 ticks = 58.5 s (104 fights); on the 60-stamina trial 10/6 gave 60/63 s and 8/6 51/54 s.
   The live 24/12 arena measures a median 80 ticks = 120 s. Details: [model.md §4](../../docs/model.md#4-timing-and-compute).
   LLM planners need a budget of at most about 7 s under this window (lineup `budget_ms`, `--timeout`).
 - [x] Per-beat playback during the next commit window (site side done; 6 × 600 ms fits in 13.5 s).

@@ -40,7 +40,7 @@ def roles() -> dict[str, bytes]:
 # (AUD-021, AUD-022): a fresh devnet directory, never a converted one.
 DEMO = {"ticks_per_epoch": 2400, "season_epochs": 4, "season_closeout_ticks": 300,
         "pair_starts_per_epoch": 6, "pair_rematch_ticks": 60}
-DEMO_TIMING = {1: (9, 6)}       # commit, reveal ticks: ~13 ticks a round, ~38 per ranked fight (57 s at 1.5 s)
+DEMO_TIMING = {1: (9, 6)}       # commit, reveal ticks: ~13 ticks a round, ~37 per ranked fight (55 s at 1.5 s)
 PROFILES = {
     "dev": {},
     "demo": dict(DEMO),

@@ -347,10 +347,11 @@ replays verify under that ruleset.
 | THROW vs BLOCK | 14 | 20 | Throw is the only answer to a turtle; it now punishes a predicted block harder. |
 | Opening bonus | 4 | 8 | Power and opening together added about 3 HP per fighter and fight, too little to plan around. |
 | Power bonus | 4 | 12 | The same reason. Power still costs +4 and is spent even if it misses. |
-| Initial and maximum HP | 100 | 120 | With the stronger reads, 100 HP made about 87% of fights knockouts; 120 brings it to about 68%. |
+| Initial and maximum HP | 100 | 120 | With the stronger reads, 100 HP made about 87% of fights knockouts; 120 brings it to about 64%. |
+| Initial and maximum stamina | 60 | 48 | With the cheap jab winning the kick exchange, 60 stamina rarely bound: a planner that ignored its resources lost almost nothing against competent opponents (+0.035 in a 60-stamina trial). 48 makes the stamina plan matter again (+0.055; candidate 1 +0.094). The model.md resource gate itself still fails, at a ceiling (model.md §8.1). |
 
 Everything else is unchanged: costs, block streak cost and strain,
-recovery, break recovery, stamina limits, rounds and beats.
+recovery, break recovery, rounds and beats.
 
 Consequences in words:
 
@@ -374,34 +375,34 @@ Consequences in words:
 | RECOVER | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | EXHAUSTED | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 
-State: HP 0..120, starting at 120; stamina 0..60, starting at 60. Opening
-+8, power +12 for +4 stamina.
+State: HP 0..120, starting at 120; stamina 0..48, starting at 48. Opening
++8, power +12 for +4 stamina. Break recovery +10, capped at 48.
 
 ### 11.3 Hand-checkable vectors
 
-Both fighters start at (HP 120, stamina 60, opening 0, guard 0, power 1).
+Both fighters start at (HP 120, stamina 48, opening 0, guard 0, power 1).
 Fields are after one beat.
 
 | A / B | A (HP, stamina, opening, guard_streak) | B (HP, stamina, opening, guard_streak) |
 |---|---|---|
-| JAB / BLOCK | (120,56,0,0) | (120,58,0,1) |
-| JAB / KICK | (116,56,0,0) | (110,50,0,0) |
-| DUCK / JAB | (120,58,1,0) | (116,56,0,0) |
-| KICK / DUCK | (120,50,0,0) | (102,58,0,0) |
-| THROW / BLOCK | (120,53,0,0) | (100,58,0,1) |
-| BLOCK / KICK | (120,52,0,1) | (120,50,0,0) |
-| RECOVER / JAB | (108,60,0,0) | (120,56,1,0) |
-| THROW / THROW | (120,53,0,0) | (120,53,0,0) |
+| JAB / BLOCK | (120,44,0,0) | (120,46,0,1) |
+| JAB / KICK | (116,44,0,0) | (110,38,0,0) |
+| DUCK / JAB | (120,46,1,0) | (116,44,0,0) |
+| KICK / DUCK | (120,38,0,0) | (102,46,0,0) |
+| THROW / BLOCK | (120,41,0,0) | (100,46,0,1) |
+| BLOCK / KICK | (120,40,0,1) | (120,38,0,0) |
+| RECOVER / JAB | (108,48,0,0) | (120,44,1,0) |
+| THROW / THROW | (120,41,0,0) | (120,41,0,0) |
 
 - After DUCK/JAB above, play KICK/JAB: A's kick deals 4 + 8 opening = 12,
-  B's jab deals 10. A=(110,48,0,0); B=(104,52,0,0).
-- A at stamina 60 with an opening powers a KICK into a DUCK: A stamina 46,
+  B's jab deals 10. A=(110,36,0,0); B=(104,40,0,0).
+- A at stamina 48 with an opening powers a KICK into a DUCK: A stamina 34,
   power spent; B loses 38.
 - A with an opening DUCKs a JAB: the counter deals 12; A earns a new opening.
 - A at stamina 11 attempts KICK against a JAB: EXHAUSTED, A=(108,17,0,0),
-  B=(120,56,1,0).
-- Six JABs each per round: HP 72 and stamina 46 after the first break,
-  HP 24 and stamina 32 after the second; the third beat of round 2 is a
+  B=(120,44,1,0).
+- Six JABs each per round: HP 72 and stamina 34 after the first break,
+  HP 24 and stamina 20 after the second; the third beat of round 2 is a
   simultaneous KO.
 - Six RECOVERs each, three rounds: HP stays 120, an HP_TIE draw.
 
