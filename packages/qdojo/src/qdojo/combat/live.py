@@ -608,7 +608,7 @@ def add_parser(s):
     d.add_argument("--devnet", help="arena directory (default ~/.qdojo/combat/arena)")
     d.add_argument("--lineup", help="lineup JSON (default: eight demo bots)")
     d.add_argument("--profile", default="demo", choices=tuple(PROFILES),
-                   help="devnet profile of a NEW arena: demo (candidate 1), demo-c2 (candidate 2, 9/6 timing) or dev")
+                   help="devnet profile of a NEW arena: demo (candidate 1), demo-c2 (candidate 2, 9/8 timing) or dev")
     d.add_argument("--export", default="apps/web/data/combat/v1")
     d.add_argument("--tick-seconds", type=float, default=1.5)
     d.add_argument("--export-every", type=int, default=10, help="ticks between exports")

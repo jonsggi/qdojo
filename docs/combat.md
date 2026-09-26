@@ -413,7 +413,7 @@ build with `-DQDOJO_RULESET=2` and `apps/web/tests/combat-engine.test.cjs`.
 
 - A devnet or arena fixes its ruleset when it is created. Profile `demo-c2`
   (`combat/devnet.py`) is the demo arena on candidate 2 with the demo
-  timing (commit 9, reveal 6 ticks); `demo` and `dev` stay on candidate 1.
+  timing (commit 9, reveal 8 ticks); `demo` and `dev` stay on candidate 1.
 - `qdojo combat train` and `qdojo combat evaluate` take `--ruleset`;
   `scripts/combat-validation.py --ruleset` runs the model.md campaign.
 - `verify_replay` and `qdojo combat replay` use the ruleset the replay names.

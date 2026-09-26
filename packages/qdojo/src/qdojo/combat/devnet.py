@@ -53,9 +53,12 @@ def roles() -> dict[str, bytes]:
 # existing arena keeps the values it was created with (devnet.json).
 DEMO_TIMING = (24, 12)
 # The candidate-2 demo arena's windows (docs/model.md §4, AUD-022): a round
-# takes the commit window plus ~4 ticks of reveal latency, so 9/6 gives a
-# median ranked fight of ~37 ticks (55 s at 1.5 s per tick).
-DEMO_C2_TIMING = (9, 6)
+# takes the commit window plus ~4 ticks of reveal latency, so 9 ticks of
+# commit give a median ranked fight of ~37 ticks (55 s at 1.5 s per tick).
+# The reveal window is only a deadline: 6 ticks forfeited ~6% of fights (a
+# dropped reveal is noticed 1-3 ticks late and its resend needs 1-3 more);
+# 8 ticks brings that back to the ~2% baseline without lengthening rounds.
+DEMO_C2_TIMING = (9, 8)
 
 # Manifest profiles. "dev" is the development fixture with the specified
 # matchmaking limits. "demo" is the public spectator arena: shorter epochs and

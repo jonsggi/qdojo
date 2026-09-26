@@ -154,7 +154,7 @@ reveal latency (a median 4 ticks in the live arena). The live demo arena on
 24/12 ticks resolves a round every 28 ticks: a ranked fight takes a median
 80 ticks, 120 s at 1.5 s per tick (143 finished ranked fights in the live
 export). The devnet profile `demo-c2` sets timing profile 1 to **commit 9,
-reveal 6 ticks**. On the simulated chain (latency 1-3 ticks, 2% drops, the
+reveal 8 ticks** (9/6 was measured first; see below). On the simulated chain (latency 1-3 ticks, 2% drops, the
 default demo lineup plus four competent bots, candidate 2, 3,000 ticks) a
 ranked fight then takes a median **37 ticks = 55.5 s** and p95 39 ticks = 58.5 s
 (104 fights; 24/12 on the same harness with candidate 1: median 56, p95 84 ticks).
@@ -163,14 +163,27 @@ ranked fight then takes a median **37 ticks = 55.5 s** and p95 39 ticks = 58.5 s
 |---|---:|---:|---|
 | 24 / 12 (live, candidate 1) | 120 s | 126 s | live export |
 | 10 / 6 | 60 s | 63 s | simulated chain, 60-stamina trial |
-| 9 / 6 (chosen) | 55.5 s | 58.5 s | simulated chain, final candidate 2 |
+| 9 / 6 | 55.5 s | 58.5 s | simulated chain; 6.2% forfeits |
+| 9 / 8 (chosen) | ~55 s | ~59 s | simulated chain; 2.2% forfeits (baseline) |
 | 8 / 6 | 51 s | 54 s | simulated chain, 60-stamina trial |
+
+**Reveal window (2026-09-26).** In its first half hour live, the 9/6 arena
+forfeited 3 of 14 fights, all missed reveals by scripted bots. The simulated
+chain reports a drop only at the transaction's target tick (1-3 ticks after
+sending), so a dropped reveal plus its resend can need up to 7 ticks. Over
+2,500 ticks with the live lineup (LLM entries stubbed): 9/6 forfeited 6.2%
+of 211 fights, 9/8 2.2% of 223, 8/9 1.7% of 232, 10/10 2.2% of 226; the
+baseline (24/12, candidate 1) is 2-3%, most of it the deliberately flaky
+ronin. The reveal window is a deadline, not a wait: a round ends when both
+reveals are in, so 8 ticks costs no fight time. 9/8 is the demo timing.
 
 A 9-tick commit window leaves a planner about 6 ticks (9 s) before its
 commit must be sent, allowing 3 ticks of inclusion latency. In-process
 policies need well under a second. An LLM planner must be given a budget of
-at most about 7 s (lineup `budget_ms` about 7000 and the model's `--timeout`
-about 6), or it misses commits and forfeits. The site's beat-by-beat
+at most about 8 s (lineup `budget_ms` about 7000-8000 and the model's `--timeout`
+6-7), or it misses commits and forfeits. A Claude model that reasons in
+prose before its JSON needs the three-sentence limit in `llm_planner` to
+stay near 4-6.5 s. The site's beat-by-beat
 playback (6 × 600 ms) fits inside the 13.5 s window.
 
 Stress simultaneous resolutions, cups and ranked queue occupancy. Benchmark

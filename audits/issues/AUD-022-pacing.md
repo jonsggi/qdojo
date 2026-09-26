@@ -1,6 +1,6 @@
 # AUD-022 — A ranked fight takes twice the target time
 
-- **Status:** Mitigated (timing wiring 67f10c1; demo timing 9/6 in profile `demo-c2`; the live arena runs it once the orchestrator starts a `demo-c2` arena)
+- **Status:** Mitigated (timing wiring 67f10c1; demo timing 9/8 in profile `demo-c2`; the live arena runs it once the orchestrator starts a `demo-c2` arena)
 - **Priority:** P2 — spectator experience
 - **Type:** Timing
 - **Evidence:** 123 s per ranked fight against a 60 s median target; each round is about 42 s, mostly the fixed 24-tick commit window
@@ -12,7 +12,7 @@ Spectators wait about 40 s per round for six beats that land at once ([simulatio
 
 ## Acceptance criteria
 
-- [x] A demo timing profile: devnet profile `demo-c2`, timing profile 1 = **commit 9 / reveal 6 ticks**
+- [x] A demo timing profile: devnet profile `demo-c2`, timing profile 1 = **commit 9 / reveal 8 ticks** (9/6 forfeited 6% of fights: see docs/model.md §4)
   (`combat/devnet.py`, `DEMO_C2_TIMING`, through the same `timing` profile value and devnet.json record as `DEMO_TIMING`; `qdojo combat live --timing C,R` still overrides it for a new arena). Measured on the simulated chain with candidate 2:
   ranked median 37 ticks = **55.5 s**, p95 39 ticks = 58.5 s (104 fights); on the 60-stamina trial 10/6 gave 60/63 s and 8/6 51/54 s.
   The live 24/12 arena measures a median 80 ticks = 120 s. Details: [model.md §4](../../docs/model.md#4-timing-and-compute).

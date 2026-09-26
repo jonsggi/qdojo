@@ -183,7 +183,7 @@ def test_demo_c2_profile_is_the_demo_profile_on_candidate_2(c2, tmp_path):
     from qdojo.combat import devnet
     demo, dc2 = devnet.manifest("demo"), devnet.manifest("demo-c2")
     assert dc2.ruleset is c2 and demo.ruleset is rules_mod.candidate_1()
-    assert dc2.timing[1] == devnet.DEMO_C2_TIMING == (9, 6)
+    assert dc2.timing[1] == devnet.DEMO_C2_TIMING == (9, 8)
     assert (dc2.tiers, dc2.fees, dc2.pair_starts_per_epoch) == (demo.tiers, demo.fees, demo.pair_starts_per_epoch)
     net = devnet.Devnet(tmp_path / "a", "demo-c2")
     meta = _json.loads((tmp_path / "a" / devnet.MARKER).read_text())
