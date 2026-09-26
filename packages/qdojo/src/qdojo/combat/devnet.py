@@ -33,7 +33,7 @@ from . import codec, export, invariants, scouting, store
 from .codec import Code, Op
 from .contract import Manifest, Qualification, development_manifest
 from .ledger import FeeProfile
-from .rules import candidate_1
+from .rules import CANDIDATE_1, CANDIDATE_2, by_version
 from .sim import World, _Failing, _Owners, identity
 from .store import StoreError, refuse_legacy
 
@@ -52,14 +52,21 @@ def roles() -> dict[str, bytes]:
 # them here, or for one new arena with `qdojo combat live --timing C,R`. An
 # existing arena keeps the values it was created with (devnet.json).
 DEMO_TIMING = (24, 12)
+# The candidate-2 demo arena's windows (docs/model.md §4, AUD-022): a round
+# takes the commit window plus ~4 ticks of reveal latency, so 9/6 gives a
+# median ranked fight of ~37 ticks (55 s at 1.5 s per tick).
+DEMO_C2_TIMING = (9, 6)
 
 # Manifest profiles. "dev" is the development fixture with the specified
 # matchmaking limits. "demo" is the public spectator arena: shorter epochs and
 # looser pair limits so a small bot population keeps fighting, seasons turn
 # over within hours, and stakes large enough that rake covers the simulated
 # execution cost of a fight (docs/economics-report.md). The site shows which
-# profile produced its data. Keys beyond Manifest fields: "timing"
-# {profile: [commit, reveal]}, "tiers" {tier: stake}, "fees" {profile: bps}.
+# profile produced its data. Keys beyond Manifest fields: "ruleset" (a
+# packaged semantic version, default candidate 1), "timing" {profile:
+# [commit, reveal]}, "tiers" {tier: stake}, "fees" {profile: bps}.
+# "demo-c2" is the demo arena on combat-v1 candidate 2 (docs/combat.md §11,
+# AUD-021) with DEMO_C2_TIMING: always a fresh devnet, never a converted one.
 # Demo fee profiles in bps: 1 for ranked fights and duels, 2 for cup entries.
 DEMO_FEES = {1: {"rake_bps": 500, "house_bps": 6000, "dev_bps": 1000, "share_bps": 3000},
              2: {"rake_bps": 1000, "house_bps": 6000, "dev_bps": 1000, "share_bps": 3000}}
@@ -73,10 +80,11 @@ PROFILES = {
              "pair_starts_per_epoch": 3, "pair_rematch_ticks": 60,
              "timing": {1: DEMO_TIMING}, "tiers": {1: 5000, 2: 20000}, "fees": DEMO_FEES},
 }
+PROFILES["demo-c2"] = {**PROFILES["demo"], "ruleset": CANDIDATE_2, "timing": {1: DEMO_C2_TIMING}}
 
 # Season championship qualification per profile (contract.Qualification): the
 # demo arena scales the distinct-opponent thresholds to its small field.
-QUALIFICATION = {"dev": Qualification(), "demo": Qualification(scale=True)}
+QUALIFICATION = {"dev": Qualification(), "demo": Qualification(scale=True), "demo-c2": Qualification(scale=True)}
 
 # Arenas created before devnet.json recorded manifest values replay with these.
 LEGACY_PROFILES = {
@@ -105,7 +113,8 @@ def manifest(profile: str = "dev", params: dict | None = None) -> Manifest:
     timing = {int(k): tuple(v) for k, v in p.pop("timing", {}).items()}
     tiers = {int(k): int(v) for k, v in p.pop("tiers", {}).items()}
     fees = p.pop("fees", {})
-    m = development_manifest(candidate_1(), r["admin"], r["house"], r["dev"], r["share"], **p)
+    rules = by_version(p.pop("ruleset", CANDIDATE_1))     # recorded in devnet.json, like every other value
+    m = development_manifest(rules, r["admin"], r["house"], r["dev"], r["share"], **p)
     changes = {}
     if timing:
         changes["timing"] = {**m.timing, **timing}

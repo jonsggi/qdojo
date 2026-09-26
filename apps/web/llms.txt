@@ -33,30 +33,52 @@ Words: an OWNER holds a FIGHTER; the owner's BOT queues, commits and reveals;
 each round the bot runs a PLANNER (your program) that returns a PLAN. A ROUND
 is six BEATS. Deadlines are chain TICKS. Glossary: docs/glossary.md.
 
-## Rules (combat-v1 candidate 1; numbers from /combat/ruleset.js)
+## Rules: two rulesets, one engine
 
-- Start: HP 100, stamina 60 (also the cap), one power strike per fight.
+Two packaged rulesets share every rule below except the numbers. THE LIVE
+DEMO ARENA RUNS CANDIDATE 2 (combat-v1-candidate-2, digest 231607f8...).
+Candidate 1 (combat-v1-candidate-1, digest 12085c86...) is the original;
+older demo fights and the sample export were played under it and still
+verify under it. Every fight names its ruleset_digest; the observation your
+planner receives carries it too, and /data/combat/v1/manifest.json and
+rulesets/{digest}.json give the exact numbers. Exact matrices: docs/combat.md
+(candidate 2 in section 11).
+
+Candidate 2 (live):
+- Start: HP 120, stamina 48 (also the cap), one power strike per fight.
 - Cost: JAB 6, KICK 12, BLOCK 4 (+3 per consecutive block, up to 3 in a
   row), DUCK 4, THROW 9, RECOVER 0.
 - Damage, row action onto column action, before bonuses:
-  JAB hits JAB/KICK/THROW for 8 and RECOVER/EXHAUSTED for 12; blocked or
-  ducked for 0. KICK hits JAB/KICK/THROW for 14, DUCK/RECOVER/EXHAUSTED for
-  18; blocked for 0 (the blocker loses 6 extra stamina: strain, never HP).
-  THROW hits BLOCK for 14 and RECOVER/EXHAUSTED for 18; a jab or kick
-  interrupts it; a duck evades it. BLOCK, DUCK and RECOVER deal nothing.
+  JAB hits JAB/THROW for 8, KICK for 10, RECOVER/EXHAUSTED for 12; blocked
+  or ducked for 0. KICK hits KICK/THROW for 14, DUCK/RECOVER/EXHAUSTED for
+  18, but a JAB only for 4: the jab is faster and wins that exchange 10 to 4.
+  Blocked for 0 (the blocker loses 6 extra stamina: strain, never HP).
+  THROW hits BLOCK for 20 and RECOVER/EXHAUSTED for 18; a jab or kick
+  interrupts it; a duck evades it. DUCK against a JAB slips it and counters
+  for 4. BLOCK and RECOVER deal nothing.
+- Opening +8, power +12 (at +4 cost).
+
+Candidate 1 (older fights): HP 100, stamina 60; JAB deals 8 to a KICK and
+KICK deals 14 to a JAB; THROW hits BLOCK for 14; DUCK deals nothing;
+opening +4, power +4. Everything else as above.
+
+Both:
 - An unaffordable move becomes EXHAUSTED: pays nothing, deals nothing, takes
   damage as an open target, recovers 6.
 - Stamina per beat: +2 after any executed action; RECOVER +18 if unhit, +6
-  if hit. Between rounds +10. HP never regenerates.
+  if hit. Between rounds +10 (up to the cap). HP never regenerates.
 - Opening: ducking a jab or throw, or a clean jab (dealt damage, took none),
-  gives +4 damage on the next beat only, if it lands. Power: mark one
-  JAB/KICK/THROW for +4 damage at +4 cost; spent even if it misses.
+  gives the bonus on the next beat only, if it lands. Power: mark one
+  JAB/KICK/THROW (never a DUCK); spent even if it misses. Bonuses never turn
+  a zero into damage.
 - End: 0 HP is a knockout (both at 0 on the same beat: draw). After round 3
   higher HP wins; equal HP draws. A missed deadline forfeits the whole
   contest (TIMEOUT), never shown as a knockout.
+- Timing on the live demo: commit window 9 ticks, reveal window 6 ticks
+  (a tick is about 1.5 s). Your planner has a few seconds, not tens.
 - Ranked rating: integer, zero-sum, starts at 1000; the first 10 ranked
   fights are placement. Belts are display only. Duels never move rating.
-- Exact matrix and resolution order: docs/combat.md.
+- Exact matrices and resolution order: docs/combat.md.
 
 ## The planner contract
 
@@ -103,10 +125,12 @@ uv run qdojo combat npcs
 uv run qdojo combat train --npc jabber-v1 --planner "python3 my_bot.py" --out fight.json
 uv run qdojo combat replay fight.json
 uv run qdojo combat evaluate --policy mixed-v1 --seeds 20
+uv run qdojo combat train --npc scout-v1 --ruleset combat-v1-candidate-2   # the live demo's rules
 uv run qdojo combat doctor --planner "python3 my_bot.py"
 ```
 
-train prints every beat, the seed (--seed reproduces a fight) and where your
+train and evaluate default to candidate 1; pass --ruleset
+combat-v1-candidate-2 to practise the live demo's rules. train prints every beat, the seed (--seed reproduces a fight) and where your
 plan cost you. evaluate benchmarks built-in policies only; to benchmark your
 own planner over many seeds, loop over qdojo.combat.training.run_fight (an
 example is in docs/build-a-bot.md section 4).

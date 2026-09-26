@@ -26,12 +26,32 @@ from pathlib import Path
 
 from . import npcs, planner, scouting
 from .engine import resolve_beat
-from .rules import candidate_1
+from .rules import CANDIDATE_1, RulesetError, by_digest, candidate_1
 from .types import Action, FighterState
 
 PROMPTS = Path(__file__).resolve().parents[5] / "prompts/combat"
 PROMPT = PROMPTS / "planner-system.md"
 URL = "https://openrouter.ai/api/v1/chat/completions"
+
+
+def _rules(obs: dict):
+    """The ruleset the observation names (candidate 1 when it names none this
+    package knows): projections, fallbacks and the legality check use it."""
+    try:
+        return by_digest(str(obs.get("ruleset_digest")))
+    except RulesetError:
+        return candidate_1()
+
+
+def prompt_for(prompt: Path, obs: dict) -> Path:
+    """A ruleset other than candidate 1 uses the prompt's "-<ruleset suffix>"
+    sibling when one exists (planner-system.md -> planner-system-candidate-2.md),
+    so the model is told the numbers of the game it is actually playing."""
+    rules = _rules(obs)
+    if rules.semantic_version == CANDIDATE_1:
+        return prompt
+    variant = prompt.with_name(f"{prompt.stem}-{rules.semantic_version.removeprefix('combat-v1-')}{prompt.suffix}")
+    return variant if variant.exists() else prompt
 
 
 def _power_line(side: dict, who: str) -> str:
@@ -105,7 +125,7 @@ def _projection_line(obs: dict) -> str | None:
     if guess is None:
         return None
     actions, source = guess
-    rules = candidate_1()
+    rules = _rules(obs)
     them = planner.fighter_state(obs["opponent"])
     # A fresh, blocking stand-in each beat: it never hits them, so their
     # recoveries are the unhit kind and nothing but their own plan moves them.
@@ -231,7 +251,7 @@ def _normalise(actions, power_slot):
 
 def _fallback(obs: dict, why: str) -> dict:
     print(f"fallback to mixed-v1: {why}", file=sys.stderr)
-    rules = candidate_1()
+    rules = _rules(obs)
     s, o = planner.fighter_state(obs["self"]), planner.fighter_state(obs["opponent"])
     seed = hashlib.sha256(json.dumps(obs, sort_keys=True).encode()).digest()
     plan = npcs.mixed_v1(rules, npcs.Observation(obs["round_index"], s, o), npcs.Stream(seed, 0, obs["round_index"]))
@@ -335,7 +355,7 @@ def ask(model: str, obs: dict, timeout: float, spend: "Spend", prompt: Path = PR
 
 def legal(obs: dict, plan) -> dict:
     """The contract's own plan check, applied before the plan leaves the planner."""
-    plan, why = planner.legal_plan(candidate_1(), planner.fighter_state(obs["self"]), plan)
+    plan, why = planner.legal_plan(_rules(obs), planner.fighter_state(obs["self"]), plan)
     if why:
         print(f"adjusted: {why}", file=sys.stderr)
     return planner.plan_json(plan)
@@ -366,7 +386,7 @@ def main():
         out = _fallback(obs, f"daily cap ${a.daily_usd:.2f} reached")
     else:
         try:
-            out = ask(a.model, obs, a.timeout, spend, prompt, a.reasoning, a.max_tokens)
+            out = ask(a.model, obs, a.timeout, spend, prompt_for(prompt, obs), a.reasoning, a.max_tokens)
         except Exception as exc:        # any model, network or parse failure: play the local policy
             out = _fallback(obs, f"{type(exc).__name__}: {str(exc)[:160]}")
     print(json.dumps(out))

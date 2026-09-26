@@ -24,7 +24,7 @@ sys.path.insert(0, str(ROOT / "packages/qdojo/src"))
 from qdojo.combat import evaluate as E  # noqa: E402
 from qdojo.combat import npcs  # noqa: E402
 from qdojo.combat.engine import resolve_round  # noqa: E402
-from qdojo.combat.rules import candidate_1  # noqa: E402
+from qdojo.combat.rules import CANDIDATE_1, KNOWN, by_version  # noqa: E402
 from qdojo.combat.types import FightState  # noqa: E402
 
 
@@ -44,9 +44,10 @@ def main():
     p.add_argument("--search-samples", type=int, default=8)
     p.add_argument("--out", default=str(ROOT / "docs/validation-report.md"))
     p.add_argument("--suite", default="test", help="seed namespace; use a fresh one after any instrument change")
+    p.add_argument("--ruleset", default=CANDIDATE_1, choices=tuple(KNOWN), help="packaged ruleset to validate")
     a = p.parse_args()
-    rules = candidate_1()
-    pools = E.pools()
+    rules = by_version(a.ruleset)
+    pools = E.pools(rules)
     search = E.SearchPlanner(candidates=a.search_candidates, samples=a.search_samples)
     reader = E.ReaderPlanner()
     started = time.time()
@@ -68,7 +69,7 @@ def main():
         for tier in tiers:
             for cname, cpol in tier.items():
                 seeds = a.seeds if cname in ("scout-v1", "mixed-v1", "known-policy-response") else a.costly_seeds * 4
-                r = E.summarize(name, E.paired(cpol, pol, seeds, f"{a.suite}/counter/{name}"))
+                r = E.summarize(name, E.paired(cpol, pol, seeds, f"{a.suite}/counter/{name}", rules=rules))
                 r["counter"] = cname
                 if best is None or r["lower95"] > best["lower95"]:
                     best = r
@@ -92,11 +93,11 @@ def main():
                 "reader-v1": (reader, a.costly_seeds * 4)}
     reward = {}
     for pname, (pol, seeds) in planners.items():
-        vs_random = E.summarize("random-v1", E.paired(pol, npcs.random_v1, seeds, f"{a.suite}/reward/random"))
+        vs_random = E.summarize("random-v1", E.paired(pol, npcs.random_v1, seeds, f"{a.suite}/reward/random", rules=rules))
         style_scores = []
         per = max(1, -(-seeds // len(pools["fixed-style"])))
         for oname, opol in pools["fixed-style"].items():
-            style_scores += E.paired(pol, opol, per, f"{a.suite}/reward/{oname}").scores
+            style_scores += E.paired(pol, opol, per, f"{a.suite}/reward/{oname}", rules=rules).scores
         style = {"score": E.mean(style_scores), "lower95": E.bootstrap_lower(style_scores),
                  "fights": 2 * len(style_scores)}
         reward[pname] = {"random": vs_random, "fixed_style": style}
@@ -117,8 +118,8 @@ def main():
     log("ablations")
     pred = pools["predictable"]
     per = max(1, a.costly_seeds // len(pred))
-    res_ab = E.ablation(reader, E.ReaderPlanner(ignore_resources=True), pred, per, f"{a.suite}/ablation/resources")
-    hist_ab = E.ablation(reader, E.ReaderPlanner(use_history=False), pred, per, f"{a.suite}/ablation/history")
+    res_ab = E.ablation(reader, E.ReaderPlanner(ignore_resources=True), pred, per, f"{a.suite}/ablation/resources", rules=rules)
+    hist_ab = E.ablation(reader, E.ReaderPlanner(use_history=False), pred, per, f"{a.suite}/ablation/history", rules=rules)
     raw["ablation"] = {"resources": res_ab, "history": hist_ab}
     gates.append(gate("Resource/opening state matters to the improved planner (>=0.05, LB>0)",
                       res_ab["mean_improvement"] >= 0.05 and res_ab["lower95"] > 0,
@@ -163,14 +164,19 @@ def main():
     for i, x in enumerate(names):
         for y in names[i:]:
             seeds = a.costly_seeds if {x, y} & costly else a.seeds
-            t = E.paired(competent[x], competent[y], seeds, f"{a.suite}/shape/{x}/{y}")
+            t = E.paired(competent[x], competent[y], seeds, f"{a.suite}/shape/{x}/{y}", rules=rules)
             matrix.append(E.summarize(f"{x} vs {y}", t))
             strength[x] += t.scores
             if x != y:
                 strength[y] += [1 - s for s in t.scores]
             for f in ("fights", "draws", "reached_round_2", "round0_ko", "trailing_after_r0", "trailing_won",
-                      "exhausted_beats", "executed_beats"):
+                      "exhausted_beats", "executed_beats", "kos", "decisions", "opening_bonus_hp", "power_bonus_hp",
+                      "leader_after_r1", "leader_after_r1_won"):
                 setattr(total, f, getattr(total, f) + getattr(t, f))
+            for act, row in t.action_beats.items():
+                acc = total.action_beats.setdefault(act, [0, 0, 0])
+                for k in range(3):
+                    acc[k] += row[k]
     shape = {
         "draws": total.draws / total.fights,
         "round2": total.reached_round_2 / total.fights,
@@ -178,6 +184,15 @@ def main():
         "trailer_wins": total.trailing_won / max(1, total.trailing_after_r0),
         "exhausted": total.exhausted_beats / max(1, total.executed_beats),
         "strength": {n: E.mean(s) for n, s in strength.items()},
+        # Reported, not gated: the AUD-021 balance measures.
+        "ko_rate": total.kos / total.fights,
+        "decision_rate": total.decisions / total.fights,
+        "beats_per_fight": total.executed_beats / total.fights,
+        "opening_bonus_per_side": total.opening_bonus_hp / total.fights,
+        "power_bonus_per_side": total.power_bonus_hp / total.fights,
+        "leader_after_r1_wins": total.leader_after_r1_won / max(1, total.leader_after_r1),
+        "actions": {act: {"share": row[0] / max(1, total.executed_beats), "net_per_beat": (row[1] - row[2]) / row[0]}
+                    for act, row in sorted(total.action_beats.items()) if row[0]},
     }
     families = [n for n, s in shape["strength"].items() if s >= 0.45]
     raw["shape"], raw["shape_matrix"] = shape, matrix
@@ -192,11 +207,20 @@ def main():
              ", ".join(f"{n} {s:.3f}" for n, s in shape["strength"].items())),
     ]
     sections.append(E.markdown("Competent-pool round robin", matrix))
+    sections.append(
+        "### Fight shape and action value (competent pool, reported, not gated)\n\n"
+        f"KO {shape['ko_rate']:.1%}, decision {shape['decision_rate']:.1%}, draws {shape['draws']:.1%}; "
+        f"{shape['beats_per_fight']:.1f} executed beats per fight; the HP leader after round 1 (of 0..2) wins "
+        f"{shape['leader_after_r1_wins']:.1%}; opening bonus {shape['opening_bonus_per_side']:.1f} and power bonus "
+        f"{shape['power_bonus_per_side']:.1f} HP per fighter and fight. Each fight counts once per side "
+        "(net = damage dealt minus damage taken on beats where that side executed the action).\n\n"
+        "| Action | Share of executed beats | Net HP per beat |\n|---|---:|---:|\n"
+        + "\n".join(f"| {k} | {v['share']:.1%} | {v['net_per_beat']:+.2f} |" for k, v in shape["actions"].items()) + "\n")
 
     elapsed = time.time() - started
     passed = sum(g["pass"] for g in gates)
     lines = [
-        "# Combat candidate 1 — strategic validation report", "",
+        f"# Combat {rules.semantic_version.removeprefix('combat-v1-').replace('-', ' ')} — strategic validation report", "",
         f"Generated by `scripts/combat-validation.py` with the instruments of commit {commit}, "
         f"ruleset `{rules.digest.hex()}` ({rules.semantic_version}).",
         f"Hardware: {platform.machine()}, Python {platform.python_version()}, 2 CPUs; runtime {elapsed / 60:.1f} min.",

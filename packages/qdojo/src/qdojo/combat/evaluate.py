@@ -257,21 +257,22 @@ class ReaderPlanner:
         return beam_response(rules, me, opp, preds, self.beam)
 
 
-_SCRIPTS: dict[str, Plan] = {}
+_SCRIPTS: dict[tuple[bytes, str], Plan] = {}
 
 
 def strong_script(rules: Ruleset, versus: str) -> npcs.Policy:
     """A predictable but competent opponent: one fixed plan, chosen by beam
     search as the best reply to eight round-0 plans of `versus`, replayed
     every round (power on its first attack in the last round)."""
-    if versus not in _SCRIPTS:
+    key = (rules.digest, versus)
+    if key not in _SCRIPTS:
         s0 = npcs.FighterState.initial(rules)
         obs = npcs.Observation(0, s0, s0)
         pol = npcs.ROSTER[versus].policy
         preds = [Plan.of(pol(rules, obs, npcs.Stream(sha256(TAG_EVAL, b"script", versus.encode(), bytes([i])), 0, 0))
                          .actions) for i in range(8)]
-        _SCRIPTS[versus] = beam_response(rules, s0, s0, preds)
-    return pattern(_SCRIPTS[versus].actions)
+        _SCRIPTS[key] = beam_response(rules, s0, s0, preds)
+    return pattern(_SCRIPTS[key].actions)
 
 
 def exploit_opening(opening: Plan, then: npcs.Policy = npcs.mixed_v1):
@@ -280,8 +281,10 @@ def exploit_opening(opening: Plan, then: npcs.Policy = npcs.mixed_v1):
     return policy
 
 
-def pools() -> dict[str, dict[str, npcs.Policy]]:
-    """Named opponent pools. 'baseline' is the model.md §2 exploit list."""
+def pools(rules: Ruleset | None = None) -> dict[str, dict[str, npcs.Policy]]:
+    """Named opponent pools. 'baseline' is the model.md §2 exploit list. The
+    scripted opponents are best replies computed under `rules` (default
+    candidate 1), so each ruleset gets its own competent scripts."""
     roster = {n.id: n.policy for n in npcs.ROSTER.values()}
     spams = {f"spam-{a.name.lower()}": spam(a) for a in SUBMITTED}
     spams["spam-jab-spend-power"] = spam(J, 0)
@@ -299,7 +302,7 @@ def pools() -> dict[str, dict[str, npcs.Policy]]:
         "turtle-alt": pattern([B, R, B, D, B, R]),
         "thrower": pattern([T, R, T, D, T, R]),
     }
-    rules = candidate_1()
+    rules = rules or candidate_1()
     scripts = {f"script-vs-{v}": strong_script(rules, v) for v in ("mixed-v1", "random-v1", "scout-v1", "kicker-v1")}
     fixed_style = {k: roster[k] for k in ("jabber-v1", "turtle-v1", "kicker-v1")} | held_out_styles
     return {
@@ -315,7 +318,7 @@ def pools() -> dict[str, dict[str, npcs.Policy]]:
     }
 
 
-def policy_by_name(name: str) -> npcs.Policy:
+def policy_by_name(name: str, rules: Ruleset | None = None) -> npcs.Policy:
     if name in npcs.ROSTER:
         return npcs.ROSTER[name].policy
     if name == "search-v1":
@@ -330,7 +333,7 @@ def policy_by_name(name: str) -> npcs.Policy:
         return ReaderPlanner(use_history=False, name="reader-blind")
     if name == "reader-nores":
         return ReaderPlanner(ignore_resources=True, name="reader-nores")
-    for pool in pools().values():
+    for pool in pools(rules).values():
         if name in pool:
             return pool[name]
     raise KeyError(f"unknown policy {name!r}")
@@ -355,6 +358,13 @@ class Tally:
     power_wasted: int = 0
     openings_converted: int = 0
     hp_margin: int = 0
+    kos: int = 0                   # fights ended by KO or double KO
+    decisions: int = 0             # fights decided on HP after the last round (ties included)
+    opening_bonus_hp: int = 0      # this side's opening bonus damage
+    power_bonus_hp: int = 0        # this side's power bonus damage
+    leader_after_r1: int = 0       # fights reaching the last round with an HP leader after the second
+    leader_after_r1_won: int = 0
+    action_beats: dict = field(default_factory=dict)   # effective action -> [beats, dealt, taken], this side
 
 
 def _record(t: Tally, replay: dict, slot: str) -> float:
@@ -386,6 +396,22 @@ def _record(t: Tally, replay: dict, slot: str) -> float:
             t.power_wasted += "POWER_WASTED" in reasons
             t.openings_converted += "OPENING_USED" in reasons
     t.hp_margin += replay["final"][slot]["hp"] - replay["final"][other]["hp"]
+    t.kos += out["result"] in ("KO", "DOUBLE_KO")
+    t.decisions += out["result"] in ("HP", "HP_TIE")
+    if len(rounds) >= 3:
+        ea, eb = rounds[1]["end"]["A"]["hp"], rounds[1]["end"]["B"]["hp"]
+        if ea != eb:
+            t.leader_after_r1 += 1
+            t.leader_after_r1_won += out["winner"] == ("A" if ea > eb else "B")
+    for r in rounds:
+        for beat in r["beats"]:
+            me, them = beat[slot], beat[other]
+            t.opening_bonus_hp += me["opening_bonus"]
+            t.power_bonus_hp += me["power_bonus"]
+            row = t.action_beats.setdefault(me["effective"], [0, 0, 0])
+            row[0] += 1
+            row[1] += me["computed_damage"]
+            row[2] += them["computed_damage"]
     return score
 
 
@@ -431,14 +457,19 @@ def summarize(name: str, t: Tally) -> dict:
         "exhausted_rate": t.exhausted_beats / max(1, t.executed_beats),
         "power_used": t.power_used, "power_wasted": t.power_wasted,
         "openings_converted": t.openings_converted, "mean_hp_margin": t.hp_margin / t.fights,
+        "ko_rate": t.kos / t.fights, "decision_rate": t.decisions / t.fights,
+        "beats_per_fight": t.executed_beats / t.fights,
+        "opening_bonus_per_fight": t.opening_bonus_hp / t.fights, "power_bonus_per_fight": t.power_bonus_hp / t.fights,
+        "leader_after_r1_win_rate": t.leader_after_r1_won / t.leader_after_r1 if t.leader_after_r1 else float("nan"),
     }
 
 
 def evaluate(policy: npcs.Policy, pool: dict[str, npcs.Policy], seeds: int, suite: str = "test",
-             policy_id: str = "policy", progress: Callable[[str], None] | None = None) -> list[dict]:
+             policy_id: str = "policy", progress: Callable[[str], None] | None = None,
+             rules: Ruleset | None = None) -> list[dict]:
     rows = []
     for name, opp in pool.items():
-        t = paired(policy, opp, seeds, f"{suite}/{name}", policy_id, name)
+        t = paired(policy, opp, seeds, f"{suite}/{name}", policy_id, name, rules=rules)
         rows.append(summarize(name, t))
         if progress:
             progress(f"{name}: score {rows[-1]['score']:.3f}")
@@ -446,12 +477,12 @@ def evaluate(policy: npcs.Policy, pool: dict[str, npcs.Policy], seeds: int, suit
 
 
 def ablation(full: npcs.Policy, ablated: npcs.Policy, pool: dict[str, npcs.Policy], seeds: int,
-             suite: str = "ablation") -> dict:
+             suite: str = "ablation", rules: Ruleset | None = None) -> dict:
     """Paired difference full-minus-ablated on identical seeds and opponents."""
     diffs = []
     for name, opp in pool.items():
-        a = paired(full, opp, seeds, f"{suite}/{name}")
-        b = paired(ablated, opp, seeds, f"{suite}/{name}")
+        a = paired(full, opp, seeds, f"{suite}/{name}", rules=rules)
+        b = paired(ablated, opp, seeds, f"{suite}/{name}", rules=rules)
         diffs += [x - y for x, y in zip(a.scores, b.scores)]
     return {"mean_improvement": mean(diffs), "lower95": bootstrap_lower(diffs), "pairs": len(diffs)}
 

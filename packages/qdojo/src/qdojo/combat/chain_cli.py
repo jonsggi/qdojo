@@ -213,12 +213,12 @@ def cmd_bot_run(a):
     """Run your fighter's bot on the devnet for N ticks. With --spar, a disclosed
     house-labelled sparring bot enters too, so a lone owner still gets fights."""
     net = _net(a)
-    rules = candidate_1()
+    rules = net.m.ruleset                      # whatever ruleset this devnet's manifest names
     fid, owner = net.ensure_fighter(a.fighter)
     if a.planner:
         choose = planner_chooser(shlex.split(a.planner), a.budget_ms)
     else:
-        choose = policy_chooser(rules, E.policy_by_name(a.npc or "mixed-v1"), os.urandom(32))
+        choose = policy_chooser(rules, E.policy_by_name(a.npc or "mixed-v1", rules), os.urandom(32))
     budget = Budget(ruleset_digest=rules.digest.hex())
     if a.budget:
         budget = Budget(**{**budget.__dict__, **json.loads(Path(a.budget).read_text())})
@@ -227,7 +227,7 @@ def cmd_bot_run(a):
     if a.spar:
         sfid, sowner = net.ensure_fighter("sparring-" + a.spar)
         bots.append(Bot(net.client(sowner), rules, sfid, sowner, sowner,
-                        policy_chooser(rules, E.policy_by_name(a.spar), os.urandom(32)),
+                        policy_chooser(rules, E.policy_by_name(a.spar, rules), os.urandom(32)),
                         Budget(ruleset_digest=rules.digest.hex(), max_fights_per_day=10**6,
                                max_daily_committed=10**12, max_daily_net_loss=10**12, stop_after_faults=10**6),
                         _home() / "bots" / ("sparring-" + a.spar)))

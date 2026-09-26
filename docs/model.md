@@ -3,7 +3,7 @@
 > **Purpose:** the acceptance gates combat must pass: correctness, exploits, optimisation reward, fight shape, readability, timing, money and farming. \
 > **Audience:** reviewers deciding whether the ruleset is fit to launch. \
 > **Status:** normative (the gates). It defines measurements and claims none. Results so far are in [validation-status.md](validation-status.md): mechanical correctness and the 11 strategic gates measured so far pass on held-out seeds. Not measured: adaptation time against a style-switching opponent, §3 readability, §4 timing and contract cost, and economics with real costs. \
-> **Last reviewed:** 2026-09-25 (header, status and links; rules text unchanged)
+> **Last reviewed:** 2026-09-26 (§4 demo timing and §8 balance measurements added; the gates are unchanged)
 
 Historic riddle experiments are [archived](archive/riddle-v0/docs/model.md) and are not combat evidence.
 
@@ -16,6 +16,7 @@ Historic riddle experiments are [archived](archive/riddle-v0/docs/model.md) and 
 - [5. Money model](#5-money-model)
 - [6. Farming and adversarial participation](#6-farming-and-adversarial-participation)
 - [7. Acceptance report](#7-acceptance-report)
+- [8. Balance measurements: candidate 1 and candidate 2](#8-balance-measurements-candidate-1-and-candidate-2)
 
 ## 1. What success must mean
 
@@ -147,6 +148,31 @@ using a historic assumed tick duration. Measure current network distribution.
 A six-beat replay should fit inside the next commit window at normal speed.
 Default planner 1500 ms; record actual hardware/provider cost.
 
+**Demo timing profile (measured 2026-09-26, AUD-022).** The contract waits
+out the whole commit window, so a round lasts the commit window plus the
+reveal latency (a median 4 ticks in the live arena). The live demo arena on
+24/12 ticks resolves a round every 28 ticks: a ranked fight takes a median
+80 ticks, 120 s at 1.5 s per tick (143 finished ranked fights in the live
+export). The devnet profile `demo-c2` sets timing profile 1 to **commit 9,
+reveal 6 ticks**. On the simulated chain (latency 1-3 ticks, 2% drops, the
+default demo lineup plus four competent bots, candidate 2, 3,000 ticks) a
+ranked fight then takes a median **37 ticks = 55.5 s** and p95 39 ticks = 58.5 s
+(104 fights; 24/12 on the same harness with candidate 1: median 56, p95 84 ticks).
+
+| Commit / reveal ticks | Median | p95 | Note |
+|---|---:|---:|---|
+| 24 / 12 (live, candidate 1) | 120 s | 126 s | live export |
+| 10 / 6 | 60 s | 63 s | simulated chain, 60-stamina trial |
+| 9 / 6 (chosen) | 55.5 s | 58.5 s | simulated chain, final candidate 2 |
+| 8 / 6 | 51 s | 54 s | simulated chain, 60-stamina trial |
+
+A 9-tick commit window leaves a planner about 6 ticks (9 s) before its
+commit must be sent, allowing 3 ticks of inclusion latency. In-process
+policies need well under a second. An LLM planner must be given a budget of
+at most about 7 s (lineup `budget_ms` about 7000 and the model's `--timeout`
+about 6), or it misses commits and forfeits. The site's beat-by-beat
+playback (6 × 600 ms) fits inside the 13.5 s window.
+
 Stress simultaneous resolutions, cups and ranked queue occupancy. Benchmark
 the pinned contract's procedure work AND state hashing, idle hooks, negative
 paths, nonce/credit tables and ownership queries. Empty ticks must not scan
@@ -213,3 +239,119 @@ because operator bots fight each other.
 Numeric balance changes require a new candidate/version and regenerated
 independent fixtures. Paid activation requires all hard gates passed and
 the chosen manifest cost/timing/capacity values justified by the report.
+
+## 8. Balance measurements: candidate 1 and candidate 2
+
+Measured 2026-09-26 for AUD-021 and AUD-022. Two instruments:
+
+- **The campaign** (`scripts/combat-validation.py --ruleset …`, full
+  budgets, both rulesets on the same fresh seed suite `holdout-20260926b`).
+  Candidate 2's report: [validation-report-candidate-2.md](validation-report-candidate-2.md).
+- **A field tournament**: a fast integer simulator (checked against
+  `combat/engine.py` on random beats) re-implementing the live arena's
+  non-LLM families (random, jabber, kicker, turtle, mixed, scout,
+  reader-v1, repeat-last-winner, search-v1, script-vs-mixed,
+  script-vs-scout), all history-aware as fixed by AUD-014; 55 pairings ×
+  40 paired seeds = 4,400 fights per ruleset. It stands in for the live
+  field; it is not a gate. LLM planners are not in it.
+
+### 8.1 Gates (campaign, same seeds)
+
+| Gate | Candidate 1 | Candidate 2 |
+|---|---|---|
+| Simple strategies with a counter | 29/29 | 29/29 |
+| Planner vs random / fixed styles (best) | search-v1 0.914 / 0.980 | search-v1 0.811 / 0.869; reader-v1 0.794 / 0.989 |
+| Resource/opening ablation (predictable pool) | +0.175 (LB 0.138) PASS | **−0.002 (LB −0.022) FAIL** |
+| History ablation (predictable pool) | +0.106 (LB 0.068) | +0.351 (LB 0.301) |
+| Competitive plans from different beliefs | 10 | 10 |
+| Draws | 7.4% | 2.6% |
+| Fights reaching round 2 | 76.5% | 97.6% |
+| Round-0 knockouts | 0.0% | 0.0% |
+| Trailing after round 0 wins | 26.9% | 31.2% |
+| Exhausted beats (competent) | 1.4% | 2.7% |
+| Families ≥ 0.45 vs the pool | scout 0.681, search 0.652, reader 0.647 | reader 0.646, search 0.610, scout 0.576 |
+| **Gates passed** | **11/11** | **10/11** |
+
+**The failed gate is a ceiling, and the reason it is not waived.** Against
+the predictable pool (fixed styles and scripts) both the full reader and
+its no-resource ablation score 0.98-0.99 under candidate 2, so no
+difference can show. Against the competent pool (mixed-v1, scout-v1,
+repeat-last-winner; 80 paired seeds × 3 = 240 pairs, suite
+`ablc-holdout-20260926b`) resources still matter: candidate 2 +0.055
+(LB +0.018), candidate 1 +0.094 (LB +0.057). That is a real cost of the
+design: a cheap jab that wins the kick exchange makes stamina planning
+less decisive. A 60-stamina trial of candidate 2 measured only +0.035
+(LB −0.023) there; the 48-stamina cap is what brings it back above 0.05.
+Candidate 1's first campaign met the same ceiling on the history gate and
+fixed it with harder predictable opponents; the same instrument fix
+(scripts computed against the reader, or the competent pool for this
+ablation) is the next step, and it is a gate change for the reviewers to
+decide, not something to adopt after seeing the result. Until then the
+resource gate is a **FAIL** for candidate 2, which blocks paid activation
+under §7, not the fake-QU demo arena.
+
+### 8.2 Fight shape and action value (campaign, competent pool)
+
+| Measure | Candidate 1 | Candidate 2 |
+|---|---:|---:|
+| KO / decision / draw | 72.5% / 27.5% / 7.4% | 43.9% / 56.1% / 2.6% |
+| Executed beats per fight | 14.8 | 16.8 |
+| Leader after round 1 (of 0..2) wins | 78.0% | 78.9% |
+| Opening + power bonus per fighter and fight | 1.9 + 1.7 HP | 5.8 + 6.9 HP |
+| Net HP per beat: KICK / JAB / THROW | +6.56 / +1.03 / −0.84 | +5.58 / +3.74 / +0.62 |
+| Net HP per beat: BLOCK / DUCK / RECOVER | −1.19 / −4.51 / −8.61 | −1.98 / −2.52 / −8.62 |
+| Share: JAB / KICK / BLOCK / DUCK / THROW / RECOVER | 22 / 26 / 14 / 14 / 8 / 15% | 25 / 19 / 13 / 15 / 9 / 16% |
+
+Net HP per beat favours attacks by construction (BLOCK and DUCK deal
+nothing except the duck counter; RECOVER buys stamina). What matters is
+the spread between the attacks and whether the defences lose less:
+KICK's lead over JAB fell from 5.5 to 1.8 HP per beat, THROW turned
+positive, DUCK's loss halved.
+
+### 8.3 The live-field tournament
+
+| Measure (4,400 fights each) | Candidate 1 | Candidate 2 |
+|---|---:|---:|
+| KO / decision / draw | 82% / 17% / 5% | 64% / 35% / 2% |
+| Fights reaching round 3 | 54% | 89% |
+| Trailer after the first round wins | 20% | 26% |
+| Leader after the second round wins | 84% | 86% |
+| Median final HP margin; finishes within 8 HP | 28; 18% | 36; 14% |
+| Opening + power bonus per fighter and fight | 2.9 HP | 12.5 HP |
+| Net HP per beat KICK / JAB / THROW / BLOCK / DUCK | +7.2 / +1.5 / +1.9 / −1.3 / −5.6 | +5.4 / +4.2 / +3.2 / −2.0 / −3.3 |
+| One-beat equilibrium at a fresh state (value 8×HP + stamina) | KICK 50%, BLOCK 49% | JAB 32%, KICK 20%, BLOCK 35%, DUCK 13% |
+| History value: reader minus history-blind reader | +0.05 | +0.31 |
+| Top of the field | script-vs-scout 0.84, reader 0.83, search 0.79 | reader 0.85, search 0.71, jabber 0.70 |
+| reader-v1's own mix J / K / B / D / T / R | 20 / 33 / 12 / 10 / 13 / 11% | 32 / 18 / 7 / 15 / 14 / 12% |
+
+Readings:
+
+- **No dominant action.** KICK no longer weakly dominates JAB; four
+  actions carry the one-beat equilibrium; the best planners use every
+  action. THROW stays situational (best reply on 29% of beats, against
+  blocks and recoveries, played on 6-14%) and RECOVER is a resource move.
+- **Adaptation pays more.** A fixed script topped candidate 1's field; in
+  candidate 2 the history-aware reader leads and the best script is fifth.
+  The round-by-round swing of the adapters grew (reader-v1's HP differential: −5.9 in the first round, +49.6 in
+  the second; candidate 1: −11.2 and +36.8).
+- **Fewer knockouts, more full fights.** Round 3 is reached in 89% of fights.
+- **Not improved: late comebacks and close finishes.** The leader after the second round
+  still wins about 86%, and better planners win by wider margins. The field
+  policies do not change risk with the score; comebacks may need a mechanic
+  (see AUD-021's proposals) rather than numbers.
+- **Style readability.** Jabber beats kicker 1.00 and both scripts; kicker
+  (kick, recover, repeated) now loses to every adapter, because the jab
+  answers the kick and punishes the recovery.
+
+### 8.4 Rejected variants
+
+About fifty variants were measured on the field tournament before the
+campaign (details in [AUD-021](../audits/issues/AUD-021-balance-kick-duck.md)).
+Single levers on candidate 1 (kick cost 14, kick 10 damage, throw 20,
+duck counter, power 10, opening 8) left KICK/BLOCK the only equilibrium.
+Jab-wins-kick was the necessary change; HP 120 cut KOs; throw 20, duck
+counter 4, opening 8 and power 12 each helped a little; block cost and
+strain changes did nothing measurable. Rounds × beats of 8×3, 6×4, 5×4
+and 4×4 (HP scaled) did not improve comebacks or history value, widened
+margins and raised exhaustion to 10-11% with 8-beat rounds
+([combat.md §11.5](combat.md#115-considered-and-not-adopted)).

@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from ..hashing import sha256
 from . import codec, npcs, planner, scouting
 from .engine import new_fight, resolve_beat, resolve_round
-from .rules import Ruleset, candidate_1
+from .rules import CANDIDATE_1_DIGEST, Ruleset, RulesetError, by_digest, candidate_1
 from .types import SUBMITTED, Action, FighterState, FightState, Plan, Reason, RoundResult
 
 REPLAY_SCHEMA = "qdojo.combat.replay.v1"
@@ -172,9 +172,13 @@ def verify_replay(replay: dict, rules: Ruleset | None = None) -> dict:
     Only the plans (and the ruleset digest) are inputs. States, traces and the
     outcome in the file are claims, checked against an independent resolution.
     """
-    rules = rules or candidate_1()
     if replay.get("schema") != REPLAY_SCHEMA:
         raise ReplayMismatch(f"not a {REPLAY_SCHEMA} document")
+    if rules is None:                     # the replay names its ruleset; use that packaged one
+        try:
+            rules = by_digest(str(replay.get("ruleset_digest")))
+        except RulesetError:
+            raise ReplayMismatch("replay names a ruleset this package does not know") from None
     if replay.get("ruleset_digest") != rules.digest.hex():
         raise ReplayMismatch("replay names a different ruleset")
     state = new_fight(rules)
@@ -208,7 +212,7 @@ def explain(replay: dict, slot: str, rules: Ruleset | None = None) -> list[str]:
     """Plain sentences for the beats that cost `slot` something (combat.md §9).
     Alternatives are labelled hindsight: they hold the opponent's recorded
     action fixed, which is not proof the opponent would have played it."""
-    rules = rules or candidate_1()
+    rules = rules or by_digest(str(replay.get("ruleset_digest", CANDIDATE_1_DIGEST)))
     other = "B" if slot == "A" else "A"
     lines = []
     for r in replay["rounds"]:

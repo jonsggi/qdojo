@@ -51,7 +51,7 @@
 | **Timeout / forfeit** | Missing a commit or reveal deadline loses the whole contest to a compliant opponent. Shown as TIMEOUT, never as a knockout |
 | **Double fault** | Both sides missed a deadline: no winner, stakes returned, a fault for each, no rating change |
 | **Void** | The contract could not run (service gap): stakes returned, no fault, no rating change |
-| **Ruleset / ruleset digest** | The exact combat parameters, and the SHA-256 that identifies them (`combat-v1-candidate-1`, `12085c86…`) |
+| **Ruleset / ruleset digest** | The exact combat parameters, and the SHA-256 that identifies them (`combat-v1-candidate-1`, `12085c86…`; `combat-v1-candidate-2`, `231607f8…`) |
 | **Reference contract** | The Python contract in `combat/contract.py` that every other implementation must match |
 | **Devnet** | A local, persistent fake chain running the reference contract with fake QU and synthetic identities |
 | **Simulated chain** | `SimChain`: the devnet plus latency, dropped and reordered transactions, and execution fees |

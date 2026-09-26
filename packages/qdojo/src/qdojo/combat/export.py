@@ -344,8 +344,8 @@ def export_all(c: CombatContract, root: Path, keep: int | None = None, deploymen
         _write(p, doc)
         out.append(p)
     put("manifest.json", manifest(c))
-    from .rules import CANDIDATE_1, RULESET_DIR, digest_of
-    artifact = json.loads((RULESET_DIR / f"{CANDIDATE_1}.json").read_text())
+    from .rules import artifact as ruleset_artifact, digest_of
+    artifact = ruleset_artifact(c.m.ruleset.semantic_version)
     if digest_of(artifact) != c.m.ruleset.digest:
         raise ValueError("the packaged ruleset artifact is not the contract's ruleset")
     put(f"rulesets/{c.m.ruleset.digest.hex()}.json", {"schema": SCHEMA.format("ruleset"),

@@ -129,8 +129,8 @@ Seven findings were fixed and deployed on 2026-09-25; the rest are open.
 | [AUD-018](issues/AUD-018-house-economics.md) | Mitigated (demo) f27a972 | P1 / paid launch gate | House economics do not close |
 | [AUD-019](issues/AUD-019-player-ev-and-event-farming.md) | **Mitigated** f27a972 | P1 / fairness / outside stakes | Honest players lose money; cups and duels were farmed |
 | [AUD-020](issues/AUD-020-ratings-and-seasons.md) | **Mitigated** f27a972 | P2 / competition quality | Ratings do not converge and season titles are noisy |
-| [AUD-021](issues/AUD-021-balance-kick-duck.md) | Open | P2 / strategic depth | Kick dominates; duck and throw are near useless |
-| [AUD-022](issues/AUD-022-pacing.md) | Open (profile wiring 67f10c1) | P2 / spectator experience | A ranked fight takes twice the target time |
+| [AUD-021](issues/AUD-021-balance-kick-duck.md) | Mitigated (candidate 2 in code; 10/11 gates) | P2 / strategic depth | Kick dominates; duck and throw are near useless |
+| [AUD-022](issues/AUD-022-pacing.md) | Mitigated (profile `demo-c2`, 9/6 ticks; wiring 67f10c1) | P2 / spectator experience | A ranked fight takes twice the target time |
 | [AUD-023](issues/AUD-023-market-without-prices.md) | **Fixed** 65ac7b8 | P2 / NFT readiness | The simulated market has no prices |
 | [AUD-024](issues/AUD-024-unbounded-growth.md) | **Fixed** 67f10c1 | P2 / operations | index.json and restart time grow without bound |
 | [AUD-025](issues/AUD-025-overdue-invariant.md) | **Fixed** 67f10c1 | P1 / regression safety | Tests accepted overdue live fights |

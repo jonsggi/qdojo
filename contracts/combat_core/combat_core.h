@@ -1,4 +1,4 @@
-// qdojo combat-v1 (candidate 1) pure core.
+// qdojo combat-v1 pure core (candidate 1 by default; -DQDOJO_RULESET=2 for candidate 2).
 //
 // Independent C++ implementation of docs/combat.md sections 2-7 and the
 // canonical state/plan encodings of docs/protocol.md section 2. Written from
@@ -7,9 +7,10 @@
 //   - header-only, no heap allocation, no exceptions, no STL containers
 //   - no floating point, no RNG, no clock
 //   - fixed-width integer types only; every loop has a compile-time bound
-//   - all ruleset constants compiled in (contracts cannot parse JSON);
-//     test_combat_core.cpp asserts they equal docs/combat-v1.json and that
-//     the file hashes to RULESET_DIGEST
+//   - all ruleset constants compiled in (contracts cannot parse JSON), one
+//     table per packaged ruleset, one selected per build (QDOJO_RULESET);
+//     test_combat_core.cpp asserts each table equals its JSON file and that
+//     the file hashes to the table's digest
 //   - invalid input is rejected with an error code, never repaired/clamped
 //
 // Reason codes (SideTrace::reasons) are a descriptive bitmask with STABLE bit
@@ -39,27 +40,16 @@
 namespace qdojo_combat {
 
 // ---------------------------------------------------------------- constants
-// Mirrors docs/combat-v1.json (semantic_version "combat-v1-candidate-1").
-static constexpr uint8_t ROUNDS = 3;
-static constexpr uint8_t BEATS_PER_ROUND = 6;
-static constexpr uint16_t INITIAL_HP = 100;
-static constexpr uint16_t INITIAL_STAMINA = 60;
-static constexpr uint8_t INITIAL_OPENING = 0;
-static constexpr uint8_t INITIAL_GUARD_STREAK = 0;
-static constexpr uint8_t INITIAL_POWER_AVAILABLE = 1;
-static constexpr uint16_t LIMIT_HP = 100;
-static constexpr uint16_t LIMIT_STAMINA = 60;
-static constexpr uint8_t LIMIT_GUARD_STREAK = 3;
-static constexpr uint16_t BLOCK_STREAK_COST = 3;
-static constexpr uint16_t BLOCK_STRAIN = 6;
-static constexpr uint16_t ORDINARY_RECOVERY = 2;
-static constexpr uint16_t RECOVER_UNHIT = 18;
-static constexpr uint16_t RECOVER_HIT = 6;
-static constexpr uint16_t EXHAUSTED_RECOVERY = 6;
-static constexpr uint16_t BREAK_RECOVERY = 10;
-static constexpr uint16_t OPENING_DAMAGE = 4;
-static constexpr uint16_t POWER_DAMAGE = 4;
-static constexpr uint16_t POWER_COST = 4;
+// Every packaged combat-v1 ruleset is compiled in as a table (contracts cannot
+// parse JSON). A build SELECTS one with -DQDOJO_RULESET=<n> (default 1): a
+// deployed contract serves exactly one ruleset, and its manifest must name
+// that ruleset's digest (combat_contract.h checks this). Both tables are
+// always present, so the test runner checks each against its JSON file:
+//   1 = docs/combat-v1.json               "combat-v1-candidate-1"
+//   2 = docs/combat-v1-candidate-2.json   "combat-v1-candidate-2"
+#ifndef QDOJO_RULESET
+#define QDOJO_RULESET 1
+#endif
 
 enum Action : uint8_t {
     JAB = 0, KICK = 1, BLOCK = 2, DUCK = 3, THROW = 4, RECOVER = 5,
@@ -68,24 +58,114 @@ enum Action : uint8_t {
 static constexpr uint8_t ACTION_COUNT = 7;
 static constexpr uint8_t SUBMITTED_ACTION_COUNT = 6;  // ids 0..5
 
-static constexpr uint16_t BASE_COSTS[ACTION_COUNT] = {6, 12, 4, 4, 9, 0, 0};
+struct RulesetTable {
+    uint8_t rounds;
+    uint8_t beats_per_round;
+    uint16_t initial_hp;
+    uint16_t initial_stamina;
+    uint8_t initial_opening;
+    uint8_t initial_guard_streak;
+    uint8_t initial_power_available;
+    uint16_t limit_hp;
+    uint16_t limit_stamina;
+    uint8_t limit_guard_streak;
+    uint16_t block_streak_cost;
+    uint16_t block_strain;
+    uint16_t ordinary_recovery;
+    uint16_t recover_unhit;
+    uint16_t recover_hit;
+    uint16_t exhausted_recovery;
+    uint16_t break_recovery;
+    uint16_t opening_damage;
+    uint16_t power_damage;
+    uint16_t power_cost;
+    uint16_t base_costs[ACTION_COUNT];
+    uint16_t damage[ACTION_COUNT][ACTION_COUNT];  // [attacker][defender], before opening/power
+    // SHA256("qdojo/combat/rules/v1\0" || canonical JSON of the ruleset file)
+    uint8_t digest[32];
+};
 
+// combat-v1-candidate-1 (docs/combat-v1.json).
+static constexpr RulesetTable CANDIDATE_1 = {
+    3, 6,                 // rounds, beats_per_round
+    100, 60, 0, 0, 1,     // initial hp, stamina, opening, guard_streak, power_available
+    100, 60, 3,           // limits hp, stamina, guard_streak
+    3, 6, 2, 18, 6, 6, 10,  // block_streak_cost, block_strain, ordinary, recover_unhit, recover_hit, exhausted, break
+    4, 4, 4,              // opening_damage, power_damage, power_cost
+    {6, 12, 4, 4, 9, 0, 0},
+    {
+        {8, 8, 0, 0, 8, 12, 12},
+        {14, 14, 0, 18, 14, 18, 18},
+        {0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 14, 0, 0, 18, 18},
+        {0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0},
+    },
+    {0x12, 0x08, 0x5c, 0x86, 0xa6, 0x1f, 0xfd, 0x10, 0x64, 0x30, 0xb6, 0x69, 0x0a, 0xcb, 0xd5, 0x22,
+     0xc5, 0xa9, 0x4f, 0x90, 0xed, 0x80, 0x24, 0x58, 0x58, 0x17, 0xf4, 0x93, 0x9f, 0xe4, 0x84, 0x2c},
+};
+
+// combat-v1-candidate-2 (docs/combat-v1-candidate-2.json): jab out-trades
+// kick, duck counters a jab, throw punishes block harder, bigger opening and
+// power, 120 HP, 48 stamina. Same engine, action table and encodings as candidate 1.
+static constexpr RulesetTable CANDIDATE_2 = {
+    3, 6,
+    120, 48, 0, 0, 1,
+    120, 48, 3,
+    3, 6, 2, 18, 6, 6, 10,
+    8, 12, 4,
+    {6, 12, 4, 4, 9, 0, 0},
+    {
+        {8, 10, 0, 0, 8, 12, 12},
+        {4, 14, 0, 18, 14, 18, 18},
+        {0, 0, 0, 0, 0, 0, 0},
+        {4, 0, 0, 0, 0, 0, 0},
+        {0, 0, 20, 0, 0, 18, 18},
+        {0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0},
+    },
+    {0x23, 0x16, 0x07, 0xf8, 0x23, 0x15, 0x37, 0x47, 0xf4, 0xc9, 0x22, 0xfd, 0x59, 0x76, 0xc1, 0xac,
+     0x06, 0x62, 0x25, 0x42, 0xcd, 0x5a, 0x39, 0xea, 0xb0, 0x88, 0x87, 0x4d, 0x88, 0x6b, 0x8b, 0x74},
+};
+
+#if QDOJO_RULESET == 1
+static constexpr const RulesetTable& RULES = CANDIDATE_1;
+#elif QDOJO_RULESET == 2
+static constexpr const RulesetTable& RULES = CANDIDATE_2;
+#else
+#error "QDOJO_RULESET must be 1 (candidate 1) or 2 (candidate 2)"
+#endif
+
+// The engine, the 7-byte plan codec and the contract assume these shapes.
+static_assert(CANDIDATE_1.rounds == 3 && CANDIDATE_1.beats_per_round == 6, "combat-v1 is 3 x 6");
+static_assert(CANDIDATE_2.rounds == 3 && CANDIDATE_2.beats_per_round == 6, "combat-v1 is 3 x 6");
+
+// The selected ruleset under the names the engine uses.
+static constexpr uint8_t ROUNDS = RULES.rounds;
+static constexpr uint8_t BEATS_PER_ROUND = RULES.beats_per_round;
+static constexpr uint16_t INITIAL_HP = RULES.initial_hp;
+static constexpr uint16_t INITIAL_STAMINA = RULES.initial_stamina;
+static constexpr uint8_t INITIAL_OPENING = RULES.initial_opening;
+static constexpr uint8_t INITIAL_GUARD_STREAK = RULES.initial_guard_streak;
+static constexpr uint8_t INITIAL_POWER_AVAILABLE = RULES.initial_power_available;
+static constexpr uint16_t LIMIT_HP = RULES.limit_hp;
+static constexpr uint16_t LIMIT_STAMINA = RULES.limit_stamina;
+static constexpr uint8_t LIMIT_GUARD_STREAK = RULES.limit_guard_streak;
+static constexpr uint16_t BLOCK_STREAK_COST = RULES.block_streak_cost;
+static constexpr uint16_t BLOCK_STRAIN = RULES.block_strain;
+static constexpr uint16_t ORDINARY_RECOVERY = RULES.ordinary_recovery;
+static constexpr uint16_t RECOVER_UNHIT = RULES.recover_unhit;
+static constexpr uint16_t RECOVER_HIT = RULES.recover_hit;
+static constexpr uint16_t EXHAUSTED_RECOVERY = RULES.exhausted_recovery;
+static constexpr uint16_t BREAK_RECOVERY = RULES.break_recovery;
+static constexpr uint16_t OPENING_DAMAGE = RULES.opening_damage;
+static constexpr uint16_t POWER_DAMAGE = RULES.power_damage;
+static constexpr uint16_t POWER_COST = RULES.power_cost;
+static constexpr const uint16_t (&BASE_COSTS)[ACTION_COUNT] = RULES.base_costs;
 // DAMAGE[attacker][defender], before opening/power bonuses.
-static constexpr uint16_t DAMAGE[ACTION_COUNT][ACTION_COUNT] = {
-    {8, 8, 0, 0, 8, 12, 12},
-    {14, 14, 0, 18, 14, 18, 18},
-    {0, 0, 0, 0, 0, 0, 0},
-    {0, 0, 0, 0, 0, 0, 0},
-    {0, 0, 14, 0, 0, 18, 18},
-    {0, 0, 0, 0, 0, 0, 0},
-    {0, 0, 0, 0, 0, 0, 0},
-};
-
-// SHA256("qdojo/combat/rules/v1\0" || canonical JSON of docs/combat-v1.json)
-static constexpr uint8_t RULESET_DIGEST[32] = {
-    0x12, 0x08, 0x5c, 0x86, 0xa6, 0x1f, 0xfd, 0x10, 0x64, 0x30, 0xb6, 0x69, 0x0a, 0xcb, 0xd5, 0x22,
-    0xc5, 0xa9, 0x4f, 0x90, 0xed, 0x80, 0x24, 0x58, 0x58, 0x17, 0xf4, 0x93, 0x9f, 0xe4, 0x84, 0x2c,
-};
+static constexpr const uint16_t (&DAMAGE)[ACTION_COUNT][ACTION_COUNT] = RULES.damage;
+static constexpr const uint8_t (&RULESET_DIGEST)[32] = RULES.digest;
 
 static constexpr uint8_t NO_POWER_SLOT = 255;  // wire value for power_slot -1
 static constexpr uint32_t STATE_BYTES = 8;

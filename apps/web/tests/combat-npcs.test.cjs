@@ -13,7 +13,11 @@ const ROOT = path.join(__dirname, '../../..');
 const E = require('../combat/engine.js');
 const N = require('../combat/npcs.js');
 const rules = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/combat-v1.json'), 'utf8'));
-const FIX = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/qdojo/tests/combat/fixtures/npcs-v1.json'), 'utf8'));
+const FIXDIR = path.join(ROOT, 'packages/qdojo/tests/combat/fixtures');
+const FIX = JSON.parse(fs.readFileSync(path.join(FIXDIR, 'npcs-v1.json'), 'utf8'));
+// Candidate 2's NPC parity set: the same roster projecting with its numbers.
+const RULES2 = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/combat-v1-candidate-2.json'), 'utf8'));
+const FIX2 = JSON.parse(fs.readFileSync(path.join(FIXDIR, 'npcs-v1-231607f823153747.json'), 'utf8'));
 
 test('sha256 matches node:crypto on lengths around every block boundary', () => {
   for (let len = 0; len < 200; len++) {
@@ -36,25 +40,31 @@ test('fixture ruleset is the one the page embeds', () => {
   assert.equal(FIX.ruleset_digest, '12085c86a61ffd106430b6690acbd522c5a94f90ed8024585817f4939fe4842c');
 });
 
-test('every npcs-v1 fixture case reproduces exactly', () => {
-  const mismatches = [];
-  const perNpc = {};
-  for (const c of FIX.cases) {
-    const obs = {
-      round_index: c.round,
-      self: E.decodeState(c.self, rules),
-      opponent: E.decodeState(c.opponent, rules),
-      opponent_history: c.opponent_history,
-    };
-    const plan = N.planFor(c.npc, rules, obs, c.seed, c.fight);
-    const got = E.encodePlan(plan);
-    perNpc[c.npc] = (perNpc[c.npc] || 0) + 1;
-    if (got !== c.plan) mismatches.push(`${c.npc} seed=${c.seed.slice(0, 8)} fight=${c.fight} round=${c.round}: ${got} != ${c.plan}`);
-  }
-  assert.deepEqual(mismatches.slice(0, 10), [], `${mismatches.length} of ${FIX.cases.length} cases differ`);
-  assert.equal(mismatches.length, 0);
-  assert.deepEqual(Object.keys(perNpc).sort(), N.ROSTER.map(n => n.id).sort(), 'every roster NPC has fixtures');
-  assert.equal(FIX.cases.length, 900);
+for (const [label, fix, rs] of [['candidate 1', FIX, rules], ['candidate 2', FIX2, RULES2]]) {
+  test(`every npcs-v1 fixture case reproduces exactly (${label})`, () => {
+    const mismatches = [];
+    const perNpc = {};
+    for (const c of fix.cases) {
+      const obs = {
+        round_index: c.round,
+        self: E.decodeState(c.self, rs),
+        opponent: E.decodeState(c.opponent, rs),
+        opponent_history: c.opponent_history,
+      };
+      const plan = N.planFor(c.npc, rs, obs, c.seed, c.fight);
+      const got = E.encodePlan(plan);
+      perNpc[c.npc] = (perNpc[c.npc] || 0) + 1;
+      if (got !== c.plan) mismatches.push(`${c.npc} seed=${c.seed.slice(0, 8)} fight=${c.fight} round=${c.round}: ${got} != ${c.plan}`);
+    }
+    assert.deepEqual(mismatches.slice(0, 10), [], `${mismatches.length} of ${fix.cases.length} cases differ`);
+    assert.equal(mismatches.length, 0);
+    assert.deepEqual(Object.keys(perNpc).sort(), N.ROSTER.map(n => n.id).sort(), 'every roster NPC has fixtures');
+    assert.equal(fix.cases.length, 900);
+  });
+}
+
+test('candidate 2 NPC fixtures name candidate 2', () => {
+  assert.equal(FIX2.ruleset_digest, '231607f823153747f4c922fd5976c1ac06622542cd5a39eab088874d886b8b74');
 });
 
 test('loads as a plain browser script after engine.js', () => {

@@ -205,6 +205,14 @@ test('codecs round-trip', () => {
 // ---- frozen full-fight fixtures ------------------------------------------
 
 const fixtureFiles = fs.readdirSync(FIXDIR).filter(n => /^fights-[0-9a-f]+\.json$/.test(n));
+// One parity set per packaged ruleset; each replays under its own numbers.
+const RULESETS = ['docs/combat-v1.json', 'docs/combat-v1-candidate-2.json']
+  .map(p => JSON.parse(fs.readFileSync(path.join(ROOT, p), 'utf8')));
+const rulesFor = doc => {
+  const r = RULESETS.find(x => x.semantic_version === doc.semantic_version);
+  assert.ok(r, 'fixture ruleset ' + doc.semantic_version + ' is packaged');
+  return r;
+};
 
 function sideDetail(t) {
   return {
@@ -216,7 +224,7 @@ function sideDetail(t) {
 for (const name of fixtureFiles) {
   test(`replays every fight in ${name} with zero mismatches`, () => {
     const doc = JSON.parse(fs.readFileSync(path.join(FIXDIR, name), 'utf8'));
-    assert.equal(doc.semantic_version, rules.semantic_version);
+    const rules = rulesFor(doc);
     assert.deepEqual(doc.action_ids, Object.fromEntries(rules.action_names.map((n, i) => [n, i])));
     assert.ok(doc.fights.length >= 10000, 'at least 10,000 frozen fights');
     const mismatches = [];
@@ -255,6 +263,7 @@ for (const name of fixtureFiles) {
 
   test(`slot symmetry on a sample of ${name}`, () => {
     const doc = JSON.parse(fs.readFileSync(path.join(FIXDIR, name), 'utf8'));
+    const rules = rulesFor(doc);
     const swapWinner = { A: 'B', B: 'A' };
     for (let i = 0; i < doc.fights.length; i += 25) {
       const rounds = doc.fights[i].rounds;
@@ -274,4 +283,36 @@ for (const name of fixtureFiles) {
   });
 }
 
-test('there is at least one fixture file', () => assert.ok(fixtureFiles.length >= 1));
+test('there is one fixture file per packaged ruleset', () => {
+  const versions = fixtureFiles.map(n => JSON.parse(fs.readFileSync(path.join(FIXDIR, n), 'utf8')).semantic_version).sort();
+  assert.deepEqual(versions, RULESETS.map(r => r.semantic_version).sort());
+});
+
+test('candidate 2 hand vectors (docs/combat.md "Candidate 2")', () => {
+  const c2 = RULESETS[1];
+  const f2 = (over = {}) => Object.assign({ hp: 120, stamina: 48, opening: 0, guard_streak: 0, power_available: 1 }, over);
+  const b2 = (a, b, ia, ib, pa = false, pb = false) => E.resolveBeat(c2, a, b, ia, ib, pa, pb);
+  const rows = [
+    [JAB, BLOCK, [120, 44, 0, 0], [120, 46, 0, 1]],
+    [JAB, KICK, [116, 44, 0, 0], [110, 38, 0, 0]],
+    [DUCK, JAB, [120, 46, 1, 0], [116, 44, 0, 0]],
+    [KICK, DUCK, [120, 38, 0, 0], [102, 46, 0, 0]],
+    [THROW, BLOCK, [120, 41, 0, 0], [100, 46, 0, 1]],
+    [BLOCK, KICK, [120, 40, 0, 1], [120, 38, 0, 0]],
+    [RECOVER, JAB, [108, 48, 0, 0], [120, 44, 1, 0]],
+    [THROW, THROW, [120, 41, 0, 0], [120, 41, 0, 0]],
+  ];
+  for (const [ia, ib, ea, eb] of rows) {
+    const t = b2(f2(), f2(), ia, ib);
+    assert.deepEqual([tuple(t.a), tuple(t.b)], [ea, eb], `${ia}/${ib}`);
+  }
+  const t1 = b2(f2(), f2(), DUCK, JAB);
+  assert.deepEqual(t1.trace[0].reasons, ['HIT', 'OPENING_EARNED']);   // the duck counter
+  assert.deepEqual(t1.trace[1].reasons, ['EVADED']);
+  const t2 = b2(t1.a, t1.b, KICK, JAB);
+  assert.deepEqual([tuple(t2.a), tuple(t2.b)], [[110, 36, 0, 0], [104, 40, 0, 0]]);
+  const pk = b2(f2({ opening: 1 }), f2(), KICK, DUCK, true, false);
+  assert.equal(pk.trace[1].actual_hp_lost, 38);
+  assert.equal(pk.a.stamina, 34);
+  assert.throws(() => b2(f2(), f2(), DUCK, JAB, true, false), /attack/);   // no power on a duck
+});

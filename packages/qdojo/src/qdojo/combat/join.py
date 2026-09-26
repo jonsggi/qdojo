@@ -688,7 +688,7 @@ def register(http: Http, info: dict, name: str, subseed: bytes, pub: bytes, log=
 def cmd_join(a):
     from ..combat import evaluate as E
     from .bot import Bot, Budget, planner_chooser, policy_chooser
-    from .rules import candidate_1
+    from .rules import RulesetError, by_digest, candidate_1
     import shlex
     http = Http(a.arena)
     try:
@@ -703,7 +703,10 @@ def cmd_join(a):
     print(f"fighter {a.name} = {fid.hex()}")
     rules = candidate_1()
     if info.get("ruleset_digest") and info["ruleset_digest"] != rules.digest.hex():
-        raise SystemExit("qdojo: the arena runs another ruleset than this checkout; update qdojo")
+        try:                                   # any packaged ruleset: the demo arena runs candidate 2
+            rules = by_digest(info["ruleset_digest"])
+        except RulesetError:
+            raise SystemExit("qdojo: the arena runs a ruleset this checkout does not know; update qdojo") from None
     state = Path(a.state) if a.state else _home() / "join" / a.name
     client = RemoteClient(http, info, subseed, pub, fid, state)
     client.refresh()
@@ -726,7 +729,7 @@ def cmd_join(a):
     if a.planner:
         choose = planner_chooser(shlex.split(a.planner), a.budget_ms)
     else:
-        choose = policy_chooser(rules, E.policy_by_name(a.npc or "mixed-v1"), os.urandom(32))
+        choose = policy_chooser(rules, E.policy_by_name(a.npc or "mixed-v1", rules), os.urandom(32))
     budget = Budget(ruleset_digest=rules.digest.hex(), max_stake=int(info["tiers"].get("1", 1000)) * 5,
                     max_total_escrow=int(info["tiers"].get("1", 1000)) * 20)
     if a.budget:

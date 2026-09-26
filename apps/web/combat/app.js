@@ -147,7 +147,7 @@
         if (!m) continue;
         D.base = src.base; D.sample = src.sample; D.manifest = m; D.cache.clear(); D.meta.clear(); D.done.clear();
         const art = HEX64.test(m.ruleset_digest || '') ? await fetchJson('rulesets/' + m.ruleset_digest + '.json').catch(() => null) : null;
-        const pick = await L.chooseRuleset({ exported: art, embedded: window.QDojoRuleset, manifestDigest: m.ruleset_digest, sha256: SHA });
+        const pick = await L.chooseRuleset({ exported: art, embedded: window.QDojoRulesets || window.QDojoRuleset, manifestDigest: m.ruleset_digest, sha256: SHA });
         R = pick.rules;
         RULES_INFO = pick;
         await noteFreshness();
@@ -1122,7 +1122,7 @@
         if (f.kind === 'beat') {
           x.now.innerHTML = sideSummary(t, f.trace[s === 'A' ? 'B' : 'A']);
           const who = opts.mySide === s ? 'YOU' : names[s], them = opts.mySide === (s === 'A' ? 'B' : 'A') ? 'YOU' : names[s === 'A' ? 'B' : 'A'];
-          const lines = L.explainSide(t, f.trace[s === 'A' ? 'B' : 'A'], who, them);
+          const lines = L.explainSide(t, f.trace[s === 'A' ? 'B' : 'A'], who, them, R.opening_damage);
           if (opts.mySide === s) {
             const h = L.hindsight(R, { a: f.trace.A.before, b: f.trace.B.before }, s, f.trace);
             if (h) lines.push(h.text);
@@ -1850,9 +1850,21 @@
   };
   const REASONS = ['HIT', 'BLOCKED', 'EVADED', 'THROW_INTERRUPTED', 'THROW_CLASH', 'INSUFFICIENT_STAMINA', 'RECOVERY_PUNISHED', 'GUARD_STRAIN', 'OPENING_EARNED', 'OPENING_USED', 'OPENING_EXPIRED', 'POWER_USED', 'POWER_WASTED', 'KO', 'DOUBLE_KO'];
 
+  // The fixed purpose text, plus what this ruleset's matrix adds to it
+  // (candidate 2: jab out-trades kick, duck counters a jab).
+  function purposeOf(n, i) {
+    const d = R.damage, id = name => R.action_names.indexOf(name);
+    const J = id('JAB'), K = id('KICK'), D = id('DUCK');
+    let text = PURPOSE[n] || '';
+    if (i === J && d[J][K] > d[K][J]) text += '; out-trades a kick (' + d[J][K] + ' to ' + d[K][J] + ')';
+    if (i === K && d[K][J] > d[J][K]) text += '; wins a trade with a jab (' + d[K][J] + ' to ' + d[J][K] + ')';
+    if (i === D && d[D][J] > 0) text += '; counters a jab for ' + d[D][J];
+    return text;
+  }
+
   async function viewRules(tok) {
     const moves = NAMES.map((n, i) => '<tr><td class="num">' + i + '</td><td>' + actionTag(n) + (R.submitted_action_ids.includes(i) ? '' : ' <span class="muted">(internal)</span>') + '</td><td class="num">' +
-      R.base_costs[i] + (n === 'BLOCK' ? ' + ' + R.block_streak_cost + '&times;guard' : '') + '</td><td class="wraptd">' + esc(PURPOSE[n] || '') + '</td></tr>').join('');
+      R.base_costs[i] + (n === 'BLOCK' ? ' + ' + R.block_streak_cost + '&times;guard' : '') + '</td><td class="wraptd">' + esc(purposeOf(n, i)) + '</td></tr>').join('');
     const matrix = '<tr><th>ATTACKER \\ DEFENDER</th>' + NAMES.map(n => '<th class="num">' + n + '</th>').join('') + '</tr>' +
       R.damage.map((row, i) => '<tr><th>' + NAMES[i] + '</th>' + row.map(v => '<td class="num' + (v ? ' dmg' : ' zero') + '">' + v + '</td>').join('') + '</tr>').join('');
     const I = R.initial;

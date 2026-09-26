@@ -32,8 +32,7 @@ from . import export, invariants, join, store
 from .bot import Bot, Budget, planner_chooser, policy_chooser
 from .chainsim import Asset, AssetRegistry, FeeModel, SimChain, SimQubicClient
 from .codec import Mode, Op
-from .devnet import Devnet, DevnetClient, roles
-from .rules import candidate_1
+from .devnet import PROFILES, Devnet, DevnetClient, roles
 from .sim import identity
 from .types import ATTACKS, Plan
 from ..hashing import sha256
@@ -104,14 +103,14 @@ def stub_chooser(rules, name: str, seed: bytes):
     behind the 2026-09-25 forfeits. The bot's plan check must strip it.
     Any other name is a policy name."""
     if name == "power-reuse":
-        base = policy_chooser(rules, E.policy_by_name("mixed-v1"), seed)
+        base = policy_chooser(rules, E.policy_by_name("mixed-v1", rules), seed)
 
         def choose(obs):
             plan = base(obs)
             slot = next((i for i, a in enumerate(plan.actions) if a in ATTACKS), None)
             return plan if slot is None else Plan(plan.actions, slot)
         return choose
-    return policy_chooser(rules, E.policy_by_name(name), seed)
+    return policy_chooser(rules, E.policy_by_name(name, rules), seed)
 
 
 # Demo bots' duel accept filters (AUD-019): decline a challenger rated more
@@ -262,7 +261,7 @@ class Arena:
                 + (f" (skipped: {'; '.join(r['tried'])})" if r["tried"] else ""))
         self.snapshot_every = snapshot_every
         self.w = self.net.world
-        self.rules = candidate_1()
+        self.rules = self.net.m.ruleset          # the ruleset this devnet's manifest names
         state = self._load("chain.json", {"reserve": 0, "burned": 0, "funded": 0, "seed": seed or secrets.randbits(32),
                                           "collectors": 0})
         self.state = state
@@ -351,7 +350,7 @@ class Arena:
                 if self.deterministic else secrets.token_bytes(32))
         if "stub" in entry:
             return stub_chooser(self.rules, entry["stub"], seed)
-        return policy_chooser(self.rules, E.policy_by_name(entry["policy"]), seed)
+        return policy_chooser(self.rules, E.policy_by_name(entry["policy"], self.rules), seed)
 
     def _bot_log(self, label: str):
         return lambda m: self.log(f"tick {self.w.tick}: bot {label}: {m}")
@@ -608,14 +607,15 @@ def add_parser(s):
     d = s.add_parser("live", help="run the demo arena on a simulated chain and export for spectators")
     d.add_argument("--devnet", help="arena directory (default ~/.qdojo/combat/arena)")
     d.add_argument("--lineup", help="lineup JSON (default: eight demo bots)")
-    d.add_argument("--profile", default="demo", choices=("demo", "dev"))
+    d.add_argument("--profile", default="demo", choices=tuple(PROFILES),
+                   help="devnet profile of a NEW arena: demo (candidate 1), demo-c2 (candidate 2, 9/6 timing) or dev")
     d.add_argument("--export", default="apps/web/data/combat/v1")
     d.add_argument("--tick-seconds", type=float, default=1.5)
     d.add_argument("--export-every", type=int, default=10, help="ticks between exports")
     d.add_argument("--keep", type=int, default=200, help="fights kept in the export")
     d.add_argument("--ticks", type=int, help="stop after this many ticks (default: run until stopped)")
     d.add_argument("--timing", metavar="COMMIT,REVEAL",
-                   help="commit and reveal windows in ticks for a NEW arena (default devnet.DEMO_TIMING); "
+                   help="commit and reveal windows in ticks for a NEW arena (default: the profile's, devnet.DEMO_TIMING or DEMO_C2_TIMING); "
                         "an existing arena keeps the values it was created with")
     d.add_argument("--join-inbox", help="ENABLE outside builders: the inbox the API's join endpoints fill "
                                         "(off by default; docs/build-a-bot.md §8)")
