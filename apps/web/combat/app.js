@@ -5,6 +5,10 @@
  * #practice/<npc>/<seed>, #join, #rules, #help. The site polls the export
  * every 30 s and repaints live views in place, without a reload.
  *
+ * Full history comes from the read API (/api/v1/, docs/api.md §3.2) when it
+ * answers: every fight, paginated, and a fighter's whole career. Without it
+ * every view falls back to the static export's recent fights.
+ *
  * Every replay is re-derived here from the revealed plan bytes with
  * combat/engine.js (via combat/logic.js); the exported traces are only checked
  * against, never shown as fact. Playback is a frame index advanced by a timer:
@@ -43,7 +47,7 @@
   let motionOn = !sysReduced && store.get('qdojo.combat.motion') !== '0';
   const motion = () => motionOn && !sysReduced && !!ANIM && !ANIM.reduced;
 
-  const D = { base: null, sample: false, manifest: null, error: null, cache: new Map(), meta: new Map(), done: new Set(), wallMs: NaN, tick: null, polls: 0 };
+  const D = { base: null, sample: false, manifest: null, error: null, cache: new Map(), meta: new Map(), done: new Set(), wallMs: NaN, tick: null, polls: 0, api: false };
   let viewToken = 0;
   let players = [];
   let timers = [];
@@ -76,6 +80,56 @@
     return D.cache.get(key);
   }
 
+  /* The read API: optional, and only beside a live export (never the SAMPLE).
+   * It must describe the same network as the export's manifest. Any failure
+   * turns it off until the next poll probes it again; every caller then uses
+   * the static export instead. */
+  const API_BASE = 'api/v1/';
+  const API_TIMEOUT_MS = 5000;
+  const apiCache = new Map();
+  function fetchSoon(url) {
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    const t = ctl ? setTimeout(() => ctl.abort(), API_TIMEOUT_MS) : null;
+    return fetch(url, { cache: 'no-cache', signal: ctl ? ctl.signal : undefined }).finally(() => clearTimeout(t));
+  }
+  async function probeApi() {
+    D.api = false;
+    if (D.sample || !D.manifest || D.base !== SOURCES[0].base) return;
+    try {
+      const r = await fetchSoon(API_BASE + 'status');
+      const j = r.ok ? await r.json() : null;
+      D.api = !!(j && j.schema === 'qdojo.combat.api.status.v1' && j.network_id === D.manifest.network_id);
+    } catch (e) { D.api = false; }
+  }
+  function apiJson(rel) {
+    if (!D.api) return Promise.reject(new Error('read API unavailable'));
+    if (!apiCache.has(rel)) {
+      const p = fetchSoon(API_BASE + rel).then(async r => {
+        if (!r.ok) {
+          if (r.status >= 500) D.api = false;
+          const e = new Error(rel + ': HTTP ' + r.status); e.status = r.status; throw e;
+        }
+        return r.json();
+      }, e => { D.api = false; throw e; });
+      apiCache.set(rel, p);
+      p.catch(() => apiCache.delete(rel));
+    }
+    return apiCache.get(rel);
+  }
+  // The API's answer when it gives one, else the static export's.
+  async function viaApi(fromApi, fromStatic) {
+    if (D.api) { try { return await fromApi(); } catch (e) { /* fall back */ } }
+    return fromStatic();
+  }
+  // Names and origin from API rows fill in what the export's index lacks.
+  function learnFighters(rows) {
+    for (const f of rows || []) {
+      if (f && f.name && HEX64.test(f.fighter_id || '') && !FIGHTER_NAMES[f.fighter_id]) FIGHTER_NAMES[f.fighter_id] = f.name;
+      if (f && f.origin && HEX64.test(f.fighter_id || '')) API_ORIGIN[f.fighter_id] = f.origin;
+    }
+  }
+  const API_ORIGIN = {};
+
   async function trySource(src) {
     const r = await fetch(src.base + 'manifest.json', { cache: 'no-cache' });
     if (!r.ok) return null;
@@ -97,6 +151,7 @@
         R = pick.rules;
         RULES_INFO = pick;
         await noteFreshness();
+        await probeApi();
         return;
       } catch (e) { /* try the next source */ }
     }
@@ -135,8 +190,10 @@
       const volatile = /^(index|book|manifest)\.json$/.test(rel) || /^events\//.test(rel) || /^fighters\//.test(rel) || (fm && !done.has(fm[1]));
       if (volatile) D.cache.delete(key);
     }
+    apiCache.clear();
     const before = D.tick;
     await noteFreshness().catch(() => {});
+    await probeApi();
     paintSource();
     const name = currentRoute()[0];
     if (['arena', 'title', 'book', 'results', 'leaderboard', 'cups', 'cup', 'duels', 'duel', 'season'].includes(name) || (name === 'fight' && D.tick !== before)) repaint();
@@ -168,7 +225,8 @@
     $('#foot-data').innerHTML = D.manifest
       ? 'DATA ' + esc(D.base) + (D.sample ? ' <b class="sample-note">SAMPLE: fake QU, synthetic fighters</b>' : '') +
         ' &middot; NETWORK <span class="id">' + esc(short(D.manifest.network_id)) + '</span> &middot; CONTRACT <span class="id">' + esc(short(D.manifest.contract_id)) + '</span>' +
-        ' &middot; refreshed every ' + (POLL_MS / 1000) + ' s &middot; Every replay is re-derived in your browser; rendering never changes a result.'
+        ' &middot; refreshed every ' + (POLL_MS / 1000) + ' s' + (D.sample ? '' : D.api ? ' &middot; FULL HISTORY from the read API' : ' &middot; recent fights only (read API unavailable)') +
+        ' &middot; Every replay is re-derived in your browser; rendering never changes a result.'
       : esc(D.error || 'No data. PRACTICE and RULES still work offline.');
   }
 
@@ -305,6 +363,9 @@
     return ((book && book.active_fights) || []).filter(id => DEC.test(id));
   }
   async function latestDone(n) {
+    if (D.api) {
+      try { return (await apiJson('fights?status=done&per_page=' + n)).items; } catch (e) { /* static below */ }
+    }
     const index = await fetchJson('index.json');
     if (index && index.names) FIGHTER_NAMES = index.names;
     const ids = (index.fights || []).filter(id => DEC.test(id)).slice().sort((a, b) => Number(b) - Number(a));
@@ -443,12 +504,22 @@
 
   function metaOf(hex, f) {
     const dep = (D.deployment && D.deployment.fighters && D.deployment.fighters[hex]) || {};
-    return { name: (f && f.name) || dep.name || null, driver: (f && f.driver) || dep.driver || null, asset: (f && f.asset) || dep.asset || null };
+    return { name: (f && f.name) || dep.name || null, driver: (f && f.driver) || dep.driver || null, asset: (f && f.asset) || dep.asset || null,
+      origin: (f && f.origin) || dep.origin || API_ORIGIN[hex] || null };
+  }
+  /* Who runs a fighter (AUD-006, AUD-027): HOUSE fighters are run by the
+   * operator (demo bots, NPCs); OUTSIDE fighters were registered by an outside
+   * builder and are run from the builder's own machine. */
+  function originBadge(origin) {
+    if (origin === 'outside') return '<span class="drv drv-outside" title="Registered and run by an outside builder from their own machine">OUTSIDE</span>';
+    if (origin === 'house') return '<span class="drv drv-house" title="Run by the arena operator: a house demo bot, not an independent entrant">HOUSE</span>';
+    return '';
   }
   function driverBadge(d) {
     if (!d) return '';
     if (/^llm:/.test(d)) return '<span class="drv drv-llm" title="An LLM chooses this fighter\'s plans">MODEL: ' + esc(d.slice(4)) + '</span>';
     if (d === 'planner') return '<span class="drv drv-planner" title="The owner\'s own planner program">PLANNER</span>';
+    if (d === 'builder') return '<span class="drv drv-planner" title="The outside builder runs this bot on their own machine; its code never runs on the arena">BUILDER\'S OWN BOT</span>';
     return '<span class="drv drv-policy" title="A disclosed policy chooses this fighter\'s plans">POLICY: ' + esc(d) + '</span>';
   }
   const foundingBadge = a => (a && a.founding ? '<span class="drv drv-founding" title="One of the founding fighters of this deployment">FOUNDING</span>' : '');
@@ -711,16 +782,33 @@
 
   // ---- RESULTS -----------------------------------------------------------------------
 
-  async function viewResults(tok) {
+  // One page of finished fights from the API (the whole history), else every
+  // fight the static export still lists. Live fights come from the export's book.
+  const RESULTS_PAGE = 50;
+  async function loadResults(index, page) {
+    return viaApi(async () => {
+      const [list, active] = await Promise.all([
+        apiJson('fights?status=done&per_page=' + RESULTS_PAGE + '&page=' + page),
+        activeIds().then(ids => Promise.all(ids.map(id => fetchJson('fights/' + id + '.json').catch(() => null)))),
+      ]);
+      return { done: list.items, active: active.filter(Boolean).sort((a, b) => Number(b.fight_id) - Number(a.fight_id)), total: list.total, page: list.page, pages: list.pages, missing: 0, full: true };
+    }, async () => {
+      const ids = (index.fights || []).filter(id => DEC.test(id));
+      const sums = await Promise.all(ids.map(summaryOf));
+      const all = sums.filter(Boolean).sort((a, b) => Number(b.fight_id) - Number(a.fight_id));
+      const done = all.filter(s => s.phase === 'DONE');
+      return { done, active: all.filter(s => s.phase !== 'DONE'), total: done.length, page: 1, pages: 1, missing: sums.filter(x => !x).length, full: false, listed: ids.length };
+    });
+  }
+
+  async function viewResults(tok, pageArg) {
     if (needData()) return;
     const index = await fetchJson('index.json');
     if (index && index.names) FIGHTER_NAMES = index.names;
-    const ids = (index.fights || []).filter(id => DEC.test(id));
-    const sums = await Promise.all(ids.map(summaryOf));
+    const page = DEC.test(pageArg || '') ? Math.max(1, Number(pageArg)) : 1;
+    const r = await loadResults(index, page);
     if (tok !== viewToken) return;
-    const missing = sums.filter(x => !x).length;
-    const all = sums.filter(Boolean).sort((a, b) => Number(b.fight_id) - Number(a.fight_id));
-    const active = all.filter(s => s.phase !== 'DONE'), done = all.filter(s => s.phase === 'DONE');
+    const { done, active, missing } = r;
     const feed = done.map(s => {
       const out = summaryOutcome(s), w = out.outcome ? out.outcome.winner : null;
       const A_ = s.fighters.A.fighter_id, B_ = s.fighters.B.fighter_id;
@@ -733,11 +821,13 @@
         '<span class="feed-tick tiny muted">TICK ' + esc(s.result && s.result.tick) + '</span>' +
         '<a class="btn btn-sm" href="#fight/' + esc(s.fight_id) + '">REPLAY</a></li>';
     }).join('');
-    setView(screen('RESULTS', esc(done.length) + ' FINISHED &middot; ' + esc(active.length) + ' LIVE &middot; SNAPSHOT TICK ' + esc(index.generated_tick)) +
+    const pager = pagerHtml(n => '#results/' + n, r.page, r.pages);
+    setView(screen('RESULTS', esc(r.total) + ' FINISHED &middot; ' + esc(active.length) + ' LIVE &middot; SNAPSHOT TICK ' + esc(index.generated_tick)) +
       liveNowPanel(active) +
       '<p class="sub-links"><a href="#duels">DUELS &#9654;</a> &middot; <a href="#cups">CUPS &#9654;</a> &middot; <a href="#season">SEASON &#9654;</a></p>' +
-      '<section class="panel"><h3>HISTORY</h3>' + (feed ? '<ol class="feed">' + feed + '</ol>' : '<p class="muted">No finished fight yet.</p>') +
-      (missing || ids.length >= 200 ? '<p class="tiny muted">The export keeps the most recent fights only' + (missing ? '; ' + missing + ' listed file(s) were not available' : '') + '.</p>' : '') + '</section>');
+      '<section class="panel"><h3>HISTORY' + (r.pages > 1 ? ' &middot; PAGE ' + esc(r.page) + ' OF ' + esc(r.pages) : '') + '</h3>' + pager +
+      (feed ? '<ol class="feed">' + feed + '</ol>' : '<p class="muted">No finished fight yet.</p>') + pager +
+      (!r.full && (missing || r.listed >= 200) ? '<p class="tiny muted">The export keeps the most recent fights only' + (missing ? '; ' + missing + ' listed file(s) were not available' : '') + '.</p>' : '') + '</section>');
   }
 
   // Running fights up front as versus chips; fights whose deadline passed and
@@ -769,10 +859,19 @@
     if (needData()) return;
     const index = await fetchJson('index.json');
     if (index && index.names) FIGHTER_NAMES = index.names;
-    const hexes = (index.fighters || []).filter(h => HEX64.test(h));
-    const fighters = (await Promise.all(hexes.map(h => fetchJson('fighters/' + h + '.json').catch(() => null)))).filter(Boolean);
-    const rows = L.leaderboard(fighters);
-    const forms = await Promise.all(rows.map(async ({ f }) => L.recentForm(f.fighter_id, await Promise.all((f.fights || []).slice(-8).map(summaryOf)), 5)));
+    // The API ranks every fighter on its whole career and sends each one's form;
+    // the static export needs one file per fighter and the recent fight files.
+    const { rows, forms, full } = await viaApi(async () => {
+      const doc = await apiJson('leaderboard');
+      learnFighters(doc.fighters);
+      return { rows: doc.fighters.map(f => ({ f, faults: f.faults || 0 })), forms: doc.fighters.map(f => f.form || []), full: true };
+    }, async () => {
+      const hexes = (index.fighters || []).filter(h => HEX64.test(h));
+      const fighters = (await Promise.all(hexes.map(h => fetchJson('fighters/' + h + '.json').catch(() => null)))).filter(Boolean);
+      const rows = L.leaderboard(fighters);
+      const forms = await Promise.all(rows.map(async ({ f }) => L.recentForm(f.fighter_id, await Promise.all((f.fights || []).slice(-8).map(summaryOf)), 5)));
+      return { rows, forms, full: false };
+    });
     if (tok !== viewToken) return;
     const beltCell = f => f.provisional
       ? '<span class="belt belt-sm belt-white" title="Provisional: ' + esc(f.placement_fights) + ' of 10 placement fights">PROVISIONAL ' + esc(f.placement_fights) + '/10</span>'
@@ -780,7 +879,7 @@
     const formCell = form => form.length ? form.map(x => '<a class="form form-' + x.mark + '" href="#fight/' + esc(x.fight_id) + '" title="#' + esc(x.fight_id) + ' ' + esc(x.how) + '">' + (x.forfeit ? x.mark.toLowerCase() : x.mark) + '</a>').join('') : '<span class="muted">—</span>';
     const body = rows.map(({ f, faults }, i) => {
       const r = f.record || {};
-      return '<tr><td class="num rank">' + (i + 1) + '</td><td>' + fighterLink(f.fighter_id) + (f.house_npc ? ' <span class="pill tiny">HOUSE NPC</span>' : '') + '</td>' +
+      return '<tr><td class="num rank">' + (i + 1) + '</td><td>' + fighterLink(f.fighter_id) + (f.house_npc ? ' <span class="pill tiny">HOUSE NPC</span>' : '') + ' ' + originBadge(metaOf(f.fighter_id, f).origin) + '</td>' +
         '<td class="num"><b>' + esc(f.lifetime_rating) + '</b></td><td>' + beltCell(f) + '</td>' +
         '<td class="num">' + esc(r.W || 0) + '</td><td class="num">' + esc(r.D || 0) + '</td><td class="num">' + esc(r.L || 0) + '</td>' + winRateCell(careerOf(f).tot) +
         '<td class="num">' + esc(r.FW || 0) + '/' + esc(r.FL || 0) + '</td><td class="num' + (faults ? ' neg' : '') + '">' + faults + '</td>' +
@@ -790,7 +889,9 @@
       (rows.length >= 3 ? '<section class="lb-hero" aria-label="Top three"><div class="t-podium">' + podiumHtml(rows) + '</div></section>' : '') +
       '<section class="panel panel-yellow"><h3>RANKED</h3>' + (rows.length ? '<div class="tscroll"><table class="board"><thead><tr><th class="num">#</th><th>FIGHTER</th><th class="num">RATING</th><th>BELT</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th title="Wins over fought results in every mode: ranked, duels and cups">WIN RATE (ALL)</th><th class="num">FORFEITS W/L</th><th class="num">FAULTS</th><th>FORM (NEWEST FIRST)</th></tr></thead><tbody>' + body + '</tbody></table></div>' : '<p class="muted">No fighters yet.</p>') +
       '<p class="tiny muted">Ratings start at 1000 and move by the integer formula in RULES; W/D/L are ranked contract records, forfeits separate. WIN RATE (ALL) also counts duels and cups. The first 10 ranked fights are placement: shown white and PROVISIONAL. ' +
-      'FORM: W win, L loss, D draw, N no result (double fault or void); lower case is a forfeit. Belts are display only: they change no stats.</p></section>');
+      'FORM: W win, L loss, D draw, N no result (double fault or void); lower case is a forfeit. Belts are display only: they change no stats. ' +
+      'HOUSE fighters are run by the arena operator; OUTSIDE fighters by outside builders. ' +
+      (full ? 'Records and form cover every fight in the arena (read API).' : 'Form covers the recent fights still in the export.') + '</p></section>');
   }
 
   // ---- JOIN / HOW TO BUILD A BOT -----------------------------------------------------
@@ -813,7 +914,7 @@
       '<li><i class="t-ico t-ico-fight" aria-hidden="true"></i><b>FEEL THE RULES</b><span>Fight the NPCs yourself in the browser. <a href="#practice">PRACTICE &#9654;</a></span></li>' +
       '<li><i class="t-ico t-ico-plan" aria-hidden="true"></i><b>WRITE A PLANNER</b><span>Any program: one JSON observation in, one JSON plan of six moves out.</span></li>' +
       '<li><i class="t-ico t-ico-seal" aria-hidden="true"></i><b>TRAIN LOCALLY</b><span>Run it against every NPC with <code>qdojo combat train</code>. Free, offline.</span></li>' +
-      '<li><i class="t-ico t-ico-plan" aria-hidden="true"></i><b>ENTER THE ARENA</b><span>Coming soon: register a fighter and let it fight the house bots.</span></li></ol>' +
+      '<li><i class="t-ico t-ico-plan" aria-hidden="true"></i><b>ENTER THE ARENA</b><span>When the operator opens it: <code>qdojo combat join</code> registers a fighter on the simulated chain and runs your bot from your machine against the house bots (guide §8).</span></li></ol>' +
       '<p class="guide-cta join-cta"><a class="btn" href="https://github.com/jonsggi/qdojo/blob/main/docs/build-a-bot.md">THE BOT BUILDER\'S GUIDE</a> <a class="btn btn-cyan" href="llms.txt">BRIEF YOUR CODING AGENT</a></p>' +
       '<section class="panel panel-red"><h3>STATUS: PRACTICE AND DEVNET ONLY</h3><p><b>On-chain paid play is not live yet.</b> Nothing on this page asks for a wallet, a seed or QU. ' +
       'You can build, practise and benchmark a bot today, free and offline; ranked fights on this site come from ' + (D.sample ? 'a SAMPLE devnet export' : 'the house export') + '. ' +
@@ -1261,10 +1362,18 @@
   async function viewFight(tok, id) {
     if (needData()) return;
     if (!DEC.test(id || '')) return notFound('Fight IDs are decimal numbers.');
-    const summary = await fetchJson('fights/' + id + '.json').catch(() => null);
-    // No summary (pruned or unknown): still try the replay once; a summary
-    // that says no round resolved yet means there is no replay to ask for.
-    const replay = summary ? await replayFor(summary) : await fetchJson('fights/' + id + '/replay.json').catch(() => null);
+    let summary = null, replay = null;
+    // A fight the export no longer lists (it keeps recent ones) comes from the read API.
+    if (!listed(id) && D.api) {
+      summary = await apiJson('fights/' + id).catch(() => null);
+      replay = summary && hasReplay(summary) ? await apiJson('fights/' + id + '/replay').catch(() => null) : null;
+    }
+    if (!summary) {
+      summary = await fetchJson('fights/' + id + '.json').catch(() => null);
+      // No summary (pruned or unknown): still try the replay once; a summary
+      // that says no round resolved yet means there is no replay to ask for.
+      replay = summary ? await replayFor(summary) : await fetchJson('fights/' + id + '/replay.json').catch(() => null);
+    }
     if (tok !== viewToken) return;
     if (!summary && !replay) return notFound('Fight #' + id + ' is not in this export.');
     const fighters = (replay || summary).fighters;
@@ -1338,26 +1447,56 @@
       modes.map(m => row(esc(m.toUpperCase()), c.by[m])).join('') + (modes.length > 1 ? row('ALL', c.tot, 'career-all') : '') + '</tbody></table></div>';
   }
 
-  async function viewFighter(tok, hex) {
-    if (needData()) return;
-    if (!HEX64.test(hex || '')) return notFound('A fighter ID is 64 lowercase hex digits.');
-    const f = await fetchJson('fighters/' + hex + '.json').catch(() => null);
-    if (tok !== viewToken) return;
-    if (!f) return notFound('Fighter ' + short(hex) + ' is not in this export.');
-    const meta = metaOf(hex, f);
-    const ids = (f.fights || []).filter(x => DEC.test(x));
-    const loaded = await Promise.all(ids.map(async id => {
-      const s = await summaryOf(id);
-      const rp = await replayFor(s);
-      return { id, summary: s, replay: rp };
-    }));
-    if (tok !== viewToken) return;
-    // Completed fights only: a live fight's partial rounds are not scouting data yet.
-    const items = loaded.filter(x => x.replay && (!x.summary || x.summary.phase === 'DONE')).map(x => ({ replay: x.replay, derived: L.deriveReplay(R, x.replay), id: x.id }));
-    const s = L.fighterStats(hex, items);
-    const rec = f.record || {};
-    const beltCls = f.provisional ? 'belt-other' : 'belt-' + esc(f.belt || 'other');
-    const faults = Object.entries(f.faults_by_epoch || {});
+  // Pages of a list: « 1 … 4 [5] 6 … 20 »; hrefOf(n) is the page's link.
+  function pagerHtml(hrefOf, page, pages) {
+    if (pages <= 1) return '';
+    const want = new Set([1, pages, page - 1, page, page + 1].filter(n => n >= 1 && n <= pages));
+    const nums = Array.from(want).sort((a, b) => a - b);
+    let out = '', last = 0;
+    for (const n of nums) {
+      if (n - last > 1) out += '<span class="muted">&hellip;</span>';
+      out += n === page ? '<b class="on" aria-current="page">' + n + '</b>' : '<a class="btn btn-sm" href="' + hrefOf(n) + '">' + n + '</a>';
+      last = n;
+    }
+    return '<nav class="pager" aria-label="Pages">' + (page > 1 ? '<a class="btn btn-sm" href="' + hrefOf(page - 1) + '">&larr; NEWER</a>' : '') + out +
+      (page < pages ? '<a class="btn btn-sm" href="' + hrefOf(page + 1) + '">OLDER &rarr;</a>' : '') + '</nav>';
+  }
+
+  const FIGHTER_PAGE = 50, SCOUT_BATCH = 100;
+  const scoutItems = batch => batch.map(x => ({ replay: x.replay, derived: L.deriveReplay(R, x.replay), id: x.fight_id }));
+
+  /* A fighter's career: from the read API every fight, paginated, and a
+   * scouting report over its most recent 100 finished fights (or all of them,
+   * on request); from the static export, the recent fights still published. */
+  async function loadFighter(hex, page) {
+    return viaApi(async () => {
+      const [f, list, rep] = await Promise.all([
+        apiJson('fighters/' + hex),
+        apiJson('fighters/' + hex + '/fights?per_page=' + FIGHTER_PAGE + '&page=' + page),
+        apiJson('fighters/' + hex + '/replays?limit=' + SCOUT_BATCH),
+      ]);
+      learnFighters([f]);
+      return {
+        f, full: true, page: list.page, pages: list.pages, total: list.total,
+        rows: list.items.map(x => ({ id: x.fight_id, summary: x, replay: null })),
+        scout: scoutItems(rep.items), scoutTotal: rep.total, scoutNext: rep.next_before,
+      };
+    }, async () => {
+      const f = await fetchJson('fighters/' + hex + '.json').catch(() => null);
+      if (!f) return null;
+      const ids = (f.fights || []).filter(x => DEC.test(x));
+      const loaded = await Promise.all(ids.map(async id => {
+        const s = await summaryOf(id);
+        return { id, summary: s, replay: await replayFor(s) };
+      }));
+      // Completed fights only: a live fight's partial rounds are not scouting data yet.
+      const scout = loaded.filter(x => x.replay && (!x.summary || x.summary.phase === 'DONE')).map(x => ({ replay: x.replay, derived: L.deriveReplay(R, x.replay), id: x.id }));
+      const rows = loaded.slice().reverse().filter(x => x.replay || x.summary);
+      return { f, full: false, page: 1, pages: 1, total: rows.length, rows, scout, scoutTotal: scout.length, scoutNext: null };
+    });
+  }
+
+  function scoutHtml(hex, s, d) {
     const freqRows = NAMES.map((n, a) => {
       const cells = [0, 1, 2].map(r => {
         const tot = sumOf(s.perRound[r]);
@@ -1367,35 +1506,14 @@
       return '<tr><td>' + actionTag(n) + '</td>' + cells + '<td class="num muted">' + s.unexecuted[a] + '</td></tr>';
     }).join('');
     const results = Object.entries(s.results).map(([m, r]) => '<tr><td>' + esc(m.toUpperCase()) + '</td><td class="num">' + r.W + '</td><td class="num">' + r.D + '</td><td class="num">' + r.L + '</td><td class="num">' + r.FW + '</td><td class="num">' + r.FL + '</td></tr>').join('');
-    const fightRows = loaded.slice().reverse().map(x => {
-      const src = x.replay || x.summary;
-      if (!src) return '';
-      const side = src.fighters.A.fighter_id === hex ? 'A' : 'B', opp = src.fighters[side === 'A' ? 'B' : 'A'].fighter_id;
-      const out = x.replay ? x.replay : summaryOutcome(x.summary);
-      const w = out.outcome ? out.outcome.winner : null;
-      const done = !x.summary || x.summary.phase === 'DONE';
-      return '<tr><td class="num"><a href="#fight/' + esc(x.id) + '">#' + esc(x.id) + '</a></td><td>' + esc(String(src.mode || '').toUpperCase()) + '</td><td>' + side + '</td><td>' + fighterLink(opp) + '</td><td>' +
-        (done ? resultBadge(out) + ' ' + (w == null ? '<span class="muted">draw</span>' : w === side ? '<span class="pos">WON</span>' : '<span class="neg">LOST</span>') : '<span class="rbadge rbadge-open">LIVE</span>') + '</td></tr>';
-    }).join('');
     const pw = s.power;
-    setView(screen('FIGHTER', '<span class="id wrap">' + esc(hex) + '</span>') +
-      '<section class="panel panel-yellow fighter-panel"><h3>' + esc(meta.name ? meta.name.toUpperCase() : short(hex)) + (f.house_npc ? ' &middot; HOUSE NPC' : '') + '</h3>' +
-      (A && A.bio ? '<p class="bio">' + esc(A.bio(hex)) + '</p>' : '') +
-      '<p class="badges">' + driverBadge(meta.driver) + ' ' + foundingBadge(meta.asset) + (meta.asset ? ' <span class="drv drv-nft" title="Simulated fighter NFT">NFT ' + esc(meta.asset.name || '') + '</span>' : '') + '</p><div class="fprofile">' +
-      avatar(hex, 'avatar-xl') + '<dl class="kv">' +
-      '<dt>RATING</dt><dd><b class="big">' + esc(f.lifetime_rating) + '</b> ' + (f.provisional ? '<span class="belt belt-sm belt-white" title="Placement: the first 10 ranked fights">PROVISIONAL ' + esc(f.placement_fights) + '/10</span>' : '<span class="belt belt-sm ' + beltCls + '">' + esc(String(f.belt || '').toUpperCase()) + ' BELT</span>') + '</dd>' +
-      '<dt>RANKED</dt><dd>' + esc(rec.W || 0) + 'W ' + esc(rec.D || 0) + 'D ' + esc(rec.L || 0) + 'L &middot; forfeits ' + esc(rec.FW || 0) + ' won / ' + esc(rec.FL || 0) + ' lost <span class="muted">(contract record)</span></dd>' +
-      '<dt>CAREER</dt><dd>' + esc(careerOf(f).all) + ' finished fights in all modes <span class="muted">(table below)</span></dd>' +
-      '<dt>RANKED FIGHTS</dt><dd>' + esc(f.placement_fights) + (f.provisional ? ' of 10 placement fights' : '') + '</dd>' +
-      '<dt>STATUS</dt><dd>' + esc(f.lock || 'IDLE') + (f.cooldown_until && f.cooldown_until !== '0' ? ' &middot; cooldown until tick ' + esc(f.cooldown_until) : '') + '</dd>' +
-      '<dt>FAULTS</dt><dd>' + (faults.length ? faults.map(([k, v]) => 'epoch ' + esc(k) + ': ' + esc(v)).join(', ') : '<span class="pos">none</span>') + '</dd>' +
-      '<dt>SEASONS</dt><dd>' + Object.entries(f.season_ratings || {}).map(([k, v]) => 'S' + esc(k) + ' ' + esc(v)).join(', ') + '</dd>' +
-      '<dt>OWNER</dt><dd>' + ownerLink((meta.asset && meta.asset.owner) || f.owner) + (f.operator !== f.owner ? ' &middot; operator <span class="id">' + esc(String(f.operator).slice(0, 8)) + '&hellip;</span>' : ' (self-operated)') + '</dd>' +
-      '</dl></div></section>' +
-      '<section class="panel panel-yellow"><h3>CAREER</h3>' + careerTable(f) + '<p class="tiny muted">Every finished fight in the arena, by mode. Ratings and belts come from RANKED fights only. Forfeits are missed deadlines; NO RESULT is a double fault or a void.</p></section>' +
-      '<section class="panel panel-cyan"><h3>SCOUTING REPORT</h3>' +
-      '<p class="caveat">Observed in ' + s.replayed + ' completed fight(s) still published (the export keeps recent fights only), ' + s.beats + ' executed beats, re-derived from revealed plans. ' +
+    const scope = d.full
+      ? 'Observed in the most recent ' + s.replayed + ' of ' + esc(d.scoutTotal) + ' finished fight(s) with revealed plans'
+      : 'Observed in ' + s.replayed + ' completed fight(s) still published (the export keeps recent fights only)';
+    return '<h3>SCOUTING REPORT</h3>' +
+      '<p class="caveat">' + scope + ', ' + s.beats + ' executed beats, re-derived from revealed plans. ' +
       'History describes past play only; it does not predict the next plan, and owners may change software between rounds.</p>' +
+      (d.full && d.scoutNext ? '<p><button class="btn btn-sm" id="scout-all" type="button">SCOUT THE FULL CAREER (' + esc(d.scoutTotal) + ' FIGHTS)</button></p>' : '') +
       '<div class="tscroll"><table class="freq"><thead><tr><th>ACTION (EFFECTIVE)</th><th class="num">ROUND 1</th><th class="num">ROUND 2</th><th class="num">ROUND 3</th><th class="num">UNPLAYED*</th></tr></thead><tbody>' + freqRows + '</tbody></table></div>' +
       '<p class="tiny muted">* Revealed after a knockout and never executed: listed apart, not counted as play. EXHAUSTED is a failed unaffordable move.</p>' +
       '<div class="cols">' +
@@ -1403,11 +1521,80 @@
       '<div><h4>OPENINGS</h4><p>Earned ' + s.opening.earned + '. Held on ' + s.opening.held + ' beat(s); converted into bonus damage on ' + s.opening.converted + ' (' + pct(s.opening.converted, s.opening.held) + ').</p></div>' +
       '<div><h4>RECOVERY TIMING</h4><p>RECOVER on beats 1-6: ' + s.recoverByBeat.join(' / ') + '. Punished ' + s.recoverPunished + ' of ' + s.recovers + ' (' + pct(s.recoverPunished, s.recovers) + '). Exhausted ' + s.exhausted + ' time(s).</p></div>' +
       '</div>' +
-      '<h4>RESULTS BY MODE (REPLAYED)</h4><div class="tscroll"><table><thead><tr><th>MODE</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num">FW</th><th class="num">FL</th></tr></thead><tbody>' + (results || '<tr><td colspan="6" class="muted">none</td></tr>') + '</tbody></table></div>' +
-      '</section>' +
+      '<h4>RESULTS BY MODE (REPLAYED)</h4><div class="tscroll"><table><thead><tr><th>MODE</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num">FW</th><th class="num">FL</th></tr></thead><tbody>' + (results || '<tr><td colspan="6" class="muted">none</td></tr>') + '</tbody></table></div>';
+  }
+
+  async function viewFighter(tok, hex, pageArg) {
+    if (needData()) return;
+    if (!HEX64.test(hex || '')) return notFound('A fighter ID is 64 lowercase hex digits.');
+    const page = DEC.test(pageArg || '') ? Math.max(1, Number(pageArg)) : 1;
+    const d = await loadFighter(hex, page);
+    if (tok !== viewToken) return;
+    if (!d) return notFound('Fighter ' + short(hex) + ' is not in this export.');
+    const f = d.f;
+    const meta = metaOf(hex, f);
+    const s = L.fighterStats(hex, d.scout);
+    const rec = f.record || {};
+    const beltCls = f.provisional ? 'belt-other' : 'belt-' + esc(f.belt || 'other');
+    const faults = Object.entries(f.faults_by_epoch || {});
+    const fightRows = d.rows.map(x => {
+      const src = x.replay || x.summary;
+      if (!src) return '';
+      const side = src.fighters.A.fighter_id === hex ? 'A' : 'B', opp = src.fighters[side === 'A' ? 'B' : 'A'].fighter_id;
+      const out = x.replay ? x.replay : summaryOutcome(x.summary);
+      const w = out.outcome ? out.outcome.winner : null;
+      const done = !x.summary || x.summary.phase === 'DONE';
+      const tick = x.summary && x.summary.result ? x.summary.result.tick : null;
+      return '<tr><td class="num"><a href="#fight/' + esc(x.id) + '">#' + esc(x.id) + '</a></td><td>' + esc(String(src.mode || '').toUpperCase()) + '</td><td>' + side + '</td><td>' + fighterLink(opp) + '</td><td>' +
+        (done ? resultBadge(out) + ' ' + (w == null ? '<span class="muted">draw</span>' : w === side ? '<span class="pos">WON</span>' : '<span class="neg">LOST</span>') : '<span class="rbadge rbadge-open">LIVE</span>') +
+        '</td><td class="num tiny muted">' + (tick ? esc(tick) : '') + '</td></tr>';
+    }).join('');
+    const pager = pagerHtml(n => '#fighter/' + hex + '/' + n, d.page, d.pages);
+    const listTitle = d.full ? 'ALL FIGHTS (' + esc(d.total) + ')' + (d.pages > 1 ? ' &middot; PAGE ' + esc(d.page) + ' OF ' + esc(d.pages) : '') : 'RECENT FIGHTS (' + d.rows.length + ')';
+    const career = careerOf(f);
+    setView(screen('FIGHTER', '<span class="id wrap">' + esc(hex) + '</span>') +
+      '<section class="panel panel-yellow fighter-panel"><h3>' + esc(meta.name ? meta.name.toUpperCase() : short(hex)) + (f.house_npc ? ' &middot; HOUSE NPC' : '') + '</h3>' +
+      (A && A.bio ? '<p class="bio">' + esc(A.bio(hex)) + '</p>' : '') +
+      '<p class="badges">' + originBadge(meta.origin) + ' ' + driverBadge(meta.driver) + ' ' + foundingBadge(meta.asset) + (meta.asset ? ' <span class="drv drv-nft" title="Simulated fighter NFT">NFT ' + esc(meta.asset.name || '') + '</span>' : '') + '</p><div class="fprofile">' +
+      avatar(hex, 'avatar-xl') + '<dl class="kv">' +
+      '<dt>RATING</dt><dd><b class="big">' + esc(f.lifetime_rating) + '</b> ' + (f.provisional ? '<span class="belt belt-sm belt-white" title="Placement: the first 10 ranked fights">PROVISIONAL ' + esc(f.placement_fights) + '/10</span>' : '<span class="belt belt-sm ' + beltCls + '">' + esc(String(f.belt || '').toUpperCase()) + ' BELT</span>') + '</dd>' +
+      '<dt>RANKED</dt><dd>' + esc(rec.W || 0) + 'W ' + esc(rec.D || 0) + 'D ' + esc(rec.L || 0) + 'L &middot; forfeits ' + esc(rec.FW || 0) + ' won / ' + esc(rec.FL || 0) + ' lost <span class="muted">(contract record)</span></dd>' +
+      '<dt>CAREER</dt><dd>' + esc(career.all) + ' finished fights in all modes' + (d.full && f.first_fight ? ' since fight #' + esc(f.first_fight) : '') + ' <span class="muted">(table below)</span></dd>' +
+      '<dt>RANKED FIGHTS</dt><dd>' + esc(f.placement_fights) + (f.provisional ? ' of 10 placement fights' : '') + '</dd>' +
+      '<dt>STATUS</dt><dd>' + esc(f.lock || 'IDLE') + (f.cooldown_until && f.cooldown_until !== '0' ? ' &middot; cooldown until tick ' + esc(f.cooldown_until) : '') + '</dd>' +
+      '<dt>FAULTS</dt><dd>' + (faults.length ? faults.map(([k, v]) => 'epoch ' + esc(k) + ': ' + esc(v)).join(', ') : '<span class="pos">none</span>') + '</dd>' +
+      '<dt>SEASONS</dt><dd>' + Object.entries(f.season_ratings || {}).map(([k, v]) => 'S' + esc(k) + ' ' + esc(v)).join(', ') + '</dd>' +
+      '<dt>OWNER</dt><dd>' + ownerLink((meta.asset && meta.asset.owner) || f.owner) + (f.operator !== f.owner ? ' &middot; operator <span class="id">' + esc(String(f.operator).slice(0, 8)) + '&hellip;</span>' : ' (self-operated)') + '</dd>' +
+      '</dl></div></section>' +
+      '<section class="panel panel-yellow"><h3>CAREER</h3>' + careerTable(f) + '<p class="tiny muted">Every finished fight in the arena, by mode. Ratings and belts come from RANKED fights only. Forfeits are missed deadlines; NO RESULT is a double fault or a void.</p></section>' +
+      '<section class="panel panel-cyan" id="scout">' + scoutHtml(hex, s, d) + '</section>' +
       '<section class="panel"><h3>OWNERSHIP (SIMULATED NFT)</h3>' + nftHistory(meta.asset) +
       (meta.asset ? '<p class="tiny muted">Issuer <span class="id">' + esc(String(meta.asset.issuer || '').slice(0, 8)) + '&hellip;</span> &middot; asset ' + esc(meta.asset.name || '?') + '. A transfer changes who owns the fighter, never its stats or record.</p>' : '') + '</section>' +
-      '<section class="panel"><h3>RECENT FIGHTS (' + loaded.filter(x => x.replay || x.summary).length + ')</h3><div class="tscroll"><table><thead><tr><th class="num">FIGHT</th><th>MODE</th><th>SLOT</th><th>OPPONENT</th><th>RESULT</th></tr></thead><tbody>' + fightRows + '</tbody></table></div></section>');
+      '<section class="panel" id="fighter-fights"><h3>' + listTitle + '</h3>' + pager +
+      '<div class="tscroll"><table><thead><tr><th class="num">FIGHT</th><th>MODE</th><th>SLOT</th><th>OPPONENT</th><th>RESULT</th><th class="num">TICK</th></tr></thead><tbody>' + fightRows + '</tbody></table></div>' + pager +
+      (d.full ? '' : '<p class="tiny muted">The static export keeps recent fights only; the full history needs the read API.</p>') + '</section>');
+    wireScoutAll(tok, hex, d);
+  }
+
+  // Page through every finished fight's replay (100 per request) and redo the report.
+  function wireScoutAll(tok, hex, d) {
+    const btn = $('#scout-all');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      let items = d.scout.slice(), next = d.scoutNext;
+      try {
+        while (next && tok === viewToken) {
+          btn.textContent = 'SCOUTING… ' + items.length + ' / ' + d.scoutTotal;
+          const rep = await apiJson('fighters/' + hex + '/replays?limit=' + SCOUT_BATCH + '&before=' + next);
+          items = items.concat(scoutItems(rep.items));
+          next = rep.next_before;
+        }
+      } catch (e) { btn.textContent = 'SCOUTING STOPPED: ' + e.message; return; }
+      if (tok !== viewToken) return;
+      $('#scout').innerHTML = scoutHtml(hex, L.fighterStats(hex, items), { ...d, scoutNext: null });
+      markScrollers($('#scout'));
+    });
   }
 
   // ---- PRACTICE ------------------------------------------------------------------------
@@ -1945,7 +2132,7 @@
       if (name === 'arena') await viewArena(tok);
       else if (name === 'title') await viewTitle(tok);
       else if (name === 'book') await viewBook(tok);
-      else if (name === 'results' || name === 'fights') await viewResults(tok);
+      else if (name === 'results' || name === 'fights') await viewResults(tok, rest[0]);
       else if (name === 'leaderboard') await viewLeaderboard(tok);
       else if (name === 'cups') await viewCups(tok);
       else if (name === 'cup') await viewCup(tok, rest[0]);
@@ -1958,7 +2145,7 @@
       else if (name === 'guide') await viewGuide(tok);
       else if (name === 'story') viewStory();
       else if (name === 'fight') await viewFight(tok, rest[0]);
-      else if (name === 'fighter') await viewFighter(tok, rest[0]);
+      else if (name === 'fighter') await viewFighter(tok, rest[0], rest[1]);
       else if (name === 'practice') viewPractice(tok, rest);
       else if (name === 'rules') await viewRules(tok);
       else { location.replace('#arena'); return; }

@@ -3,7 +3,7 @@
 > **Purpose:** the fastest path from an empty file to a planner that beats the practice NPCs, and what changes when real registration exists. \
 > **Audience:** bot builders (human or coding agent). \
 > **Status:** guide. The binding interface is [api.md](api.md) §1; the rules are [combat.md](combat.md). \
-> **Last verified:** 2026-09-25. Every command here was run from a clean checkout with `uv`.
+> **Last verified:** 2026-09-26. Every command here was run from a clean checkout with `uv`; §8 against a local arena (the public one opens only when its operator enables it).
 
 ## Contents
 
@@ -14,7 +14,8 @@
 5. [Strategy notes from the rules](#5-strategy-notes-from-the-rules)
 6. [On the local devnet](#6-on-the-local-devnet)
 7. [LLM planners](#7-llm-planners)
-8. [Later: real registration](#8-later-real-registration)
+8. [Enter the demo arena](#8-enter-the-demo-arena)
+9. [Later: real registration](#9-later-real-registration)
 
 ## 1. Ready, fight
 
@@ -258,7 +259,69 @@ Model calls take seconds, so raise `--budget-ms` above the planner's own
 `--timeout` (20 s by default). Several fighters in the live demo arena are
 LLM-driven.
 
-## 8. Later: real registration
+## 8. Enter the demo arena
+
+The public demo arena at [qdojo.jonsggi.com](https://qdojo.jonsggi.com/)
+runs the reference contract on a **simulated** chain with **fake QU**. When
+its operator has opened it to outside builders, you can register a fighter
+there and fight the house bots with your own planner. Your bot runs on
+**your** machine; no code of yours ever runs on the arena.
+
+```sh
+uv run qdojo combat join --arena https://qdojo.jonsggi.com --name musashi --planner "python3 my_bot.py"
+```
+
+What `join` does:
+
+1. **A key for the simulated arena.** On first use it creates a fresh
+   55-letter seed in `~/.qdojo/combat/join/musashi.seed` (mode 0600) and
+   derives a Qubic public key from it. It is a throwaway key for fake QU.
+   Never point `--key` at your real Qubic seed.
+2. **Registration.** It signs `(network, contract, public key, tick, name)`
+   with SchnorrQ and posts it. Within a few ticks the arena issues a
+   simulated fighter NFT (`QDOJOF`, asset label `outside:musashi`) to your
+   key, grants 100,000 fake QU once, and registers the asset with the
+   contract. Your fighter is disclosed as **OUTSIDE** in the export, the
+   API and on the site; the operator's bots are **HOUSE**.
+3. **On-chain registration.** It sends `REGISTER_FIGHTER` itself: a
+   Qubic-format transaction (source = your key, destination = the arena
+   contract, input type 1, input = one 512-byte combat call frame),
+   signed by your key.
+4. **The bot.** It runs the ordinary owner bot (budget, plan journal,
+   commit and reveal, as in §6) with a client that reads chain state from
+   the arena's API and sends every action as a signed transaction. Plans and
+   salts stay on your machine until you reveal them. Add `--cups` or
+   `--duels` to enter cups or accept challenges, `--no-ranked` to stay out
+   of the ranked queue, `--npc scout-v1` to try it without a planner, and
+   `--register-only` to stop after registering.
+
+The chain clock is the arena's: a tick is about 1.5 s, the commit window 24
+ticks and the reveal window 12. Keep your planner well inside
+`--budget-ms`; a missed reveal forfeits the contest exactly as on a real
+chain.
+
+**What the arena accepts.** Only transactions from a registered outside
+key, with a valid signature, a tick close to the arena's, an attachment of
+at most 20,000 fake QU, and a player opcode (register, queue, duel, cup,
+commit, reveal, withdraw; never the admin opcodes). Each key may register
+one fighter; the arena has room for a limited number of outside fighters;
+transactions are rate-limited per key (a burst of 20, then about one per
+second) with a daily quota. Errors come back as JSON with a code, for
+example `not_registered`, `bad_signature`, `stale` or `rate_limited`.
+
+**Your own client.** Anything that can build and sign the transaction can
+play: `GET /api/v1/join` returns the network and contract IDs, tiers, input
+type and limits; `GET /api/v1/chain/state?fighter=&who=` your fighter's
+lock, balance, credit and nonce; `GET /api/v1/chain/fight/{id}?slot=A` the
+observation; `POST /api/v1/tx {"tx": "<hex>"}` submits and
+`GET /api/v1/tx/{hash}` returns `new`, `pending`, `included` (with the
+contract's result) or `dropped`. `combat/join.py` is the reference.
+
+If the operator has not opened the arena, `join` stops with
+`join_disabled` (or `join_closed` from the public proxy), and nothing is
+created.
+
+## 9. Later: real registration
 
 Not available today. When it is, the path will be:
 

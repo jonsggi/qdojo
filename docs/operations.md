@@ -3,7 +3,7 @@
 > **Purpose:** runtime authority, the production runbook for paid play, and the runbook for today's public demo arena. \
 > **Audience:** operators. \
 > **Status:** guide. §1–7 are the planned production runbook and are not in effect (nothing is deployed). §8 describes the demo arena that runs today. \
-> **Last verified:** 2026-09-25 (§8 against the systemd units, `combat/live.py`, `combat/devnet.py` and the `Dockerfile`)
+> **Last verified:** 2026-09-26 (§8 against the systemd units, `combat/live.py`, `combat/devnet.py` and the `Dockerfile`)
 
 The riddle deployment is documented in
 [the historical runbook](archive/riddle-v0/docs/operations.md). Do not run
@@ -112,8 +112,9 @@ NFTs and operator-run demo bots, labelled as such on every page.
 | Arena runner | systemd user unit `qdojo-combat-live` on the ops host: `qdojo combat live --profile demo --tick-seconds 1.5 --export-every 6` from the `~/src/qdojo-live` checkout, under `infisical run` so LLM bots get their OpenRouter key from the environment |
 | Arena state | `~/.qdojo/combat/arena/` (devnet journal, assets.json, chain.json, bot plan journals) |
 | Lineup | `~/.qdojo/combat/lineup-arena.json` (label, policy / planner / llm, founding, cups, duels, ranked, reliability); without `--lineup`, eight built-in demo bots |
-| Public export | `~/.qdojo/combat/public/combat/v1/`, served on the tailnet by `qdojo-combat-data` (port 8790) |
-| Site | Dokploy builds `Dockerfile`; nginx proxies `/data/combat/v1/` to the data server and falls back to the baked copy |
+| Public export | `~/.qdojo/combat/public/combat/v1/`, written by the runner every few ticks |
+| Read API + data server | systemd user unit `qdojo-combat-api` ([deploy/systemd/qdojo-combat-api.service](../deploy/systemd/qdojo-combat-api.service)): `qdojo combat api` on the tailnet (100.101.145.63:8790). It follows the arena journal into `~/.qdojo/combat/readmodel.sqlite` (plus a private `readmodel.replica` snapshot), answers `/api/v1/` ([api.md](api.md) §3.2) and serves the export on every other path. It replaces `qdojo-combat-data` (the plain `http.server`) |
+| Site | Dokploy builds `Dockerfile`; nginx proxies `/data/combat/v1/` to `QDOJO_LIVE_DATA` (falling back to the baked copy) and `/api/v1/` to `QDOJO_LIVE_API` (answering a JSON 503 when it is down, so the site uses the static files) |
 
 The `demo` profile differs from the specified development values so a small
 bot population keeps fighting and seasons turn over quickly: 2,400-tick epochs
@@ -127,10 +128,38 @@ dropped, execution fees burn a reserve the operator tops up, and fighter NFTs
 come from the simulated `AssetRegistry`, including an occasional market sale of
 an idle fighter.
 
+**Read model.** The API's first start replays the whole journal (measured
+2026-09-26: 199,182 records, 5,223 fights, about 4 min on this host, 95 MB
+RSS, a 27 MB database); until then `/api/v1/` answers 503 `not_ready` and
+the site uses the static export. Later starts resume from the snapshot. To
+rebuild from scratch, stop the unit and run `qdojo combat readmodel rebuild
+--devnet … --db … --export …`, or start it once with `--rebuild`. When the
+arena directory is moved aside for a rules change, the API notices the new
+journal and re-indexes by itself.
+
+**Outside builders (off by default).** [build-a-bot.md](build-a-bot.md) §8
+describes the builder's side. Three switches, all off today, because opening
+a public write path and choosing quotas are operator decisions:
+
+1. the arena: `--join-inbox ~/.qdojo/combat/arena/inbox.sqlite` on
+   `qdojo combat live` (drains registrations and signed transactions into
+   `SimChain` each tick, and flushes the journal every tick so remote bots
+   see fresh state);
+2. the API: the same `--join-inbox`, plus `--join-config` with a JSON file of
+   `combat/join.py` `Limits` fields (outside-fighter cap, fake-QU grant,
+   attachment cap, per-key burst, rate and daily quota, global inbox size);
+3. the public proxy: `QDOJO_JOIN_OPEN=1` in the Dokploy environment (nginx
+   otherwise answers 403 `join_closed` to every non-GET under `/api/v1/`).
+
+[deploy/systemd/join.conf.example](../deploy/systemd/join.conf.example) has
+the drop-ins. Outside fighters are listed in `arena/outside.json` and stay
+labelled `outside` even after joining is switched off; their bots simply stop
+being able to send. No builder code runs on the host.
+
 **Operate:**
 
 ```sh
-systemctl --user status qdojo-combat-live qdojo-combat-data
+systemctl --user status qdojo-combat-live qdojo-combat-api
 journalctl --user -u qdojo-combat-live -n 50
 systemctl --user restart qdojo-combat-live     # SIGTERM saves the journal; restart resumes exactly
 ```
@@ -139,8 +168,11 @@ Handling problems:
 - **STALE on the site.** The runner has stopped exporting. Check the
   unit's status and log, then restart it.
 - **Site shows the baked copy.** The data server or the tailnet is down.
-  Check `qdojo-combat-data`, and whether the Dokploy host can reach this
+  Check `qdojo-combat-api`, and whether the Dokploy host can reach this
   host's tailnet address.
+- **Site says "recent fights only".** `/api/v1/status` did not answer for
+  this network: the API is down, still indexing (503 `not_ready`), or
+  pointed at another arena. `journalctl --user -u qdojo-combat-api`.
 - **Stopping LLM spend.** LLM bots cap their spend per UTC day
   (`--daily-usd`) and fall back to a local policy. Removing their lineup
   entries and restarting stops all model calls.

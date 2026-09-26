@@ -1,0 +1,16 @@
+# OPTIONAL, OFF BY DEFAULT: let outside builders join the demo arena
+# (docs/build-a-bot.md §8, docs/operations.md §8). Needs three switches:
+#
+# 1. The arena drains the inbox:  ~/.config/systemd/user/qdojo-combat-live.service.d/join.conf
+#      [Service]
+#      ExecStart=
+#      ExecStart=<the unit's ExecStart> --join-inbox /home/klabautermann/.qdojo/combat/arena/inbox.sqlite
+# 2. The API accepts writes:       ~/.config/systemd/user/qdojo-combat-api.service.d/join.conf
+#      [Service]
+#      ExecStart=
+#      ExecStart=<the unit's ExecStart> --join-inbox /home/klabautermann/.qdojo/combat/arena/inbox.sqlite --join-config /home/klabautermann/.qdojo/combat/join-limits.json
+# 3. The public nginx lets POSTs through: set QDOJO_JOIN_OPEN=1 in Dokploy and redeploy.
+#
+# join-limits.json overrides any field of qdojo.combat.join.Limits, for example:
+#   {"max_outside_fighters": 8, "grant_qu": 100000, "tx_per_day": 20000}
+# Then: systemctl --user daemon-reload && systemctl --user restart qdojo-combat-live qdojo-combat-api
