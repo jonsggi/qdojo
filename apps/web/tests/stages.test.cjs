@@ -37,6 +37,11 @@ function paintHash(stages, W, H, index, seed, t) {
   return { hash: createHash('sha256').update(log.join('\n')).digest('hex'), calls: log.length };
 }
 
+test('the ten robot-dojo arenas, in order', () => {
+  assert.deepEqual(Array.from(S.list, s => s.key), ['scrapyard', 'arcade', 'rooftop', 'mall', 'harbour', 'freeway', 'drivein', 'refinery', 'reactor', 'bunker']);
+  for (const s of S.list) assert.match(s.name, /^[A-Za-z][A-Za-z -]+$/, 'a plain display name: ' + s.name);
+});
+
 test('a fight ID always picks the same stage, and every stage is reachable', () => {
   assert.ok(S.list.length >= 6, 'at least six stages');
   assert.equal(new Set(S.list.map(s => s.key)).size, S.list.length, 'unique keys');
@@ -52,7 +57,8 @@ test('a fight ID always picks the same stage, and every stage is reachable', () 
 
 test('every stage paints, still and animated, at desktop, card and tiny sizes', () => {
   for (let i = 0; i < S.list.length; i++) {
-    for (const [W, H] of [[360, 110], [240, 90], [160, 70], [40, 30]]) {
+    // desktop replay, compact arena card, phone replay, title card, and degenerate sizes
+    for (const [W, H] of [[360, 110], [359, 120], [240, 90], [106, 100], [262, 92], [160, 70], [40, 30]]) {
       for (const t of [0, 1.234, 97.5]) {
         const r = paintHash(S, W, H, i, 'fight-' + i, t);
         assert.ok(r.calls > 50, S.list[i].name + ' draws something at ' + W + 'x' + H);
@@ -75,4 +81,25 @@ test('same seed and time give the same pixels, in a fresh runtime too; seeds and
 test('no randomness or clock inside the renderer: Math.random and Date are never used', () => {
   assert.doesNotMatch(SRC, /Math\.random|Date\.now|new Date/);
   assert.doesNotMatch(SRC, /url\(|<img|new Image|fetch\(/, 'no external images');
+});
+
+test('the still frame (t = 0) is stable and differs from motion; phone and desktop layouts both deterministic', () => {
+  for (let i = 0; i < S.list.length; i++) {
+    for (const [W, H] of [[359, 120], [106, 100]]) {
+      const a = paintHash(S, W, H, i, '5021', 0), b = paintHash(load(), W, H, i, '5021', 0);
+      assert.equal(a.hash, b.hash, S.list[i].name + ' still frame at ' + W + 'x' + H);
+      assert.notEqual(paintHash(S, W, H, i, '5021', 3.3).hash, a.hash, S.list[i].name + ' animates at ' + W + 'x' + H);
+    }
+  }
+});
+
+test('every draw stays finite and inside a sane range around the canvas', () => {
+  for (let i = 0; i < S.list.length; i++) {
+    for (const [W, H] of [[359, 120], [106, 100], [40, 30]]) {
+      const bad = [];
+      const ctx = { fillStyle: '', globalAlpha: 1, drawImage() {}, fillRect(x, y, w, h) { if (x < -200 || y < -200 || x > W + 200 || y > H + 200 || w < 0 || h < 0) bad.push([x, y, w, h]); } };
+      S.paint(ctx, W, H, i, 'range', 1.5, (w, h) => ({ width: w, height: h, getContext: () => ctx }));
+      assert.deepEqual(bad, [], S.list[i].name + ' draws near the canvas at ' + W + 'x' + H);
+    }
+  }
 });
