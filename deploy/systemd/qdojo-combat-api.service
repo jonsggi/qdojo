@@ -1,0 +1,37 @@
+# qdojo combat read API: replaces qdojo-combat-data (the python http.server).
+# Serves /api/v1/ from a SQLite read model it keeps current by following the
+# arena journal, and every other path from the static export, on the same
+# tailnet address and port the site's nginx already proxies to.
+#
+# Install (user unit):
+#   cp deploy/systemd/qdojo-combat-api.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user disable --now qdojo-combat-data
+#   systemctl --user enable --now qdojo-combat-api
+# The first start replays the whole journal (about 4 min for 200k records);
+# meanwhile /api/v1/ answers 503 not_ready and the site uses the static files.
+# Later restarts resume from a private snapshot next to the database.
+[Unit]
+Description=qdojo combat read API + static export (tailnet only, 100.101.145.63:8790)
+After=network.target
+Conflicts=qdojo-combat-data.service
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+WorkingDirectory=/home/klabautermann/src/qdojo-live
+# Binds the tailnet address, never 0.0.0.0. Read-only toward the arena: it
+# reads the journal and the export and writes only its own database.
+ExecStart=/home/klabautermann/.local/bin/uv run qdojo combat api --host 100.101.145.63 --port 8790 --db /home/klabautermann/.qdojo/combat/readmodel.sqlite --devnet /home/klabautermann/.qdojo/combat/arena --export /home/klabautermann/.qdojo/combat/public/combat/v1 --cors-origin https://qdojo.jonsggi.com
+KillSignal=SIGTERM
+TimeoutStopSec=60
+# Tailscale may not be up yet at boot: keep retrying until the address exists.
+Restart=always
+RestartSec=5
+Nice=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

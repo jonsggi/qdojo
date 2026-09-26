@@ -309,6 +309,10 @@ table.board td.rank { color: var(--yellow); }
 .drv-policy { color: var(--cyan); }
 .drv-founding { color: var(--black); background: var(--yellow); border-color: var(--yellow); }
 .drv-nft { color: var(--grey); }
+.drv-house { color: var(--grey); border-style: dashed; }
+.drv-outside { color: var(--black); background: var(--green); border-color: var(--green); }
+.pager { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0; }
+.pager .on { text-decoration: underline; }
 .sub-links { font-size: 9px; margin: -6px 0 14px; }
 
 /* ---- simulated chain / profile ---------------------------------------- */

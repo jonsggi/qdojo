@@ -204,10 +204,49 @@ def _model_plan(text: str):
         doc = json.loads(_extract_json(text))
     except ValueError as exc:
         raise planner.PlannerError("BAD_PLAN", f"reply is not JSON: {exc}") from None
-    if not isinstance(doc, dict) or "actions" not in doc or "power_slot" not in doc:
-        raise planner.PlannerError("BAD_PLAN", "reply lacks actions or power_slot")
-    body = {"schema": planner.PLAN_SCHEMA, "actions": doc["actions"], "power_slot": doc["power_slot"]}
+    if not isinstance(doc, dict) or "actions" not in doc:
+        raise planner.PlannerError("BAD_PLAN", "reply lacks actions")
+    actions, power_slot, notes = _normalise(doc["actions"], doc.get("power_slot", -1))
+    for n in notes:
+        print(f"repaired: {n}", file=sys.stderr)
+    body = {"schema": planner.PLAN_SCHEMA, "actions": actions, "power_slot": power_slot}
     return planner.parse_plan(json.dumps(body)), doc.get("read")
+
+
+ATTACKS = ("JAB", "KICK", "THROW")
+
+
+def _normalise(actions, power_slot):
+    """Repair the harmless slips models make, so a sound read of the fight is
+    not thrown away for a spelling: lower case and spaces in names, a
+    "POWER JAB" style name (becomes the power slot when none is set), a power
+    slot as a string, and a power slot on a move that cannot carry power
+    (dropped). Anything else is left for parse_plan to reject."""
+    notes = []
+    if not isinstance(actions, list):
+        return actions, power_slot, notes
+    out = []
+    for i, a in enumerate(actions):
+        if isinstance(a, str):
+            name = a.strip().upper().replace("-", " ").replace("_", " ")
+            if name.startswith("POWER ") or name.endswith(" POWER") or name.endswith("*"):
+                base = name.replace("POWER", "").replace("*", "").strip()
+                if base in ATTACKS:
+                    if power_slot in (-1, None, "-1"):
+                        power_slot = i
+                    notes.append(f"action {a!r} read as {base} with the power slot")
+                    name = base
+            if name != a:
+                a = name
+        out.append(a)
+    if isinstance(power_slot, str) and power_slot.lstrip("-").isdigit():
+        power_slot = int(power_slot)
+    if power_slot is None:
+        power_slot = -1
+    if isinstance(power_slot, int) and 0 <= power_slot < len(out) and out[power_slot] not in ATTACKS:
+        notes.append(f"power_slot {power_slot} selects {out[power_slot]}, not an attack: dropped")
+        power_slot = -1
+    return out, power_slot, notes
 
 
 def _fallback(obs: dict, why: str) -> dict:
@@ -277,20 +316,38 @@ def ask(model: str, obs: dict, timeout: float, spend: "Spend", prompt: Path = PR
     key = os.environ.get("OPEN_ROUTER_API_KEY") or os.environ.get("OPENROUTER_API_KEY")
     if not key:
         raise planner.PlannerError("NOT_STARTED", "no OpenRouter key in the environment")
-    body = request_body(model, obs, prompt, reasoning, max_tokens)
-    req = urllib.request.Request(URL, data=json.dumps(body).encode(), method="POST",
-                                 headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
-                                          "X-Title": "qdojo combat demo"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        doc = json.loads(resp.read())
-    usage = doc.get("usage") or {}
-    cost = float(usage.get("cost") or 0.0)
-    spend.add(cost)
-    cached = (usage.get("prompt_tokens_details") or {}).get("cached_tokens")
-    print(f"{model}: ${cost:.5f} (today ${spend.today:.4f}); tokens in {usage.get('prompt_tokens')}"
-          f"{f' ({cached} cached)' if cached else ''}, out {usage.get('completion_tokens')}", file=sys.stderr)
-    text = doc["choices"][0]["message"].get("content") or ""
-    plan, read = _model_plan(text)
+    import time
+    started = time.monotonic()
+
+    def call(reasoning_now: str) -> str:
+        body = request_body(model, obs, prompt, reasoning_now, max_tokens)
+        req = urllib.request.Request(URL, data=json.dumps(body).encode(), method="POST",
+                                     headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                                              "X-Title": "qdojo combat demo"})
+        left = max(1.0, timeout - (time.monotonic() - started))
+        with urllib.request.urlopen(req, timeout=left) as resp:
+            doc = json.loads(resp.read())
+        usage = doc.get("usage") or {}
+        cost = float(usage.get("cost") or 0.0)
+        spend.add(cost)
+        cached = (usage.get("prompt_tokens_details") or {}).get("cached_tokens")
+        choice = doc["choices"][0]
+        print(f"{model}: ${cost:.5f} (today ${spend.today:.4f}); tokens in {usage.get('prompt_tokens')}"
+              f"{f' ({cached} cached)' if cached else ''}, out {usage.get('completion_tokens')}"
+              f", finish {choice.get('finish_reason')}", file=sys.stderr)
+        return choice["message"].get("content") or ""
+
+    text = call(reasoning)
+    try:
+        plan, read = _model_plan(text)
+    except planner.PlannerError as exc:
+        # An empty or prose-only reply is usually hidden reasoning that used
+        # the token budget: one more try with reasoning off, if time allows.
+        print(f"unusable reply ({exc}); first 160 chars: {text[:160]!r}", file=sys.stderr)
+        if reasoning == "off" or time.monotonic() - started > timeout / 2:
+            raise
+        text = call("off")
+        plan, read = _model_plan(text)
     if read:
         print(f"read: {str(read)[:200]}", file=sys.stderr)
     return legal(obs, plan)

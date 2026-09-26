@@ -264,7 +264,9 @@ def test_observations_carry_bounded_public_opponent_history(tmp_path):
 
 def test_scouting_is_capped(tmp_path, monkeypatch):
     lineup = [{"label": "a", "policy": "kicker-v1"}, {"label": "b", "policy": "jabber-v1"}]
-    arena = live.Arena(tmp_path / "arena", lineup, seed=4, deterministic=True, log=lambda m: None)
+    # Two fighters only: allow six starts per pair and epoch so they meet often enough.
+    arena = live.Arena(tmp_path / "arena", lineup, seed=4, deterministic=True, log=lambda m: None,
+                       params={"pair_starts_per_epoch": 6})
     for _ in range(2500):
         arena.step()
     c = arena.w.contract

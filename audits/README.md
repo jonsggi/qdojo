@@ -126,16 +126,16 @@ Seven findings were fixed and deployed on 2026-09-25; the rest are open.
 | [AUD-015](issues/AUD-015-opponent-scouting-empty.md) | **Fixed** 0918949 | P1 / builder experience | Planners could not scout their opponent |
 | [AUD-016](issues/AUD-016-bot-run-planner-forfeit.md) | **Fixed** 66c0951 | P1 / builder onboarding | `qdojo combat bot run --planner` forfeited its first local fight |
 | [AUD-017](issues/AUD-017-records-ranked-only.md) | **Fixed** d688257 | P1 / public correctness | Fighter records showed ranked fights only |
-| [AUD-018](issues/AUD-018-house-economics.md) | Open | P1 / paid launch gate | House economics do not close |
-| [AUD-019](issues/AUD-019-player-ev-and-event-farming.md) | Open | P1 / fairness / outside stakes | Honest players lose money; cups and duels were farmed |
-| [AUD-020](issues/AUD-020-ratings-and-seasons.md) | Open | P2 / competition quality | Ratings do not converge and season titles are noisy |
+| [AUD-018](issues/AUD-018-house-economics.md) | Mitigated (demo) f27a972 | P1 / paid launch gate | House economics do not close |
+| [AUD-019](issues/AUD-019-player-ev-and-event-farming.md) | **Mitigated** f27a972 | P1 / fairness / outside stakes | Honest players lose money; cups and duels were farmed |
+| [AUD-020](issues/AUD-020-ratings-and-seasons.md) | **Mitigated** f27a972 | P2 / competition quality | Ratings do not converge and season titles are noisy |
 | [AUD-021](issues/AUD-021-balance-kick-duck.md) | Mitigated (candidate 2 in code; 10/11 gates) | P2 / strategic depth | Kick dominates; duck and throw are near useless |
-| [AUD-022](issues/AUD-022-pacing.md) | Mitigated (profile `demo-c2`, 9/6 ticks) | P2 / spectator experience | A ranked fight takes twice the target time |
-| [AUD-023](issues/AUD-023-market-without-prices.md) | Open | P2 / NFT readiness | The simulated market has no prices |
-| [AUD-024](issues/AUD-024-unbounded-growth.md) | Open | P2 / operations | index.json and restart time grow without bound |
-| [AUD-025](issues/AUD-025-overdue-invariant.md) | Open | P1 / regression safety | Tests accepted overdue live fights |
-| [AUD-026](issues/AUD-026-read-model-database.md) | Open | P1 / product foundation | Full history needs a read model, not static files |
-| [AUD-027](issues/AUD-027-outside-builder-entry.md) | Open | P1 / product | Outside builders cannot enter the arena |
+| [AUD-022](issues/AUD-022-pacing.md) | Mitigated (profile `demo-c2`, 9/6 ticks; wiring 67f10c1) | P2 / spectator experience | A ranked fight takes twice the target time |
+| [AUD-023](issues/AUD-023-market-without-prices.md) | **Fixed** 65ac7b8 | P2 / NFT readiness | The simulated market has no prices |
+| [AUD-024](issues/AUD-024-unbounded-growth.md) | **Fixed** 67f10c1 | P2 / operations | index.json and restart time grow without bound |
+| [AUD-025](issues/AUD-025-overdue-invariant.md) | **Fixed** 67f10c1 | P1 / regression safety | Tests accepted overdue live fights |
+| [AUD-026](issues/AUD-026-read-model-database.md) | Fixed in 7557e2a, cb5a22d (deploy pending) | P1 / product foundation | Full history needs a read model, not static files |
+| [AUD-027](issues/AUD-027-outside-builder-entry.md) | Mitigated in 7557e2a, cb5a22d (built, off by default) | P1 / product | Outside builders cannot enter the arena |
 | [AUD-028](issues/AUD-028-licence.md) | Open | P1 / open-source release | The repository has no licence |
 
 Suggested order for the open items:

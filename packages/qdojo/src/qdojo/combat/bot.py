@@ -20,6 +20,7 @@ Rules this module keeps (docs/api.md §2, matchmaking.md §5):
 """
 from __future__ import annotations
 
+import collections
 import datetime as dt
 import json
 import os
@@ -77,6 +78,12 @@ class Budget:
     ruleset_digest: str = ""          # pinned; empty means refuse to enter
     timing_profile_id: int = 1
     fee_profile_id: int = 1
+    # Duel accept filters (matchmaking.md §5). A named duel has no rating gate
+    # in the contract, so the owner's bot decides what it accepts.
+    duel_max_stake: int = 0           # 0: max_stake
+    duel_max_rating_gap: int = 0      # decline a challenger rated more than this above us; 0: any rating
+    duel_h2h_series: int = 0          # after this many series against one challenger...
+    duel_h2h_min_score: float = 0.0   # ...decline it while our series score against it is below this
 
 
 @dataclass
@@ -85,6 +92,7 @@ class Spend:
     contest_or_offer: str
     stake: int
     returned: int | None = None       # QU credited back to us at settlement, once known
+    opponent: str = ""                # a duel's challenger (hex), for the head-to-head filter
 
 
 @dataclass
@@ -93,6 +101,7 @@ class BudgetState:
     faults: int = 0
     last_entry_tick: int = -10**9
     fault_ticks: list[int] = field(default_factory=list)   # tick each fault was seen (newest last)
+    duel_h2h: dict = field(default_factory=dict)           # challenger hex -> [series won, drawn, lost]
 
     @classmethod
     def load(cls, path: Path) -> "BudgetState":
@@ -100,13 +109,17 @@ class BudgetState:
             return cls()
         raw = json.loads(path.read_text())
         return cls([Spend(**s) for s in raw["spends"]], raw["faults"], raw["last_entry_tick"],
-                   list(raw.get("fault_ticks", [])))
+                   list(raw.get("fault_ticks", [])), dict(raw.get("duel_h2h", {})))
 
     def save(self, path: Path):
         tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"spends": [asdict(s) for s in self.spends], "faults": self.faults,
+        # Settled spends older than today no longer count against any limit.
+        today = max((s.day for s in self.spends), default="")
+        keep = [s for s in self.spends if s.returned is None or s.day == today]
+        self.spends[:] = keep
+        tmp.write_text(json.dumps({"spends": [asdict(s) for s in keep], "faults": self.faults,
                                    "last_entry_tick": self.last_entry_tick,
-                                   "fault_ticks": self.fault_ticks[-64:]}))
+                                   "fault_ticks": self.fault_ticks[-64:], "duel_h2h": self.duel_h2h}))
         os.replace(tmp, path)
 
     def recent_faults(self, tick: int, window: int) -> int:
@@ -221,6 +234,10 @@ class Bot:
         # Backoff after a rejection that may clear: purpose -> (not before tick, delay).
         self.backoff: dict = {}
         self.skip_cups: set = set()          # cups whose registration was rejected
+        # Final commit/reveal rejections by "what:CODE" (for example
+        # "reveal:BAD_PLAN"). Soaks and tests assert on it (AUD-025).
+        self.rejected: collections.Counter = collections.Counter()
+        self.declined: set = set()           # duel offers declined by the owner's filters
 
     def planning(self) -> bool:
         """True while a background planner decision is still running."""
@@ -296,6 +313,7 @@ class Bot:
             return f"state unreadable: {exc}"
         if me is None:
             return "fighter not registered"
+        self._drain_challenge()
         drained = self._drain_entry()
         if drained is not None and "enter" in self.inflight:
             return drained                                  # still waiting: don't act on stale state
@@ -354,7 +372,13 @@ class Bot:
             ok, why, day = self._spend_allowed(tick, o["stake"])
             if not ok:
                 continue
-            spend = Spend(day, "pending", o["stake"])
+            declined = self._duel_declined(me, o)
+            if declined:
+                if o["offer_id"] not in self.declined:
+                    self.declined.add(o["offer_id"])
+                    self.log(f"duel offer {o['offer_id']} declined: {declined}")
+                continue
+            spend = Spend(day, "pending", o["stake"], opponent=o["challenger"].hex())
             self.bstate.spends.append(spend)
             self.bstate.last_entry_tick = tick
             self.bstate.save(self.bpath)
@@ -368,6 +392,63 @@ class Bot:
                 spend.returned = spend.stake
             self.bstate.save(self.bpath)
             return f"duel accept {r.code.name}"
+        return None
+
+    def challenge(self, opponent: bytes, opponent_rating: int, stake: int, fmt: int, expires_tick: int) -> str | None:
+        """Offer a named duel, under the same budget and filters as accepting
+        one (a weak bot must not keep challenging a fighter that beats it).
+        Returns why not, or None when the offer was sent."""
+        if "challenge" in self.inflight:
+            return "a challenge is in flight"
+        try:
+            tick = self.client.tick()
+            me = self.client.fighter(self.fighter_id)
+        except Exception as exc:
+            return f"state unreadable: {exc}"
+        if me is None or me["lock"] != "IDLE" or tick < int(me.get("cooldown_until") or 0):
+            return "not idle"
+        declined = self._duel_declined(me, {"stake": stake, "challenger": opponent, "challenger_rating": opponent_rating})
+        if declined:
+            return declined
+        ok, why, day = self._spend_allowed(tick, stake)
+        if not ok:
+            return why
+        spend = Spend(day, "pending", stake, opponent=opponent.hex())
+        self.bstate.spends.append(spend)
+        self.bstate.last_entry_tick = tick
+        self.bstate.save(self.bpath)
+        r = self._submit("challenge", Op.DUEL_OFFER, stake, extra=spend, fighter_id=self.fighter_id,
+                         auth_version=me["auth_version"], opponent_id=opponent, ruleset_digest=self.rules.digest,
+                         timing_profile_id=self.budget.timing_profile_id, fee_profile_id=self.budget.fee_profile_id,
+                         stake=stake, format=fmt, expires_tick=expires_tick)
+        if r is not None:
+            self._challenge_result(r, spend)
+        return None
+
+    def _challenge_result(self, r, spend: Spend):
+        if r == "dropped" or r.code not in (Code.OK, Code.DUPLICATE):
+            spend.returned = spend.stake
+        else:
+            spend.contest_or_offer = f"offer:{r.data['offer_id']}"
+        self.bstate.save(self.bpath)
+
+    def _drain_challenge(self):
+        st, spend = self._poll("challenge")
+        if st is not None and st != "pending":
+            self._challenge_result(st, spend)
+
+    def _duel_declined(self, me: dict, o: dict) -> str | None:
+        """Why this bot's owner filters would decline a duel offer, or None."""
+        b = self.budget
+        if o["stake"] > (b.duel_max_stake or b.max_stake):
+            return f"stake {o['stake']} above the duel limit"
+        rating = o.get("challenger_rating")
+        if b.duel_max_rating_gap and rating is not None and rating - int(me.get("lifetime", 1000)) > b.duel_max_rating_gap:
+            return f"challenger rated {rating}, more than {b.duel_max_rating_gap} above us"
+        won, drawn, lost = self.bstate.duel_h2h.get(o["challenger"].hex(), (0, 0, 0))
+        series = won + drawn + lost
+        if b.duel_h2h_series and series >= b.duel_h2h_series and (won + drawn / 2) / series < b.duel_h2h_min_score:
+            return f"lost {lost} of {series} series to this challenger"
         return None
 
     def _maybe_join_cup(self, me: dict, tick: int) -> str | None:
@@ -487,6 +568,9 @@ class Bot:
                 continue
             kind, value = outcome
             s.returned = value
+            if s.opponent and kind in ("settled", "fault"):
+                h2h = self.bstate.duel_h2h.setdefault(s.opponent, [0, 0, 0])
+                h2h[0 if value > s.stake else 1 if value == s.stake and kind == "settled" else 2] += 1
             if kind == "fault":
                 self.bstate.faults += 1
                 self.bstate.fault_ticks.append(self.client.tick() if tick is None else tick)
@@ -588,6 +672,7 @@ class Bot:
         if code in RETRYABLE:
             self._back_off((what, key), tick)
             return f"{what} {code.name}; retrying from tick {self.backoff[(what, key)][0]}"
+        self.rejected[f"{what}:{code.name}"] += 1
         self.journal.put({**rec, "status": f"{what}:rejected:{code.name}"})
         self.log(f"fight {key[2]} round {key[3]}: {what} rejected {code.name}"
                  + (f" ({detail})" if detail else "") + "; not re-sending")

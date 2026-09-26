@@ -13,8 +13,16 @@ Rules:
   open offer outlives its expiry by more than one matching interval (lazy
   cleanup); no running cup outlives its absolute expiry. Ticks when the
   contract did not run (a service gap) are allowed, since nothing can act then.
+
+`check_export(contract, root, slack)` checks a public export against the
+contract (AUD-025): no published live fight is overdue by more than `slack`
+ticks, and every fight the contract finished before the export ran is
+published in its final form, also in results.json and index.json.
 """
 from __future__ import annotations
+
+import json
+from pathlib import Path
 
 from .codec import Mode
 
@@ -72,6 +80,65 @@ def check(world) -> list[str]:
     for k in c.cups.values():
         if k.status == "RUNNING" and serviced > k.expiry_tick:
             out.append(f"liveness: cup {k.cup_id} running past its absolute expiry")
+    return out
+
+
+def _read(path: Path):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def check_export(contract, root, slack: int) -> list[str]:
+    """Published fight files against the contract. `slack` is how many ticks a
+    live file may lag: at least the export interval, since a live fight's file
+    is refreshed only when the exporter runs. Fights the contract no longer
+    holds in memory (compacted history) are checked for finality only."""
+    c, root = contract, Path(root)
+    out = []
+    manifest = _read(root / "manifest.json")
+    if manifest is None:
+        return ["export: manifest.json missing or unreadable"]
+    exported = int(manifest["generated_tick"])
+    fights_dir = root / "fights"
+    published = sorted(int(p.stem) for p in fights_dir.glob("*.json") if p.stem.isdigit()) if fights_dir.exists() else []
+    for fid in published:
+        doc = _read(fights_dir / f"{fid}.json")
+        if doc is None:
+            out.append(f"export: fight {fid} file unreadable")
+            continue
+        if doc.get("final") is True:
+            if doc.get("phase") != "DONE" or not doc.get("result"):
+                out.append(f"export: fight {fid} marked final but published as {doc.get('phase')}")
+            continue
+        phase = doc.get("phase")
+        deadline = doc.get("commit_last") if phase == "COMMIT" else doc.get("reveal_last") if phase == "REVEAL" else None
+        if deadline is not None and c.tick - int(deadline) > slack:
+            out.append(f"export: fight {fid} published as {phase} with deadline {deadline}, "
+                       f"overdue by {c.tick - int(deadline)} ticks at tick {c.tick}")
+        fight = c.fights.get(fid)
+        contest = c.contests.get(fight.contest_id) if fight is not None else None
+        if fight is None or contest is None:
+            if fid < c.next_id["fight"]:
+                out.append(f"export: fight {fid} is history in the contract but its published file is not final")
+            continue
+        done = contest.status == "DONE" and fight.phase == "DONE"
+        if done and contest.result and int(contest.result["tick"]) <= exported:
+            out.append(f"export: fight {fid} finished at tick {contest.result['tick']} but the export "
+                       f"of tick {exported} still publishes it as {phase}")
+    index = _read(root / "index.json")
+    if index is not None:
+        for x in index.get("active_fights", []):
+            fight = c.fights.get(int(x))
+            if fight is None or (fight.phase == "DONE" and fight.result and int(fight.result["tick"]) <= exported):
+                out.append(f"export: index lists fight {x} as active after it finished")
+    results = _read(root / "results.json")
+    if results is not None:
+        for r in results.get("results", []):
+            doc = _read(fights_dir / f"{r['fight_id']}.json")
+            if doc is not None and doc.get("phase") != "DONE":
+                out.append(f"export: results.json has fight {r['fight_id']} finished, its file says {doc.get('phase')}")
     return out
 
 

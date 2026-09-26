@@ -3,7 +3,7 @@
 > **Purpose:** the public book, offer compatibility, deterministic pairing order, races and autonomous budgets. \
 > **Audience:** contract reviewers; bot builders who automate queue entry. \
 > **Status:** normative (combat-v1 candidate 1). Implemented in `combat/matchmaking.py` and the reference contract on the simulated chain. The public demo arena loosens the per-pair limits and says so in its export ([operations.md](operations.md) §8). \
-> **Last reviewed:** 2026-09-25 (header, status and links; rules text unchanged)
+> **Last reviewed:** 2026-09-26 (§5 duel accept filters; §6 demo pairing measurements)
 
 ## Contents
 
@@ -139,6 +139,11 @@ The client scheduler needs independent owner-configured limits:
 - Maximum fights per session/day, cooldown between fights, stop time.
 - Minimum available withdrawal/wallet reserve.
 - Allowed modes, ruleset/timing digests, maximum rating gap.
+- Duel accept filters: maximum duel stake, maximum rating gap above the
+  bot's own rating, and a head-to-head rule (after N series against one
+  challenger, decline it while the bot's series score against it is below a
+  threshold). A named duel has no contract-side rating gate, so without these
+  a bot that auto-accepts is farmed (`bot.Budget.duel_*`).
 - Stop after consecutive protocol faults (default one).
 - Optional spending limit on external model/provider use.
 
@@ -164,6 +169,17 @@ timed entry, collusion, transferred identities or hidden common ownership.
 Paid registration is a participation credential, not a proof of personhood.
 Monitor repeated pairing, forfeits, ownership clusters and abnormal rating
 transfers. Do not claim these checks solve collusion.
+
+### Demo arena pairing (2026-09-26)
+
+In the 2026-09-25 audit the two best demo fighters met 210 times, because
+policies played without history and their ratings drifted out of everyone
+else's 100..200 window. After the history fix a 20,000-tick soak with the
+public lineup shows no isolation: the most common pair was 5.4% of ranked
+fights, and the top-rated pair 3% of their own. New demo arenas also cap a
+pair at 3 rated starts per epoch (was 6; spec 2), which brought the most
+common pair to 3.2%. The window itself is spec and unchanged. Measurements
+are in the [economics report](economics-report.md).
 
 ## 7. Required scenarios
 

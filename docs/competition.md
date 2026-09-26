@@ -3,7 +3,7 @@
 > **Purpose:** rating, belts, faults, seasons, duels and cups. \
 > **Audience:** players and spectators who want the standings explained; contract reviewers. \
 > **Status:** normative (combat-v1 candidate 1). Implemented in `combat/rating.py`, `combat/series.py` and the reference contract; running on the simulated chain in the demo arena. Replaces riddle-era progression and season scoring. \
-> **Last reviewed:** 2026-09-25 (header, status and links; rules text unchanged)
+> **Last reviewed:** 2026-09-26 (§3 demo qualification scaling, §4 duel accept filters, §5 demo cup prices and sponsorship cap)
 
 Combat rounds and series fights are different: every fight has at most three dependent combat rounds.
 
@@ -103,6 +103,19 @@ Qualification requires all of:
 
 Forfeits, voids, duels, NPCs and cup wins do not satisfy these counts.
 Known common-owner/operator opponents are already barred by matchmaking.
+
+**Demo arena: thresholds scale with the field.** In a small population the
+best fighters have few opponents inside their rating window, and a fixed
+four-distinct-opponent rule excluded exactly them (the 2026-09-25 audit: the
+top two fought mostly each other and a 754-rated fighter took the title). The
+demo profile (`devnet.QUALIFICATION`, `contract.Qualification(scale=True)`)
+therefore sets the distinct-opponent threshold to 20% of the season's field
+(fighters with a completed ranked combat fight), at least 2 and at most 4, and
+the distinct-defeated threshold to one less, at least 1 and at most 3; the
+12-fight and final-epoch rules are unchanged. With 20 or more fighters in the
+field this is the specified rule. It is a standings rule, not contract state:
+`season_standings` takes it as a parameter and `seasons.json` publishes the
+thresholds each season used.
 The per-pair two-rated-starts-per-epoch limit also applies to placement.
 These are mitigations, not a claim to detect undisclosed coordinated ownership.
 
@@ -157,6 +170,19 @@ fight traces remain public and explicitly nonsettling.
 
 No duel changes rating, belts, season eligibility or season score. All money,
 honours and battle records are mode-labelled.
+
+**Accept filters.** Because a named duel has no rating gate, the defender's
+owner decides what to accept, and a bot must let them
+([matchmaking.md](matchmaking.md) §5). The demo bots decline a challenger
+rated more than 200 above them, a stake above their duel limit, and a
+challenger they have played at least 3 series against with a series score
+below one third (their own head-to-head history), and they apply the same
+filters before challenging: in the demo the arena only picks who challenges
+whom, the challenger's bot decides, pays and records the series. In the 2026-09-25 audit
+auto-accepting bots let one scout bot win 138 of 143 series. In the demo
+arena duel stakes grow with the format (1×, 2× and 3× the tier-1 stake for
+SINGLE, BO3 and BO5), so the single rake of a longer series still pays for its
+fights ([economics report](economics-report.md)).
 
 ## 5. Cups
 
@@ -258,6 +284,15 @@ in the whole event, abort without a trophy or rake. On whole-event abort return
 ALL entry fees and sponsorship to original payers, including eliminated entrants.
 Earlier pairings remain archived exhibition results with no rating changes.
 Gross funds must have remained reserved to make these refunds possible.
+
+**Demo arena cups.** Entry is twice the tier-1 stake and cup entries carry a
+1,000 bps fee profile (twice the ranked rake), because a cup of eight plays
+about eighteen fights for one set of entries. Every ranked demo bot may enter,
+so the strongest ranked fighters meet the cup field. The house sponsors each
+cup with 0.1× the tier-1 stake, except while one fighter has won more than 2
+of the last 6 sponsored cups: a fixed script cannot keep capturing house money
+(the audit's oni took 25 of 27 cups and 125,000 QU of sponsorship). These are
+host choices in `live.EVENTS`, published in `economics.json`.
 
 At a pairing boundary, a buyer inherits the reserved bracket position and next
 schedule. Prize entitlement for the final is fixed to its check-in snapshot.

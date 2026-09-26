@@ -89,6 +89,32 @@ def development_manifest(ruleset: Ruleset, admin: bytes, house: bytes, dev: byte
     return Manifest(network_id, contract_id, admin, ruleset, {1: (24, 12)}, {1: fee}, {1: 1000}, **kw)
 
 
+@dataclass(frozen=True)
+class Qualification:
+    """Season championship qualification (competition.md §3). The specified
+    rule is fixed: 12 fights, 4 distinct opponents, 3 distinct defeated, 3 in
+    the final epoch. With `scale` (the demo arena), the distinct-opponent and
+    distinct-defeated thresholds shrink with the season's field, so a small
+    population's best fighters are not excluded because few opponents are
+    within their rating window: opponents = clamp(round(field * share), 2,
+    opponents), defeated = clamp(opponents - 1, 1, defeated). A query-side
+    rule: it decides who is listed champion, never what the contract does."""
+    fights: int = 12
+    opponents: int = 4
+    defeated: int = 3
+    final_epoch_fights: int = 3
+    scale: bool = False
+    share: float = 0.2                 # of the season's field (fighters with a combat fight)
+
+    def thresholds(self, field_size: int) -> dict:
+        opp, beaten = self.opponents, self.defeated
+        if self.scale:
+            opp = max(2, min(self.opponents, round(field_size * self.share)))
+            beaten = max(1, min(self.defeated, opp - 1))
+        return {"fights": self.fights, "opponents": opp, "defeated": beaten,
+                "final_epoch_fights": self.final_epoch_fights}
+
+
 # ---- records ---------------------------------------------------------------
 
 @dataclass
@@ -1340,16 +1366,21 @@ class CombatContract:
 
     # -- seasons ------------------------------------------------------------
 
-    def season_standings(self, season: int, t: int) -> dict:
-        """Frozen only after the season's closeout interval; qualification per competition.md §3."""
+    def season_standings(self, season: int, t: int, rule: "Qualification | None" = None) -> dict:
+        """Frozen only after the season's closeout interval; qualification per
+        competition.md §3 (`rule`, default the specified fixed thresholds)."""
         closes = self.m.season_first_tick(season + 1) + self.m.season_closeout_ticks
+        rule = rule or Qualification()
+        field_size = sum(1 for f in self.fighters.values() if f.season_stats.get(season, {}).get("fights"))
+        need = rule.thresholds(field_size)
         rows = []
         for ftr in self.fighters.values():
             st = ftr.season_stats.get(season)
             if not st:
                 continue
-            qualified = (st["fights"] >= 12 and len(st["opponents"]) >= 4 and len(st["defeated"]) >= 3
-                         and st["final_epoch_fights"] >= 3 and ftr.placement >= rt.PLACEMENT_FIGHTS
+            qualified = (st["fights"] >= need["fights"] and len(st["opponents"]) >= need["opponents"]
+                         and len(st["defeated"]) >= need["defeated"]
+                         and st["final_epoch_fights"] >= need["final_epoch_fights"] and ftr.placement >= rt.PLACEMENT_FIGHTS
                          and ftr.suspended_epoch != self.m.epoch(t))
             rows.append({"fighter_id": ftr.fighter_id, "rating": ftr.rating_in(season),
                          "defeated": len(st["defeated"]), "wins": st["wins"], "fights": st["fights"],
@@ -1367,7 +1398,8 @@ class CombatContract:
             else:
                 playoff = [r["fighter_id"] for r in tied]
         return {"season": season, "final": t >= closes, "standings": rows, "champion": champion,
-                "playoff": playoff, "status": "CHAMPION" if champion else "PLAYOFF" if playoff else "NO_CHAMPION"}
+                "playoff": playoff, "status": "CHAMPION" if champion else "PLAYOFF" if playoff else "NO_CHAMPION",
+                "qualification": {**need, "field": field_size}}
 
     # -- queries ------------------------------------------------------------
 

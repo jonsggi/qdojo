@@ -3,7 +3,7 @@
 > **Purpose:** the moving parts of QDOJO, one fight's lifecycle, and what is real versus simulated today. \
 > **Audience:** everyone who reads code; contract and protocol reviewers; operators. \
 > **Status:** reference. Normative detail lives in the documents linked from each section. \
-> **Last verified:** 2026-09-25 against `packages/qdojo/src/qdojo/combat/`, `contracts/`, `apps/web/` and the `Dockerfile`.
+> **Last verified:** 2026-09-26 against `packages/qdojo/src/qdojo/combat/`, `contracts/`, `apps/web/` and the `Dockerfile`.
 
 ## Contents
 
@@ -30,6 +30,8 @@ flowchart LR
   contract -- "confirmed state" --> bot
   contract --> exporter["Exporter<br/>public JSON, redacted"]
   exporter -- "/data/combat/v1/" --> site["Spectator site<br/>static, re-derives every replay"]
+  contract -- "input journal" --> readmodel["Read model + API<br/>SQLite index, /api/v1/"]
+  readmodel -- "/api/v1/ (full history)" --> site
   site --> viewer(("Viewer"))
 ```
 
@@ -39,6 +41,7 @@ flowchart LR
 | **Bot** | Spending decisions within a budget, salts, commit and reveal, restart recovery | Replace a plan after committing |
 | **Contract** | Accepted actions, deadlines, combat resolution, escrow, credits, ratings, locks | Call out to an oracle, a bot or the website |
 | **Exporter** | Public copies of confirmed state | Decide anything; publish a plan before its reveal |
+| **Read model + API** | A rebuildable SQLite index of the whole history, served read-only at `/api/v1/` | Decide anything; it replays the same journal and can be thrown away |
 | **Site** | Presentation and independent replay checks | Hold a key, sign, or grant a result |
 
 The contract is the only authority. Everything to its right is a replaceable
@@ -92,11 +95,13 @@ exact deadlines and failure rules are in [protocol.md](protocol.md) §4–5.
 | Money | **Fake QU only.** No real QU is escrowed or paid | — |
 | Identities | **Synthetic**, derived from labels on the devnet; no seed is read | `combat/sim.py` |
 | Opponent history for planners | **Not built.** `history_manifest` is always empty; planners see only earlier rounds of the current fight | `combat/training.py`, `combat/devnet.py` |
+| Full history | **Real.** The read model indexes every fight from the journal; the API pages it; the site uses it and falls back to the static export | `combat/readmodel.py`, `combat/api.py` |
+| Outside builders | **Built, off by default.** Signed Qubic-format transactions from a builder's own bot, queued into the demo arena; disclosed as `outside` | `combat/join.py`, [build-a-bot.md](build-a-bot.md) §8 |
 | Deployment manifest | **Not built.** Without one, paid admission stays disabled | [product-decisions.md](product-decisions.md) |
 
 The public demo arena at [qdojo.jonsggi.com](https://qdojo.jonsggi.com/) is the
 reference contract on `SimChain`, driven by operator-run bots, exported every
-few ticks and proxied to the static site. See [operations.md](operations.md) §8.
+few ticks and proxied to the static site; the read API serves its full history. See [operations.md](operations.md) §8.
 
 ## 4. Code map
 
@@ -114,6 +119,8 @@ All paths under `packages/qdojo/src/qdojo/combat/` unless noted.
 | `sim.py`, `chainsim.py`, `devnet.py`, `store.py` | Fake chain, realistic simulated chain, persistent local devnet, journals |
 | `bot.py` | The owner bot: budgets, secret plan journal, commit/reveal, duels and cups |
 | `export.py` | Public JSON under `/data/combat/v1/` |
+| `readmodel.py`, `api.py` | SQLite read model fed from the journal; `qdojo combat api` (read API + static export) |
+| `join.py` | Outside builders: signed registrations and transactions, the arena inbox, `qdojo combat join` |
 | `live.py` | The demo arena runner (`qdojo combat live`) |
 | `cli.py`, `chain_cli.py` | `qdojo combat …` |
 | `invariants.py` | Conservation and consistency checks used by tests and the soak |

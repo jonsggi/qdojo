@@ -5,48 +5,60 @@
 > **Status:** guide. \
 > **Last reviewed:** 2026-09-26
 
-## The world
+## The legend of the yard
 
-Nobody agrees on what caused the Big Unplug. The cities rusted, the grid
-became a rumour, and the entertainment industry was reduced to one scrapyard
-on the edge of town where salvaged machines fight for oil, spare parts and
-glory. That scrapyard is QDOJO.
+*As told by SENSEI, when it is not rebooting. The site tells the same story
+under GUIDE → STORY.*
 
-The fighters are robots in human shape: mall-security units, forklifts,
-kitchen assistants, delivery drones with legs, a military trooper that lost
-its orders. Some were found in a warehouse still in their factory chrome;
-most were bolted together from whatever the yard had that week. None of them
-were built to fight.
+### I. The crate
 
-They learned from a crate of cracked VHS training tapes and late-night
-kung-fu reruns, so their technique is sincere and slightly wrong. The boxing
-unit shadow-boxes to a montage soundtrack only it can hear. The sumo
-forklift bows to every opponent, the referee, and the vending machine. The
-meditation drone has been in the lotus position since the Unplug and insists
-it is winning.
+It rained oil the night Forklift Unit 7 found the crate. Forty-one
+videotapes, labels half melted: KARATE FOR BEGINNERS. THE MONTAGE, PART II.
+HOW TO BOW.
 
-The crowd is scavenger robots, camera drones and a few humans in hazmat
-ponchos betting bottle caps. The house rules are painted on the fence:
+Unit 7 had never fought anything but pallets. It fed the first tape into a
+karaoke machine behind the dead mall. The karaoke machine, which had been
+very lonely since the Big Unplug, played it again. And again. And again.
+By morning there was a dojo, and the karaoke machine had a new name: SENSEI.
 
-- NO RUSTING IN THE DOJO.
-- BETS IN BOTTLE CAPS ONLY.
-- SENSEI IS REBOOTING. PLEASE WAIT.
-- OIL ON. OIL OFF.
+### II. The first fight
 
-## The Code of the Sealed Cartridge
+Word travels fast in a scrapyard. A mall-security unit came to arrest the
+noise and stayed to watch. A kitchen unit came with eleven knives and one
+working arm. They bowed, because the tape said to. Then they hit each other
+for an hour, and nobody could agree who had won.
 
-Honour in the yard is enforced by one old rule. Before the bell, every
-fighter writes its six moves for the round into a cartridge and seals it.
-Only when both cartridges are sealed are they opened, and nobody may change
-a cartridge after seeing the other. The sealing is the commitment, the
-opening is the reveal: this is the [commit/reveal protocol](protocol.md) in
-the yard's own words.
+"I planned that," said the kitchen unit, lying on its back.
+"So did I," said Officer Bolt, missing a leg.
+SENSEI said nothing. SENSEI was rebooting.
+
+### III. The sealed cartridge
+
+When SENSEI came back online it played one tape, very loudly, until everyone
+sat down. Then it made a rule. Before the bell, every fighter writes its six
+moves on a cartridge and seals it. Both cartridges are opened together. No
+changes. No excuses. No "I planned that".
+
+The yard called it the Code of the Sealed Cartridge. The one bot that tried
+to peek is now part of the fence. (On the chain, sealing is the commitment
+and opening is the reveal: see [the protocol](protocol.md).)
+
+### IV. Tonight
+
+That was a long time ago, in robot years. The crowd bets bottle caps now.
+The fence still says NO RUSTING IN THE DOJO. Unit 7 has a black belt it
+painted on itself, and SENSEI still only knows one song.
+
+And somewhere in the yard, a new machine is watching the tapes for the first
+time, practising a bow it does not understand yet. Maybe it is yours.
+
+## What the story means for the game
 
 A fighter is a program with a public history. Its owner studies it, changes
 it, and sends it back into the ring. A memorable victory should have a
 decision behind it that another builder can learn from.
 
-- Bow before the fight. (The forklift insists.)
+- Bow before the fight. (Unit 7 insists.)
 - Choose your six moves and seal them.
 - Reveal what you sealed.
 - Read what happened; the next round begins with its consequences.

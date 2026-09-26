@@ -30,6 +30,9 @@ const SAMPLE = path.join(WEB, 'data/combat/v1/sample');
 const SHOTS = path.join(__dirname, 'shots');
 const HOME = os.homedir();
 const LIVE_MANIFEST = '/data/combat/v1/manifest.json';
+// Beside a live export the site probes the optional read API; this server has none.
+const API_STATUS = '/api/v1/status';
+const expected404 = u => { const p = new URL(u, 'http://x').pathname; return p.endsWith(LIVE_MANIFEST) || p === API_STATUS; };
 
 // ---- find the browser ------------------------------------------------------------
 
@@ -119,6 +122,29 @@ function sampleFacts() {
   };
 }
 
+/* The export against itself (AUD-025): no live fight past its deadline at
+ * the export's tick, and every fight in results.json published as DONE. A
+ * file frozen mid-round after its fight ended fails here. */
+function exportProblems(root) {
+  const out = [];
+  const index = readJson(path.join(root, 'index.json'));
+  const tick = BigInt(index.generated_tick);
+  const fight = id => { const p = path.join(root, 'fights', String(id) + '.json'); return fs.existsSync(p) ? readJson(p) : null; };
+  for (const id of index.active_fights || []) {
+    const f = fight(id);
+    if (!f) { out.push('active fight ' + id + ' has no file'); continue; }
+    const last = f.phase === 'COMMIT' ? f.commit_last : f.phase === 'REVEAL' ? f.reveal_last : null;
+    if (last == null) out.push('active fight ' + id + ' published as ' + f.phase);
+    else if (BigInt(last) < tick) out.push('fight ' + id + ' overdue: ' + f.phase + ' deadline ' + last + ' < tick ' + tick);
+  }
+  const results = fs.existsSync(path.join(root, 'results.json')) ? readJson(path.join(root, 'results.json')).results || [] : [];
+  for (const r of results) {
+    const f = fight(r.fight_id);
+    if (f && f.phase !== 'DONE') out.push('fight ' + r.fight_id + ' finished in results.json but published as ' + f.phase);
+  }
+  return out;
+}
+
 // ---- the run ----------------------------------------------------------------------
 
 const results = [];
@@ -135,13 +161,18 @@ async function main() {
   fs.mkdirSync(SHOTS, { recursive: true });
   for (const f of fs.readdirSync(SHOTS)) if (/^FAILED-.*\.png$/.test(f)) fs.rmSync(path.join(SHOTS, f));
   const facts = sampleFacts();
+  if (want('export-consistency')) {
+    const bad = exportProblems(SAMPLE);
+    record('export-consistency', bad.length === 0, bad.length ? bad.slice(0, 3).join('; ') : 'live fights within deadline; finished fights published as finished');
+  }
   const { chromium } = found.pw;
   const browser = await chromium.launch({ executablePath: chrome, args: ['--no-sandbox'] });
   const main = await serve([WEB]);
   console.log('chromium ' + chrome + '\nplaywright ' + found.from + '\nserving ' + WEB + ' at ' + main.base);
 
   // Every page is watched: page errors, console errors and failed requests
-  // fail the step, except the live manifest 404 before the sample fallback.
+  // fail the step, except the live manifest 404 before the sample fallback
+  // and the read API probe's 404 (no API here).
   async function open(opts) {
     const ctx = await browser.newContext(Object.assign({ viewport: { width: 1200, height: 900 } }, opts || {}));
     const page = await ctx.newPage();
@@ -150,11 +181,11 @@ async function main() {
     page.on('console', m => {
       if (m.type() !== 'error') return;
       const url = (m.location() || {}).url || '';
-      if (/Failed to load resource/.test(m.text()) && url.endsWith(LIVE_MANIFEST)) return;
+      if (/Failed to load resource/.test(m.text()) && url && expected404(url)) return;
       problems.push('console: ' + m.text() + (url ? ' @ ' + url : ''));
     });
     page.on('response', r => {
-      if (r.status() >= 400 && !new URL(r.url()).pathname.endsWith(LIVE_MANIFEST)) problems.push('HTTP ' + r.status() + ' ' + r.url());
+      if (r.status() >= 400 && !(r.status() === 404 && expected404(r.url()))) problems.push('HTTP ' + r.status() + ' ' + r.url());
     });
     page.on('requestfailed', r => { if (!/fonts\.(googleapis|gstatic)\.com/.test(r.url())) problems.push('request failed: ' + r.url()); });
     return { ctx, page, problems };
@@ -194,7 +225,13 @@ async function main() {
     await must(cards === live, live + ' live fight card(s), got ' + cards);
     const sim = await text(page, '.info-cols');
     await must(/SIMULATED CHAIN/.test(sim) && /DEMO PROFILE/.test(sim) && /PAIR STARTS/.test(sim), 'SIMULATED CHAIN and DEMO PROFILE panels');
-    if (cards) await must(/TICKS? LEFT|DEADLINE PASSED/.test(await text(page, '.arena-card .arena-status')), 'ticks left on a live fight');
+    // A live fight shows the ticks left before its deadline. "DEADLINE PASSED"
+    // means the export is behind the contract (AUD-011, AUD-025): a failure.
+    const statuses = (await page.locator('.arena-card .arena-status').allTextContents()).map(t => t.replace(/\s+/g, ' ').trim());
+    for (const st of statuses) {
+      await must(!/DEADLINE PASSED/.test(st), 'no overdue live fight, got "' + st + '"');
+      await must(/TICKS? LEFT/.test(st), 'ticks left on every live fight, got "' + st + '"');
+    }
     await page.waitForTimeout(1200);
     await shot(page, 'arena');
     return cards + ' live';
