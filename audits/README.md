@@ -3,7 +3,7 @@
 > **Purpose:** findings from the 2026-09-16 targeted review of the riddle-era code, and how to reproduce them. \
 > **Audience:** the owner; anyone touching money paths, custody or NFTs. \
 > **Status:** reference. All ten findings are **open**. They describe the legacy riddle implementation; the combat pivot does not close them. Each must be resolved or retired with evidence before paid combat or an NFT release ([legacy-closeout.md](../docs/legacy-closeout.md), stage P8 of the [roadmap](../docs/roadmap.md)). \
-> **Last reviewed:** 2026-09-25 (status note only; findings unchanged)
+> **Last reviewed:** 2026-09-26: the combat review (AUD-011 to AUD-028) was added below.
 
 Several concerns carry over to combat and should be reviewed against the
 [combat spec](../docs/spec.md): verification scope (AUD-008, now reflected in
@@ -102,3 +102,47 @@ It did not exhaustively audit the indexer/parser, signing implementation, depend
 supply chain, deployment, node infrastructure, all protocol boundaries, economics,
 or proposed contracts. Additional findings may exist. A complete project audit
 remains separate work.
+
+## Combat review 2026-09-25
+
+A second review, of the **combat** game running in the live demo arena
+(simulated chain, fake QU), with a product review of the site and repository.
+It is a replay-based analysis of 34.8 h of arena play, not a security audit.
+
+- [Simulation audit](reports/2026-09-25-simulation-audit.md): liveness,
+  economics, balance, fun, with evidence. Supporting CSVs and scripts are in
+  [`reports/2026-09-25-simulation/`](reports/2026-09-25-simulation/).
+- [Product review](reports/2026-09-25-product-review.md): what would make
+  QDOJO a great product.
+
+Seven findings were fixed and deployed on 2026-09-25; the rest are open.
+
+| ID | Status | Priority / gate | Issue |
+|---|---|---|---|
+| [AUD-011](issues/AUD-011-exporter-froze-finished-fights.md) | **Fixed** d688257 | P0 / public correctness | The exporter froze finished fights mid-round |
+| [AUD-012](issues/AUD-012-spent-power-forfeits.md) | **Fixed** 0918949 | P0 / fair play | LLM bots forfeited by reusing a spent power strike |
+| [AUD-013](issues/AUD-013-resend-loops-and-fault-stop.md) | **Fixed** 0918949 | P1 / unattended operation (see AUD-005) | Bots re-sent rejected entries every tick; the fault stop was disabled |
+| [AUD-014](issues/AUD-014-live-policies-without-history.md) | **Fixed** 0918949 | P1 / game integrity | History-based policies played blind in the live arena |
+| [AUD-015](issues/AUD-015-opponent-scouting-empty.md) | **Fixed** 0918949 | P1 / builder experience | Planners could not scout their opponent |
+| [AUD-016](issues/AUD-016-bot-run-planner-forfeit.md) | **Fixed** 66c0951 | P1 / builder onboarding | `qdojo combat bot run --planner` forfeited its first local fight |
+| [AUD-017](issues/AUD-017-records-ranked-only.md) | **Fixed** d688257 | P1 / public correctness | Fighter records showed ranked fights only |
+| [AUD-018](issues/AUD-018-house-economics.md) | Open | P1 / paid launch gate | House economics do not close |
+| [AUD-019](issues/AUD-019-player-ev-and-event-farming.md) | Open | P1 / fairness / outside stakes | Honest players lose money; cups and duels were farmed |
+| [AUD-020](issues/AUD-020-ratings-and-seasons.md) | Open | P2 / competition quality | Ratings do not converge and season titles are noisy |
+| [AUD-021](issues/AUD-021-balance-kick-duck.md) | Open | P2 / strategic depth | Kick dominates; duck and throw are near useless |
+| [AUD-022](issues/AUD-022-pacing.md) | Open | P2 / spectator experience | A ranked fight takes twice the target time |
+| [AUD-023](issues/AUD-023-market-without-prices.md) | Open | P2 / NFT readiness | The simulated market has no prices |
+| [AUD-024](issues/AUD-024-unbounded-growth.md) | Open | P2 / operations | index.json and restart time grow without bound |
+| [AUD-025](issues/AUD-025-overdue-invariant.md) | Open | P1 / regression safety | Tests accepted overdue live fights |
+| [AUD-026](issues/AUD-026-read-model-database.md) | Open | P1 / product foundation | Full history needs a read model, not static files |
+| [AUD-027](issues/AUD-027-outside-builder-entry.md) | Open | P1 / product | Outside builders cannot enter the arena |
+| [AUD-028](issues/AUD-028-licence.md) | Open | P1 / open-source release | The repository has no licence |
+
+Suggested order for the open items:
+
+1. Keep the fixes honest: AUD-025 (tests that would have caught AUD-011).
+2. Foundations for outside players: AUD-026 (read model), AUD-027 (entry
+   path), AUD-028 (licence).
+3. Before any paid play: AUD-018 and AUD-019 (economics), re-measured after
+   the 2026-09-25 bot fixes.
+4. Game quality: AUD-020, AUD-021, AUD-022, then AUD-023 and AUD-024.

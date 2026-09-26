@@ -1,0 +1,53 @@
+=== reader-v1
+kicker-v1: score 1.000
+### reader-v1 vs roster (60 paired seeds, suite audit-20260925)
+
+| Opponent | Fights | W/D/L | Score | 95% LB | Draw | Round 2 | R0 KO | Trailer wins | Exhausted |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---:|
+| script-vs-mixed-v1 | 120 | 67/21/32 | 0.646 | 0.579 | 17.5% | 55.0% | 0.0% | 55.0% | 2.2% |
+| kicker-v1 | 120 | 120/0/0 | 1.000 | 1.000 | 0.0% | 5.0% | 0.0% | 58.6% | 0.3% |
+
+=== mixed-v1
+kicker-v1: score 0.329
+### mixed-v1 vs roster (60 paired seeds, suite audit-20260925)
+
+| Opponent | Fights | W/D/L | Score | 95% LB | Draw | Round 2 | R0 KO | Trailer wins | Exhausted |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---:|
+| script-vs-mixed-v1 | 120 | 2/3/115 | 0.029 | 0.008 | 2.5% | 32.5% | 0.0% | 2.5% | 0.3% |
+| kicker-v1 | 120 | 35/9/76 | 0.329 | 0.254 | 7.5% | 79.2% | 0.0% | 23.4% | 0.5% |
+
+=== scout-v1
+kicker-v1: score 0.887
+### scout-v1 vs roster (60 paired seeds, suite audit-20260925)
+
+| Opponent | Fights | W/D/L | Score | 95% LB | Draw | Round 2 | R0 KO | Trailer wins | Exhausted |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---:|
+| script-vs-mixed-v1 | 120 | 8/18/94 | 0.142 | 0.096 | 15.0% | 16.7% | 0.0% | 5.8% | 0.7% |
+| kicker-v1 | 120 | 100/13/7 | 0.887 | 0.829 | 10.8% | 33.3% | 0.0% | 41.4% | 0.2% |
+
+=== search-blind
+kicker-v1: score 0.988
+### search-blind vs roster (60 paired seeds, suite audit-20260925)
+
+| Opponent | Fights | W/D/L | Score | 95% LB | Draw | Round 2 | R0 KO | Trailer wins | Exhausted |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---:|
+| script-vs-mixed-v1 | 120 | 21/18/81 | 0.250 | 0.179 | 15.0% | 5.0% | 0.0% | 12.8% | 3.6% |
+| kicker-v1 | 120 | 118/1/1 | 0.988 | 0.967 | 0.8% | 3.3% | 0.0% | 0.8% | 1.9% |
+
+=== search-v1
+| Opponent | Fights | W/D/L | Score | 95% LB | Draw | Round 2 | R0 KO | Trailer wins | Exhausted |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---:|
+| script-vs-mixed-v1 | 80 | 33/10/37 | 0.475 | 0.375 | 12.5% | 10.0% | 0.0% | 28.8% | 4.1% |
+
+=== soak
+# Combat soak run
+
+4000 ticks, seed 20260925, drop rate 0.05, 9 bots; runtime 9 s.
+
+- Contests: {'COMBAT': 17, 'FORFEIT': 6, 'VOID': 3}
+- Cups: {'ABORTED': 1, 'RUNNING': 1}; duels: 10
+- NFT sales: 2; contract service generation: 676 (halted ticks 675)
+- Transactions: 1080, dropped 519
+- Invariant violations: 0
+- Finished contests with an unsettled bot budget: 0
+
