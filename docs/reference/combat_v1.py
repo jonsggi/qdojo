@@ -12,6 +12,8 @@ import json
 from pathlib import Path
 
 RULES = json.loads((Path(__file__).resolve().parents[1] / "combat-v1.json").read_text())
+# Every number below is read from RULES at call time, so a test may point it at
+# another packaged ruleset (docs/combat-v1-candidate-2.json) of the same engine.
 JAB, KICK, BLOCK, DUCK, THROW, RECOVER, EXHAUSTED = range(7)
 ATTACKS = (JAB, KICK, THROW)
 
@@ -24,8 +26,9 @@ class State:
     power_available: int = 1
 
     def validate(self):
-        for name, cap in (("hp", 100), ("stamina", 60), ("opening", 1),
-                          ("guard_streak", 3), ("power_available", 1)):
+        lim = RULES["limits"]
+        for name, cap in (("hp", lim["hp"]), ("stamina", lim["stamina"]), ("opening", 1),
+                          ("guard_streak", lim["guard_streak"]), ("power_available", 1)):
             value = getattr(self, name)
             if type(value) is not int or not 0 <= value <= cap:
                 raise ValueError((name, value))
@@ -72,8 +75,8 @@ def beat(a, b, action_a, action_b, power_a=False, power_b=False):
         opening = int((action == DUCK and opp in (JAB, THROW)) or
                       (action == JAB and damage[i] > 0 and incoming == 0))
         nxt = State(
-            max(0, s.hp - incoming), min(60, st + recovery), opening,
-            min(3, s.guard_streak + 1) if action == BLOCK else 0, powers[i])
+            max(0, s.hp - incoming), min(RULES["limits"]["stamina"], st + recovery), opening,
+            min(RULES["limits"]["guard_streak"], s.guard_streak + 1) if action == BLOCK else 0, powers[i])
         result.append(nxt)
         trace.append(dict(
             before=asdict(s), after=asdict(nxt), intended=intents[i],
@@ -115,7 +118,7 @@ def resolve_round(states, plans, index):
     if index == 2:
         return states, traces, ("DRAW" if states[0].hp == states[1].hp else
                                "A" if states[0].hp > states[1].hp else "B")
-    states = tuple(replace(s, stamina=min(60, s.stamina+RULES["break_recovery"])) for s in states)
+    states = tuple(replace(s, stamina=min(RULES["limits"]["stamina"], s.stamina+RULES["break_recovery"])) for s in states)
     return states, traces, None
 
 def compact(s):

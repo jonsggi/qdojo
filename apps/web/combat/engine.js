@@ -72,8 +72,9 @@
       rules, id, count, damage, limits,
       costs: rules.base_costs,
       submitted: new Set(submitted),
-      // An attack is an action that can deal damage to something.
-      attacks: new Set(damage.map((row, i) => (row.some(v => v > 0) ? i : -1)).filter(i => i >= 0)),
+      // The attacks are named (combat.md section 3), not inferred from the matrix:
+      // candidate 2's DUCK deals counter damage but is not an attack (no power).
+      attacks: new Set(['JAB', 'KICK', 'THROW'].map(n => id[n])),
     };
     c.initial = checkState(c, {
       hp: initial.hp, stamina: initial.stamina, opening: initial.opening,
@@ -202,9 +203,10 @@
     const out = [];
     const incoming = them.computed;
     if (me.eff === id.EXHAUSTED) out.push('INSUFFICIENT_STAMINA');
+    // HIT for any positive computed damage (a candidate 2 duck counter too).
+    if (me.computed > 0) out.push('HIT');
     else if (c.attacks.has(me.eff)) {
-      if (me.computed > 0) out.push('HIT');
-      else if (me.eff === id.THROW && them.eff === id.THROW) out.push('THROW_CLASH');
+      if (me.eff === id.THROW && them.eff === id.THROW) out.push('THROW_CLASH');
       else if (me.eff === id.THROW && c.attacks.has(them.eff) && incoming > 0) out.push('THROW_INTERRUPTED');
       else if (them.eff === id.BLOCK) out.push('BLOCKED');
       else if (them.eff === id.DUCK) out.push('EVADED');

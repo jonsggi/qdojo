@@ -218,21 +218,21 @@ static std::string state_hex(const Fighter& f) {
 }
 
 // ------------------------------------------------------------ constants
-static void test_constants(const std::string& root) {
+static void check_table(const std::string& path, const char* version, const RulesetTable& T) {
     Json r;
-    if (!load_json(root + "/docs/combat-v1.json", r)) { ++g_fail; return; }
-    CHECK(r["semantic_version"].s == "combat-v1-candidate-1", "semantic_version %s", r["semantic_version"].s.c_str());
-    CHECK(r["rounds"].n == ROUNDS, "rounds");
-    CHECK(r["beats_per_round"].n == BEATS_PER_ROUND, "beats_per_round");
-    CHECK(r["initial"]["hp"].n == INITIAL_HP, "initial.hp");
-    CHECK(r["initial"]["stamina"].n == INITIAL_STAMINA, "initial.stamina");
-    CHECK(r["initial"]["opening"].n == INITIAL_OPENING, "initial.opening");
-    CHECK(r["initial"]["guard_streak"].n == INITIAL_GUARD_STREAK, "initial.guard_streak");
-    CHECK(r["initial"]["power_available"].n == INITIAL_POWER_AVAILABLE, "initial.power_available");
+    if (!load_json(path, r)) { ++g_fail; return; }
+    CHECK(r["semantic_version"].s == version, "semantic_version %s", r["semantic_version"].s.c_str());
+    CHECK(r["rounds"].n == T.rounds, "rounds");
+    CHECK(r["beats_per_round"].n == T.beats_per_round, "beats_per_round");
+    CHECK(r["initial"]["hp"].n == T.initial_hp, "initial.hp");
+    CHECK(r["initial"]["stamina"].n == T.initial_stamina, "initial.stamina");
+    CHECK(r["initial"]["opening"].n == T.initial_opening, "initial.opening");
+    CHECK(r["initial"]["guard_streak"].n == T.initial_guard_streak, "initial.guard_streak");
+    CHECK(r["initial"]["power_available"].n == T.initial_power_available, "initial.power_available");
     CHECK(r["initial"].size() == 5 && r["limits"].size() == 3, "initial/limits key count");
-    CHECK(r["limits"]["hp"].n == LIMIT_HP, "limits.hp");
-    CHECK(r["limits"]["stamina"].n == LIMIT_STAMINA, "limits.stamina");
-    CHECK(r["limits"]["guard_streak"].n == LIMIT_GUARD_STREAK, "limits.guard_streak");
+    CHECK(r["limits"]["hp"].n == T.limit_hp, "limits.hp");
+    CHECK(r["limits"]["stamina"].n == T.limit_stamina, "limits.stamina");
+    CHECK(r["limits"]["guard_streak"].n == T.limit_guard_streak, "limits.guard_streak");
     static const char* names[ACTION_COUNT] = {"JAB", "KICK", "BLOCK", "DUCK", "THROW", "RECOVER", "EXHAUSTED"};
     CHECK(r["action_names"].size() == ACTION_COUNT, "action_names size");
     for (size_t i = 0; i < ACTION_COUNT && i < r["action_names"].size(); ++i)
@@ -242,36 +242,43 @@ static void test_constants(const std::string& root) {
         CHECK(r["submitted_action_ids"][i].n == (long long)i, "submitted_action_ids[%zu]", i);
     CHECK(r["base_costs"].size() == ACTION_COUNT, "base_costs size");
     for (size_t i = 0; i < ACTION_COUNT && i < r["base_costs"].size(); ++i)
-        CHECK(r["base_costs"][i].n == BASE_COSTS[i], "base_costs[%zu]", i);
-    CHECK(r["block_streak_cost"].n == BLOCK_STREAK_COST, "block_streak_cost");
-    CHECK(r["block_strain"].n == BLOCK_STRAIN, "block_strain");
-    CHECK(r["ordinary_recovery"].n == ORDINARY_RECOVERY, "ordinary_recovery");
-    CHECK(r["recover_unhit"].n == RECOVER_UNHIT, "recover_unhit");
-    CHECK(r["recover_hit"].n == RECOVER_HIT, "recover_hit");
-    CHECK(r["exhausted_recovery"].n == EXHAUSTED_RECOVERY, "exhausted_recovery");
-    CHECK(r["break_recovery"].n == BREAK_RECOVERY, "break_recovery");
-    CHECK(r["opening_damage"].n == OPENING_DAMAGE, "opening_damage");
-    CHECK(r["power_damage"].n == POWER_DAMAGE, "power_damage");
-    CHECK(r["power_cost"].n == POWER_COST, "power_cost");
+        CHECK(r["base_costs"][i].n == T.base_costs[i], "base_costs[%zu]", i);
+    CHECK(r["block_streak_cost"].n == T.block_streak_cost, "block_streak_cost");
+    CHECK(r["block_strain"].n == T.block_strain, "block_strain");
+    CHECK(r["ordinary_recovery"].n == T.ordinary_recovery, "ordinary_recovery");
+    CHECK(r["recover_unhit"].n == T.recover_unhit, "recover_unhit");
+    CHECK(r["recover_hit"].n == T.recover_hit, "recover_hit");
+    CHECK(r["exhausted_recovery"].n == T.exhausted_recovery, "exhausted_recovery");
+    CHECK(r["break_recovery"].n == T.break_recovery, "break_recovery");
+    CHECK(r["opening_damage"].n == T.opening_damage, "opening_damage");
+    CHECK(r["power_damage"].n == T.power_damage, "power_damage");
+    CHECK(r["power_cost"].n == T.power_cost, "power_cost");
     CHECK(r["damage"].size() == ACTION_COUNT, "damage rows");
     for (size_t i = 0; i < ACTION_COUNT && i < r["damage"].size(); ++i) {
         CHECK(r["damage"][i].size() == ACTION_COUNT, "damage[%zu] cols", i);
         for (size_t k = 0; k < ACTION_COUNT && k < r["damage"][i].size(); ++k)
-            CHECK(r["damage"][i][k].n == DAMAGE[i][k], "damage[%zu][%zu]", i, k);
+            CHECK(r["damage"][i][k].n == T.damage[i][k], "damage[%zu][%zu]", i, k);
     }
     // No key the core does not know about.
-    CHECK(r.size() == 19, "combat-v1.json has %zu top-level keys, core mirrors 19", r.size());
+    CHECK(r.size() == 19, "%s has %zu top-level keys, core mirrors 19", path.c_str(), r.size());
 
-    // Ruleset digest over canonical JSON equals the compiled-in digest.
+    // Ruleset digest over canonical JSON equals the table's digest.
     std::string pre(TAG_RULES, sizeof(TAG_RULES));
     canonical(r, pre);
     uint8_t d[32];
     sha256(reinterpret_cast<const uint8_t*>(pre.data()), uint32_t(pre.size()), d);
-    CHECK(hex(d, 32) == hex(RULESET_DIGEST, 32), "ruleset digest %s", hex(d, 32).c_str());
+    CHECK(hex(d, 32) == hex(T.digest, 32), "%s ruleset digest %s", version, hex(d, 32).c_str());
+}
+
+// Every compiled-in table, whichever one this build selected.
+static void test_constants(const std::string& root) {
+    check_table(root + "/docs/combat-v1.json", "combat-v1-candidate-1", CANDIDATE_1);
+    check_table(root + "/docs/combat-v1-candidate-2.json", "combat-v1-candidate-2", CANDIDATE_2);
+    CHECK(&RULES == (QDOJO_RULESET == 2 ? &CANDIDATE_2 : &CANDIDATE_1), "selected table");
 }
 
 // ----------------------------------------------------------- hand vectors
-static Fighter F(uint16_t hp = 100, uint16_t st = 60, uint8_t op = 0, uint8_t gs = 0, uint8_t pw = 1) {
+static Fighter F(uint16_t hp = INITIAL_HP, uint16_t st = 60, uint8_t op = 0, uint8_t gs = 0, uint8_t pw = 1) {
     Fighter f;
     f.hp = hp; f.stamina = st; f.opening = op; f.guard_streak = gs; f.power_available = pw;
     return f;
@@ -296,6 +303,7 @@ static Plan plan6(uint8_t x, uint8_t slot = NO_POWER_SLOT) {
     return p;
 }
 
+#if QDOJO_RULESET == 1
 static void test_hand_vectors() {
     struct Row { uint8_t a, b; int A[4], B[4]; };
     const Row table[] = {
@@ -436,6 +444,73 @@ static void test_hand_vectors() {
     }
 }
 
+#endif  // QDOJO_RULESET == 1
+
+#if QDOJO_RULESET == 2
+// docs/combat.md "Candidate 2" hand vectors: fresh fighters are (120, 60, 0, 0).
+static void test_hand_vectors() {
+    struct Row { uint8_t a, b; int A[4], B[4]; };
+    const Row table[] = {
+        {JAB, BLOCK, {120, 56, 0, 0}, {120, 58, 0, 1}},
+        {JAB, KICK, {116, 56, 0, 0}, {110, 50, 0, 0}},
+        {DUCK, JAB, {120, 58, 1, 0}, {116, 56, 0, 0}},
+        {KICK, DUCK, {120, 50, 0, 0}, {102, 58, 0, 0}},
+        {THROW, BLOCK, {120, 53, 0, 0}, {100, 58, 0, 1}},
+        {BLOCK, KICK, {120, 52, 0, 1}, {120, 50, 0, 0}},
+        {RECOVER, JAB, {108, 60, 0, 0}, {120, 56, 1, 0}},
+        {THROW, THROW, {120, 53, 0, 0}, {120, 53, 0, 0}},
+    };
+    for (const Row& r : table) {
+        BeatTrace t = beat(F(), F(), r.a, r.b);
+        CHECK(same4(t.a.after, r.A[0], r.A[1], r.A[2], r.A[3]), "c2 table %d/%d A=%s", r.a, r.b, state_hex(t.a.after).c_str());
+        CHECK(same4(t.b.after, r.B[0], r.B[1], r.B[2], r.B[3]), "c2 table %d/%d B=%s", r.a, r.b, state_hex(t.b.after).c_str());
+    }
+    {  // DUCK/JAB (duck counters for 4 and earns an opening) then KICK/JAB
+        BeatTrace t1 = beat(F(), F(), DUCK, JAB);
+        CHECK(t1.a.dealt == 4 && (t1.a.reasons & R_HIT) && (t1.b.reasons & R_EVADED), "duck counter");
+        BeatTrace t2 = beat(t1.a.after, t1.b.after, KICK, JAB);
+        CHECK(same4(t2.a.after, 110, 48, 0, 0), "c2 duck-then-kick A");
+        CHECK(same4(t2.b.after, 104, 52, 0, 0), "c2 duck-then-kick B");
+        CHECK(t2.a.dealt == 12 && t2.a.base == 4 && t2.a.opening_bonus == 8 && t2.b.dealt == 10, "kick 4+8 vs jab 10");
+    }
+    {  // opening=1 powered KICK into DUCK: 18 + 8 + 12
+        BeatTrace t = beat(F(INITIAL_HP, 60, 1), F(), KICK, DUCK, true, false);
+        CHECK(t.a.after.stamina == 46 && t.a.after.power_available == 0, "c2 powered kick A");
+        CHECK(t.b.lost == 38 && t.b.after.hp == 82 && t.a.lost == 0, "c2 powered kick damage");
+    }
+    {  // a duck counter with an opening: 4 + 8; no power on a duck
+        BeatTrace t = beat(F(INITIAL_HP, 60, 1), F(), DUCK, JAB);
+        CHECK(t.a.dealt == 12 && t.b.after.hp == 108 && t.a.after.opening == 1, "c2 duck counter with opening");
+    }
+    {  // stamina 11 KICK vs JAB -> EXHAUSTED, takes the jab's 12 (jab vs exhausted)
+        BeatTrace t = beat(F(INITIAL_HP, 11), F(), KICK, JAB);
+        CHECK(t.a.effective == EXHAUSTED && same4(t.a.after, 108, 17, 0, 0), "c2 exhausted kick");
+        CHECK(same4(t.b.after, 120, 56, 1, 0), "c2 exhausted B");
+    }
+    {  // six JABs per round: 120 -> 72 -> 24 -> double KO on the third beat of round 2
+        FightState s = new_fight();
+        RoundResult rr;
+        CHECK(resolve_round(s, plan6(JAB), plan6(JAB), rr) == OK, "c2 jab r0");
+        CHECK(rr.end.a.hp == 72 && rr.end.b.hp == 72 && rr.end.a.stamina == 46, "c2 jab r0 after break");
+        s = rr.end;
+        CHECK(resolve_round(s, plan6(JAB), plan6(JAB), rr) == OK, "c2 jab r1");
+        CHECK(rr.end.a.hp == 24 && rr.end.a.stamina == 32, "c2 jab r1 after break");
+        s = rr.end;
+        CHECK(resolve_round(s, plan6(JAB), plan6(JAB), rr) == OK, "c2 jab r2");
+        CHECK(rr.executed == 3 && rr.end.outcome == OUTCOME_DOUBLE_KO, "c2 jab r2 double KO on beat 3");
+    }
+    {  // six RECOVERs x3 rounds -> HP_TIE at 120
+        FightState s = new_fight();
+        for (int r = 0; r < 3; ++r) {
+            RoundResult rr;
+            CHECK(resolve_round(s, plan6(RECOVER), plan6(RECOVER), rr) == OK, "c2 recover round");
+            s = rr.end;
+        }
+        CHECK(s.a.hp == 120 && s.outcome == OUTCOME_HP_TIE, "c2 recover HP_TIE");
+    }
+}
+#endif  // QDOJO_RULESET == 2
+
 // Break carry: the literal vector (stamina 55, opening 1, guard 3 -> 60, 1, 3)
 // is not reachable by play (guard 3 needs a final BLOCK, which never earns an
 // opening), so check the break rule on the literal values and on a real round.
@@ -491,8 +566,9 @@ static void test_commitment(const std::string& root) {
     context_digest(ctx.data(), cd);
     CHECK(hex(cd, 32) == j["context_digest"].s, "context_digest %s", hex(cd, 32).c_str());
     // Context embeds the ruleset digest at offset 102.
-    CHECK(hex(ctx.data() + 102, 32) == hex(RULESET_DIGEST, 32), "context ruleset digest");
-    CHECK(j["ruleset_digest"].s == hex(RULESET_DIGEST, 32), "fixture ruleset digest");
+    // (The frozen vector is a candidate 1 context; hashing does not depend on the build's table.)
+    CHECK(hex(ctx.data() + 102, 32) == hex(CANDIDATE_1.digest, 32), "context ruleset digest");
+    CHECK(j["ruleset_digest"].s == hex(CANDIDATE_1.digest, 32), "fixture ruleset digest");
 
     auto rs = unhex(j["round_state_bytes"].s);
     CHECK(rs.size() == 49, "round_state_bytes size");
@@ -502,8 +578,10 @@ static void test_commitment(const std::string& root) {
     Fighter fa, fb;
     CHECK(decode_state(rs.data() + 33, fa) == OK && decode_state(rs.data() + 41, fb) == OK, "decode states");
     uint8_t ea[8], eb[8];
-    encode_state(new_fight().a, ea);
-    encode_state(new_fight().b, eb);
+    Fighter c1 = F(CANDIDATE_1.initial_hp, CANDIDATE_1.initial_stamina, CANDIDATE_1.initial_opening,
+                   CANDIDATE_1.initial_guard_streak, CANDIDATE_1.initial_power_available);
+    encode_state(c1, ea);
+    encode_state(c1, eb);
     CHECK(hex(ea, 8) == hex(rs.data() + 33, 8) && hex(eb, 8) == hex(rs.data() + 41, 8), "initial state bytes");
     uint8_t sd[32];
     round_state_digest(cd, rs[32], ea, eb, sd);
@@ -590,12 +668,17 @@ static void test_fights(const std::string& root) {
         closedir(d);
     }
     CHECK(!files.empty(), "no fight fixtures in %s", dir.c_str());
+    int matched = 0;
     long fights = 0, rounds = 0, beats = 0, traced_fights = 0, traced_beats = 0;
     ReasonStats rs;
     for (auto& path : files) {
         Json doc;
         if (!load_json(path, doc)) { ++g_fail; continue; }
-        CHECK(doc["ruleset_digest"].s == hex(RULESET_DIGEST, 32), "%s ruleset digest", path.c_str());
+        if (doc["ruleset_digest"].s != hex(RULESET_DIGEST, 32)) {  // another ruleset's parity set
+            std::printf("skipping %s (ruleset %s is not this build's)\n", path.c_str(), doc["ruleset_digest"].s.c_str());
+            continue;
+        }
+        ++matched;
         const Json& fs = doc["fights"];
         const Json& tr = doc["traced"];
         for (size_t fi = 0; fi < fs.size(); ++fi) {
@@ -644,6 +727,7 @@ static void test_fights(const std::string& root) {
             ++fights;
         }
     }
+    CHECK(matched == 1, "%d fight fixture files for this build's ruleset, want 1", matched);
     std::printf("fights: %ld fights, %ld rounds, %ld beats replayed; %ld traced fights, %ld traced beats\n", fights,
                 rounds, beats, traced_fights, traced_beats);
     std::printf("reason codes (informational, not asserted): %ld sides agree, %ld differ\n", rs.agree, rs.differ);
@@ -653,7 +737,7 @@ static void test_fights(const std::string& root) {
 int main(int argc, char** argv) {
     std::string root = argc > 1 ? argv[1] : ".";
     int before;
-    before = g_fail; test_constants(root);    std::printf("constants vs combat-v1.json: %s\n", g_fail == before ? "ok" : "FAIL");
+    before = g_fail; test_constants(root);    std::printf("ruleset tables vs JSON (build selects %d): %s\n", QDOJO_RULESET, g_fail == before ? "ok" : "FAIL");
     before = g_fail; test_hand_vectors(); test_break_carry(); std::printf("hand vectors: %s\n", g_fail == before ? "ok" : "FAIL");
     before = g_fail; test_sha256();           std::printf("NIST SHA-256: %s\n", g_fail == before ? "ok" : "FAIL");
     before = g_fail; test_commitment(root);   std::printf("commitment-v1 vector: %s\n", g_fail == before ? "ok" : "FAIL");

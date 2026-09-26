@@ -41,6 +41,24 @@ test('embedded ruleset equals docs/combat-v1.json and hashes to the manifest dig
   assert.equal(await L.rulesetDigest(R, async b => N.toHex(N.sha256(b))), d);
 });
 
+test('every embedded ruleset equals its docs/ file; the page picks the one the manifest names', async () => {
+  const all = globalThis.QDojoRulesets;
+  assert.equal(all.length, 2);
+  assert.equal(all[0], R);
+  assert.deepEqual(clone(all[1]), readJson(path.join(ROOT, 'docs/combat-v1-candidate-2.json')));
+  const sha = L.defaultSha256();
+  const c2 = 'c90da811dc1e5275d09c8e09d25d15c548866b9c01907c4f1878ca321b9e4650';
+  assert.equal(await L.rulesetDigest(all[1], sha), c2);
+  const pick2 = await L.chooseRuleset({ exported: null, embedded: all, manifestDigest: c2, sha256: sha });
+  assert.equal(pick2.rules.semantic_version, 'combat-v1-candidate-2');
+  assert.equal(pick2.ok, true);
+  const pick1 = await L.chooseRuleset({ exported: null, embedded: all, manifestDigest: manifest.ruleset_digest, sha256: sha });
+  assert.equal(pick1.rules, R);
+  assert.equal(pick1.ok, true);
+  const none = await L.chooseRuleset({ exported: null, embedded: all, manifestDigest: 'ee'.repeat(32), sha256: sha });
+  assert.equal(none.ok, false);
+});
+
 test('protocol commitment fixture: context, round state and commitment preimage', async () => {
   const fx = readJson(path.join(ROOT, 'docs/fixtures/commitment-v1.json'));
   const sha = L.defaultSha256();

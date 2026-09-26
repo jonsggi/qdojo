@@ -104,9 +104,17 @@
         if (!want || d === want) return { rules: ex, source: 'export', digest: d, ok: !!want, note: 'Loaded from the export; its SHA-256 ' + (want ? 'equals the manifest digest.' : 'could not be compared (no manifest).') };
       } catch (e) { /* malformed artifact: fall through to the embedded copy */ }
     }
-    const d = await rulesetDigest(opts.embedded, sha);
+    // `embedded` is one ruleset or a list of them (ruleset.js embeds every
+    // packaged candidate): use the one whose digest the manifest names.
+    const list = Array.isArray(opts.embedded) ? opts.embedded : [opts.embedded];
+    let rules = list[0], d = await rulesetDigest(rules, sha);
+    for (const r of list.slice(1)) {
+      if (!want || d === want) break;
+      const x = await rulesetDigest(r, sha);
+      if (x === want) { rules = r; d = x; }
+    }
     const why = ex ? 'The export\'s ruleset artifact does not hash to the manifest digest; ' : 'The export has no ruleset body; ';
-    return { rules: opts.embedded, source: 'embedded', digest: d, ok: !want || d === want, note: why + 'using the embedded copy, which ' + (!want ? 'could not be compared.' : d === want ? 'hashes to the manifest digest.' : 'does NOT hash to the manifest digest.') };
+    return { rules, source: 'embedded', digest: d, ok: !want || d === want, note: why + 'using the embedded ' + rules.semantic_version + ' copy, which ' + (!want ? 'could not be compared.' : d === want ? 'hashes to the manifest digest.' : 'does NOT hash to the manifest digest.') };
   }
 
   // ---- fight context (protocol.md section 2) ---------------------------------
@@ -581,12 +589,16 @@
       case ID.DUCK: return 'Ducking dodges jabs and throws, but not a kick.';
       case ID.BLOCK: return 'A block stops jabs and kicks, but not a throw.';
       case ID.THROW: return 'A throw loses to a jab or a kick: it is interrupted and takes the hit.';
-      case ID.JAB: case ID.KICK: return 'Both attacked on the same beat, so both hits landed: a trade.';
+      case ID.JAB:
+        if (o.effective === ID.DUCK) return 'The duck slipped under the jab and countered.';
+        return 'Both attacked on the same beat, so both hits landed: a trade.';
+      case ID.KICK: return 'Both attacked on the same beat, so both hits landed: a trade.';
       default: return null;
     }
   }
 
-  function explainSide(t, o, who, them) {
+  // openingDamage: the ruleset's opening bonus (4 in candidate 1, 8 in candidate 2).
+  function explainSide(t, o, who, them, openingDamage = 4) {
     const out = [];
     const poss = x => (x === 'YOU' ? 'YOUR' : x + "'s");
     const act = lc(t.intended), oact = lc(o.effective);
@@ -622,7 +634,8 @@
       out.push('Power spent with no damage: wasted. The power bonus only adds to a strike that lands, and ' +
         (o.effective === ID.BLOCK ? 'this one was blocked.' : o.effective === ID.DUCK ? 'this one was ducked.' : t.effective === ID.EXHAUSTED ? 'the move was never made.' : 'this one did not land.'));
     }
-    if (t.reasons.includes('OPENING_EARNED')) out.push('Earned an OPENING: +' + 4 + ' on the next beat if it lands.');
+    if (t.effective === ID.DUCK && t.computed_damage > 0) out.push('Countered the ' + oact + ' from the duck.');
+    if (t.reasons.includes('OPENING_EARNED')) out.push('Earned an OPENING: +' + openingDamage + ' on the next beat if it lands.');
     if (t.reasons.includes('DOUBLE_KO')) out.push('DOUBLE K.O.: both fighters reached 0 HP on the same beat, so the fight is a draw.');
     else if (t.reasons.includes('KO')) out.push(who + ' is knocked out (0 HP) by ' + poss(them) + ' ' + oact + '.');
     return out;

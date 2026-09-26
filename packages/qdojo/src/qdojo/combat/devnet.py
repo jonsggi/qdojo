@@ -9,12 +9,13 @@ every restart replays to the identical contract.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 from . import codec, export, scouting
 from .codec import Code, Op
 from .contract import Manifest, development_manifest
-from .rules import candidate_1
+from .rules import CANDIDATE_1, CANDIDATE_2, by_version
 from .sim import World, identity
 from .store import StoreError, refuse_legacy
 
@@ -31,16 +32,29 @@ def roles() -> dict[str, bytes]:
 # matchmaking limits. "demo" is the public spectator arena: shorter epochs and
 # looser pair limits so a small bot population keeps fighting, and seasons
 # turn over within hours. The site shows which profile produced its data.
+#
+# A profile may also name its ruleset ("ruleset", default candidate 1) and
+# replace the timing profiles ("timing": {id: (commit_ticks, reveal_ticks)},
+# default the development fixture's {1: (24, 12)}). "demo-c2" is the demo
+# arena on combat-v1 candidate 2 with the demo timing of docs/model.md §4
+# (AUD-021, AUD-022): a fresh devnet directory, never a converted one.
+DEMO = {"ticks_per_epoch": 2400, "season_epochs": 4, "season_closeout_ticks": 300,
+        "pair_starts_per_epoch": 6, "pair_rematch_ticks": 60}
+DEMO_TIMING = {1: (9, 6)}       # commit, reveal ticks: ~13 ticks a round, ~38 per ranked fight (57 s at 1.5 s)
 PROFILES = {
     "dev": {},
-    "demo": {"ticks_per_epoch": 2400, "season_epochs": 4, "season_closeout_ticks": 300,
-             "pair_starts_per_epoch": 6, "pair_rematch_ticks": 60},
+    "demo": dict(DEMO),
+    "demo-c2": {**DEMO, "ruleset": CANDIDATE_2, "timing": DEMO_TIMING},
 }
 
 
 def manifest(profile: str = "dev") -> Manifest:
     r = roles()
-    return development_manifest(candidate_1(), r["admin"], r["house"], r["dev"], r["share"], **PROFILES[profile])
+    kw = dict(PROFILES[profile])
+    rules = by_version(kw.pop("ruleset", CANDIDATE_1))
+    timing = kw.pop("timing", None)
+    m = development_manifest(rules, r["admin"], r["house"], r["dev"], r["share"], **kw)
+    return replace(m, timing=dict(timing)) if timing else m
 
 
 class Devnet:

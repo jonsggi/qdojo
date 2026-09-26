@@ -42,15 +42,24 @@ def test_ruleset_rejects_drift():
 
 
 def test_frozen_fight_fixtures_match_engine():
-    """The parity set for the C++ and browser engines must still be what this engine produces."""
+    """The parity sets for the C++ and browser engines, one per packaged ruleset,
+    must still be what this engine produces."""
     import importlib.util
     import json
     spec = importlib.util.spec_from_file_location("combat_fixtures", ROOT / "scripts/combat-fixtures.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    frozen = json.loads(next((ROOT / "packages/qdojo/tests/combat/fixtures").glob("fights-*.json")).read_text())
-    _, fights, traced = mod.generate(len(frozen["fights"]), frozen["seed"])
-    assert fights == frozen["fights"] and traced == frozen["traced"]
+    paths = sorted((ROOT / "packages/qdojo/tests/combat/fixtures").glob("fights-*.json"))
+    digests = set()
+    for path in paths:
+        frozen = json.loads(path.read_text())
+        rules = rules_mod.by_digest(frozen["ruleset_digest"])
+        assert path.name == f"fights-{rules.digest.hex()[:16]}.json"
+        assert frozen["semantic_version"] == rules.semantic_version
+        _, fights, traced = mod.generate(len(frozen["fights"]), frozen["seed"], rules)
+        assert fights == frozen["fights"] and traced == frozen["traced"]
+        digests.add(frozen["ruleset_digest"])
+    assert digests == set(rules_mod.KNOWN.values()), "every packaged ruleset has a parity set"
 
 
 def manifest_from_header(head):
@@ -86,5 +95,6 @@ def test_contract_parity_journals_replay_to_their_digest():
 def test_npc_fixtures_match_the_roster():
     import subprocess
     import sys
-    r = subprocess.run([sys.executable, str(ROOT / "scripts/combat-npc-fixtures.py"), "--check"])
-    assert r.returncode == 0
+    for version in rules_mod.KNOWN:
+        r = subprocess.run([sys.executable, str(ROOT / "scripts/combat-npc-fixtures.py"), "--check", "--ruleset", version])
+        assert r.returncode == 0, version
