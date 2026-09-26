@@ -47,7 +47,7 @@ test('every embedded ruleset equals its docs/ file; the page picks the one the m
   assert.equal(all[0], R);
   assert.deepEqual(clone(all[1]), readJson(path.join(ROOT, 'docs/combat-v1-candidate-2.json')));
   const sha = L.defaultSha256();
-  const c2 = 'c90da811dc1e5275d09c8e09d25d15c548866b9c01907c4f1878ca321b9e4650';
+  const c2 = '231607f823153747f4c922fd5976c1ac06622542cd5a39eab088874d886b8b74';
   assert.equal(await L.rulesetDigest(all[1], sha), c2);
   const pick2 = await L.chooseRuleset({ exported: null, embedded: all, manifestDigest: c2, sha256: sha });
   assert.equal(pick2.rules.semantic_version, 'combat-v1-candidate-2');

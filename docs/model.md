@@ -147,6 +147,31 @@ using a historic assumed tick duration. Measure current network distribution.
 A six-beat replay should fit inside the next commit window at normal speed.
 Default planner 1500 ms; record actual hardware/provider cost.
 
+**Demo timing profile (measured 2026-09-26, AUD-022).** The contract waits
+out the whole commit window, so a round lasts the commit window plus the
+reveal latency (a median 4 ticks in the live arena). The live demo arena on
+24/12 ticks resolves a round every 28 ticks: a ranked fight takes a median
+80 ticks, 120 s at 1.5 s per tick (143 finished ranked fights in the live
+export). The devnet profile `demo-c2` sets timing profile 1 to **commit 9,
+reveal 6 ticks**. On the simulated chain (latency 1-3 ticks, 2% drops, the
+default demo lineup plus four competent bots, candidate 2, 3,000 ticks) a
+ranked fight then takes a median **38 ticks = 57 s** and p95 39 ticks = 58.5 s
+(112 fights; 24/12 on the same harness: median 56, p95 84 ticks).
+
+| Commit / reveal ticks | Median | p95 | Note |
+|---|---:|---:|---|
+| 24 / 12 (live, candidate 1) | 120 s | 126 s | live export |
+| 10 / 6 | 60 s | 63 s | simulated chain |
+| 9 / 6 (chosen) | 57 s | 58.5 s | simulated chain |
+| 8 / 6 | 51 s | 54 s | simulated chain |
+
+A 9-tick commit window leaves a planner about 6 ticks (9 s) before its
+commit must be sent, allowing 3 ticks of inclusion latency. In-process
+policies need well under a second. An LLM planner must be given a budget of
+at most about 7 s (lineup `budget_ms` about 7000 and the model's `--timeout`
+about 6), or it misses commits and forfeits. The site's beat-by-beat
+playback (6 × 600 ms) fits inside the 13.5 s window.
+
 Stress simultaneous resolutions, cups and ranked queue occupancy. Benchmark
 the pinned contract's procedure work AND state hashing, idle hooks, negative
 paths, nonce/credit tables and ownership queries. Empty ticks must not scan

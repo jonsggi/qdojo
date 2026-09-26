@@ -290,17 +290,17 @@ test('there is one fixture file per packaged ruleset', () => {
 
 test('candidate 2 hand vectors (docs/combat.md "Candidate 2")', () => {
   const c2 = RULESETS[1];
-  const f2 = (over = {}) => Object.assign({ hp: 120, stamina: 60, opening: 0, guard_streak: 0, power_available: 1 }, over);
+  const f2 = (over = {}) => Object.assign({ hp: 120, stamina: 48, opening: 0, guard_streak: 0, power_available: 1 }, over);
   const b2 = (a, b, ia, ib, pa = false, pb = false) => E.resolveBeat(c2, a, b, ia, ib, pa, pb);
   const rows = [
-    [JAB, BLOCK, [120, 56, 0, 0], [120, 58, 0, 1]],
-    [JAB, KICK, [116, 56, 0, 0], [110, 50, 0, 0]],
-    [DUCK, JAB, [120, 58, 1, 0], [116, 56, 0, 0]],
-    [KICK, DUCK, [120, 50, 0, 0], [102, 58, 0, 0]],
-    [THROW, BLOCK, [120, 53, 0, 0], [100, 58, 0, 1]],
-    [BLOCK, KICK, [120, 52, 0, 1], [120, 50, 0, 0]],
-    [RECOVER, JAB, [108, 60, 0, 0], [120, 56, 1, 0]],
-    [THROW, THROW, [120, 53, 0, 0], [120, 53, 0, 0]],
+    [JAB, BLOCK, [120, 44, 0, 0], [120, 46, 0, 1]],
+    [JAB, KICK, [116, 44, 0, 0], [110, 38, 0, 0]],
+    [DUCK, JAB, [120, 46, 1, 0], [116, 44, 0, 0]],
+    [KICK, DUCK, [120, 38, 0, 0], [102, 46, 0, 0]],
+    [THROW, BLOCK, [120, 41, 0, 0], [100, 46, 0, 1]],
+    [BLOCK, KICK, [120, 40, 0, 1], [120, 38, 0, 0]],
+    [RECOVER, JAB, [108, 48, 0, 0], [120, 44, 1, 0]],
+    [THROW, THROW, [120, 41, 0, 0], [120, 41, 0, 0]],
   ];
   for (const [ia, ib, ea, eb] of rows) {
     const t = b2(f2(), f2(), ia, ib);
@@ -310,9 +310,9 @@ test('candidate 2 hand vectors (docs/combat.md "Candidate 2")', () => {
   assert.deepEqual(t1.trace[0].reasons, ['HIT', 'OPENING_EARNED']);   // the duck counter
   assert.deepEqual(t1.trace[1].reasons, ['EVADED']);
   const t2 = b2(t1.a, t1.b, KICK, JAB);
-  assert.deepEqual([tuple(t2.a), tuple(t2.b)], [[110, 48, 0, 0], [104, 52, 0, 0]]);
+  assert.deepEqual([tuple(t2.a), tuple(t2.b)], [[110, 36, 0, 0], [104, 40, 0, 0]]);
   const pk = b2(f2({ opening: 1 }), f2(), KICK, DUCK, true, false);
   assert.equal(pk.trace[1].actual_hp_lost, 38);
-  assert.equal(pk.a.stamina, 46);
+  assert.equal(pk.a.stamina, 34);
   assert.throws(() => b2(f2(), f2(), DUCK, JAB, true, false), /attack/);   // no power on a duck
 });

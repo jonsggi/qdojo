@@ -22,7 +22,7 @@ CANDIDATE_1_DIGEST = "12085c86a61ffd106430b6690acbd522c5a94f90ed8024585817f4939f
 # with rebalanced numbers. Candidate 1 stays loadable: journals and replays
 # bound to its digest must keep verifying.
 CANDIDATE_2 = "combat-v1-candidate-2"
-CANDIDATE_2_DIGEST = "c90da811dc1e5275d09c8e09d25d15c548866b9c01907c4f1878ca321b9e4650"
+CANDIDATE_2_DIGEST = "231607f823153747f4c922fd5976c1ac06622542cd5a39eab088874d886b8b74"
 # Every packaged ruleset, by semantic version, with the digest its file must hash to.
 KNOWN = {CANDIDATE_1: CANDIDATE_1_DIGEST, CANDIDATE_2: CANDIDATE_2_DIGEST}
 

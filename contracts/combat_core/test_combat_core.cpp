@@ -278,7 +278,7 @@ static void test_constants(const std::string& root) {
 }
 
 // ----------------------------------------------------------- hand vectors
-static Fighter F(uint16_t hp = INITIAL_HP, uint16_t st = 60, uint8_t op = 0, uint8_t gs = 0, uint8_t pw = 1) {
+static Fighter F(uint16_t hp = INITIAL_HP, uint16_t st = INITIAL_STAMINA, uint8_t op = 0, uint8_t gs = 0, uint8_t pw = 1) {
     Fighter f;
     f.hp = hp; f.stamina = st; f.opening = op; f.guard_streak = gs; f.power_available = pw;
     return f;
@@ -447,18 +447,18 @@ static void test_hand_vectors() {
 #endif  // QDOJO_RULESET == 1
 
 #if QDOJO_RULESET == 2
-// docs/combat.md "Candidate 2" hand vectors: fresh fighters are (120, 60, 0, 0).
+// docs/combat.md "Candidate 2" hand vectors: fresh fighters are (120, 48, 0, 0).
 static void test_hand_vectors() {
     struct Row { uint8_t a, b; int A[4], B[4]; };
     const Row table[] = {
-        {JAB, BLOCK, {120, 56, 0, 0}, {120, 58, 0, 1}},
-        {JAB, KICK, {116, 56, 0, 0}, {110, 50, 0, 0}},
-        {DUCK, JAB, {120, 58, 1, 0}, {116, 56, 0, 0}},
-        {KICK, DUCK, {120, 50, 0, 0}, {102, 58, 0, 0}},
-        {THROW, BLOCK, {120, 53, 0, 0}, {100, 58, 0, 1}},
-        {BLOCK, KICK, {120, 52, 0, 1}, {120, 50, 0, 0}},
-        {RECOVER, JAB, {108, 60, 0, 0}, {120, 56, 1, 0}},
-        {THROW, THROW, {120, 53, 0, 0}, {120, 53, 0, 0}},
+        {JAB, BLOCK, {120, 44, 0, 0}, {120, 46, 0, 1}},
+        {JAB, KICK, {116, 44, 0, 0}, {110, 38, 0, 0}},
+        {DUCK, JAB, {120, 46, 1, 0}, {116, 44, 0, 0}},
+        {KICK, DUCK, {120, 38, 0, 0}, {102, 46, 0, 0}},
+        {THROW, BLOCK, {120, 41, 0, 0}, {100, 46, 0, 1}},
+        {BLOCK, KICK, {120, 40, 0, 1}, {120, 38, 0, 0}},
+        {RECOVER, JAB, {108, 48, 0, 0}, {120, 44, 1, 0}},
+        {THROW, THROW, {120, 41, 0, 0}, {120, 41, 0, 0}},
     };
     for (const Row& r : table) {
         BeatTrace t = beat(F(), F(), r.a, r.b);
@@ -469,32 +469,32 @@ static void test_hand_vectors() {
         BeatTrace t1 = beat(F(), F(), DUCK, JAB);
         CHECK(t1.a.dealt == 4 && (t1.a.reasons & R_HIT) && (t1.b.reasons & R_EVADED), "duck counter");
         BeatTrace t2 = beat(t1.a.after, t1.b.after, KICK, JAB);
-        CHECK(same4(t2.a.after, 110, 48, 0, 0), "c2 duck-then-kick A");
-        CHECK(same4(t2.b.after, 104, 52, 0, 0), "c2 duck-then-kick B");
+        CHECK(same4(t2.a.after, 110, 36, 0, 0), "c2 duck-then-kick A");
+        CHECK(same4(t2.b.after, 104, 40, 0, 0), "c2 duck-then-kick B");
         CHECK(t2.a.dealt == 12 && t2.a.base == 4 && t2.a.opening_bonus == 8 && t2.b.dealt == 10, "kick 4+8 vs jab 10");
     }
     {  // opening=1 powered KICK into DUCK: 18 + 8 + 12
-        BeatTrace t = beat(F(INITIAL_HP, 60, 1), F(), KICK, DUCK, true, false);
-        CHECK(t.a.after.stamina == 46 && t.a.after.power_available == 0, "c2 powered kick A");
+        BeatTrace t = beat(F(INITIAL_HP, 48, 1), F(), KICK, DUCK, true, false);
+        CHECK(t.a.after.stamina == 34 && t.a.after.power_available == 0, "c2 powered kick A");
         CHECK(t.b.lost == 38 && t.b.after.hp == 82 && t.a.lost == 0, "c2 powered kick damage");
     }
     {  // a duck counter with an opening: 4 + 8; no power on a duck
-        BeatTrace t = beat(F(INITIAL_HP, 60, 1), F(), DUCK, JAB);
+        BeatTrace t = beat(F(INITIAL_HP, 48, 1), F(), DUCK, JAB);
         CHECK(t.a.dealt == 12 && t.b.after.hp == 108 && t.a.after.opening == 1, "c2 duck counter with opening");
     }
     {  // stamina 11 KICK vs JAB -> EXHAUSTED, takes the jab's 12 (jab vs exhausted)
         BeatTrace t = beat(F(INITIAL_HP, 11), F(), KICK, JAB);
         CHECK(t.a.effective == EXHAUSTED && same4(t.a.after, 108, 17, 0, 0), "c2 exhausted kick");
-        CHECK(same4(t.b.after, 120, 56, 1, 0), "c2 exhausted B");
+        CHECK(same4(t.b.after, 120, 44, 1, 0), "c2 exhausted B");
     }
     {  // six JABs per round: 120 -> 72 -> 24 -> double KO on the third beat of round 2
         FightState s = new_fight();
         RoundResult rr;
         CHECK(resolve_round(s, plan6(JAB), plan6(JAB), rr) == OK, "c2 jab r0");
-        CHECK(rr.end.a.hp == 72 && rr.end.b.hp == 72 && rr.end.a.stamina == 46, "c2 jab r0 after break");
+        CHECK(rr.end.a.hp == 72 && rr.end.b.hp == 72 && rr.end.a.stamina == 34, "c2 jab r0 after break");
         s = rr.end;
         CHECK(resolve_round(s, plan6(JAB), plan6(JAB), rr) == OK, "c2 jab r1");
-        CHECK(rr.end.a.hp == 24 && rr.end.a.stamina == 32, "c2 jab r1 after break");
+        CHECK(rr.end.a.hp == 24 && rr.end.a.stamina == 20, "c2 jab r1 after break");
         s = rr.end;
         CHECK(resolve_round(s, plan6(JAB), plan6(JAB), rr) == OK, "c2 jab r2");
         CHECK(rr.executed == 3 && rr.end.outcome == OUTCOME_DOUBLE_KO, "c2 jab r2 double KO on beat 3");
@@ -516,12 +516,12 @@ static void test_hand_vectors() {
 // opening), so check the break rule on the literal values and on a real round.
 static void test_break_carry() {
     FightState t = new_fight();
-    t.a = F(70, 55, 1, 3, 1);
+    t.a = F(70, uint16_t(LIMIT_STAMINA - 5), 1, 3, 1);
     apply_break_recovery(t);
-    CHECK(same4(t.a, 70, 60, 1, 3) && t.a.power_available == 1 && t.round_index == 1, "55/1/3 -> 60/1/3");
+    CHECK(same4(t.a, 70, LIMIT_STAMINA, 1, 3) && t.a.power_available == 1 && t.round_index == 1, "limit-5/1/3 -> limit/1/3");
 
     FightState s = new_fight();
-    s.a = F(100, 60, 0, 3, 1);
+    s.a = F(100, LIMIT_STAMINA, 0, 3, 1);
     Plan pa = plan6(BLOCK), pb = plan6(RECOVER);
     pa.actions[5] = DUCK;
     pb.actions[5] = JAB;  // DUCK vs JAB earns A an opening on the last beat
@@ -532,7 +532,7 @@ static void test_break_carry() {
     CHECK(before.opening == 1 && after.opening == 1, "opening carries through break");
     CHECK(after.guard_streak == before.guard_streak && after.hp == before.hp &&
               after.power_available == before.power_available, "break carries hp/guard/power");
-    CHECK(after.stamina == min_u16(uint16_t(before.stamina + 10), 60), "break +10 capped");
+    CHECK(after.stamina == min_u16(uint16_t(before.stamina + BREAK_RECOVERY), LIMIT_STAMINA), "break recovery capped");
 }
 
 // ------------------------------------------------------------------- NIST
@@ -576,7 +576,13 @@ static void test_commitment(const std::string& root) {
     CHECK(hex(rs.data(), 32) == hex(cd, 32), "round state carries context digest");
     // Round-start state must be canonical initial state, reproduced by the codec.
     Fighter fa, fb;
+#if QDOJO_RULESET == 1
     CHECK(decode_state(rs.data() + 33, fa) == OK && decode_state(rs.data() + 41, fb) == OK, "decode states");
+#else
+    // A candidate 1 state (stamina 60) is out of this build's limits; decode_state rightly refuses it.
+    CHECK(decode_state(rs.data() + 33, fa) == BAD_ENCODING, "candidate 1 state refused by this build");
+    fa = fb = F(CANDIDATE_1.initial_hp, CANDIDATE_1.initial_stamina, 0, 0, 1);
+#endif
     uint8_t ea[8], eb[8];
     Fighter c1 = F(CANDIDATE_1.initial_hp, CANDIDATE_1.initial_stamina, CANDIDATE_1.initial_opening,
                    CANDIDATE_1.initial_guard_streak, CANDIDATE_1.initial_power_available);

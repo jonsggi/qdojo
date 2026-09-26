@@ -1,9 +1,9 @@
-# Combat rules: combat-v1 candidate 1
+# Combat rules: combat-v1 candidates 1 and 2
 
 > **Purpose:** every mechanical rule: state, actions, the damage matrix, exact beat resolution and hand-checkable vectors. \
 > **Audience:** bot builders who want exact numbers; implementers; reviewers. Scope and money are in [spec.md](spec.md). \
-> **Status:** normative. Implemented in Python (`combat/engine.py`), C++ (`contracts/combat_core/`) and the browser (`apps/web/combat/engine.js`); all three agree on 10,000 frozen fights. The §5 matrix is machine-checked against [combat-v1.json](combat-v1.json) by `docs/reference/check_docs.py`. Balance: see [validation-status.md](validation-status.md). \
-> **Last verified:** 2026-09-25 (§8 vectors run in the test suite; rules text unchanged)
+> **Status:** normative. Sections 1-10 are candidate 1 ([combat-v1.json](combat-v1.json), digest `12085c86…`); [section 11](#11-candidate-2) is candidate 2 ([combat-v1-candidate-2.json](combat-v1-candidate-2.json), digest `231607f8…`): the same engine and encodings with rebalanced numbers. Both are implemented in Python (`combat/engine.py`), C++ (`contracts/combat_core/`, one table per candidate) and the browser (`apps/web/combat/engine.js`); all three agree on 10,000 frozen fights per candidate. The §5 and §11.2 matrices are machine-checked against their JSON files by `docs/reference/check_docs.py`. Balance: see [validation-status.md](validation-status.md) and [model.md §8](model.md#8-balance-measurements-candidate-1-and-candidate-2). \
+> **Last verified:** 2026-09-26 (§8 and §11.3 vectors run in the test suite)
 
 ## Contents
 
@@ -17,6 +17,7 @@
 - [8. Hand-checkable acceptance vectors](#8-hand-checkable-acceptance-vectors)
 - [9. Trace and explanation requirements](#9-trace-and-explanation-requirements)
 - [10. Bot optimization and uncertainty](#10-bot-optimization-and-uncertainty)
+- [11. Candidate 2](#11-candidate-2)
 
 ## 1. Design contract
 
@@ -323,3 +324,112 @@ surprise. If the metagame converges prematurely, change the candidate rules
 and rerun evaluation before launch. Later reviewed mechanics need explicit
 state/cost/counterplay, fixed integer resolution, bounded work, equal access
 and a new ruleset version.
+
+## 11. Candidate 2
+
+`combat-v1-candidate-2`, digest
+`231607f823153747f4c922fd5976c1ac06622542cd5a39eab088874d886b8b74`,
+file [combat-v1-candidate-2.json](combat-v1-candidate-2.json).
+
+Candidate 2 changes numbers only. Sections 1-4 and 6-10 apply unchanged:
+the same six actions and ids, three rounds of six beats, the 7-byte plan
+and 8-byte state encodings, the step order of §6, the opening rules, the
+reason codes and the round pseudocode. Candidate 1 stays frozen and
+loadable: every fight names the digest it was played under, and its
+replays verify under that ruleset.
+
+### 11.1 Changes from candidate 1, and why
+
+| Change | Candidate 1 | Candidate 2 | Why (measured with candidate 1, [model.md §8](model.md#8-balance-measurements-candidate-1-and-candidate-2)) |
+|---|---:|---:|---|
+| JAB vs KICK exchange (jab deals / kick deals) | 8 / 14 | 10 / 4 | KICK weakly dominated JAB in every matrix column, earned +7.2 HP per beat, and the one-beat equilibrium was KICK and BLOCK only. The jab is now the fast answer to a kick: a read, where it used to be a losing trade. |
+| DUCK vs JAB (duck deals) | 0 | 4 | DUCK was the worst action (−5.6 HP per beat). Slipping a jab now counters for 4 as well as earning the opening. DUCK is still not an attack: it cannot carry power. |
+| THROW vs BLOCK | 14 | 20 | Throw is the only answer to a turtle; it now punishes a predicted block harder. |
+| Opening bonus | 4 | 8 | Power and opening together added about 3 HP per fighter and fight, too little to plan around. |
+| Power bonus | 4 | 12 | The same reason. Power still costs +4 and is spent even if it misses. |
+| Initial and maximum HP | 100 | 120 | With the stronger reads, 100 HP made about 87% of fights knockouts; 120 brings it to about 68%. |
+
+Everything else is unchanged: costs, block streak cost and strain,
+recovery, break recovery, stamina limits, rounds and beats.
+
+Consequences in words:
+
+- Jab/kick: both land, but the jab wins 10 to 4 and the kick costs twice as much.
+- Kick/kick: 14 each, as before. Kick still punishes duck and recovery for 18.
+- Duck/jab: the jab deals 0, the duck deals 4 and earns an opening
+  (reason codes: HIT and OPENING_EARNED for the duck, EVADED for the jab).
+  With an opening already in hand the counter deals 4 + 8 = 12.
+- Throw/block: 20. A powered throw into a block deals 32.
+- A powered kick into a duck with an opening deals 18 + 8 + 12 = 38.
+
+### 11.2 Damage matrix
+
+| Attacker / defender | JAB | KICK | BLOCK | DUCK | THROW | RECOVER | EXHAUSTED |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| JAB | 8 | 10 | 0 | 0 | 8 | 12 | 12 |
+| KICK | 4 | 14 | 0 | 18 | 14 | 18 | 18 |
+| BLOCK | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| DUCK | 4 | 0 | 0 | 0 | 0 | 0 | 0 |
+| THROW | 0 | 0 | 20 | 0 | 0 | 18 | 18 |
+| RECOVER | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| EXHAUSTED | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+State: HP 0..120, starting at 120; stamina 0..60, starting at 60. Opening
++8, power +12 for +4 stamina.
+
+### 11.3 Hand-checkable vectors
+
+Both fighters start at (HP 120, stamina 60, opening 0, guard 0, power 1).
+Fields are after one beat.
+
+| A / B | A (HP, stamina, opening, guard_streak) | B (HP, stamina, opening, guard_streak) |
+|---|---|---|
+| JAB / BLOCK | (120,56,0,0) | (120,58,0,1) |
+| JAB / KICK | (116,56,0,0) | (110,50,0,0) |
+| DUCK / JAB | (120,58,1,0) | (116,56,0,0) |
+| KICK / DUCK | (120,50,0,0) | (102,58,0,0) |
+| THROW / BLOCK | (120,53,0,0) | (100,58,0,1) |
+| BLOCK / KICK | (120,52,0,1) | (120,50,0,0) |
+| RECOVER / JAB | (108,60,0,0) | (120,56,1,0) |
+| THROW / THROW | (120,53,0,0) | (120,53,0,0) |
+
+- After DUCK/JAB above, play KICK/JAB: A's kick deals 4 + 8 opening = 12,
+  B's jab deals 10. A=(110,48,0,0); B=(104,52,0,0).
+- A at stamina 60 with an opening powers a KICK into a DUCK: A stamina 46,
+  power spent; B loses 38.
+- A with an opening DUCKs a JAB: the counter deals 12; A earns a new opening.
+- A at stamina 11 attempts KICK against a JAB: EXHAUSTED, A=(108,17,0,0),
+  B=(120,56,1,0).
+- Six JABs each per round: HP 72 and stamina 46 after the first break,
+  HP 24 and stamina 32 after the second; the third beat of round 2 is a
+  simultaneous KO.
+- Six RECOVERs each, three rounds: HP stays 120, an HP_TIE draw.
+
+These run in `packages/qdojo/tests/combat/test_candidate2.py`, the C++
+build with `-DQDOJO_RULESET=2` and `apps/web/tests/combat-engine.test.cjs`.
+
+### 11.4 Selecting a ruleset
+
+- A devnet or arena fixes its ruleset when it is created. Profile `demo-c2`
+  (`combat/devnet.py`) is the demo arena on candidate 2 with the demo
+  timing (commit 9, reveal 6 ticks); `demo` and `dev` stay on candidate 1.
+- `qdojo combat train` and `qdojo combat evaluate` take `--ruleset`;
+  `scripts/combat-validation.py --ruleset` runs the model.md campaign.
+- `verify_replay` and `qdojo combat replay` use the ruleset the replay names.
+- The C++ core compiles both tables and a build selects one
+  (`-DQDOJO_RULESET=2`); a deployed contract serves exactly the ruleset its
+  manifest names.
+- The site embeds both rulesets and replays with the one whose digest
+  equals the export manifest's (the export's own ruleset artifact first).
+
+### 11.5 Considered and not adopted
+
+- **Longer rounds or more rounds** (8 beats × 3 rounds, 6 × 4, 5 × 4, 4 × 4,
+  HP scaled): none improved comebacks or adaptation value, blowouts grew,
+  exhaustion reached 10-11% in 8-beat rounds, and 6 × 4 adds a fourth
+  commit window to every fight. The plan encoding, the contract, the site
+  planner and every bot would have had to change for no measured gain.
+- **A new move** (FEINT, PARRY, CHARGE): parameter changes gave every
+  action a role (model.md §8), so the cost of a new action id was not
+  justified. The proposals are recorded in
+  [AUD-021](../audits/issues/AUD-021-balance-kick-duck.md).

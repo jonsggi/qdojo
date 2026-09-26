@@ -32,15 +32,15 @@ def out_path(rules) -> Path:
 
 def generate(per_npc: int = 150, seed: int = 99, rules=None):
     rules = rules or by_version(CANDIDATE_1)
-    hp = rules.max_hp
+    hp, st = rules.max_hp, rules.max_stamina
     rng = random.Random(seed)
     cases = []
     for npc_id in npcs.ROSTER:
         for _ in range(per_npc):
             r = rng.randrange(3)
-            me = FighterState(rng.randint(1, hp), rng.randint(0, 60), rng.randint(0, 1), rng.randint(0, 3),
+            me = FighterState(rng.randint(1, hp), rng.randint(0, st), rng.randint(0, 1), rng.randint(0, 3),
                               rng.randint(0, 1))
-            opp = FighterState(rng.randint(1, hp), rng.randint(0, 60), rng.randint(0, 1), rng.randint(0, 3),
+            opp = FighterState(rng.randint(1, hp), rng.randint(0, st), rng.randint(0, 1), rng.randint(0, 3),
                                rng.randint(0, 1))
             history = tuple(tuple(rng.choice(list(SUBMITTED) + [Action.EXHAUSTED]) for _ in range(rng.randint(1, 6)))
                             for _ in range(r))

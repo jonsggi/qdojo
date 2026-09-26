@@ -50,13 +50,14 @@
     ],
   };
   // Candidate 2 (docs/combat.md "Candidate 2"): jab out-trades kick, duck
-  // counters a jab, throw breaks a block for 20, opening +8, power +12, 120 HP.
+  // counters a jab, throw breaks a block for 20, opening +8, power +12, 120 HP,
+  // 48 stamina.
   const candidate2 = {
     semantic_version: 'combat-v1-candidate-2',
     rounds: 3,
     beats_per_round: 6,
-    initial: { hp: 120, stamina: 60, opening: 0, guard_streak: 0, power_available: 1 },
-    limits: { hp: 120, stamina: 60, guard_streak: 3 },
+    initial: { hp: 120, stamina: 48, opening: 0, guard_streak: 0, power_available: 1 },
+    limits: { hp: 120, stamina: 48, guard_streak: 3 },
     action_names: ['JAB', 'KICK', 'BLOCK', 'DUCK', 'THROW', 'RECOVER', 'EXHAUSTED'],
     submitted_action_ids: [0, 1, 2, 3, 4, 5],
     base_costs: [6, 12, 4, 4, 9, 0, 0],

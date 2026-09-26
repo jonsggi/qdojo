@@ -35,7 +35,7 @@ What the table means in practice:
 
 ## Resources
 
-- HP starts at 120. Stamina starts at 60 and never exceeds 60.
+- HP starts at 120. Stamina starts at 48 and never exceeds 48.
 - Every executed action other than RECOVER restores 2 stamina afterwards.
 - If you cannot afford an action on its beat, you are EXHAUSTED for that beat:
   you deal nothing, take damage like a RECOVER, and regain 6. Never plan a

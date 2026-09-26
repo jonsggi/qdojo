@@ -11,7 +11,7 @@ Actions (stamina cost):
 - RECOVER (0): +18 stamina if not hit, only +6 if hit. It takes full damage.
 
 Other rules:
-- HP starts at 120 and stamina at 60 (maximum 60).
+- HP starts at 120 and stamina at 48 (maximum 48).
 - Every other action you execute regains 2 stamina.
 - If you cannot afford an action, you are EXHAUSTED for that beat: you
   deal nothing, take full damage, and regain 6 stamina.

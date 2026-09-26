@@ -1,6 +1,6 @@
 # AUD-022 — A ranked fight takes twice the target time
 
-- **Status:** Open
+- **Status:** Mitigated (demo timing profile `demo-c2` in code; the live arena still runs 24/12 until the orchestrator starts a `demo-c2` arena)
 - **Priority:** P2 — spectator experience
 - **Type:** Timing
 - **Evidence:** 123 s per ranked fight against a 60 s median target; each round is about 42 s, mostly the fixed 24-tick commit window
@@ -12,7 +12,19 @@ Spectators wait about 40 s per round for six beats that land at once ([simulatio
 
 ## Acceptance criteria
 
-- [ ] A demo timing profile (for example commit 8 / reveal 6 ticks).
-- [ ] Per-beat playback during the next commit window (site side done).
+- [x] A demo timing profile: devnet profile `demo-c2`, timing profile 1 = **commit 9 / reveal 6 ticks**
+  (`combat/devnet.py`, `DEMO_TIMING`). Measured on the simulated chain with candidate 2:
+  ranked median 38 ticks = **57 s**, p95 39 ticks = 58.5 s (112 fights); 10/6 gives 60/63 s, 8/6 gives 51/54 s.
+  The live 24/12 arena measures a median 80 ticks = 120 s. Details: [model.md §4](../../docs/model.md#4-timing-and-compute).
+  LLM planners need a budget of at most about 7 s under this window (lineup `budget_ms`, `--timeout`).
+- [x] Per-beat playback during the next commit window (site side done; 6 × 600 ms fits in 13.5 s).
+
+## Resolution
+
+The profile also selects combat-v1 candidate 2 (AUD-021), because a devnet's
+ruleset and timing are fixed when it is created: switching means a fresh arena
+directory, not a change to the running one. `live.py` needs the small patch in
+the balance track's report (its ruleset comes from the manifest, and
+`--profile` accepts `demo-c2`) before `qdojo combat live --profile demo-c2` runs.
 
 **Source:** [2026-09-25 combat review](../reports/2026-09-25-simulation-audit.md).

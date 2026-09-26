@@ -17,7 +17,7 @@ const FIXDIR = path.join(ROOT, 'packages/qdojo/tests/combat/fixtures');
 const FIX = JSON.parse(fs.readFileSync(path.join(FIXDIR, 'npcs-v1.json'), 'utf8'));
 // Candidate 2's NPC parity set: the same roster projecting with its numbers.
 const RULES2 = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/combat-v1-candidate-2.json'), 'utf8'));
-const FIX2 = JSON.parse(fs.readFileSync(path.join(FIXDIR, 'npcs-v1-c90da811dc1e5275.json'), 'utf8'));
+const FIX2 = JSON.parse(fs.readFileSync(path.join(FIXDIR, 'npcs-v1-231607f823153747.json'), 'utf8'));
 
 test('sha256 matches node:crypto on lengths around every block boundary', () => {
   for (let len = 0; len < 200; len++) {
@@ -64,7 +64,7 @@ for (const [label, fix, rs] of [['candidate 1', FIX, rules], ['candidate 2', FIX
 }
 
 test('candidate 2 NPC fixtures name candidate 2', () => {
-  assert.equal(FIX2.ruleset_digest, 'c90da811dc1e5275d09c8e09d25d15c548866b9c01907c4f1878ca321b9e4650');
+  assert.equal(FIX2.ruleset_digest, '231607f823153747f4c922fd5976c1ac06622542cd5a39eab088874d886b8b74');
 });
 
 test('loads as a plain browser script after engine.js', () => {

@@ -25,7 +25,7 @@ def c2():
     return rules_mod.candidate_2()
 
 
-def st(hp=120, stamina=60, opening=0, guard_streak=0, power_available=1):
+def st(hp=120, stamina=48, opening=0, guard_streak=0, power_available=1):
     return FighterState(hp, stamina, opening, guard_streak, power_available)
 
 
@@ -47,19 +47,20 @@ def test_artifacts_agree_and_candidate_1_is_untouched(c2):
     two = json.loads((ROOT / "docs/combat-v1-candidate-2.json").read_text())
     diff = {k for k in one if one[k] != two[k]}
     assert diff == {"semantic_version", "initial", "limits", "damage", "opening_damage", "power_damage"}
+    assert two["initial"]["stamina"] == two["limits"]["stamina"] == 48 and two["initial"]["hp"] == 120
     cells = {(i, k) for i in range(7) for k in range(7) if one["damage"][i][k] != two["damage"][i][k]}
     assert cells == {(J, K), (K, J), (D, J), (T, B)}
 
 
 ONE_BEAT = [
-    (J, B, (120, 56, 0, 0), (120, 58, 0, 1)),
-    (J, K, (116, 56, 0, 0), (110, 50, 0, 0)),     # jab wins the exchange 10 to 4
-    (D, J, (120, 58, 1, 0), (116, 56, 0, 0)),     # duck counters for 4 and earns an opening
-    (K, D, (120, 50, 0, 0), (102, 58, 0, 0)),
-    (T, B, (120, 53, 0, 0), (100, 58, 0, 1)),     # throw breaks a block for 20
-    (B, K, (120, 52, 0, 1), (120, 50, 0, 0)),
-    (R, J, (108, 60, 0, 0), (120, 56, 1, 0)),
-    (T, T, (120, 53, 0, 0), (120, 53, 0, 0)),
+    (J, B, (120, 44, 0, 0), (120, 46, 0, 1)),
+    (J, K, (116, 44, 0, 0), (110, 38, 0, 0)),     # jab wins the exchange 10 to 4
+    (D, J, (120, 46, 1, 0), (116, 44, 0, 0)),     # duck counters for 4 and earns an opening
+    (K, D, (120, 38, 0, 0), (102, 46, 0, 0)),
+    (T, B, (120, 41, 0, 0), (100, 46, 0, 1)),     # throw breaks a block for 20
+    (B, K, (120, 40, 0, 1), (120, 38, 0, 0)),
+    (R, J, (108, 48, 0, 0), (120, 44, 1, 0)),
+    (T, T, (120, 41, 0, 0), (120, 41, 0, 0)),
 ]
 
 
@@ -76,13 +77,13 @@ def test_duck_counter_then_kick(c2):
     assert t1.a.computed_damage == 4 and Reason.HIT in t1.a.reasons and Reason.EVADED in t1.b.reasons
     assert Reason.OPENING_EARNED in t1.a.reasons
     a, b, t2 = resolve_beat(c2, a, b, K, J)
-    assert (compact(a), compact(b)) == ((110, 48, 0, 0), (104, 52, 0, 0))
+    assert (compact(a), compact(b)) == ((110, 36, 0, 0), (104, 40, 0, 0))
     assert (t2.a.base_damage, t2.a.opening_bonus, t2.a.computed_damage, t2.b.computed_damage) == (4, 8, 12, 10)
 
 
 def test_powered_kick_into_duck_with_opening(c2):
     a, b, t = resolve_beat(c2, st(opening=1), st(), K, D, True, False)
-    assert a.stamina == 46 and a.power_available == 0
+    assert a.stamina == 34 and a.power_available == 0
     assert t.b.actual_hp_lost == 38 and b.hp == 82          # 18 + 8 opening + 12 power
     assert Reason.POWER_USED in t.a.reasons and Reason.OPENING_USED in t.a.reasons
 
@@ -97,15 +98,15 @@ def test_duck_counter_takes_an_opening_but_never_power(c2):
 def test_unaffordable_kick_is_exhausted(c2):
     a, b, t = resolve_beat(c2, st(stamina=11), st(), K, J)
     assert t.a.effective is X.EXHAUSTED
-    assert (compact(a), compact(b)) == ((108, 17, 0, 0), (120, 56, 1, 0))
+    assert (compact(a), compact(b)) == ((108, 17, 0, 0), (120, 44, 1, 0))
 
 
 def test_six_jabs_each_round(c2):
     s = new_fight(c2)
     r = resolve_round(c2, s, Plan.of([J] * 6), Plan.of([J] * 6))
-    assert (r.end.a.hp, r.end.a.stamina, r.end.b.hp) == (72, 46, 72)
+    assert (r.end.a.hp, r.end.a.stamina, r.end.b.hp) == (72, 34, 72)
     r = resolve_round(c2, r.end, Plan.of([J] * 6), Plan.of([J] * 6))
-    assert (r.end.a.hp, r.end.a.stamina) == (24, 32)
+    assert (r.end.a.hp, r.end.a.stamina) == (24, 20)
     r = resolve_round(c2, r.end, Plan.of([J] * 6), Plan.of([J] * 6))
     assert r.executed == 3 and r.end.outcome.result is Result.DOUBLE_KO
 
@@ -118,9 +119,11 @@ def test_recovering_all_fight_ties_at_120(c2):
 
 
 def test_state_limits_follow_the_ruleset(c2):
-    FighterState(120, 60, 0, 0, 1).validate(c2)
+    FighterState(120, 48, 0, 0, 1).validate(c2)
     with pytest.raises(Exception):
-        FighterState(120, 60, 0, 0, 1).validate(rules_mod.candidate_1())
+        FighterState(120, 48, 0, 0, 1).validate(rules_mod.candidate_1())
+    with pytest.raises(Exception):
+        FighterState(100, 60, 0, 0, 1).validate(c2)
 
 
 @pytest.fixture()

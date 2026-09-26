@@ -50,8 +50,9 @@ for the record and does not describe the current system.
 | Document | Status | One line |
 |---|---|---|
 | [spec.md](spec.md) | normative | Scope, identity, money, deployment manifest, cross-system invariants |
-| [combat.md](combat.md) | normative | Actions, damage matrix, exact beat resolution, hand vectors |
+| [combat.md](combat.md) | normative | Actions, damage matrix, exact beat resolution, hand vectors; §11 candidate 2 |
 | [combat-v1.json](combat-v1.json) | normative | Machine-readable ruleset; its digest identifies combat-v1 candidate 1 |
+| [combat-v1-candidate-2.json](combat-v1-candidate-2.json) | normative | Candidate 2: the same engine with rebalanced numbers (digest `231607f8…`) |
 | [protocol.md](protocol.md) | normative | Bytes, commitments, procedures, deadlines, service failure |
 | [matchmaking.md](matchmaking.md) | normative | The book, compatibility, pairing order, budgets |
 | [competition.md](competition.md) | normative | Rating, belts, faults, seasons, duels, cups |

@@ -16,18 +16,24 @@ for p in paths:
         target=target.split("#",1)[0].split(" ",1)[0]
         if target and not (p.parent/target).resolve().exists():
             errors.append(str(p.relative_to(ROOT))+": "+target)
-rules=json.loads((ROOT/"docs/combat-v1.json").read_text())
-assert rules["rounds"]==3 and rules["beats_per_round"]==6
-assert rules["submitted_action_ids"]==list(range(6))
-assert len(rules["damage"])==7 and all(len(row)==7 for row in rules["damage"])
-assert all(type(n) is int and n>=0 for row in rules["damage"] for n in row)
-# Cross-check the normative Markdown matrix against the machine artifact.
+def matrix_rows(text, names):
+    rows=[]
+    for line in text.splitlines():
+        cells=[part.strip() for part in line.split("|")[1:-1]]
+        if len(cells)==8 and cells[0] in names and all(x.isdigit() for x in cells[1:]):
+            rows.append([int(x) for x in cells[1:]])
+    return rows
+# Every packaged ruleset: artifact shape, and its Markdown matrix in combat.md
+# (candidate 1 in sections 1-10, candidate 2 in its own section 11).
 combat=(ROOT/"docs/combat.md").read_text()
-rows=[]
-for line in combat.splitlines():
-    cells=[part.strip() for part in line.split("|")[1:-1]]
-    if len(cells)==8 and cells[0] in rules["action_names"] and all(x.isdigit() for x in cells[1:]):
-        rows.append([int(x) for x in cells[1:]])
-assert rows==rules["damage"],"Markdown/artifact damage matrix mismatch"
+split=combat.index("## 11. Candidate 2")
+for name,text in (("combat-v1.json",combat[:split]),("combat-v1-candidate-2.json",combat[split:])):
+    rules=json.loads((ROOT/"docs"/name).read_text())
+    assert rules["rounds"]==3 and rules["beats_per_round"]==6
+    assert rules["submitted_action_ids"]==list(range(6))
+    assert len(rules["damage"])==7 and all(len(row)==7 for row in rules["damage"])
+    assert all(type(n) is int and n>=0 for row in rules["damage"] for n in row)
+    # Cross-check the normative Markdown matrix against the machine artifact.
+    assert matrix_rows(text,rules["action_names"])==rules["damage"],"Markdown/artifact damage matrix mismatch: "+name
 assert not errors,"Broken active links:\n"+"\n".join(errors)
-print("Active document links passed:",len(paths),"files; candidate matrix shape passed.")
+print("Active document links passed:",len(paths),"files; candidate 1 and 2 matrices passed.")
