@@ -139,7 +139,8 @@ SINGLE, BO3 and BO5; cup entry 2×; cup sponsorship 0.1×, withheld while one
 fighter won more than 2 of the last 6 sponsored cups. Ranked bots enter cups
 unless their lineup entry says `"cups": false`. Demo bots decline duels from a
 challenger rated more than 200 above them, or one they won less than a third
-of at least 3 series against (lineup keys `duel_max_rating_gap`,
+of at least 3 series against, and apply the same filters before they
+challenge; the arena picks a pair and the challenger's bot decides (lineup keys `duel_max_rating_gap`,
 `duel_h2h_series`, `duel_h2h_min_score`, `duel_max_stake`).
 
 **Restarts and memory (AUD-024).** Every 600 ticks the arena compacts finished

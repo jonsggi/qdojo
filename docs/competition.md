@@ -176,7 +176,9 @@ owner decides what to accept, and a bot must let them
 ([matchmaking.md](matchmaking.md) §5). The demo bots decline a challenger
 rated more than 200 above them, a stake above their duel limit, and a
 challenger they have played at least 3 series against with a series score
-below one third (their own head-to-head history). In the 2026-09-25 audit
+below one third (their own head-to-head history), and they apply the same
+filters before challenging: in the demo the arena only picks who challenges
+whom, the challenger's bot decides, pays and records the series. In the 2026-09-25 audit
 auto-accepting bots let one scout bot win 138 of 143 series. In the demo
 arena duel stakes grow with the format (1×, 2× and 3× the tier-1 stake for
 SINGLE, BO3 and BO5), so the single rake of a longer series still pays for its

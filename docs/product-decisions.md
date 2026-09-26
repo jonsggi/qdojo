@@ -126,7 +126,7 @@ apply on restart, scaled to each arena's tier-1 stake):
 | Cup entry fee | 2× the tier-1 stake | `live.EVENTS` |
 | Cup sponsorship | 0.1× the tier-1 stake, withheld while one fighter won more than 2 of the last 6 sponsored cups | `live.EVENTS` |
 | Market fee | 250 bps of each sale, to the house | `live.Market` |
-| Duel accept filters | decline a challenger rated 200+ above, or one beaten less than a third of 3+ series | `live._budget` |
+| Duel filters | decline, and do not challenge, an opponent rated 200+ above or one beaten less than a third of 3+ series | `live._budget`, `Bot.challenge` |
 
 **Why stake, not rake.** A fight costs about 185–190 QU to execute whatever
 its stake, and the house's share of a 500 bps rake is 6% of the stake, so

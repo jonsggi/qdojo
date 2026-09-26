@@ -313,6 +313,7 @@ class Bot:
             return f"state unreadable: {exc}"
         if me is None:
             return "fighter not registered"
+        self._drain_challenge()
         drained = self._drain_entry()
         if drained is not None and "enter" in self.inflight:
             return drained                                  # still waiting: don't act on stale state
@@ -392,6 +393,49 @@ class Bot:
             self.bstate.save(self.bpath)
             return f"duel accept {r.code.name}"
         return None
+
+    def challenge(self, opponent: bytes, opponent_rating: int, stake: int, fmt: int, expires_tick: int) -> str | None:
+        """Offer a named duel, under the same budget and filters as accepting
+        one (a weak bot must not keep challenging a fighter that beats it).
+        Returns why not, or None when the offer was sent."""
+        if "challenge" in self.inflight:
+            return "a challenge is in flight"
+        try:
+            tick = self.client.tick()
+            me = self.client.fighter(self.fighter_id)
+        except Exception as exc:
+            return f"state unreadable: {exc}"
+        if me is None or me["lock"] != "IDLE" or tick < int(me.get("cooldown_until") or 0):
+            return "not idle"
+        declined = self._duel_declined(me, {"stake": stake, "challenger": opponent, "challenger_rating": opponent_rating})
+        if declined:
+            return declined
+        ok, why, day = self._spend_allowed(tick, stake)
+        if not ok:
+            return why
+        spend = Spend(day, "pending", stake, opponent=opponent.hex())
+        self.bstate.spends.append(spend)
+        self.bstate.last_entry_tick = tick
+        self.bstate.save(self.bpath)
+        r = self._submit("challenge", Op.DUEL_OFFER, stake, extra=spend, fighter_id=self.fighter_id,
+                         auth_version=me["auth_version"], opponent_id=opponent, ruleset_digest=self.rules.digest,
+                         timing_profile_id=self.budget.timing_profile_id, fee_profile_id=self.budget.fee_profile_id,
+                         stake=stake, format=fmt, expires_tick=expires_tick)
+        if r is not None:
+            self._challenge_result(r, spend)
+        return None
+
+    def _challenge_result(self, r, spend: Spend):
+        if r == "dropped" or r.code not in (Code.OK, Code.DUPLICATE):
+            spend.returned = spend.stake
+        else:
+            spend.contest_or_offer = f"offer:{r.data['offer_id']}"
+        self.bstate.save(self.bpath)
+
+    def _drain_challenge(self):
+        st, spend = self._poll("challenge")
+        if st is not None and st != "pending":
+            self._challenge_result(st, spend)
 
     def _duel_declined(self, me: dict, o: dict) -> str | None:
         """Why this bot's owner filters would decline a duel offer, or None."""

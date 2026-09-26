@@ -170,6 +170,17 @@ Paid registration is a participation credential, not a proof of personhood.
 Monitor repeated pairing, forfeits, ownership clusters and abnormal rating
 transfers. Do not claim these checks solve collusion.
 
+### Demo arena pairing (2026-09-26)
+
+In the 2026-09-25 audit the two best demo fighters met 210 times, because
+policies played without history and their ratings drifted out of everyone
+else's 100..200 window. After the history fix a 20,000-tick soak with the
+public lineup shows no isolation: the most common pair was 5.4% of ranked
+fights, and the top-rated pair 3% of their own. New demo arenas also cap a
+pair at 3 rated starts per epoch (was 6; spec 2), which brought the most
+common pair to 3.2%. The window itself is spec and unchanged. Measurements
+are in the [economics report](economics-report.md).
+
 ## 7. Required scenarios
 
 - Equal ratings/stakes match; unequal stakes or profiles do not.

@@ -415,21 +415,22 @@ class Arena:
         self.log(f"tick {self.w.tick}: cup {r.data.get('cup_id')} created ({r.code.name}), sponsorship {sponsorship}")
 
     def _maybe_duel(self):
+        """Now and then an idle duel bot challenges another. The challenger's
+        bot decides, under its own budget and duel filters (AUD-019)."""
         if self.w.tick % self.duel_every:
             return
         c = self.w.contract
         idle = [f for f, b in self.bots.items() if b.accept_duels and c.fighters[f].lock == "IDLE"]
-        if len(idle) < 2:
-            return
-        a, b = self.rng.sample(idle, 2)
-        owner = self.registry.assets[a].owner
+        pairs = [(a, b) for a in idle for b in idle if a != b]
+        self.rng.shuffle(pairs)
         fmt = self.rng.choice([0, 1, 1, 2])
         stake = self._stake(EVENTS["duel_stake"][fmt])
-        receipt = self.chain.send(owner, Op.DUEL_OFFER, stake, fighter_id=a, auth_version=c.fighters[a].auth_version,
-                                  opponent_id=b, ruleset_digest=self.rules.digest, timing_profile_id=1,
-                                  fee_profile_id=1, stake=stake, format=fmt, expires_tick=self.w.tick + 200)
-        del receipt
-        self.log(f"tick {self.w.tick}: duel challenge {self.labels[a]['label']} -> {self.labels[b]['label']} ({stake} QU)")
+        for a, b in pairs[:6]:
+            why = self.bots[a].challenge(b, c.fighters[b].lifetime, stake, fmt, self.w.tick + 200)
+            if why is None:
+                self.log(f"tick {self.w.tick}: duel challenge {self.labels[a]['label']} -> "
+                         f"{self.labels[b]['label']} ({stake} QU)")
+                return
 
     def _maybe_market(self):
         """Now and then owners list fighters and collectors bid (Market); an

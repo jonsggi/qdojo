@@ -101,7 +101,7 @@ def test_compaction_is_transparent_to_the_arena(tmp_path, monkeypatch):
         monkeypatch.setattr(live, "COMPACT_EVERY", every)
         arena = live.Arena(tmp_path / f"arena-{every}", lineup, seed=11, deterministic=True, log=lambda m: None,
                            cup_every=700, duel_every=100, snapshot_every=0)
-        for _ in range(2400):
+        for _ in range(3600):
             arena.step()
         runs[every] = arena
     small, full = runs[300].w.contract, runs[10**9].w.contract
@@ -282,3 +282,17 @@ def test_the_market_sells_at_a_price_and_payments_replay(tmp_path):
         (net_dir / name).unlink(missing_ok=True)
     replayed = devnet.Devnet(net_dir)
     assert replayed.world.balances == arena.w.balances           # "xfer" records replay the payments
+
+
+def test_a_bot_does_not_challenge_a_fighter_that_keeps_beating_it(tmp_path):
+    arena = _arena(tmp_path, [{"label": "p", "policy": "mixed-v1", "duels": True, "ranked": False},
+                              {"label": "q", "policy": "scout-v1", "duels": True, "ranked": False}])
+    (p, bp), (q, _) = list(arena.bots.items())
+    bp.bstate.duel_h2h[q.hex()] = [0, 0, 3]
+    assert "series" in bp.challenge(q, 1000, arena.tier_stake, 0, arena.w.tick + 200)
+    bp.bstate.duel_h2h.clear()
+    assert bp.challenge(q, 1000, arena.tier_stake, 0, arena.w.tick + 200) is None
+    for _ in range(300):
+        arena.step()
+    spend = next(s for s in bp.bstate.spends if s.opponent == q.hex())
+    assert spend.returned is not None and sum(bp.bstate.duel_h2h[q.hex()]) == 1

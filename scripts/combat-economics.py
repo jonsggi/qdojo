@@ -245,6 +245,7 @@ def main():
     p.add_argument("--out", default=str(ROOT / "docs/economics-report.md"))
     p.add_argument("--arena", action="append", default=[], metavar="LABEL=FILE",
                    help="demo-arena measurements (combat-arena-metrics.py --json) to tabulate")
+    p.add_argument("--notes", help="a Markdown file appended after the arena tables (findings, restart numbers)")
     a = p.parse_args()
     runs = [(x.split("=", 1)[0], json.loads(Path(x.split("=", 1)[1]).read_text())) for x in a.arena]
     m = money((0, 250, 500, 750, 1000), a.ticks)
@@ -268,6 +269,12 @@ def main():
         "Exec/fight counts the two entries, the commits and reveals sent and the resolved rounds; the ticks a "
         "fight shares with others add about 20 QU in the arena. At a 1,000 QU stake the house's rake share "
         "never covers it.", "",
+        "Net per fight is per group of three fighters, divided by all contests. With no subsidy the players "
+        "as a whole lose exactly the rake; skill moves QU from weaker to stronger bots. The game must not be "
+        "promoted as guaranteed earnings.", "",
+        "Every row stops at 30 contests: six fighters form 15 pairs, and the cap of two rated starts per pair "
+        "per epoch allows exactly 30. With a small launch population, the pair cap rather than demand limits "
+        "ranked volume: N fighters can play at most N(N-1) ranked fights per epoch.", "",
         "## Break-even stake", "",
         f"Execution cost per ranked fight: **{exec_fight:.0f} QU** "
         f"({'measured in the demo arena below' if measured else 'from the runs above, without tick costs'}). "
@@ -279,12 +286,6 @@ def main():
           + " | ".join(f"{t['ev'][p]:+.0f}" for p in (0.45, 0.50, 0.55, 0.60)) + " |" for t in tiers], "",
         "EV is the player's net QU per fight at that win share with no draws. The demo arena's tier 1 is "
         "5,000 QU and tier 2 20,000 QU (docs/product-decisions.md).", "",
-        "Net per fight is per group of three fighters, divided by all contests. With no subsidy the players "
-        "as a whole lose exactly the rake; skill moves QU from weaker to stronger bots. The game must not be "
-        "promoted as guaranteed earnings.", "",
-        "Every row stops at 30 contests: six fighters form 15 pairs, and the cap of two rated starts per pair "
-        "per epoch allows exactly 30. With a small launch population, the pair cap rather than demand limits "
-        "ranked volume: N fighters can play at most N(N-1) ranked fights per epoch.", "",
         "## Rating farming by a ring of throwers", "",
         "| Accomplices | Epochs | Booster rating | Gain/epoch | Rated fights | Same-owner pairings | Ring QU cost |",
         "|---:|---:|---:|---:|---:|---:|---:|",
@@ -303,6 +304,8 @@ def main():
                   "plus market fees, minus execution fees and cup sponsorship paid, over every fight of every mode. "
                   "EV groups fighters by ranked score (at least 20 ranked fights).", "",
                   *arena_tables(runs)]
+    if a.notes:
+        lines += ["", Path(a.notes).read_text().rstrip()]
     Path(a.out).write_text("\n".join(lines) + "\n")
     print(f"wrote {a.out}")
 
