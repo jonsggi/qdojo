@@ -28,13 +28,14 @@ import time
 from pathlib import Path
 
 from . import evaluate as E
-from . import export
+from . import export, invariants, store
 from .bot import Bot, Budget, planner_chooser, policy_chooser
 from .chainsim import Asset, AssetRegistry, FeeModel, SimChain, SimQubicClient
-from .codec import Op
+from .codec import Mode, Op
 from .devnet import Devnet, DevnetClient, roles
 from .rules import candidate_1
 from .sim import identity
+from .types import ATTACKS, Plan
 from ..hashing import sha256
 
 # Ranked bots are rarely idle, so the duel specialists skip ranked play: they
@@ -54,7 +55,37 @@ DEPLOYMENT = {"kind": "devnet", "currency": "fake QU", "identities": "synthetic"
               "bots": "operator-run demo bots", "note": "not a Qubic deployment; nothing here is real money"}
 
 ISSUER_LABEL = "qdojo-sim-issuer"
+EXPORT_CHECK_EVERY = 10          # exports between checks of the export against the contract
+# Hot-state bounds (AUD-024): finished fights, contests and offers leave the
+# contract's memory every COMPACT_EVERY ticks (store.compact); a verifiable
+# state snapshot every SNAPSHOT_EVERY ticks bounds a restart to replaying the
+# journal written since.
+COMPACT_EVERY = 600
+SNAPSHOT_EVERY = 1200
+
+
+
+
+def compact(contract):
+    return store.compact(contract)
+
+
 RESERVE_FLOOR, RESERVE_TOPUP = 20_000, 200_000
+
+# Event economics (AUD-018, AUD-019), in multiples of the manifest's tier-1
+# stake, so an arena created with older manifest values stays consistent.
+# The reasoning and measurements are in docs/economics-report.md.
+EVENTS = {
+    # Duel stake per fighter by series format (SINGLE, BO3, BO5): a series
+    # plays more fights, and its one rake must pay for their execution.
+    "duel_stake": {0: 1, 1: 2, 2: 3},
+    "cup_entry": 2,                  # cup entry fee
+    "cup_fee_profile": 2,            # fee profile for cup entries, when the manifest has it (else 1)
+    "cup_sponsorship": 0.2,          # house sponsorship per cup...
+    # ...paid only while no fighter won more than sponsor_max_wins of the last
+    # sponsor_window sponsored cups: one bot cannot capture the house's money.
+    "sponsor_window": 6, "sponsor_max_wins": 2,
+}
 
 
 # A demo bot stops paid entry after this many faults (missed commits/reveals)
@@ -66,26 +97,157 @@ RESERVE_FLOOR, RESERVE_TOPUP = 20_000, 200_000
 DEMO_STOP_AFTER_FAULTS = 3
 
 
-def _budget(rules, entry, epoch_ticks: int = 2400) -> Budget:
-    stake = int(entry.get("max_stake", 5000))
+def stub_chooser(rules, name: str, seed: bytes):
+    """In-process stand-ins for LLM planners, for soaks and tests (a lineup
+    entry's "stub"). "power-reuse" plays mixed-v1 but claims the power strike
+    on its first attack every round, even after it was spent: the planner bug
+    behind the 2026-09-25 forfeits. The bot's plan check must strip it.
+    Any other name is a policy name."""
+    if name == "power-reuse":
+        base = policy_chooser(rules, E.policy_by_name("mixed-v1"), seed)
+
+        def choose(obs):
+            plan = base(obs)
+            slot = next((i for i, a in enumerate(plan.actions) if a in ATTACKS), None)
+            return plan if slot is None else Plan(plan.actions, slot)
+        return choose
+    return policy_chooser(rules, E.policy_by_name(name), seed)
+
+
+# Demo bots' duel accept filters (AUD-019): decline a challenger rated more
+# than DUEL_MAX_RATING_GAP above them, and one they have lost to in most of
+# their last series (history-aware: at least DUEL_H2H_SERIES series, series
+# score below DUEL_H2H_MIN_SCORE). Lineup entries may override each.
+DUEL_MAX_RATING_GAP, DUEL_H2H_SERIES, DUEL_H2H_MIN_SCORE = 200, 3, 0.34
+
+
+def _budget(rules, entry, epoch_ticks: int = 2400, tier_stake: int = 1000) -> Budget:
+    stake = int(entry.get("max_stake", max(5000, 3 * tier_stake)))
     return Budget(ruleset_digest=rules.digest.hex(), max_stake=stake, max_total_escrow=4 * stake,
                   max_fights_per_day=100_000, max_daily_committed=10**12, max_daily_net_loss=10**12,
                   stop_after_faults=int(entry.get("stop_after_faults", DEMO_STOP_AFTER_FAULTS)),
                   fault_window_ticks=int(entry.get("fault_window_ticks", epoch_ticks)),
-                  min_ticks_between_fights=int(entry.get("min_ticks_between_fights", 0)))
+                  min_ticks_between_fights=int(entry.get("min_ticks_between_fights", 0)),
+                  duel_max_stake=int(entry.get("duel_max_stake", stake)),
+                  duel_max_rating_gap=int(entry.get("duel_max_rating_gap", DUEL_MAX_RATING_GAP)),
+                  duel_h2h_series=int(entry.get("duel_h2h_series", DUEL_H2H_SERIES)),
+                  duel_h2h_min_score=float(entry.get("duel_h2h_min_score", DUEL_H2H_MIN_SCORE)))
+
+
+class Market:
+    """A simulated secondary market for fighter NFTs (AUD-023), priced.
+
+    Every `every` ticks: owners of idle, non-founding fighters may list them
+    with an ask above the fighter's value; unsold asks come down a little; a
+    collector arrives with a bid around the value of the listing that looks
+    cheapest, and buys when the bid meets the ask. The buyer pays the ask, the
+    seller receives it less a market fee (FEE_BPS), which goes to the house.
+    Payments move external fake QU and are journalled ("xfer"), so balances
+    replay. The value model is deliberately simple and public: rating, record
+    and experience. It shows what a market would show (asks, sales, prices),
+    not real demand."""
+
+    FEE_BPS = 250
+    LIST_P, BUYERS = 0.25, 2
+
+    def __init__(self, arena, doc: dict | None):
+        self.a = arena
+        doc = doc or {}
+        self.listings: dict[str, dict] = doc.get("listings", {})
+        self.sales: list[dict] = doc.get("sales", [])
+
+    def value(self, fid: bytes) -> int:
+        """Rating doubles the value every 250 points; a winning record and
+        experience add to it. In fake QU, scaled to the tier-1 stake."""
+        f = self.a.w.contract.fighters[fid]
+        r = f.record
+        fights = r["W"] + r["D"] + r["L"] + r["FW"] + r["FL"]
+        score = (r["W"] + r["FW"] + r["D"] / 2 + 5) / (fights + 10)
+        experience = 0.8 + 0.4 * min(1.0, fights / 50)
+        return int(20 * self.a.tier_stake * 2 ** ((f.lifetime - 1000) / 250) * (0.5 + score) * experience)
+
+    def step(self):
+        a, rng, c = self.a, self.a.rng, self.a.w.contract
+        idle = {f.hex(): f for f in a.bots if c.fighters[f].lock == "IDLE" and not a.registry.assets[f].founding}
+        for hx in list(self.listings):
+            if hx not in idle or self.listings[hx]["seller"] != a.registry.assets[idle[hx]].owner.hex():
+                del self.listings[hx]                   # busy now, or it changed hands: withdrawn
+                continue
+            lst = self.listings[hx]
+            lst["ask"] = max(int(0.85 * self.value(idle[hx])), int(lst["ask"] * 0.95))
+        for hx, fid in idle.items():
+            if hx not in self.listings and rng.random() < self.LIST_P:
+                self.listings[hx] = {"ask": int(self.value(fid) * rng.uniform(1.05, 1.5)), "since": a.w.tick,
+                                     "seller": a.registry.assets[fid].owner.hex()}
+        for _ in range(self.BUYERS):
+            if not self.listings:
+                break
+            hx = min(self.listings, key=lambda h: self.listings[h]["ask"] / max(1, self.value(idle[h])))
+            fid, ask = idle[hx], self.listings[hx]["ask"]
+            bid = int(self.value(fid) * rng.uniform(0.8, 1.15))
+            if bid >= ask:
+                self._sell(fid, ask, bid)
+                del self.listings[hx]
+
+    def _sell(self, fid: bytes, price: int, bid: int):
+        a = self.a
+        seller = a.registry.assets[fid].owner
+        a.state["collectors"] += 1
+        buyer = identity(f"demo-collector:{a.state['collectors']}")
+        a.w.mint(buyer, 10**12)
+        fee = price * self.FEE_BPS // 10_000
+        a.net.transfer_external(buyer, seller, price - fee)
+        a.net.transfer_external(buyer, roles()["house"], fee)
+        a.registry.transfer(fid, seller, buyer)
+        a.w.send(buyer, Op.REGISTER_FIGHTER, fighter_id=fid, registry_version=1)
+        a._make_bot(fid)
+        f = a.w.contract.fighters[fid]
+        self.sales.append({"tick": a.w.tick, "fighter_id": fid.hex(), "seller": seller.hex(), "buyer": buyer.hex(),
+                           "price": price, "fee": fee, "bid": bid, "rating": f.lifetime, "record": dict(f.record)})
+        a.log(f"tick {a.w.tick}: {a.labels[fid]['label']} sold to collector #{a.state['collectors']} for {price} QU")
+
+    def fees_collected(self) -> int:
+        return sum(x["fee"] for x in self.sales)
+
+    def summary(self) -> dict:
+        prices = [x["price"] for x in self.sales]
+        return {"sales": len(prices), "volume": sum(prices), "fees": self.fees_collected(),
+                "median_price": sorted(prices)[len(prices) // 2] if prices else None,
+                "listings": len(self.listings)}
+
+    def doc(self) -> dict:
+        names = {f.hex(): e["label"] for f, e in self.a.labels.items()}
+        c = self.a.w.contract
+        listings = [{"fighter_id": hx, "name": names.get(hx), "ask": str(x["ask"]), "since_tick": str(x["since"]),
+                     "seller": x["seller"], "value": str(self.value(bytes.fromhex(hx))),
+                     "rating": c.fighters[bytes.fromhex(hx)].lifetime}
+                    for hx, x in sorted(self.listings.items(), key=lambda kv: int(kv[1]["ask"]))]
+        sales = [{**x, "name": names.get(x["fighter_id"]), "tick": str(x["tick"]), "price": str(x["price"]),
+                  "fee": str(x["fee"]), "bid": str(x["bid"])} for x in self.sales[-50:]][::-1]
+        return {"fee_bps": self.FEE_BPS, "currency": "fake QU", "listings": listings, "sales": sales,
+                "stats": {k: (str(v) if isinstance(v, int) else v) for k, v in self.summary().items()},
+                "model": "simulated collectors; value from rating, record and experience; not real demand"}
+
+    def state(self) -> dict:
+        return {"listings": self.listings, "sales": self.sales}
 
 
 class Arena:
     def __init__(self, directory: Path, lineup: list[dict], profile: str = "demo", seed: int | None = None,
                  latency=(1, 3), drop_rate: float = 0.02, fees: FeeModel | None = FeeModel(),
                  cup_every: int = 1800, duel_every: int = 300, market_every: int = 2400, log=print,
-                 deterministic: bool = False):
+                 deterministic: bool = False, params: dict | None = None, snapshot_every: int = SNAPSHOT_EVERY):
         self.dir = Path(directory)
         # Samples and tests only: derive policy seeds and salts from the seed.
         # A live arena keeps secrets-based salts, as a real bot must.
         self.deterministic = deterministic
         self.log = log
-        self.net = Devnet(self.dir, profile)
+        self.net = Devnet(self.dir, profile, params=params, compact=compact, compact_every=COMPACT_EVERY)
+        if self.net.restart["mode"] != "new":
+            r = self.net.restart
+            log(f"restored at tick {self.net.world.tick} by {r['mode']} in {r['seconds']} s"
+                + (f" (skipped: {'; '.join(r['tried'])})" if r["tried"] else ""))
+        self.snapshot_every = snapshot_every
         self.w = self.net.world
         self.rules = candidate_1()
         state = self._load("chain.json", {"reserve": 0, "burned": 0, "funded": 0, "seed": seed or secrets.randbits(32),
@@ -103,6 +265,8 @@ class Arena:
         self.labels: dict[bytes, dict] = {}
         self.bots: dict[bytes, Bot] = {}
         self.cup_every, self.duel_every, self.market_every = cup_every, duel_every, market_every
+        self.tier_stake = self.net.m.tiers[min(self.net.m.tiers)]
+        self.market = Market(self, self._load("market.json", None))
         admin = roles()["admin"]
         for entry in lineup:
             fid = self._fighter_for(entry, admin)
@@ -126,13 +290,17 @@ class Arena:
         os.replace(tmp, p)
 
     def save(self):
-        self.net.save()
+        self.net.save(trim=True)
+        last = self.net.snapshot_tick
+        if self.snapshot_every and (last is None or self.w.tick - last >= self.snapshot_every):
+            self.net.snapshot()
         self.state.update(reserve=self.chain.reserve or 0, burned=self.chain.burned)
         self._dump("chain.json", self.state)
         self._dump("assets.json", {fid.hex(): {"issuer": a.issuer.hex(), "name": a.name, "founding": a.founding,
                                                "history": [[t, f.hex() if f else None, to.hex()]
                                                            for t, f, to in a.history]}
                                    for fid, a in self.registry.assets.items()})
+        self._dump("market.json", self.market.state())
 
     # -- fighters and bots --------------------------------------------------
 
@@ -164,6 +332,8 @@ class Arena:
                                    log=self._bot_log(entry["label"]))
         seed = (sha256(b"qdojo/arena-policy/v1\0", str(self.state["seed"]).encode(), entry["label"].encode())
                 if self.deterministic else secrets.token_bytes(32))
+        if "stub" in entry:
+            return stub_chooser(self.rules, entry["stub"], seed)
         return policy_chooser(self.rules, E.policy_by_name(entry["policy"]), seed)
 
     def _bot_log(self, label: str):
@@ -175,10 +345,12 @@ class Arena:
         client = SimQubicClient(self.chain, owner, DevnetClient(self.net, owner))
         label = entry["label"]
         bot = Bot(client, self.rules, fid, owner, owner, self._chooser(entry),
-                  _budget(self.rules, entry, self.net.m.ticks_per_epoch),
+                  _budget(self.rules, entry, self.net.m.ticks_per_epoch, self.tier_stake),
                   self.dir / "bots" / label / owner.hex()[:12],
                   log=self._bot_log(label))
-        bot.play_cups = bool(entry.get("cups"))
+        # Every ranked bot enters cups unless its entry says "cups": false, so
+        # the strongest ranked fighters meet the cup field too (AUD-019).
+        bot.play_cups = bool(entry.get("cups", entry.get("ranked", True)))
         bot.accept_duels = bool(entry.get("duels"))
         bot.ranked = entry.get("ranked", True)
         if self.deterministic:
@@ -192,6 +364,27 @@ class Arena:
 
     # -- events -------------------------------------------------------------
 
+    def _stake(self, multiple: float) -> int:
+        return int(round(multiple * self.tier_stake))
+
+    def sponsorship(self) -> int:
+        """The house's sponsorship for the next cup: nothing while one fighter
+        won more than sponsor_max_wins of the last sponsor_window sponsored cups."""
+        c = self.w.contract
+        h = getattr(c, "history", None)
+        done = [(k.cup_id, k.champion, k.sponsorship) for k in c.cups.values() if k.status == "COMPLETE"]
+        done += [(kid, v[1], v[2]) for kid, v in (h.cups.items() if h is not None else ()) if v[0] == "COMPLETE"]
+        sponsored = [champ for _, champ, amount in sorted(done, key=lambda x: x[0]) if amount][-EVENTS["sponsor_window"]:]
+        if sponsored and max(sponsored.count(x) for x in set(sponsored)) > EVENTS["sponsor_max_wins"]:
+            return 0
+        return self._stake(EVENTS["cup_sponsorship"])
+
+    def _cup_level_ticks(self, timing_id=1, checkin=60, replay_delay=40) -> int:
+        """A cup level's window: the worst case the contract requires, with a margin."""
+        commit, reveal = self.net.m.timing[timing_id]
+        worst = checkin + 7 * 3 * (commit + reveal) + replay_delay + 3 * 3 * (commit + reveal) + 2
+        return worst + worst // 10
+
     def _maybe_cup(self):
         c = self.w.contract
         if any(k.status in ("REGISTRATION", "RUNNING") for k in c.cups.values()):
@@ -200,11 +393,14 @@ class Arena:
         if self.w.tick - last < self.cup_every:
             return
         admin = roles()["admin"]
-        r = self.w.send(admin, Op.ADMIN_CREATE_CUP, 5000, ruleset_digest=self.rules.digest, timing_profile_id=1,
-                        fee_profile_id=1, entry_fee=2000, registration_close=self.w.tick + 120, min_entrants=4,
-                        max_entrants=8, level_ticks=1300, first_level_delay=40, checkin_ticks=60, replay_delay=40)
+        fee_id = EVENTS["cup_fee_profile"] if EVENTS["cup_fee_profile"] in self.net.m.fees else 1
+        sponsorship = self.sponsorship()
+        r = self.w.send(admin, Op.ADMIN_CREATE_CUP, sponsorship, ruleset_digest=self.rules.digest, timing_profile_id=1,
+                        fee_profile_id=fee_id, entry_fee=self._stake(EVENTS["cup_entry"]),
+                        registration_close=self.w.tick + 120, min_entrants=4, max_entrants=8,
+                        level_ticks=self._cup_level_ticks(), first_level_delay=40, checkin_ticks=60, replay_delay=40)
         self.last_cup_attempt = self.w.tick
-        self.log(f"tick {self.w.tick}: cup {r.data.get('cup_id')} created ({r.code.name})")
+        self.log(f"tick {self.w.tick}: cup {r.data.get('cup_id')} created ({r.code.name}), sponsorship {sponsorship}")
 
     def _maybe_duel(self):
         if self.w.tick % self.duel_every:
@@ -215,32 +411,19 @@ class Arena:
             return
         a, b = self.rng.sample(idle, 2)
         owner = self.registry.assets[a].owner
-        stake = self.rng.choice([1000, 2000, 3000])
+        fmt = self.rng.choice([0, 1, 1, 2])
+        stake = self._stake(EVENTS["duel_stake"][fmt])
         receipt = self.chain.send(owner, Op.DUEL_OFFER, stake, fighter_id=a, auth_version=c.fighters[a].auth_version,
                                   opponent_id=b, ruleset_digest=self.rules.digest, timing_profile_id=1,
-                                  fee_profile_id=1, stake=stake, format=self.rng.choice([0, 1, 1, 2]),
-                                  expires_tick=self.w.tick + 200)
+                                  fee_profile_id=1, stake=stake, format=fmt, expires_tick=self.w.tick + 200)
         del receipt
         self.log(f"tick {self.w.tick}: duel challenge {self.labels[a]['label']} -> {self.labels[b]['label']} ({stake} QU)")
 
     def _maybe_market(self):
-        """Now and then a collector buys an idle, non-founding fighter. The bot
-        keeps operating it for the new owner after they register it."""
+        """Now and then owners list idle fighters and collectors buy them (Market)."""
         if self.market_every <= 0 or self.w.tick % self.market_every:
             return
-        c = self.w.contract
-        for_sale = [f for f in self.bots if c.fighters[f].lock == "IDLE" and not self.registry.assets[f].founding]
-        if not for_sale:
-            return
-        fid = self.rng.choice(for_sale)
-        seller = self.registry.assets[fid].owner
-        self.state["collectors"] += 1
-        buyer = identity(f"demo-collector:{self.state['collectors']}")
-        self.w.mint(buyer, 10**12)
-        self.registry.transfer(fid, seller, buyer)
-        self.w.send(buyer, Op.REGISTER_FIGHTER, fighter_id=fid, registry_version=1)
-        self._make_bot(fid)
-        self.log(f"tick {self.w.tick}: {self.labels[fid]['label']} sold to collector #{self.state['collectors']}")
+        self.market.step()
 
     def _reserve(self):
         if self.chain.fees is not None and (self.chain.reserve or 0) < RESERVE_FLOOR:
@@ -265,12 +448,72 @@ class Arena:
         self._maybe_market()
         self._reserve()
         self.chain.advance()
+        if self.w.tick % COMPACT_EVERY == 0:
+            compact(self.w.contract)
+
+    @property
+    def qualification(self):
+        from .devnet import QUALIFICATION
+        return QUALIFICATION.get(self.net.profile)
+
+    def season_standings(self, season: int, t: int) -> dict:
+        return self.w.contract.season_standings(season, t, self.qualification)
+
+    def economics(self) -> dict:
+        """economics.json (AUD-018, AUD-019): per tier, the player's expected
+        value by score and the break-even score; event prices; what recent
+        ranked contests paid by rating band; the house's running P&L."""
+        m, c = self.net.m, self.w.contract
+        fee = m.fees[1]
+        rake = fee.rake_bps / 10_000
+        tiers = {}
+        for tid, stake in sorted(m.tiers.items()):
+            house = 2 * stake * fee.rake_bps // 10_000 * fee.house_bps // 10_000
+            tiers[str(tid)] = {
+                "stake": str(stake), "rake_bps": fee.rake_bps, "house_rake_per_fight": str(house),
+                "break_even_win_share": round(1 / (2 * (1 - rake)), 4),
+                # Net QU per fight for a bot that wins this share and draws none (a draw refunds the stake).
+                "ev_by_win_share": {f"{p:.2f}": str(round(stake * (2 * p * (1 - rake) - 1)))
+                                    for p in (0.40, 0.45, 0.50, 0.55, 0.60, 0.65)}}
+        bands: dict[str, list[int]] = {}
+        for ct in c.contests.values():
+            if ct.mode != Mode.RANKED or ct.status != "DONE" or not ct.settlement or ct.result["kind"] == "VOID":
+                continue
+            for p in (ct.a, ct.b):
+                r = p.lifetime_rating
+                band = "<900" if r < 900 else "900-1099" if r < 1100 else "1100-1299" if r < 1300 else "1300+"
+                bands.setdefault(band, []).append(ct.settlement["credits"].get(p.payout_recipient, 0) - ct.stake)
+        credits = c.ledger.credits
+        fights = c.next_id["fight"] - 1
+        sponsored = sum(k.sponsorship for k in c.cups.values() if k.status == "COMPLETE")
+        h = getattr(c, "history", None)
+        sponsored += sum(v[2] for v in (h.cups.values() if h is not None else ()) if v[0] == "COMPLETE")
+        pnl = credits.get(fee.house, 0) + self.market.fees_collected() - self.chain.burned - sponsored
+        return {
+            "currency": "fake QU", "note": "simulated execution fees; not a Qubic cost measurement",
+            "tiers": tiers,
+            "events": {"duel_stake_by_format": {k: str(self._stake(v)) for k, v in
+                                                zip(("SINGLE", "BO3", "BO5"), EVENTS["duel_stake"].values())},
+                       "cup_entry_fee": str(self._stake(EVENTS["cup_entry"])),
+                       "cup_rake_bps": m.fees[EVENTS["cup_fee_profile"] if EVENTS["cup_fee_profile"] in m.fees else 1].rake_bps,
+                       "next_cup_sponsorship": str(self.sponsorship()), "market_fee_bps": Market.FEE_BPS},
+            "measured_ranked_net_by_rating": {b: {"fights": len(v), "net_per_fight": round(sum(v) / len(v), 1)}
+                                              for b, v in sorted(bands.items())},
+            "house": {"rake_income": str(credits.get(fee.house, 0)), "market_fees": str(self.market.fees_collected()),
+                      "execution_fees": str(self.chain.burned), "sponsorship_paid": str(sponsored),
+                      "pnl": str(pnl), "fights": str(fights),
+                      "pnl_per_fight": round(pnl / fights, 1) if fights else None},
+        }
+
+    def extras(self) -> dict:
+        return {"market": self.market.doc(), "economics": self.economics()}
 
     def deployment(self, tick_seconds: float) -> dict:
         fighters = {}
         for fid, entry in self.labels.items():
             driver = (f"llm:{entry['llm']['model']}" if "llm" in entry else
-                      "planner" if "planner" in entry else entry.get("policy"))
+                      "planner" if "planner" in entry else f"stub:{entry['stub']}" if "stub" in entry
+                      else entry.get("policy"))
             fighters[fid.hex()] = {"name": entry["label"], "driver": driver, "asset": self.registry.public(fid)}
         return {**DEPLOYMENT, "profile": self.net.profile, "tick_seconds": tick_seconds,
                 "names": {f: v["name"] for f, v in fighters.items()}, "fighters": fighters,
@@ -291,14 +534,21 @@ def run(devnet_dir: Path, lineup: list[dict], export_dir: Path, tick_seconds: fl
         stop["now"] = True
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
-    done = 0
+    done = exports = 0
     next_at = time.monotonic()
     while not stop["now"] and (ticks is None or done < ticks):
         arena.step()
         done += 1
         if done % export_every == 0:
             arena.save()
-            export.export_all(arena.w.contract, export_dir, keep=keep, deployment=arena.deployment(tick_seconds))
+            export.export_all(arena.w.contract, export_dir, keep=keep, deployment=arena.deployment(tick_seconds),
+                              qualification=arena.qualification, extras=arena.extras())
+            exports += 1
+            if exports % EXPORT_CHECK_EVERY == 0:
+                # The public files against the contract (AUD-025): a live fight
+                # published past its deadline or a finished one not published final.
+                for problem in invariants.check_export(arena.w.contract, export_dir, slack=export_every + 1)[:5]:
+                    log(f"tick {arena.w.tick}: export invariant: {problem}")
         next_at += tick_seconds
         delay = next_at - time.monotonic()
         if delay > 0:
@@ -306,7 +556,8 @@ def run(devnet_dir: Path, lineup: list[dict], export_dir: Path, tick_seconds: fl
         else:
             next_at = time.monotonic()
     arena.save()
-    export.export_all(arena.w.contract, export_dir, keep=keep, deployment=arena.deployment(tick_seconds))
+    export.export_all(arena.w.contract, export_dir, keep=keep, deployment=arena.deployment(tick_seconds),
+                      qualification=arena.qualification, extras=arena.extras())
     log(f"stopped at tick {arena.w.tick}; journal saved")
     return arena
 
@@ -315,8 +566,12 @@ def cmd_live(a):
     lineup = json.loads(Path(a.lineup).read_text()) if a.lineup else DEFAULT_LINEUP
     devnet_dir = Path(a.devnet) if a.devnet else Path(os.environ.get(
         "QDOJO_COMBAT_HOME", os.path.expanduser("~/.qdojo/combat"))) / "arena"
+    params = None
+    if a.timing:
+        commit, reveal = (int(x) for x in a.timing.split(","))
+        params = {"timing": {1: (commit, reveal)}}
     run(devnet_dir, lineup, Path(a.export), a.tick_seconds, a.export_every, a.keep, a.ticks,
-        log=lambda m: print(time.strftime("%H:%M:%S"), m, flush=True), profile=a.profile)
+        log=lambda m: print(time.strftime("%H:%M:%S"), m, flush=True), profile=a.profile, params=params)
 
 
 def add_parser(s):
@@ -329,4 +584,7 @@ def add_parser(s):
     d.add_argument("--export-every", type=int, default=10, help="ticks between exports")
     d.add_argument("--keep", type=int, default=200, help="fights kept in the export")
     d.add_argument("--ticks", type=int, help="stop after this many ticks (default: run until stopped)")
+    d.add_argument("--timing", metavar="COMMIT,REVEAL",
+                   help="commit and reveal windows in ticks for a NEW arena (default devnet.DEMO_TIMING); "
+                        "an existing arena keeps the values it was created with")
     d.set_defaults(fn=cmd_live)

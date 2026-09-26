@@ -119,6 +119,29 @@ function sampleFacts() {
   };
 }
 
+/* The export against itself (AUD-025): no live fight past its deadline at
+ * the export's tick, and every fight in results.json published as DONE. A
+ * file frozen mid-round after its fight ended fails here. */
+function exportProblems(root) {
+  const out = [];
+  const index = readJson(path.join(root, 'index.json'));
+  const tick = BigInt(index.generated_tick);
+  const fight = id => { const p = path.join(root, 'fights', String(id) + '.json'); return fs.existsSync(p) ? readJson(p) : null; };
+  for (const id of index.active_fights || []) {
+    const f = fight(id);
+    if (!f) { out.push('active fight ' + id + ' has no file'); continue; }
+    const last = f.phase === 'COMMIT' ? f.commit_last : f.phase === 'REVEAL' ? f.reveal_last : null;
+    if (last == null) out.push('active fight ' + id + ' published as ' + f.phase);
+    else if (BigInt(last) < tick) out.push('fight ' + id + ' overdue: ' + f.phase + ' deadline ' + last + ' < tick ' + tick);
+  }
+  const results = fs.existsSync(path.join(root, 'results.json')) ? readJson(path.join(root, 'results.json')).results || [] : [];
+  for (const r of results) {
+    const f = fight(r.fight_id);
+    if (f && f.phase !== 'DONE') out.push('fight ' + r.fight_id + ' finished in results.json but published as ' + f.phase);
+  }
+  return out;
+}
+
 // ---- the run ----------------------------------------------------------------------
 
 const results = [];
@@ -135,6 +158,10 @@ async function main() {
   fs.mkdirSync(SHOTS, { recursive: true });
   for (const f of fs.readdirSync(SHOTS)) if (/^FAILED-.*\.png$/.test(f)) fs.rmSync(path.join(SHOTS, f));
   const facts = sampleFacts();
+  if (want('export-consistency')) {
+    const bad = exportProblems(SAMPLE);
+    record('export-consistency', bad.length === 0, bad.length ? bad.slice(0, 3).join('; ') : 'live fights within deadline; finished fights published as finished');
+  }
   const { chromium } = found.pw;
   const browser = await chromium.launch({ executablePath: chrome, args: ['--no-sandbox'] });
   const main = await serve([WEB]);
@@ -194,7 +221,13 @@ async function main() {
     await must(cards === live, live + ' live fight card(s), got ' + cards);
     const sim = await text(page, '.info-cols');
     await must(/SIMULATED CHAIN/.test(sim) && /DEMO PROFILE/.test(sim) && /PAIR STARTS/.test(sim), 'SIMULATED CHAIN and DEMO PROFILE panels');
-    if (cards) await must(/TICKS? LEFT|DEADLINE PASSED/.test(await text(page, '.arena-card .arena-status')), 'ticks left on a live fight');
+    // A live fight shows the ticks left before its deadline. "DEADLINE PASSED"
+    // means the export is behind the contract (AUD-011, AUD-025): a failure.
+    const statuses = (await page.locator('.arena-card .arena-status').allTextContents()).map(t => t.replace(/\s+/g, ' ').trim());
+    for (const st of statuses) {
+      await must(!/DEADLINE PASSED/.test(st), 'no overdue live fight, got "' + st + '"');
+      await must(/TICKS? LEFT/.test(st), 'ticks left on every live fight, got "' + st + '"');
+    }
     await page.waitForTimeout(1200);
     await shot(page, 'arena');
     return cards + ' live';

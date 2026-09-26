@@ -120,3 +120,143 @@ def replay(manifest: Manifest, head: dict, records: list) -> CombatContract:
     if contract is None:
         raise StoreError("empty journal")
     return contract
+
+
+# ---- compaction of finished history (AUD-024) --------------------------------
+
+class History:
+    """What compaction took out of the contract's hot state, kept small.
+
+    The contract never reads a finished fight, contest, offer or cup again
+    (the C++ port evicts them). Readers that summarise history (the exporter,
+    a bot settling its budget) find here what they would have found there:
+    per-fighter records by mode, each fighter's recent fight ids, and bounded
+    outcome maps for bots that settle late."""
+
+    RECENT = 64                 # fight ids kept per fighter (the exporter's page)
+    OUTCOMES = 20_000           # pruned contests/offers/cups remembered for late budget settlement
+
+    def __init__(self):
+        self.records_by_mode: dict[bytes, dict[str, dict[str, int]]] = {}
+        self.recent_fights: dict[bytes, list[int]] = {}
+        self.contests: dict[int, tuple] = {}     # contest_id -> (kind, winner, stake, fee_profile_id, a, b)
+        self.offers: dict[int, tuple] = {}       # offer_id -> (status, contest_id, amount)
+        self.cups: dict[int, tuple] = {}         # cup_id -> (status, champion, sponsorship, entries_gross, entry_fee, fee_profile_id)
+        self.pruned = {"fights": 0, "contests": 0, "offers": 0, "cups": 0}
+
+    def _remember(self, table: dict, key, value):
+        table[key] = value
+        while len(table) > self.OUTCOMES:
+            del table[next(iter(table))]
+
+
+def count_fight(out: dict, fight) -> None:
+    """Add one finished fight to per-fighter records by mode: W/D/L for fought
+    results, FW/FL for forfeits, N for no result (double fault or void)."""
+    from .codec import Mode
+    if fight.phase != "DONE" or not fight.result:
+        return
+    mode = Mode(fight.context.mode).name.lower()
+    kind, winner = fight.result.get("kind"), fight.result.get("winner")
+    for side, p in (("A", fight.context.participant_a), ("B", fight.context.participant_b)):
+        r = out.setdefault(p.fighter_id, {}).setdefault(mode, {"W": 0, "D": 0, "L": 0, "FW": 0, "FL": 0, "N": 0})
+        if kind == "COMBAT":
+            r["W" if winner == side else "D" if winner is None else "L"] += 1
+        elif kind == "FORFEIT":
+            r["FW" if winner == side else "FL"] += 1
+        else:
+            r["N"] += 1
+
+
+def history(contract) -> History:
+    h = getattr(contract, "history", None)
+    if h is None:
+        h = contract.history = History()
+    return h
+
+
+def compact(contract, keep_ticks: int = 2400, keep_recent: int = 400, per_fighter: int = 12,
+            keep_cups: int = 20, keep_epochs: int = 8, keep_seasons: int = 6) -> dict:
+    """Move finished records out of the contract's hot state. Returns counts.
+
+    Kept in hot state:
+    - everything live: open offers, active contests and their fights, cups in
+      registration or running;
+    - contests that finished within `keep_ticks`, so bots settle their budgets
+      from them (they read the contest a tick or so after it ends);
+    - the `keep_recent` newest fights (the public export publishes 200), each
+      fighter's last `per_fighter` finished fights (opponent scouting reads the
+      last ten), and the fights of the `keep_cups` newest cups (cups.json);
+    - a contest while any of its fights is kept, and an offer while its contest is.
+    Pair-start counters of past epochs, fault counts older than `keep_epochs`
+    epochs and season stats older than `keep_seasons` seasons are dropped: the
+    contract reads only the current epoch's and a live contest's season.
+    Nothing here changes what the contract does next or the event digest."""
+    c = contract
+    h = history(c)
+    t = c.tick
+    cutoff = t - keep_ticks
+    live_cups = {k.cup_id for k in c.cups.values() if k.status in ("REGISTRATION", "RUNNING")}
+    recent_cups = set(sorted(c.cups)[-keep_cups:]) | live_cups
+    keep_fights = set(sorted(c.fights)[-keep_recent:])
+    per: dict[bytes, int] = {}
+    for fid in sorted(c.fights, reverse=True):
+        f = c.fights[fid]
+        if f.phase != "DONE":
+            keep_fights.add(fid)
+            continue
+        for p in (f.context.participant_a, f.context.participant_b):
+            n = per.get(p.fighter_id, 0)
+            if n < per_fighter:
+                keep_fights.add(fid)
+            per[p.fighter_id] = n + 1
+    keep_contests = set()
+    for ct in c.contests.values():
+        young = ct.status != "DONE" or not ct.result or ct.result.get("tick", t) > cutoff
+        if young or ct.cup_id in recent_cups or any(x in keep_fights for x in ct.fights):
+            keep_contests.add(ct.contest_id)
+    counts = {"fights": 0, "contests": 0, "offers": 0, "cups": 0}
+    for cid in [x for x in c.contests if x not in keep_contests]:
+        ct = c.contests.pop(cid)
+        h._remember(h.contests, cid, (ct.result["kind"], ct.result.get("winner"), ct.stake, ct.fee_profile_id,
+                                      ct.a.fighter_id, ct.b.fighter_id))
+        for fid in ct.fights:
+            f = c.fights.pop(fid, None)
+            if f is None:
+                continue
+            count_fight(h.records_by_mode, f)
+            for p in (f.context.participant_a, f.context.participant_b):
+                ids = h.recent_fights.setdefault(p.fighter_id, [])
+                ids.append(fid)
+                ids.sort()
+                del ids[:-History.RECENT]
+            counts["fights"] += 1
+        counts["contests"] += 1
+    for oid in [o.offer_id for o in c.offers.values() if o.status != "OPEN"
+                and (o.contest_id not in c.contests if o.status == "MATCHED" else o.expires_tick <= cutoff)]:
+        o = c.offers.pop(oid)
+        h._remember(h.offers, oid, (o.status, o.contest_id, o.amount))
+        counts["offers"] += 1
+    for kid in [k for k in sorted(c.cups) if k not in recent_cups]:
+        k = c.cups[kid]
+        if any(ct.cup_id == kid for ct in c.contests.values()):
+            continue
+        del c.cups[kid]
+        fee_id = k.descriptor["fee_profile_id"]
+        h._remember(h.cups, kid, (k.status, k.champion, k.sponsorship, sum(e.amount for e in k.entries.values()),
+                                  k.descriptor["entry_fee"], fee_id, tuple(k.entries)))
+        counts["cups"] += 1
+    epoch = c.m.epoch(t)
+    for key in [k for k in c.pair_starts if k[2] < epoch]:
+        del c.pair_starts[key]
+    season = c.m.season(t)
+    for ftr in c.fighters.values():
+        for e in [e for e in ftr.faults if e < epoch - keep_epochs]:
+            del ftr.faults[e]
+        for s in [s for s in ftr.season_stats if s < season - keep_seasons]:
+            del ftr.season_stats[s]
+        for s in [s for s in ftr.season_rating if s < season - keep_seasons]:
+            del ftr.season_rating[s]
+    for k, v in counts.items():
+        h.pruned[k] += v
+    return counts

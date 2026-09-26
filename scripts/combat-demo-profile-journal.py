@@ -2,8 +2,9 @@
 """Parity journal for a non-default manifest: the devnet "demo" profile.
 
 Writes packages/qdojo/tests/combat/fixtures/contract/demo-profile.journal.
-Four fighters queue ranked over and over against devnet.PROFILES["demo"]
-(pair_starts_per_epoch 6, pair_rematch_ticks 60, ticks_per_epoch 2400,
+Four fighters queue ranked over and over against the demo profile's matchmaking
+values (devnet.LEGACY_PROFILES["demo"], the ones this fixture was made with:
+pair_starts_per_epoch 6, pair_rematch_ticks 60, ticks_per_epoch 2400,
 season_closeout_ticks 300), so the same pairs meet again and again: rematches
 inside 60..120 ticks and more than two starts per pair and epoch happen, which
 the default 2/120 would refuse. Occasional missed commits and reveals add
@@ -28,7 +29,7 @@ sys.path.insert(0, str(ROOT / "packages/qdojo/tests"))
 from qdojo.combat import store  # noqa: E402
 from qdojo.combat.codec import Op  # noqa: E402
 from qdojo.combat.contract import development_manifest  # noqa: E402
-from qdojo.combat.devnet import PROFILES  # noqa: E402
+from qdojo.combat.devnet import LEGACY_PROFILES  # noqa: E402
 from qdojo.combat.rules import candidate_1  # noqa: E402
 from qdojo.combat.sim import World, commit_fields, reveal_fields  # noqa: E402
 from qdojo.combat.types import SUBMITTED, Plan  # noqa: E402
@@ -41,7 +42,7 @@ START, TICKS = 1500, 1300
 
 def build():
     rng = random.Random(SEED)
-    m = development_manifest(candidate_1(), ADMIN, HOUSE, DEV, SHARE, **PROFILES["demo"])
+    m = development_manifest(candidate_1(), ADMIN, HOUSE, DEV, SHARE, **LEGACY_PROFILES["demo"])
     assert (m.pair_starts_per_epoch, m.pair_rematch_ticks) != (2, 120), "the point is a non-default profile"
     w = World(m, tick=START)
     w.mint(ADMIN, 10**9)
