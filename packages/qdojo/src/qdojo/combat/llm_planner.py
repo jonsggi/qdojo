@@ -293,7 +293,8 @@ def request_body(model: str, obs: dict, prompt: Path = PROMPT, reasoning: str = 
         # default. The Claude prompt lets the model reason briefly in the reply
         # before the JSON object; the last JSON object with "actions" is read.
         body["messages"][0]["content"] = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
-        body["messages"][1]["content"] += "\nThink briefly if you need to, then end with the JSON object."
+        body["messages"][1]["content"] += ("\nThe commit window is short: think in at most three short sentences, "
+                                               "then end with the JSON object.")
     else:
         body["temperature"] = 0.7
         body["response_format"] = {"type": "json_object"}
