@@ -176,3 +176,18 @@ def test_llm_planner_reads_the_ruleset_it_is_playing(c2):
     for name in ("planner-system-candidate-2.md", "planner-system-claude-candidate-2.md"):
         text = (L.PROMPTS / name).read_text()
         assert "candidate 2" in text and "120" in text and "+12" in text and "+8" in text
+
+
+def test_demo_c2_profile_is_the_demo_profile_on_candidate_2(c2, tmp_path):
+    import json as _json
+    from qdojo.combat import devnet
+    demo, dc2 = devnet.manifest("demo"), devnet.manifest("demo-c2")
+    assert dc2.ruleset is c2 and demo.ruleset is rules_mod.candidate_1()
+    assert dc2.timing[1] == devnet.DEMO_C2_TIMING == (9, 6)
+    assert (dc2.tiers, dc2.fees, dc2.pair_starts_per_epoch) == (demo.tiers, demo.fees, demo.pair_starts_per_epoch)
+    net = devnet.Devnet(tmp_path / "a", "demo-c2")
+    meta = _json.loads((tmp_path / "a" / devnet.MARKER).read_text())
+    assert meta["ruleset_digest"] == rules_mod.CANDIDATE_2_DIGEST and meta["params"]["ruleset"] == rules_mod.CANDIDATE_2
+    assert devnet.recorded(meta)[2] == net.m                   # what the read model and the API replay with
+    with pytest.raises(Exception):
+        devnet.Devnet(tmp_path / "a", "demo")                  # an arena never changes its rules
