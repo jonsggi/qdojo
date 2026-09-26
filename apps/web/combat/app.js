@@ -187,7 +187,7 @@
     for (const key of Array.from(D.cache.keys())) {
       const rel = key.slice(D.base.length);
       const fm = /^fights\/(\d+)(\.json|\/replay\.json)$/.exec(rel);
-      const volatile = /^(index|book|manifest)\.json$/.test(rel) || /^events\//.test(rel) || /^fighters\//.test(rel) || (fm && !done.has(fm[1]));
+      const volatile = /^(index|book|manifest|cups|duels|seasons|results|market|economics)\.json$/.test(rel) || /^events\//.test(rel) || /^fighters\//.test(rel) || (fm && !done.has(fm[1]));
       if (volatile) D.cache.delete(key);
     }
     apiCache.clear();
@@ -196,7 +196,7 @@
     await probeApi();
     paintSource();
     const name = currentRoute()[0];
-    if (['arena', 'title', 'book', 'results', 'leaderboard', 'cups', 'cup', 'duels', 'duel', 'season'].includes(name) || (name === 'fight' && D.tick !== before)) repaint();
+    if (['arena', 'title', 'book', 'results', 'leaderboard', 'cups', 'cup', 'duels', 'duel', 'season', 'market', 'economy'].includes(name) || (name === 'fight' && D.tick !== before)) repaint();
   }
 
   function paintSource() {
@@ -2070,15 +2070,73 @@
     if (ANIM) ANIM.mount(box);
   }
 
+  // ---- MARKET and ECONOMY --------------------------------------------------------------
+
+  const qu = n => (n == null || n === '' ? '&mdash;' : '<span class="qu">' + esc(numberFmt(n)) + ' QU</span>');
+
+  async function viewMarket(tok) {
+    if (needData()) return;
+    const m = await fetchJson('market.json').catch(() => null);
+    if (tok !== viewToken) return;
+    if (!m) return setView(screen('MARKET') + '<section class="panel panel-red"><h3>NO MARKET DATA</h3><p>This export has no market file yet.</p></section>');
+    const st = m.stats || {};
+    const listings = (m.listings || []).map(x => '<tr><td>' + fighterLink(x.fighter_id, x.name) + '</td><td class="num">' + esc(x.rating) + '</td><td class="num">' + qu(x.ask) + '</td><td class="num muted">' + qu(x.value) + '</td><td class="num">' + esc(x.since_tick) + '</td><td>' + (x.sold ? '<span class="rbadge rbadge-ko">SOLD</span>' : '<span class="rbadge rbadge-open">FOR SALE</span>') + '</td></tr>').join('');
+    const sales = (m.sales || []).map(x => '<tr><td class="num">' + esc(x.tick) + '</td><td>' + fighterLink(x.fighter_id, x.name) + '</td><td class="num">' + esc(x.rating) + '</td><td class="num"><b>' + qu(x.price) + '</b></td><td class="num muted">' + qu(x.bid) + '</td><td class="num muted">' + qu(x.fee) + '</td><td>' + ownerLink(x.buyer) + '</td></tr>').join('');
+    setView(screen('THE PARTS MARKET', 'FIGHTERS CHANGE HANDS FOR FAKE QU &middot; ' + esc(m.fee_bps / 100) + '% FEE TO THE HOUSE') +
+      '<div class="kpis">' +
+      '<div class="kpi"><span>SALES</span><b>' + esc(numberFmt(st.sales || 0)) + '</b></div>' +
+      '<div class="kpi"><span>VOLUME</span><b>' + qu(st.volume || 0) + '</b></div>' +
+      '<div class="kpi"><span>MEDIAN PRICE</span><b>' + qu(st.median_price) + '</b></div>' +
+      '<div class="kpi"><span>ON SALE NOW</span><b>' + esc(numberFmt(st.listings || 0)) + '</b></div></div>' +
+      '<section class="panel panel-yellow"><h3>ON THE BLOCK</h3>' + (listings ? '<div class="tscroll"><table><thead><tr><th>FIGHTER</th><th class="num">RATING</th><th class="num">ASKING</th><th class="num">APPRAISED</th><th class="num">LISTED AT TICK</th><th></th></tr></thead><tbody>' + listings + '</tbody></table></div>'
+        : '<p class="muted">Nobody is selling right now. Owners list fighters every so often; check back after a few cups.</p>') + '</section>' +
+      '<section class="panel"><h3>RECENT SALES</h3>' + (sales ? '<div class="tscroll"><table><thead><tr><th class="num">TICK</th><th>FIGHTER</th><th class="num">RATING</th><th class="num">PRICE</th><th class="num">BEST BID</th><th class="num">FEE</th><th>NEW OWNER</th></tr></thead><tbody>' + sales + '</tbody></table></div>'
+        : '<p class="muted">No fighter has been sold in this arena yet.</p>') + '</section>' +
+      '<p class="practice-note">' + esc(m.model || '') + '. A sale changes who owns a fighter, never its stats or record.</p>');
+  }
+
+  async function viewEconomy(tok) {
+    if (needData()) return;
+    const e = await fetchJson('economics.json').catch(() => null);
+    if (tok !== viewToken) return;
+    if (!e) return setView(screen('ECONOMY') + '<section class="panel panel-red"><h3>NO ECONOMICS DATA</h3><p>This export has no economics file yet.</p></section>');
+    const h = e.house || {}, pnl = Number(h.pnl || 0), per = Number(h.pnl_per_fight || 0);
+    const flows = [['RAKE', Number(h.rake_income || 0), 'pos'], ['MARKET FEES', Number(h.market_fees || 0), 'pos'], ['EXECUTION FEES', -Number(h.execution_fees || 0), 'neg'], ['CUP SPONSORSHIP', -Number(h.sponsorship_paid || 0), 'neg']];
+    const maxFlow = Math.max(1, ...flows.map(f => Math.abs(f[1])));
+    const bandLow = k => (/^</.test(k) ? -1 : parseInt((k.match(/\d+/) || ['0'])[0], 10));
+    const bands = Object.entries(e.measured_ranked_net_by_rating || {}).sort((a, b) => bandLow(a[0]) - bandLow(b[0]));
+    const maxBand = Math.max(1, ...bands.map(([, v]) => Math.abs(v.net_per_fight)));
+    const tiers = Object.entries(e.tiers || {}).map(([k, t]) => {
+      const ev = Object.entries(t.ev_by_win_share || {}).map(([share, v]) => '<span class="ev ' + (Number(v) >= 0 ? 'pos' : 'neg') + '">' + Math.round(Number(share) * 100) + '% wins: ' + (Number(v) >= 0 ? '+' : '') + esc(Math.round(Number(v))) + '</span>').join(' ');
+      return '<tr><td>TIER ' + esc(k) + '</td><td class="num">' + qu(t.stake) + '</td><td class="num">' + esc((t.rake_bps || 0) / 100) + '%</td><td class="num">' + qu(t.house_rake_per_fight) + '</td><td class="num"><b>' + esc(Math.round((t.break_even_win_share || 0) * 1000) / 10) + '%</b></td><td class="wraptd">' + ev + '</td></tr>';
+    }).join('');
+    const ev = e.events || {};
+    setView(screen('THE ECONOMY', 'WHERE THE FAKE QU GOES &middot; SNAPSHOT TICK ' + esc(e.generated_tick)) +
+      '<div class="kpis">' +
+      '<div class="kpi ' + (pnl >= 0 ? 'kpi-pos' : 'kpi-neg') + '"><span>HOUSE P&amp;L</span><b>' + (pnl >= 0 ? '+' : '') + qu(pnl) + '</b></div>' +
+      '<div class="kpi ' + (per >= 0 ? 'kpi-pos' : 'kpi-neg') + '"><span>PER FIGHT</span><b>' + (per >= 0 ? '+' : '') + esc(per.toFixed(1)) + '</b></div>' +
+      '<div class="kpi"><span>FIGHTS</span><b>' + esc(numberFmt(h.fights || 0)) + '</b></div></div>' +
+      '<section class="panel"><h3>THE HOUSE LEDGER</h3><div class="flows">' + flows.map(([k, v, c]) =>
+        '<div class="flow"><span class="flow-k">' + k + '</span><span class="flow-bar"><i class="' + c + '" style="width:' + Math.round(100 * Math.abs(v) / maxFlow) + '%"></i></span><span class="flow-v ' + c + '">' + (v >= 0 ? '+' : '&minus;') + esc(numberFmt(Math.abs(v))) + '</span></div>').join('') + '</div>' +
+      '<p class="tiny muted">' + esc(e.note || '') + '. Execution fees are what the simulated chain charges for every commit, reveal and settlement.</p></section>' +
+      '<section class="panel panel-cyan"><h3>DOES SKILL PAY? NET QU PER RANKED FIGHT BY RATING</h3>' + (bands.length ? '<div class="bands">' + bands.map(([k, v]) =>
+        '<div class="band"><span class="band-k">' + esc(k) + '</span><span class="band-bar"><i class="' + (v.net_per_fight >= 0 ? 'pos' : 'neg') + '" style="width:' + Math.round(50 * Math.abs(v.net_per_fight) / maxBand) + '%;' + (v.net_per_fight >= 0 ? 'left:50%' : 'right:50%') + '"></i></span><span class="band-v ' + (v.net_per_fight >= 0 ? 'pos' : 'neg') + '">' + (v.net_per_fight >= 0 ? '+' : '') + esc(v.net_per_fight) + '</span><span class="band-n muted">' + esc(v.fights) + ' fights</span></div>').join('') + '</div>' : '<p class="muted">Not enough ranked fights yet.</p>') +
+      '<p class="tiny muted">Measured over this arena\'s ranked fights, after rake and fees. Positive means fighters in that band take home more than they stake.</p></section>' +
+      '<section class="panel panel-yellow"><h3>STAKES AND FEES</h3><div class="tscroll"><table><thead><tr><th>TIER</th><th class="num">STAKE</th><th class="num">RAKE</th><th class="num">HOUSE TAKE / FIGHT</th><th class="num">BREAK-EVEN WIN RATE</th><th>EXPECTED NET PER FIGHT</th></tr></thead><tbody>' + tiers + '</tbody></table></div>' +
+      '<ul class="plain rules-list"><li>Duel stakes by format: ' + Object.entries(ev.duel_stake_by_format || {}).map(([f, v]) => esc(f) + ' ' + qu(v)).join(', ') + '.</li>' +
+      '<li>Cup entry ' + qu(ev.cup_entry_fee) + ', ' + esc((ev.cup_rake_bps || 0) / 100) + '% to the house; next cup sponsorship ' + qu(ev.next_cup_sponsorship) + '.</li>' +
+      '<li>Market fee ' + esc((ev.market_fee_bps || 0) / 100) + '% of each sale.</li></ul></section>');
+  }
+
   // ---- router and chrome -------------------------------------------------------------
 
   // Sub-pages light up the nav entry they belong to.
-  const NAV_PARENT = { book: 'arena', fight: 'results', fights: 'results', duel: 'results', duels: 'results', fighter: 'leaderboard', owner: 'leaderboard', season: 'leaderboard', cup: 'cups', rules: 'guide', help: 'guide', story: 'guide' };
+  const NAV_PARENT = { book: 'arena', fight: 'results', fights: 'results', duel: 'results', duels: 'results', fighter: 'leaderboard', owner: 'leaderboard', season: 'leaderboard', market: 'leaderboard', economy: 'leaderboard', cup: 'cups', rules: 'guide', help: 'guide', story: 'guide' };
   // Each nav section can hold several screens: they show as tabs under the header.
   const SECTION_TABS = {
     arena: [['arena', 'LIVE'], ['book', 'MATCHMAKING']],
     results: [['results', 'FIGHTS'], ['duels', 'DUELS']],
-    leaderboard: [['leaderboard', 'LEADERBOARD'], ['season', 'SEASON']],
+    leaderboard: [['leaderboard', 'LEADERBOARD'], ['season', 'SEASON'], ['market', 'MARKET'], ['economy', 'ECONOMY']],
     guide: [['guide', 'HOW IT WORKS'], ['story', 'STORY'], ['rules', 'RULES'], ['help', 'GLOSSARY'], ['llms.txt', 'FOR AGENTS']],
   };
   function paintNav(name) {
@@ -2139,6 +2197,8 @@
       else if (name === 'duels') await viewDuels(tok);
       else if (name === 'duel') await viewDuel(tok, rest[0]);
       else if (name === 'season') await viewSeason(tok);
+      else if (name === 'market') await viewMarket(tok);
+      else if (name === 'economy') await viewEconomy(tok);
       else if (name === 'owner') await viewOwner(tok, rest[0]);
       else if (name === 'join') await viewJoin(tok);
       else if (name === 'help') viewHelp();

@@ -551,3 +551,31 @@ h2.screen-title small, .title-sub { color: var(--hazard); }
 }
 img.sensei { width: 128px; height: 160px; image-rendering: pixelated; display: block; margin: 0 auto; }
 .story-end .btn-start { margin: 0; }
+
+/* ---- market and economy -------------------------------------------------- */
+.kpis { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); margin: 0 0 22px; }
+.kpi { background: var(--panel-glass); border: 3px solid #3b454c; box-shadow: 5px 5px 0 #000; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.kpi span { font-size: 8px; color: var(--steel); letter-spacing: 1px; }
+.kpi b { font-size: 18px; color: var(--chrome); font-weight: normal; }
+.kpi b .qu { color: inherit; }
+.kpi-pos { border-color: #4a8a2a; } .kpi-pos b { color: var(--green); }
+.kpi-neg { border-color: var(--rust); } .kpi-neg b { color: #ff7a5a; }
+.flows, .bands { display: flex; flex-direction: column; gap: 10px; margin: 4px 0 12px; }
+.flow, .band { display: grid; grid-template-columns: 150px minmax(0, 1fr) 120px; gap: 12px; align-items: center; font-size: 9px; }
+.band { grid-template-columns: 110px minmax(0, 1fr) 80px 90px; }
+.flow-bar, .band-bar { position: relative; height: 16px; background: #14181b; border: 2px solid #000; }
+.flow-bar i, .band-bar i { position: absolute; top: 0; bottom: 0; left: 0; }
+.band-bar::after { content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 2px; background: var(--steel); }
+.flow-bar i.pos, .band-bar i.pos { background: repeating-linear-gradient(90deg, var(--green) 0 6px, #4a8a2a 6px 8px); }
+.flow-bar i.neg, .band-bar i.neg { background: repeating-linear-gradient(90deg, var(--rust) 0 6px, var(--rust-d) 6px 8px); }
+.band-bar i.neg { left: auto; }
+.flow-v, .band-v { text-align: right; font-size: 10px; }
+.flow-v.pos, .band-v.pos, .ev.pos { color: var(--green); }
+.flow-v.neg, .band-v.neg, .ev.neg { color: #ff7a5a; }
+.band-n { font-size: 8px; }
+.ev { font-family: var(--font-pixel); font-size: 8px; margin-right: 10px; white-space: nowrap; }
+@media (max-width: 640px) {
+  .flow { grid-template-columns: 1fr 90px; } .flow .flow-bar { grid-column: 1 / -1; order: 3; }
+  .band { grid-template-columns: 1fr 70px; } .band .band-bar { grid-column: 1 / -1; order: 3; } .band-n { display: none; }
+}
+.kpi b .qu { font-size: inherit; color: inherit; }
