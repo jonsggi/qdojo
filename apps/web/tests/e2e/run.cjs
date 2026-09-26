@@ -30,6 +30,9 @@ const SAMPLE = path.join(WEB, 'data/combat/v1/sample');
 const SHOTS = path.join(__dirname, 'shots');
 const HOME = os.homedir();
 const LIVE_MANIFEST = '/data/combat/v1/manifest.json';
+// Beside a live export the site probes the optional read API; this server has none.
+const API_STATUS = '/api/v1/status';
+const expected404 = u => { const p = new URL(u, 'http://x').pathname; return p.endsWith(LIVE_MANIFEST) || p === API_STATUS; };
 
 // ---- find the browser ------------------------------------------------------------
 
@@ -141,7 +144,8 @@ async function main() {
   console.log('chromium ' + chrome + '\nplaywright ' + found.from + '\nserving ' + WEB + ' at ' + main.base);
 
   // Every page is watched: page errors, console errors and failed requests
-  // fail the step, except the live manifest 404 before the sample fallback.
+  // fail the step, except the live manifest 404 before the sample fallback
+  // and the read API probe's 404 (no API here).
   async function open(opts) {
     const ctx = await browser.newContext(Object.assign({ viewport: { width: 1200, height: 900 } }, opts || {}));
     const page = await ctx.newPage();
@@ -150,11 +154,11 @@ async function main() {
     page.on('console', m => {
       if (m.type() !== 'error') return;
       const url = (m.location() || {}).url || '';
-      if (/Failed to load resource/.test(m.text()) && url.endsWith(LIVE_MANIFEST)) return;
+      if (/Failed to load resource/.test(m.text()) && url && expected404(url)) return;
       problems.push('console: ' + m.text() + (url ? ' @ ' + url : ''));
     });
     page.on('response', r => {
-      if (r.status() >= 400 && !new URL(r.url()).pathname.endsWith(LIVE_MANIFEST)) problems.push('HTTP ' + r.status() + ' ' + r.url());
+      if (r.status() >= 400 && !(r.status() === 404 && expected404(r.url()))) problems.push('HTTP ' + r.status() + ' ' + r.url());
     });
     page.on('requestfailed', r => { if (!/fonts\.(googleapis|gstatic)\.com/.test(r.url())) problems.push('request failed: ' + r.url()); });
     return { ctx, page, problems };
