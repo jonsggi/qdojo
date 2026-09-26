@@ -1,7 +1,7 @@
-/* QDOJO fighters, v4 preview: original 48×48 arcade fighters and 64×64
- * collectible cards, drawn in the spirit of early-90s arcade fighting games
- * (athletic proportions, hard 3–4 tone shading, dark outlines) without copying
- * any existing character.
+/* QDOJO fighters, v5 preview: salvaged robots in human shape, fighting in a
+ * scrapyard dojo years after the Big Unplug. Original 48×48 sprites and 64×64
+ * collectible cards in the spirit of early-90s arcade fighters, without copying
+ * any existing character or robot.
  *
  * Pure and deterministic: an identity string (usually a 64-hex fighter id) maps
  * to byte-identical SVG on every runtime. No randomness, clock, network,
@@ -11,17 +11,18 @@
  *
  * Bodies are built from a small skeleton: shoulders, elbows and fists; hips,
  * knees and ankles. Poses move joints by whole pixels, so every frame stays
- * crisp. Each body part is a pixel mask shaded from the upper right (shadow
- * band, base, light, highlight), hand details are added on top, overlapping
- * parts get a dark separation line and the whole figure a 1px ink outline.
- * `frames`/`strip` return frame sequences for the clips below; playback lives
- * in anim.js, not here.
+ * crisp. Each armour shell is a pixel mask shaded from the upper right in a
+ * material (chrome, paint, primer, rust), then weathered in its own local
+ * coordinates (chips, rust patches) so the wear moves with the part. Elbows,
+ * knees and necks are exposed joints with bolts and pistons. Martial-arts gear
+ * is layered on top. `frames`/`strip` return frame sequences for the clips
+ * below; playback lives in anim.js, not here.
  */
 'use strict';
 const QDojoAvatars = (() => {
   const SIZE = 48, N = SIZE * SIZE, CARD = 64, CX = 23;
-  const VERSION = 'qdojo-fighters-v4-preview';
-  const INK = '#140f1a';
+  const VERSION = 'qdojo-fighters-v5-preview';
+  const INK = '#0d0f12';
   const cache = new Map();
 
   // ---- Deterministic picks ------------------------------------------------
@@ -88,42 +89,54 @@ const QDojoAvatars = (() => {
     return backs.get(k);
   }
 
+
   // ---- Trait tables -----------------------------------------------------------
-  // Twelve original archetypes in the spirit of the classic arcade roster.
+  // Twelve machines with a former job, each sincerely practising a martial art
+  // it learned from a tape. The kit keeps the v4 hash domain, so every fighter
+  // keeps its discipline: the v4 dojo striker is now the kata unit, and so on.
   const KITS = [
-    { name: 'Dojo striker', backdrop: 'Sunset dojo', head: ['None', 'Hachimaki', 'Hachimaki'] },
-    { name: 'Street brawler', backdrop: 'Midnight rooftop', head: ['None', 'Headband', 'Backwards cap', 'Bandana'] },
-    { name: 'Circuit sentinel', backdrop: 'Reactor chamber', head: ['Visor helmet', 'Crested helmet', 'Cyber eye'] },
-    { name: 'Neon shinobi', backdrop: 'Moon gate', head: ['Wrapped hood', 'Hood and faceplate'] },
-    { name: 'Sumo wrestler', backdrop: 'Clay ring', head: ['None'] },
-    { name: 'Pro wrestler', backdrop: 'Arena lights', head: ['None', 'None', 'Flame mask', 'Star mask', 'Stripe mask'] },
-    { name: 'Commando', backdrop: 'Jungle base', head: ['None', 'Beret', 'Bandana', 'Headband'] },
-    { name: 'Kung-fu master', backdrop: 'Lantern market', head: ['None', 'None', 'Headband'] },
-    { name: 'Capoeira dancer', backdrop: 'Harbour dusk', head: ['None', 'Bandana', 'Headband'] },
-    { name: 'Mountain mystic', backdrop: 'Mountain temple', head: ['None', 'Forehead mark'] },
-    { name: 'Prize boxer', backdrop: 'Boxing gym', head: ['None', 'None', 'Head guard'] },
-    { name: 'Muay Thai fighter', backdrop: 'River stadium', head: ['None', 'Mongkhon'] },
+    { name: 'Kata unit', art: 'karate', code: 'KT', backdrop: 'Collapsed dojo', head: ['Hachimaki', 'Hachimaki', 'None'],
+      jobs: ['dojo floor-sweeping unit', 'karate demonstration dummy', 'shrine gift-shop greeter'] },
+    { name: 'Courier bot', art: 'street kickboxing', code: 'CR', backdrop: 'Flooded underpass', head: ['Courier cap', 'Backwards cap', 'Bandana', 'None'],
+      jobs: ['parcel courier', 'pizza delivery unit', 'express-mail walker'] },
+    { name: 'Mall-security unit', art: 'judo', code: 'MS', backdrop: 'Dead mall', head: ['Security cap', 'Security cap', 'None'],
+      jobs: ['mall-security unit', 'car-park patrol unit', 'lost-and-found attendant'] },
+    { name: 'Harvester bot', art: 'ninjutsu', code: 'HV', backdrop: 'Dust-bowl farm', head: ['Straw hat', 'Straw hat', 'Bandana', 'None'],
+      jobs: ['harvester bot', 'scarecrow upgrade', 'pumpkin-sorting unit'] },
+    { name: 'Sumo loader', art: 'sumo', code: 'SL', backdrop: 'Container yard', head: ['Warning beacon', 'Warning beacon', 'None'],
+      jobs: ['forklift', 'heavy loader', 'container-yard stacker'] },
+    { name: 'Luchador wrestle-bot', art: 'lucha libre', code: 'LX', backdrop: 'Junk arena', head: ['Flame mask', 'Star mask', 'Stripe mask', 'None'],
+      jobs: ['wrestling-ring setup crew', 'theme-park mascot', 'party-balloon tester'] },
+    { name: 'Endoskeleton trooper', art: 'parade-ground drill', code: 'TR', backdrop: 'Bunker ruins', head: ['Combat helmet', 'Combat helmet', 'None'],
+      jobs: ['parade-ground trooper', 'boot-camp drill dummy', 'army surplus mannequin'] },
+    { name: 'Kitchen unit', art: 'kung fu', code: 'KC', backdrop: 'Noodle stall', head: ['Chef hat', 'Chef hat', 'Headband', 'None'],
+      jobs: ['noodle-bar kitchen unit', 'wok-tossing arm', 'dishwasher with ambitions'] },
+    { name: 'Dance-bot', art: 'capoeira', code: 'DB', backdrop: 'Neon plaza', head: ['Sweatband', 'Bandana', 'None'],
+      jobs: ['nightclub dance-bot', 'aerobics instructor unit', 'shop-window mascot'] },
+    { name: 'Drone monk', art: 'tai chi', code: 'DM', backdrop: 'Radio-tower shrine', head: ['None', 'Forehead mark'],
+      jobs: ['survey drone', 'air-quality drone', 'lighthouse keeper drone'] },
+    { name: 'Boxer bot', art: 'boxing', code: 'BX', backdrop: 'Rust-belt gym', head: ['None', 'None', 'Head guard'],
+      jobs: ['sparring dummy', 'gym towel dispenser', 'meat-locker door opener'] },
+    { name: 'Demolition unit', art: 'Muay Thai', code: 'DX', backdrop: 'Demolition site', head: ['Hard hat', 'Hard hat', 'Mongkhon', 'None'],
+      jobs: ['demolition unit', 'wrecking-ball operator', 'pothole filler'] },
   ];
   const STANCES = ['Low guard', 'Boxer guard', 'Power stance'];
   const BUILDS = ['Lean', 'Standard', 'Heavy'];
-  // Hand-picked skin ramps: deep, shadow, base, light, highlight.
-  const SKINS = [
-    ['Porcelain', ['#7a4640', '#cf9480', '#f1c5ab', '#fde0cc', '#fff2e6']],
-    ['Rosy', ['#6a3530', '#bd735f', '#e2a488', '#f4c5ab', '#ffe0cf']],
-    ['Honey', ['#5c321c', '#aa6a3a', '#d79c66', '#ecbd88', '#f9dcb0']],
-    ['Olive', ['#4a2f1d', '#8f613a', '#bd8b58', '#d6ab77', '#edcda0']],
-    ['Bronze', ['#42241a', '#80492b', '#aa6e45', '#c79062', '#e3b48a']],
-    ['Umber', ['#301a10', '#603822', '#8a5434', '#b07a50', '#d49f74']],
-    ['Deep', ['#22110b', '#4a2918', '#6d4128', '#936342', '#bb8a62']],
-    ['Ebony', ['#190c08', '#381e13', '#553422', '#7c5539', '#a67c5a']],
-  ];
-  const HAIRS = [
-    ['Jet black', '#231f2a'], ['Dark brown', '#4b2e21'], ['Chestnut', '#7c4424'], ['Auburn', '#a4432a'],
-    ['Golden', '#d9a843'], ['Platinum', '#e3dcc8'], ['Silver', '#a4a8b6'], ['Crimson', '#b8283a'],
-    ['Steel blue', '#3d63a8'], ['Rose', '#d8628e'],
-  ];
-  const EYES = [['Brown', '#5e3622'], ['Hazel', '#8a6a2c'], ['Green', '#3b7f45'], ['Blue', '#3a6fc0'], ['Grey', '#6e7788'], ['Amber', '#c98a1c']];
-  // Curated outfit palettes: main cloth, second cloth, trim. Warm and natural.
+  const FINISHES = ['Factory Chrome', 'Polished Paint', 'Weathered', 'Rust Bucket', 'Scrap-Built'];
+  const RUSTS = ['None', 'Speckled', 'Patchy', 'Heavy'];
+  const HEADS = ['Visor', 'CRT monitor', 'Skull faceplate', 'Painted smile', 'Bucket helmet', 'Single lens', 'Radio grille'];
+  // Glow colours for eyes, visors and status lights.
+  const GLOWS = [['Cyan', '#36e0ff'], ['Neon pink', '#ff4fa0'], ['Amber', '#f2c230'], ['Toxic green', '#86f04a'],
+    ['Warning red', '#f0443a'], ['Ice white', '#dff4ff'], ['Ultraviolet', '#a66cff'], ['Teal', '#3aecc0']];
+  // Paints for the armour shells. Brass never goes on a shiny finish.
+  const PAINTS = [['Hazard yellow', '#d9a52a'], ['Oxidised teal', '#3a9d8f'], ['Fire-engine red', '#c23a2e'], ['Army olive', '#6b7042'],
+    ['Safety orange', '#dc6a26'], ['Navy', '#34507e'], ['Cream enamel', '#d6cdb2'], ['Mint', '#79bf9f'], ['Primer grey', '#7c828b'],
+    ['Bubblegum pink', '#d46f98'], ['Sky blue', '#5a97cc'], ['Tractor green', '#3f7c3e'], ['Brass', '#b48d3a'], ['Plum', '#74417a']];
+  const SALVAGE_LIMBS = ['None', 'Lead arm', 'Rear arm', 'Lead leg', 'Rear leg'];
+  const TOPPERS = ['None', 'Whip antenna', 'Rabbit ears', 'Exhaust stack', 'Drone rotor'];
+  const QUIRKS = ['None', 'Traffic-cone hat', 'Duct-tape patch', 'Necktie', 'Toaster slot', 'Rubber duck', 'Name sticker',
+    'Headphones', 'Exhaust flower', 'Band-aid'];
+  // Curated cloth palettes for the gear: main cloth, second cloth, trim.
   const PALETTES = [
     ['Classic white', '#e9e3d3', '#34303c', '#c8343c'],
     ['Crimson', '#b3303a', '#2e2830', '#e6b44a'],
@@ -131,7 +144,7 @@ const QDojoAvatars = (() => {
     ['Jungle green', '#3e7a3c', '#5a4030', '#e2b24a'],
     ['Sunset orange', '#dd6d28', '#3a2a28', '#f2d266'],
     ['Midnight', '#2c3050', '#4c4c62', '#d8423c'],
-    ['Tan leather', '#c49c66', '#5a3a26', '#b83a2e'],
+    ['Tan canvas', '#c49c66', '#5a3a26', '#b83a2e'],
     ['Royal purple', '#693a8c', '#2a2436', '#e6c04a'],
     ['Teal', '#2a8584', '#243039', '#e8d8a2'],
     ['Black and gold', '#2c2b32', '#1a191f', '#e0b042'],
@@ -140,82 +153,109 @@ const QDojoAvatars = (() => {
     ['Olive drab', '#6b7042', '#3b3a2a', '#c9a352'],
     ['Maroon', '#7a2b31', '#2a2024', '#e6c67a'],
   ];
-  const ACCENTS = ['#e8403c', '#e8b830', '#3a8ae8', '#48b058', '#f0ece0', '#a050c8'];
-  const MALE_HAIR = ['Crew cut', 'Spiked', 'Swept back', 'Flat-top', 'Topknot', 'Mohawk', 'Shaggy', 'Tied-back', 'Buzzed'];
-  const FEMALE_HAIR = ['Combat bob', 'High ponytail', 'Long braid', 'Sidecut', 'Twin buns', 'Pixie', 'Long loose'];
-  const EXPRESSIONS = ['Determined', 'Fierce', 'Calm', 'Grinning'];
-  const FACIAL = ['None', 'Stubble', 'Moustache', 'Goatee', 'Full beard', 'Chin strap'];
-  const SCARS = ['None', 'Brow scar', 'Cheek scar', 'Nose bandage'];
-  const GLOVES = ['Bare fists', 'Tape wraps', 'Fingerless gloves', 'Leather gloves'];
-  const SHOULDERS = ['None', 'Shoulder guard', 'Studded pad'];
+  const GLOVES = ['Robot fists', 'Tape wraps', 'Fingerless gloves', 'Work gloves'];
   const SASHES = ['Plain', 'Striped', 'Checked', 'Stitched'];
-  const MARKINGS = ['None', 'Arm tattoo', 'Face paint', 'Cheek stripes', 'Chest tattoo'];
-  const PATTERNS = ['Plain', 'Trim', 'Stripes', 'Emblem'];
+  const PATTERNS = ['Plain', 'Racing stripe', 'Stencil number', 'Emblem'];
   const EMBLEMS = ['Sun disc', 'Tomoe', 'Diamond', 'Wave', 'Crane'];
   const SIGNATURES = ['jab', 'kick', 'bow', 'win'];
-
-  // Per-kit wardrobe. arms: what covers the upper arm; hands: forced glove.
-  const BARE_CHEST = new Set([1, 4, 5, 8, 9, 10, 11]);
-  const FACE_COVERED = new Set([3]);
   const GLOVE_FREE = new Set([0, 1, 3, 5, 6, 8]);
-  const PAD_KITS = new Set([1, 3, 6]);
 
-  // A character-art trait, never an inference about the wallet's owner. Same
-  // hash domain as v1-v3 so a fighter keeps its character variant.
-  function isFemale(identity) { return Boolean((hash('qdojo/fighter/character/v1/' + identity) >>> 24) & 1); }
+  // Fixed material ramps: deep, shadow, base, light, highlight.
+  const CHROME = ['#1b2129', '#4b5563', '#9aa6b2', '#e8edf2', '#ffffff'];
+  const STEEL = ['#15181e', '#2b313b', '#454d5a', '#6b7483', '#a3adba'];
+  const CHIP = ['#2b313b', '#5b636e', '#8b95a0', '#bcc4cc', '#dfe5ea'];
+  const RUST = ['#3a170a', '#6e2c0f', '#8a3b12', '#c2551b', '#e07a3a'];
+  const RUSTY = ['#3a1a0c', '#6a3016', '#8e4a26', '#b0673a', '#cf8a5a'];
+
+  // Materials: a ramp, a kind, a chip rate and a rust level (0-3).
+  function glowRamp(c) { return [mixHex(c, '#000000', 0.62), mixHex(c, '#000000', 0.32), c, mixHex(c, '#ffffff', 0.45), mixHex(c, '#ffffff', 0.8)]; }
+  function material(kind, hex, rust, chips) {
+    if (kind === 'chrome') return { kind, R: CHROME, rust: 0, chips: 0, name: 'Chrome' };
+    if (kind === 'rusty') return { kind, R: RUSTY, rust: 3, chips: 0, name: 'Rusty' };
+    if (kind === 'primer') return { kind, R: ramp('#7c828b'), rust, chips: 0.03, name: 'Primer' };
+    return { kind, R: ramp(hex), rust, chips, name: 'Painted' };
+  }
 
   const looks = new Map();
   function look(identity) {
     if (looks.has(identity)) return looks.get(identity);
     const id = identity;
     const kit = pick(id, 'kit', KITS.length), K = KITS[kit];
-    const female = isFemale(id);
     let build = weighted(id, 'build', [3, 5, 3]);
     if (kit === 4) build = 2;
     if (kit === 9) build = 0;
     if (kit === 5 && build === 0) build = 1;
-    const headgear = K.head[pick(id, 'headgear', K.head.length)];
-    const masked = kit === 2 && headgear !== 'Cyber eye' || kit === 3 || /mask$/.test(headgear);
-    let hairstyle;
-    if (masked) hairstyle = female ? 'Armoured braid' : null;
-    else if (kit === 4) hairstyle = 'Topknot';
-    else if (kit === 9) hairstyle = female ? 'Long braid' : ['Bald', 'Topknot', 'Tied-back', 'Buzzed'][pick(id, 'hairstyle', 4)];
-    else hairstyle = female ? FEMALE_HAIR[pick(id, 'hairstyle', FEMALE_HAIR.length)] : MALE_HAIR[pick(id, 'hairstyle', MALE_HAIR.length)];
-    // Originality guards: the genre's archetypes are fair game, but a few
-    // combinations would read as one famous character. Steer them away.
-    if (kit === 7 && hairstyle === 'Twin buns') hairstyle = 'High ponytail';
-    if (kit === 6 && hairstyle === 'Flat-top') hairstyle = 'Crew cut';
-    if (kit === 6 && headgear === 'Beret' && hairstyle === 'Long braid') hairstyle = 'Combat bob';
-    if (kit === 5 && hairstyle === 'Mohawk') hairstyle = 'Buzzed';
-    const faceShown = !masked && !FACE_COVERED.has(kit);
-    const armsBare = kit !== 2 && kit !== 0;
-    let marking = MARKINGS[weighted(id, 'marking', [6, 2, 2, 2, 2])];
-    if ((marking === 'Face paint' || marking === 'Cheek stripes') && !faceShown) marking = 'None';
-    if (marking === 'Chest tattoo' && !(BARE_CHEST.has(kit) && !female)) marking = 'None';
-    if (marking === 'Arm tattoo' && !armsBare) marking = 'None';
-    if (kit === 4 && (marking === 'Face paint' || marking === 'Cheek stripes')) marking = 'None';
-    const gloves = kit === 2 ? 'Armoured gauntlets' : kit === 10 ? 'Boxing gloves' : kit === 11 ? 'Hand wraps'
-      : kit === 7 ? 'Spiked bracelets' : GLOVE_FREE.has(kit) ? GLOVES[pick(id, 'gloves', GLOVES.length)] : 'Bare fists';
-    const shoulders = kit === 2 ? 'Pauldron' : PAD_KITS.has(kit) ? SHOULDERS[weighted(id, 'shoulders', [5, 3, 2])] : 'None';
-    const pattern = PATTERNS[pick(id, 'pattern', PATTERNS.length)];
+    const finish = weighted(id, 'finish', kit === 10 ? [1, 2, 4, 4, 3] : [2, 3, 4, 3, 2]);
+    const rust = [0, weighted(id, 'rust', [4, 1]), 1 + weighted(id, 'rust', [1, 1]), 2 + weighted(id, 'rust', [1, 3]),
+      1 + weighted(id, 'rust', [1, 2, 1])][finish];
+    let paint = pick(id, 'paint', PAINTS.length);
+    if (kit === 6) paint = [3, 8, 5, 3][pick(id, 'paint', 4)];                  // trooper: service colours
+    if (kit === 4) paint = [0, 4, 0, 11, 2][pick(id, 'paint', 5)];             // loader: forklift colours
+    // Originality guards. The genre's archetypes are fair game; a few
+    // combinations would read as one famous robot, so steer them away.
+    if (paint === 12 && finish < 2) paint = 4;                                 // no gold protocol droid
+    if (kit === 10 && (paint === 2 || paint === 5 || paint === 10)) paint = 7; // no red-vs-blue toy boxers
+    let head = pick(id, 'head', HEADS.length);
+    if (kit === 2 && head === 0) head = 5;                                     // no visored police cyborg
+    if (kit === 6 && head === 2) head = 0;                                     // no skull-faced soldier
+    let glow = pick(id, 'glow', GLOWS.length);
+    if (glow === 4 && (finish === 0 || head === 0 || head === 2 || kit === 6)) glow = 2; // no red-eyed chrome menace
+    let headgear = K.head[pick(id, 'headgear', K.head.length)];
+    const masked = /mask$/.test(headgear);
+    let topper = weighted(id, 'topper', [4, 2, 2, 2, 0]);
+    let quirk = weighted(id, 'quirk', [5, 2, 2, 2, 2, 2, 2, 2, 2, 2]);
+    if (kit === 9) { topper = 4; if (quirk === 8 || quirk === 1) quirk = quirk === 8 ? 5 : 9; } // the monk hovers on a rotor
+    if (quirk === 8) topper = 3;                                               // the flower needs an exhaust
+    if (head === 4 && topper === 1) topper = 2;                                // bucket heads get rabbit ears
+    if (quirk === 4 && (kit === 3 || kit === 7)) quirk = 6;                    // no toaster under a bib or apron
+    const hat = !/band$|mark$|mask$|^None$|Hachimaki|Mongkhon|Bandana|Headband/.test(headgear);
+    if (quirk === 1 && hat) headgear = 'None';                                 // the cone replaces the hat
+    let salvage = weighted(id, 'salvage', [7, 1, 1, 1, 1]);
     const pal = PALETTES[pick(id, 'palette', PALETTES.length)];
-    const skin = pick(id, 'skin', SKINS.length);
-    let hair = pick(id, 'hair', HAIRS.length);
-    if (kit === 0 && pal[0] === 'Crimson' && (hair === 4 || hair === 5)) hair += 2; // no blond fighter in a red gi
+    const gloves = kit === 10 ? 'Boxing gloves' : kit === 11 ? 'Hand wraps' : kit === 7 ? ['Oven mitt', 'Robot fists'][pick(id, 'gloves', 2)]
+      : kit === 2 ? 'Work gloves' : GLOVE_FREE.has(kit) ? GLOVES[pick(id, 'gloves', GLOVES.length)] : 'Robot fists';
+    const shoulders = kit === 10 ? ['Towel', 'Towel', 'Robe', 'None'][pick(id, 'shoulders', 4)] : kit === 6 ? 'Armour plate'
+      : kit === 4 ? 'Hazard pads' : kit === 1 ? ['None', 'Parcel box'][pick(id, 'shoulders', 2)] : kit === 7 ? 'Wok' : 'None';
+
+    // Materials. Shiny finishes salvage rusty or primed parts; worn ones
+    // salvage chrome or another colour.
+    const P = PAINTS[paint][1];
+    const chips = [0, 0.012, 0.05, 0.075, 0.06][finish];
+    const body = finish === 0 ? material('chrome') : finish === 1 ? material('paint', P, rust, chips)
+      : finish === 2 ? material('paint', mixHex(P, '#77706a', 0.28), rust, chips)
+      : finish === 3 ? material('paint', mixHex(P, '#7a3c1c', 0.38), rust, chips)
+      : material('paint', mixHex(P, '#77706a', 0.18), rust, chips);
+    const other = PAINTS[(paint + 3 + pick(id, 'salvage-paint', PAINTS.length - 4)) % PAINTS.length];
+    const salvKind = finish < 2 ? ['rusty', 'primer', 'paint'][pick(id, 'salvage-finish', 3)] : ['chrome', 'primer', 'paint'][pick(id, 'salvage-finish', 3)];
+    const salvMat = salvKind === 'paint' ? material('paint', mixHex(other[1], '#77706a', finish < 2 ? 0 : 0.25), finish ? rust : 0, chips || 0.02)
+      : material(salvKind, null, finish ? rust : 1, 0);
+    // Scrap-built machines are assembled from three sources.
+    const scrap = [body, material('primer', null, rust), material('paint', mixHex(other[1], '#77706a', 0.3), rust, chips), material('chrome')];
+    const partMat = {};
+    for (const part of ['torso', 'head', 'lead-arm', 'rear-arm', 'lead-leg', 'rear-leg', 'pelvis']) {
+      partMat[part] = finish === 4 ? scrap[[0, 0, 1, 2, 3][pick(id, 'scrap/' + part, 5)] % 4] : body;
+    }
+    if (finish === 4) partMat.torso = body;
+    // The trooper is an endoskeleton: bare metal limbs under painted armour.
+    let plate = body;
+    if (kit === 6) {
+      plate = finish === 0 ? material('paint', P, 0, 0.012) : body;
+      const skeleton = finish < 2 ? material('chrome') : material('paint', '#6b7483', rust, chips);
+      for (const part of ['lead-arm', 'rear-arm', 'lead-leg', 'rear-leg', 'pelvis']) if (partMat[part] === body || finish < 2) partMat[part] = skeleton;
+      partMat.torso = partMat.head = plate;
+    }
+    if (salvage) partMat[SALVAGE_LIMBS[salvage].toLowerCase().replace(' ', '-')] = salvMat;
     const L = {
-      kit, K, female, build, headgear, hairstyle, faceShown, marking, gloves, shoulders, pattern,
-      stance: pick(id, 'stance', 3), skin, hair, palette: pal[0],
-      eyes: pick(id, 'eyes', EYES.length),
-      expression: pick(id, 'expression', EXPRESSIONS.length),
-      facial: female || !faceShown ? 0 : weighted(id, 'facial', [8, 3, 2, 2, 2, 2]),
-      scar: faceShown ? weighted(id, 'scar', [7, 2, 2, 2]) : 0,
-      sash: pick(id, 'sash', SASHES.length),
-      emblem: pick(id, 'emblem', EMBLEMS.length),
-      accent: ACCENTS[pick(id, 'accent', ACCENTS.length)],
-      S: SKINS[skin][1], H: ramp(HAIRS[hair][1]), E: ramp(EYES[pick(id, 'eyes', EYES.length)][1]),
+      kit, K, build, finish, rust, paint, head: masked ? -1 : head, glow, headgear, masked, topper, quirk, salvage, salvMat,
+      gloves, shoulders, stance: pick(id, 'stance', 3), palette: pal[0],
+      sash: pick(id, 'sash', SASHES.length), pattern: PATTERNS[pick(id, 'pattern', PATTERNS.length)],
+      emblem: pick(id, 'emblem', EMBLEMS.length), body, partMat, plate,
+      robe: ramp(['#d9822a', '#8a2b31', '#c8a24a'][pick(id, 'robe', 3)]),
+      designation: K.code + '-' + (100 + pick(id, 'designation', 900)),
+      year: 2029 + pick(id, 'year', 19),
+      G: glowRamp(GLOWS[glow][1]), P: ramp(P),
       Mn: ramp(pal[1]), Sc: ramp(pal[2]), Tr: ramp(pal[3]),
-      Ac: ramp(ACCENTS[pick(id, 'accent', ACCENTS.length)]),
-      Mt: ramp(mixHex(pal[1], '#9aa3b5', 0.72)),
+      seed: roll(id, 'wear'),
     };
     if (looks.size >= 512) looks.delete(looks.keys().next().value);
     looks.set(identity, L);
@@ -225,23 +265,69 @@ const QDojoAvatars = (() => {
   function traits(identity) {
     identity = String(identity || '');
     const L = look(identity);
-    const band = ['Hachimaki', 'Headband', 'Bandana', 'Mongkhon'].includes(L.headgear);
-    const hairShown = L.hairstyle && L.hairstyle !== 'Bald';
+    const band = ['Hachimaki', 'Headband', 'Bandana', 'Mongkhon', 'Sweatband'].includes(L.headgear);
     return Object.freeze({
-      archetype: L.K.name, stance: STANCES[L.stance], character: L.female ? 'Female' : 'Male',
-      build: BUILDS[L.build], outfit: L.Mn[2], palette: L.palette,
-      skin: L.S[2], skinTone: SKINS[L.skin][0],
-      headgear: L.headgear, hairstyle: L.hairstyle,
-      hair: hairShown ? L.H[2] : null, hairColour: hairShown ? HAIRS[L.hair][0] : null,
-      headband: band, eyes: EYES[L.eyes][0],
-      expression: L.faceShown ? EXPRESSIONS[L.expression] : 'Hidden',
-      facialHair: FACIAL[L.facial], scar: SCARS[L.scar],
-      gloves: L.gloves, shoulders: L.shoulders, sash: SASHES[L.sash], markings: L.marking,
-      pattern: L.pattern, emblem: L.pattern === 'Emblem' ? EMBLEMS[L.emblem] : null,
-      accent: L.accent, backdrop: L.K.backdrop, signature: signature(identity),
+      archetype: L.K.name, martialArt: L.K.art, formerJob: L.K.jobs[pick(identity, 'bio/job', 3)],
+      designation: L.designation, modelYear: L.year,
+      chassis: BUILDS[L.build], build: BUILDS[L.build], stance: STANCES[L.stance],
+      finish: FINISHES[L.finish], rust: RUSTS[L.rust], paint: PAINTS[L.paint][0], outfit: L.body.R[2],
+      headUnit: L.masked ? 'Masked' : HEADS[L.head], eyeGlow: GLOWS[L.glow][0], accent: GLOWS[L.glow][1],
+      salvagedLimb: L.salvage ? L.salvMat.name + ' ' + SALVAGE_LIMBS[L.salvage].toLowerCase() : 'None',
+      topper: TOPPERS[L.topper], quirk: QUIRKS[L.quirk],
+      headgear: L.headgear, headband: band, gloves: L.gloves, shoulders: L.shoulders,
+      palette: L.palette, sash: SASHES[L.sash], pattern: L.pattern,
+      emblem: L.pattern === 'Emblem' ? EMBLEMS[L.emblem] : null,
+      backdrop: L.K.backdrop, signature: signature(identity),
     });
   }
 
+  // ---- Bio --------------------------------------------------------------------
+  // One or two short sentences in the dojo's tone, built only from traits.
+  const OPENERS = ['Decommissioned', 'Retired', 'Surplus', 'Salvaged', 'Factory-recalled', 'Refurbished', 'Discontinued',
+    'Unclaimed', 'Second-hand', 'Ex-display', 'Lightly used', 'Returned-to-sender'];
+  const LEARNED = [
+    a => `Learned ${a} from a cracked VHS`,
+    a => `Picked up ${a} from late-night reruns`,
+    a => `Studied ${a} under a mentor bot with one working speaker`,
+    a => `Taught itself ${a} from a mostly static tape labelled SENSEI`,
+    a => `Learned ${a} from a training montage it only half remembers`,
+    a => `Copied every ${a} move from a warped tape played at double speed`,
+    a => `Found a ${a} manual in a dumpster and read it upside down`,
+    a => `Learned ${a} from a rusty sensei who only said "oil on, oil off"`,
+    a => `Watched one ${a} rerun eleven thousand times`,
+    a => `Downloaded ${a} over a very bad connection`,
+  ];
+  const QUIRK_BITS = {
+    'Traffic-cone hat': ['wears a traffic cone it believes is a crown', 'refuses to fight without its lucky traffic cone'],
+    'Duct-tape patch': ['is held together by duct tape and optimism', 'patches every dent with one more strip of duct tape'],
+    'Necktie': ['wears a necktie in case the fight turns into a job interview', 'straightens its necktie before every bell'],
+    'Toaster slot': ['makes toast between rounds', 'offers its opponent toast after every bout'],
+    'Rubber duck': ['consults a rubber duck before sealing its cartridge', 'will not step into the ring without its rubber duck'],
+    'Name sticker': ['still wears a blank HELLO MY NAME IS sticker', 'keeps meaning to fill in its name sticker'],
+    'Headphones': ['hears a training montage nobody else can', 'shadow-boxes to a soundtrack only it can hear'],
+    'Exhaust flower': ['keeps a flower in its exhaust for luck', 'waters the flower in its exhaust every morning'],
+    'Band-aid': ['puts band-aids on its dents', 'believes band-aids work on metal'],
+  };
+  const PLAIN_BITS = ['bows to vending machines', 'bows to every opponent and most doors', 'apologises to the punching bag',
+    'polishes itself before every bout', 'counts its bolts after every round', 'salutes the scoreboard', 'keeps a spare oil can for the other fighter'];
+  const FINISH_BITS = [['still has the factory stickers on'], ['has never missed a coat of wax'], ['squeaks a little on the backswing'],
+    ['leaves a trail of rust flakes on the mat'], ['is three different robots, officially']];
+  function bio(identity) {
+    identity = String(identity || '');
+    const t = traits(identity), L = look(identity);
+    const b = n => pick(identity, 'bio/' + n, 1 << 30);
+    const opener = OPENERS[b('opener') % OPENERS.length];
+    const job = t.formerJob;
+    const lead = b('shape') % 3 === 0
+      ? `Unit ${t.designation}, ${/^[AEIOU]/.test(opener) ? 'an' : 'a'} ${opener.toLowerCase()} ${job}, model year ${t.modelYear}.`
+      : `${opener} ${job}, model year ${t.modelYear}.`;
+    const learned = LEARNED[b('learned') % LEARNED.length](t.martialArt);
+    let habit;
+    if (QUIRK_BITS[t.quirk]) habit = QUIRK_BITS[t.quirk][b('habit') % 2];
+    else if (b('habit') % 3 === 0) habit = FINISH_BITS[L.finish][0];
+    else habit = PLAIN_BITS[b('habit') % PLAIN_BITS.length];
+    return `${lead} ${learned} and ${habit}.`;
+  }
   // ---- Masks and the pixel canvas -------------------------------------------
   // A mask is a bitmap plus its bounding box, so painting a part only visits
   // the pixels near it.
@@ -305,7 +391,7 @@ const QDojoAvatars = (() => {
     const col = new Array(N).fill(null), rp = new Array(N).fill(null), lv = new Int8Array(N), own = new Int16Array(N);
     let part = 0;
     const ok = (x, y) => x >= 0 && y >= 0 && x < SIZE && y < SIZE;
-        // Light from the upper right: a shadow band on the left and bottom, a lit
+    // Light from the upper right: a shadow band on the left and bottom, a lit
     // edge on the top and right, a highlight on the upper-right corners.
     // Overlapping parts can ask for a dark separation line on what they cover.
     function fill(m, r, o = {}) {
@@ -335,6 +421,12 @@ const QDojoAvatars = (() => {
             else if (band > 2 && !a[p - 3]) l = 1;
             else l = 2;
           }
+          // Chrome: a dark reflection just inside the lit rim and a bright
+          // sky reflection next to the shadow band, so metal reads as polished.
+          if (o.chrome && l === 2) {
+            if (!a[p + 2] || !a[p - 2 * W]) l = 1;
+            else if (!a[p - 2] || !a[p - 3]) l = 3;
+          }
           l = l < lo ? lo : l > hi ? hi : l;
         }
         col[i] = r[l]; rp[i] = r; lv[i] = l; own[i] = part;
@@ -360,6 +452,15 @@ const QDojoAvatars = (() => {
       const i = y * SIZE + x;
       if (rp[i]) { const l = Math.max(0, Math.min(4, lv[i] + d)); col[i] = rp[i][l]; lv[i] = l; }
     }
+    // Swap a pixel onto another ramp at the same light level: rust, chips.
+    function recolor(x, y, r, most = 4) {
+      if (!ok(x, y)) return;
+      const i = y * SIZE + x;
+      if (!col[i]) return;
+      const l = Math.min(lv[i], most);
+      col[i] = r[l]; rp[i] = r; lv[i] = l;
+    }
+    const rampAt = (x, y) => ok(x, y) ? rp[y * SIZE + x] : null;
     const filled = (x, y) => ok(x, y) && col[y * SIZE + x] !== null;
     const levelAt = (x, y) => ok(x, y) ? lv[y * SIZE + x] : -1;
     function out() {
@@ -381,7 +482,7 @@ const QDojoAvatars = (() => {
       }
       return [...paths].map(([color, d]) => `<path fill="${color}" d="${d}"/>`).join('');
     }
-    return { fill, set, tone, shift, filled, levelAt, out };
+    return { fill, set, tone, shift, recolor, rampAt, filled, levelAt, out };
   }
 
   // ---- Skeleton -------------------------------------------------------------
@@ -442,37 +543,39 @@ const QDojoAvatars = (() => {
     exhausted: { fps: 5, frames: [KNEE, { ...KNEE, dy: 4, hy: 3, blink: true }, KNEE, { ...KNEE, dy: 4, hy: 3 }, KNEE, {}] },
   });
 
-  // ---- Heads ----------------------------------------------------------------
-  // Three-quarter heads facing right: 12 rows, ear on the left, nose on the right.
-  const HEAD = {
-    m: [[3, 8], [1, 10], [0, 11], [0, 11], [0, 12], [0, 12], [0, 13], [0, 12], [1, 12], [1, 11], [2, 11], [4, 9]],
-    f: [[3, 8], [1, 10], [0, 11], [0, 11], [0, 12], [0, 12], [0, 13], [0, 12], [1, 12], [1, 11], [3, 10], [5, 8]],
-    h: [[3, 8], [1, 10], [0, 11], [0, 11], [0, 12], [0, 12], [0, 13], [0, 12], [0, 12], [0, 12], [1, 11], [3, 10]],
-  };
-  // Hair silhouettes in head coordinates, rows from `top`.
-  const HAIR = {
-    'Crew cut': { top: -2, rows: [[4, 8], [2, 10], [0, 11], [-1, 11], [-1, 11], [-1, 7], [-1, 3], [-1, 2], [0, 1]] },
-    'Spiked': { top: -2, rows: [[4, 8], [2, 10], [0, 11], [-1, 11], [-1, 11], [-1, 7], [-1, 3], [-1, 2], [0, 1]],
-      spikes: [[-4, -2, -1, 2, 1], [0, -4, 1, 5, 0], [5, -4, 3, 8, -1], [10, -4, 8, 11, 0], [-4, 4, -1, -1, 1], [13, 2, 10, 12, 2]] },
-    'Swept back': { top: -3, rows: [[4, 10], [2, 12], [1, 13], [0, 12], [-1, 12], [-2, 11], [-2, 6], [-2, 3], [-1, 2], [0, 1]] },
-    'Flat-top': { top: -4, rows: [[0, 10], [0, 11], [0, 11], [-1, 11], [-1, 11], [-1, 11], [-1, 11], [-1, 6], [-1, 3], [-1, 2]] },
-    'Topknot': { top: -1, rows: [[2, 10], [0, 11], [-1, 11], [-1, 10], [-1, 5], [-1, 3], [-1, 2]], bun: [3, -2, 3, 1.6] },
-    'Mohawk': { top: 0, rows: [], crest: true },
-    'Shaggy': { top: -3, rows: [[3, 10], [1, 12], [-1, 13], [-1, 13], [-2, 13], [-2, 12], [-2, 9], [-2, 4], [-2, 3], [-2, 3], [-1, 2], [-1, 1]], tips: [[12, 4], [10, 4], [8, 3], [-2, 9], [0, 9]] },
-    'Tied-back': { top: -1, rows: [[2, 10], [0, 11], [-1, 11], [-1, 11], [-1, 6], [-1, 3], [-1, 2]], tail: true },
-    'Buzzed': { top: 0, rows: [], buzz: true },
-    'Bald': { top: 0, rows: [] },
-    'Combat bob': { top: -2, rows: [[4, 8], [2, 11], [0, 12], [-1, 12], [-1, 12], [-1, 9], [-1, 5], [-1, 4], [-1, 4], [-1, 4], [0, 4], [1, 4]] },
-    'High ponytail': { top: -1, rows: [[2, 10], [0, 11], [-1, 11], [-1, 11], [-1, 7], [-1, 3], [-1, 2]], pony: true },
-    'Long braid': { top: -1, rows: [[2, 10], [0, 11], [-1, 11], [-1, 11], [-1, 7], [-1, 3], [-1, 2]], braid: true },
-    'Armoured braid': { top: 0, rows: [], braid: true },
-    'Sidecut': { top: -3, rows: [[3, 10], [1, 12], [1, 13], [2, 13], [3, 13], [5, 13], [8, 12], [10, 12]], buzz: true },
-    'Twin buns': { top: -1, rows: [[2, 10], [0, 11], [-1, 11], [-1, 11], [-1, 7], [-1, 3], [-1, 2]], buns: true },
-    'Pixie': { top: -2, rows: [[3, 9], [1, 11], [-1, 12], [-1, 12], [-1, 12], [-1, 8], [-1, 3], [-1, 2], [0, 1]], tips: [[11, 4], [9, 4]] },
-    'Long loose': { top: -2, rows: [[4, 8], [2, 11], [0, 12], [-1, 12], [-1, 12], [-1, 9], [-1, 5], [-1, 4], [-1, 4], [-1, 4], [0, 4], [1, 4]], long: true },
+  // ---- The sprite -------------------------------------------------------------
+  // Frame-stable noise: keyed to a part's own coordinates, so wear moves with it.
+  const nz = (s, u, v) => mix((s ^ Math.imul(u + 97, 73856093) ^ Math.imul(v + 97, 19349663)) >>> 0) / 4294967296;
+  const TAPE = ['#4a4e56', '#7e838b', '#a9aeb5', '#cdd1d6', '#eceef0'];
+  const ENAMEL = ['#6a6258', '#b3aa98', '#e6dcc4', '#f6efdd', '#fffaf0'];
+  const CONE = ['#5a1e08', '#b3440f', '#f06a1e', '#ff9a4a', '#ffc890'];
+  const DUCK = ['#6a4a08', '#c8960e', '#f5cf2a', '#ffe66a', '#fff4b0'];
+  const WHITE = ['#6d6a7c', '#bdb8c2', '#f2eee6', '#ffffff', '#ffffff'];
+  const HAZARD = ramp('#f2c230'), WRAP = ramp('#e6e0d2'), LEATHER = ramp('#5a3a2a'), DARK = ramp('#2c2a34');
+  const GOLD = ramp('#d8a837'), STRAW = ramp('#d6b25a'), BOX = ramp('#b0824a'), CABLE = ramp('#c8342c'), SKY = ramp('#2c3a4a');
+  const TOAST = ramp('#d9a45a'), PETAL = ramp('#ff6fb0'), LEAF = ramp('#4aa04a'), BLUSH = '#e8849a', PAINT_INK = '#2a1c1c';
+  // Head silhouettes in head coordinates (x 0..13 facing right, y 0..11).
+  const DOME = [[3, 9], [1, 11], [0, 12], [0, 12], [0, 13], [0, 13], [0, 13], [0, 13], [0, 12], [1, 12], [2, 11], [4, 10]];
+  const HEAD_SIL = [
+    DOME,
+    [[1, 12], [0, 13], [-1, 13], [-1, 13], [-1, 13], [-1, 13], [-1, 13], [-1, 13], [-1, 13], [-1, 13], [0, 13], [1, 12]],
+    [[3, 9], [1, 11], [0, 12], [0, 12], [0, 13], [0, 13], [0, 13], [1, 13], [2, 12], [3, 12], [4, 11], [5, 10]],
+    DOME,
+    [[1, 11], [1, 11], [0, 12], [0, 12], [0, 12], [0, 12], [0, 13], [0, 13], [0, 13], [0, 13], [-1, 14], [-1, 14]],
+    DOME,
+    [[2, 11], [0, 13], [0, 13], [0, 13], [0, 13], [0, 13], [0, 13], [0, 13], [0, 13], [0, 13], [0, 13], [1, 12]],
+  ];
+  const MASK_SIL = [[3, 9], [1, 11], [0, 12], [-1, 12], [-1, 12], [-1, 13], [-1, 13], [-1, 13], [-1, 13], [-1, 13], [0, 12], [1, 12], [3, 10]];
+  // 3×5 pixel font for stencils and hand-painted signs.
+  const FONT = {
+    0: '111101101101111', 1: '010110010010111', 2: '111001111100111', 3: '111001011001111', 4: '101101111001001',
+    5: '111100111001111', 6: '111100111101111', 7: '111001010010010', 8: '111101111101111', 9: '111101111001111',
+    A: '010101111101101', D: '110101101101110', E: '111100110100111', G: '011100101101011', J: '001001001101010',
+    K: '101101110101101', L: '100100100100111', M: '101111111101101', N: '110101101101101', O: '010101101101010',
+    P: '110101110100100', R: '110101110101101', S: '011100010001110', T: '111010010010010', U: '101101101101111',
+    Y: '101101010010010', '/': '001001010100100', '-': '000000111000000', '!': '010010010000010', ' ': '000000000000000',
   };
 
-  // ---- The sprite -------------------------------------------------------------
   function sprite(identity, pose = {}) {
     const L = look(identity), kit = L.kit, B = BODY[L.build];
     pooled = 0;
@@ -480,11 +583,12 @@ const QDojoAvatars = (() => {
     const c = canvas();
     const bx = dx, by = dy - jump, gy = -jump;
     const HX = CX - 6 + dx + hx, HY = 4 + dy + hy - jump;
-    const { S, H, E, Mn, Sc, Tr, Ac, Mt } = L;
-    const female = L.female;
-    const WRAP = ramp('#e6e0d2'), LEATHER = ramp('#5a3a2a'), DARK = ramp('#2c2a34'), GOLD = ramp('#d8a837');
-    const WHITE = ['#6d6a7c', '#bdb8c2', '#f2eee6', '#ffffff', '#ffffff'];
+    const { G, Mn, Sc, Tr } = L;
+    const same = r => r;
     const hd = (x, y, r, l) => c.set(HX + x, HY + y, r, l);
+    const lerp = (a, b, t) => [Math.round(a[0] + (b[0] - a[0]) * t), Math.round(a[1] + (b[1] - a[1]) * t)];
+    const eye = blink ? 1 : 3, shine = blink ? 1 : 4;
+    const headMat = L.partMat.head;
 
     const legState = LEGS[legs] || LEGS.plant;
     const hips = [[CX - B.hip + bx, 31 + by], [CX + B.hip + 1 + bx, 31 + by]];
@@ -493,108 +597,176 @@ const QDojoAvatars = (() => {
       return { hip: hips[side], knee: [CX + s[0] + spread, s[1] + gy], ankle: [CX + s[2] + spread, s[3] + gy], foot: s[4] };
     };
     const shoulders = [[CX - B.sh + 2 + bx, 18 + by], [CX + B.sh - 1 + bx, 18 + by]];
+    const thin = kit === 6 ? 1 : 0; // the trooper's limbs are bare endoskeleton rods
 
-    // Which ramp covers what, per kit.
-    const pants = { 0: Mn, 1: Sc, 2: Sc, 3: Mn, 6: Mn, 7: Sc, 8: Mn }[kit] || S;
-    const shorts = { 4: Mn, 5: Mn, 9: Mn, 10: Mn, 11: Mn }[kit] || null;
+    // Which cloth covers the legs, and how far down (a fraction of the thigh,
+    // or past the knee as a fraction of the shin).
+    const LEGWEAR = { 0: [Mn, 0.85, 0], 1: [Sc, 0.6, 0], 3: [Mn, 1, 0.55], 5: [Mn, 0.3, 0], 7: [Sc, 1, 0.35], 8: [Mn, 1, 0.5],
+      9: [L.robe, 0.8, 0], 10: [Mn, 0.5, 0], 11: [Mn, 0.5, 0] }[kit];
 
-    // Back layer: long hair, tails, scarves.
-    backHair();
-    if (kit === 3) { // shinobi scarf tails stream behind
-      const m = M();
-      cap(m, CX - 2 + bx, 16 + by, CX - 9 + bx, 18 + by, 1.6); cap(m, CX - 9 + bx, 18 + by, CX - 14 + bx, 17 + by, 1.2);
-      cap(m, CX - 3 + bx, 17 + by, CX - 10 + bx, 22 + by, 1.3); cap(m, CX - 10 + bx, 22 + by, CX - 13 + bx, 25 + by, 1);
-      c.fill(m, Tr, { band: 1 });
-      // A sword on the back: the hilt shows over the rear shoulder.
-      const hilt = cap(M(), CX - 13 + bx, 6 + by, CX - 8 + bx, 14 + by, 1.2);
-      c.fill(hilt, DARK, { band: 1 });
-      for (let k = 0; k < 3; k++) c.set(CX - 12 + k * 1.5 + bx | 0, 8 + k * 2 + by, Tr, 2);
-      c.fill(cap(M(), CX - 9 + bx, 15 + by, CX - 6 + bx, 13 + by, 1), GOLD, { band: 1 });
-    }
-
+    // Back layer: exhaust, parcel box, wok, robe.
+    backLayer();
     leg(0); leg(1);
     torso();
     waist();
     neck();
     arm(0);
+    if (L.quirk === 5) duck();
     head();
     arm(1);
+    front();
     return c.out();
+
+    // ------------------------------------------------------------ materials
+    function shell(m, part, R, o, spots, mat = L.partMat[part]) {
+      const r = R(mat.R);
+      c.fill(m, r, { band: 2, ...o, chrome: mat.kind === 'chrome' });
+      weather(m, mat, r, part, spots || [], o.ox || 0, o.oy || 0);
+    }
+    function weather(m, mat, r, part, spots, ox, oy) {
+      if (!mat.rust && !mat.chips) return;
+      const key = (L.seed ^ hash(part)) >>> 0;
+      const n = Math.min(spots.length, mat.rust);
+      each(m, (x, y) => {
+        if (c.rampAt(x, y) !== r) return;
+        const u = x - ox, v = y - oy;
+        for (let k = 0; k < n; k++) {
+          const [sx, sy, sr] = spots[k], ex = x - sx, ey = y - sy, d2 = ex * ex + ey * ey;
+          if (d2 <= sr * sr * (0.45 + 0.7 * nz(key + k, u, v))) {
+            c.recolor(x, y, RUST, d2 < (sr - 1) * (sr - 1) && nz(key + 7, u, v) < 0.3 ? 1 : 3);
+            return;
+          }
+        }
+        if (mat.rust && nz(key + 11, u, v) < 0.012 * mat.rust) { c.recolor(x, y, RUST, 2); return; }
+        if (mat.chips && c.levelAt(x, y) >= 2 && nz(key + 5, u, v) < mat.chips) c.recolor(x, y, CHIP);
+      });
+    }
+    function spotsAlong(part, a, b, r0) {
+      const key = (L.seed ^ hash(part + '/spots')) >>> 0, out = [];
+      for (let k = 0; k < 3; k++) {
+        const h = mix(key + k), t = 0.15 + (h % 70) / 100, off = ((h >>> 8) % 3) - 1;
+        out.push([a[0] + (b[0] - a[0]) * t + off, a[1] + (b[1] - a[1]) * t, r0 + ((h >>> 12) % 3) * 0.5]);
+      }
+      return out;
+    }
+    function spotsBox(part, ox, oy, u0, u1, v0, v1, r0) {
+      const key = (L.seed ^ hash(part + '/spots')) >>> 0, out = [];
+      for (let k = 0; k < 3; k++) {
+        const h = mix(key + k);
+        out.push([ox + u0 + h % (u1 - u0 + 1), oy + v0 + (h >>> 8) % (v1 - v0 + 1), r0 + ((h >>> 12) % 3) * 0.6]);
+      }
+      return out;
+    }
+    function rivet(x, y) { c.tone(x, y, 4); c.tone(x, y + 1, 0); }
+    function glyphs(text, x, y, r, l) {
+      let cx = x;
+      for (const ch of text) {
+        const g = FONT[ch] || FONT[' '];
+        for (let k = 0; k < 15; k++) if (g[k] === '1') c.set(cx + k % 3, y + (k / 3 | 0), r, l);
+        cx += 4;
+      }
+    }
+    function hazard(m) { each(m, (x, y) => { if ((x + y) % 4 < 2) c.recolor(x, y, HAZARD); else c.recolor(x, y, STEEL, 1); }); }
+
+    // ----------------------------------------------------------- back layer
+    function backLayer() {
+      const x0 = CX + bx, y0 = by;
+      if (L.topper === 3) { // exhaust stack rising behind the rear shoulder
+        c.fill(cap(M(), x0 - 7, y0 + 22, x0 - 11, y0 + 9, 1.3), CHROME, { band: 1, chrome: true });
+        c.fill(rect(M(), x0 - 13, y0 + 7, 4, 2), STEEL, { band: 1, sep: true });
+        c.set(x0 - 12, y0 + 7, STEEL, 0); c.set(x0 - 11, y0 + 7, STEEL, 0);
+        if (L.quirk === 8) { // a flower in the exhaust
+          c.fill(cap(M(), x0 - 11, y0 + 7, x0 - 11, y0 + 4, 0.5), LEAF, { flat: 2 });
+          c.fill(ell(M(), x0 - 11, y0 + 3, 1.6, 1.4), PETAL, { band: 1 });
+          c.set(x0 - 11, y0 + 3, GOLD, 4); c.set(x0 - 12, y0 + 5, LEAF, 3);
+        }
+      }
+      if (L.shoulders === 'Parcel box') { // courier: a parcel strapped to the back
+        const m = rect(M(), x0 - 13, y0 + 14, 8, 9);
+        c.fill(m, BOX, { band: 1 });
+        for (let y = 14; y < 23; y++) c.set(x0 - 10, y0 + y, TAPE, 3);
+        c.set(x0 - 12, y0 + 16, WHITE, 2); c.set(x0 - 12, y0 + 17, WHITE, 2); c.set(x0 - 13 + 1, y0 + 20, BOX, 0);
+      }
+      if (L.shoulders === 'Wok') { // kitchen unit: a wok worn on the back like a shell
+        const m = ell(M(), x0 - 8, y0 + 21, 4.5, 6);
+        c.fill(m, DARK, { band: 1 });
+        c.fill(cap(M(), x0 - 10, y0 + 15, x0 - 13, y0 + 10, 0.7), LEATHER, { band: 1 });
+        c.tone(x0 - 7, y0 + 18, 3); c.tone(x0 - 7, y0 + 19, 3);
+      }
+      if (L.shoulders === 'Robe') { // boxer: the back of a satin robe and its hood
+        const m = rows(M(), x0 - B.sh - 1, y0 + 15, [[1, 6], [0, 6], [0, 5], [0, 5], [0, 5], [0, 5], [0, 5], [0, 5], [0, 5], [0, 5], [0, 5], [0, 5], [0, 5], [0, 5], [0, 5], [0, 5], [1, 5], [1, 5]]);
+        c.fill(m, Tr, { band: 2 });
+        c.fill(ell(M(), x0 - 4, y0 + 15, 4, 2), Tr, { band: 1 });
+      }
+    }
 
     // ---------------------------------------------------------------- legs
     function leg(side) {
-      const j = legJoints(side), R = side ? (x => x) : back;
+      const j = legJoints(side), R = side ? same : back, part = side ? 'lead-leg' : 'rear-leg';
       const { hip, knee, ankle } = j;
-      const baggy = kit === 0 || kit === 3 || kit === 7 || kit === 8 ? 0.5 : 0;
-      const thigh = cap(M(), hip[0], hip[1], knee[0], knee[1], B.thigh + baggy);
-      const shin = cap(M(), knee[0], knee[1], ankle[0], ankle[1], B.shin + baggy * (kit === 8 ? 1.6 : 1));
-      const whole = or(M(), thigh); or(whole, shin);
-      c.fill(whole, R(pants), { band: 2, sep: side === 1 });
-      const along = (t, a = knee, b = ankle) => [Math.round(a[0] + (b[0] - a[0]) * t), Math.round(a[1] + (b[1] - a[1]) * t)];
-      // Shorts, trunks and wraps cover the top of the thigh.
-      const hem = { 5: 0.25, 9: 0.6, 10: 0.55, 11: 0.5 }[kit];
-      if (hem) c.fill(cap(M(), hip[0], hip[1], ...along(hem, hip, knee), B.thigh + (kit === 11 ? 1.2 : 0.6)), R(shorts), { band: 2, sep: true });
-      if (pants !== S) {
-        // Cloth folds behind the knee and at the hip crease.
-        const k = along(0, knee, knee);
-        c.tone(k[0] - 1, k[1], 1); c.tone(k[0], k[1] + 1, 1); c.tone(k[0] + 1, k[1] - 1, 3);
-        const t = along(0.5, hip, knee);
-        c.tone(t[0], t[1], 1); c.tone(t[0] + 1, t[1] + 1, 1);
-        if (kit === 6) camo(whole);
-        if (kit === 8) { const a = along(0.8); c.tone(a[0] - 1, a[1], 3); }
-      } else {
-        // Muscle: quad highlight and calf line on bare legs.
-        const q = along(0.45, hip, knee); c.tone(q[0] + 1, q[1] - 1, 3); c.tone(q[0] + 2, q[1], 3);
-        const kc = along(0.35); c.tone(kc[0] - 2, kc[1], 1);
+      const along = (t, a = knee, b = ankle) => lerp(a, b, t);
+      const heavyShin = kit === 4 || kit === 10 ? 0.4 : 0;
+      shell(cap(M(), hip[0], hip[1], knee[0], knee[1], B.thigh - thin), part, R, { sep: side === 1, ox: hip[0], oy: hip[1] }, spotsAlong(part + 't', hip, knee, 1.2));
+      shell(cap(M(), knee[0], knee[1], ankle[0], ankle[1], B.shin - thin + heavyShin), part, R, { band: 1, sep: true, ox: knee[0], oy: knee[1] }, spotsAlong(part + 's', knee, ankle, 1.1));
+      // A shin plate seam and rivet.
+      const sp = along(0.55);
+      c.tone(sp[0] + 1, sp[1], 4); c.tone(sp[0] + 1, sp[1] + 1, 0);
+      // Exposed knee: a steel joint with a bolt, a piston behind it.
+      const kr = Math.max(1.6, B.shin - 0.8);
+      c.fill(ell(M(), knee[0], knee[1], kr, kr), R(STEEL), { band: 1, sep: true });
+      c.set(knee[0] + 1, knee[1] - 1, R(STEEL), 4); c.set(knee[0], knee[1], R(STEEL), 3);
+      const pa = along(0.5, hip, knee), pb = along(0.5);
+      c.fill(cap(M(), pa[0] - 2, pa[1], pb[0] - 2, pb[1], 0.5), R(CHROME), { flat: 3, clip: true });
+      // Cloth over the legs.
+      if (LEGWEAR) {
+        const [r, th, sh] = LEGWEAR;
+        const end = sh ? along(sh) : along(th, hip, knee), wide = kit === 8 || kit === 0 ? 0.9 : kit === 11 ? 1.2 : 0.6;
+        const m = cap(M(), hip[0], hip[1], ...(sh ? knee : end), B.thigh + wide);
+        if (sh) cap(m, knee[0], knee[1], ...end, B.shin + wide * (kit === 8 ? 1.4 : 1));
+        c.fill(m, R(r), { band: 2, sep: true });
+        // Tattered or rolled hem.
+        for (let k = -3; k <= 3; k += 2) if (kit === 0 || kit === 9 || kit === 3) c.set(end[0] + k, end[1] + 2, R(r), 1);
+        if (kit === 3 || kit === 7) for (let k = -3; k <= 3; k++) if (c.filled(end[0] + k, end[1] + 1)) c.set(end[0] + k, end[1] + 1, R(r), 3);
+        const fold = along(0.5, hip, knee); c.tone(fold[0], fold[1], 1); c.tone(fold[0] + 1, fold[1] + 1, 1);
+        if (kit === 8) { const a = along(0.3); c.tone(a[0] - 1, a[1], 3); }
       }
-      // Shin gear per kit.
-      if (kit === 2) { // armoured shin and knee plate
-        const g = cap(M(), ...along(0.15), ...along(0.9), B.shin + 0.3); c.fill(g, R(Mt), { band: 1, sep: true });
-        c.fill(ell(M(), knee[0] + 1, knee[1], 2.2, 2), R(Mt), { sep: true });
-      } else if (kit === 3 || kit === 9) { // wrapped shins
-        const g = cap(M(), ...along(0.35), ...along(0.95), B.shin + 0.2); c.fill(g, R(kit === 3 ? Sc : WRAP), { band: 1 });
-        for (let t = 0.4; t < 0.95; t += 0.18) { const p = along(t); c.tone(p[0], p[1], 1); c.tone(p[0] - 1, p[1] - 1, 1); }
-      } else if (kit === 5 || kit === 10 || kit === 6) { // boots up the shin
-        const g = cap(M(), ...along(kit === 5 ? 0.25 : 0.5), ...ankle, B.shin + 0.4);
-        c.fill(g, R(kit === 6 ? LEATHER : kit === 5 ? Sc : DARK), { band: 1, sep: true });
-        if (kit === 5) { c.fill(ell(M(), knee[0] + 1, knee[1], 2.4, 2.2), R(Tr), { sep: true }); }
+      // Gear on the shins.
+      if (kit === 5 || kit === 10) { // boots
+        c.fill(cap(M(), ...along(kit === 5 ? 0.3 : 0.5), ...ankle, B.shin + 0.5), R(kit === 5 ? Sc : DARK), { band: 1, sep: true });
         for (let t = 0.6; t < 0.95; t += 0.2) { const p = along(t); c.set(p[0] + 1, p[1], kit === 10 ? WHITE : R(Tr), 3); }
-      } else if (kit === 11) { // ankle wraps
-        c.fill(cap(M(), ...along(0.8), ...ankle, B.shin + 0.2), R(WRAP), { band: 1 });
-      } else if (kit === 7) { // white socks over the ankle
-        c.fill(cap(M(), ...along(0.82), ...ankle, B.shin), R(WRAP), { band: 1 });
+        if (kit === 5) c.fill(ell(M(), knee[0] + 1, knee[1], 2.4, 2.2), R(Tr), { sep: true });
+      } else if (kit === 11) { // hazard-striped shin guards and ankle wraps
+        const g = cap(M(), ...along(0.3), ...along(0.7), B.shin + 0.3);
+        c.fill(g, R(STEEL), { band: 1, sep: true }); hazard(g);
+        c.fill(cap(M(), ...along(0.82), ...ankle, B.shin + 0.2), R(WRAP), { band: 1 });
+      } else if (kit === 6) { // trooper: armour plates on thigh and shin
+        const tp = cap(M(), ...along(0.25, hip, knee), ...along(0.55, hip, knee), B.thigh - 0.6);
+        shell(tp, part + 'p', R, { band: 1, sep: true, ox: hip[0], oy: hip[1] }, [], L.plate);
+        const sg = cap(M(), ...along(0.4), ...along(0.7), B.shin - 0.7);
+        shell(sg, part + 'q', R, { band: 1, sep: true, ox: knee[0], oy: knee[1] }, [], L.plate);
       }
-      foot(j, side, R);
+      foot(j, side, R, part);
     }
 
-    function camo(m) {
-      each(m, (x, y) => {
-        const k = (x * 7 + y * 13 + ((x * y) >> 2)) % 11;
-        if (k === 0 || k === 1) c.shift(x, y, -1);
-        else if (k === 5) c.set(x, y, Sc, 1);
-      });
-    }
-
-    function foot(j, side, R) {
+    function foot(j, side, R, part) {
       const [ax, ay] = j.ankle, m = M(), w = L.build === 2 ? 1 : 0;
       let sole = null;
       if (j.foot === 'kick') { rect(m, ax - 1, ay - 2, 5 + w, 5); rect(m, ax + 2, ay - 3, 3, 1); sole = [ax + 4 + w, ay - 3, 1, 6]; }
       else if (j.foot === 'tuck') { rect(m, ax - 2, ay - 1, 5, 4); rect(m, ax + 2, ay + 2, 2, 2); }
       else if (j.foot === 'back') { rect(m, ax - 4, ay - 1, 6, 3); }
       else { rows(m, ax, ay - 1, [[-2, 2], [-2, 3], [-3, 4 + w], [-3, 5 + w], [-3, 5 + w]]); sole = [ax - 3, ay + 3, 9 + w, 1]; }
-      const bare = kit === 0 || kit === 4 || kit === 8 || kit === 9 || kit === 11;
-      const shoe = bare ? S : kit === 1 ? WRAP : kit === 2 ? Mt : kit === 6 ? LEATHER : kit === 5 ? Sc : kit === 10 ? DARK : DARK;
-      c.fill(m, R(shoe), { band: 1, sep: true });
-      if (bare) {
-        if (j.foot === 'flat') { c.tone(ax + 3, ay + 3, 1); c.tone(ax + 1, ay + 3, 1); c.tone(ax - 1, ay, 3); }
-        if (kit === 9) { c.set(ax - 2, ay, GOLD, 2); c.set(ax, ay, GOLD, 3); }
-        return;
-      }
+      const boot = kit === 5 ? Sc : kit === 10 ? DARK : kit === 1 ? WRAP : null;
+      if (boot) c.fill(m, R(boot), { band: 1, sep: true });
+      else shell(m, part, R, { band: 1, sep: true, ox: ax, oy: ay });
       if (sole) for (let yy = sole[1]; yy < sole[1] + sole[3]; yy++) for (let xx = sole[0]; xx < sole[0] + sole[2]; xx++) {
-        if (c.filled(xx, yy)) c.set(xx, yy, kit === 1 ? R(WRAP) : R(DARK), kit === 1 ? 3 : 0);
+        if (c.filled(xx, yy)) c.set(xx, yy, R(boot === WRAP ? WRAP : STEEL), boot === WRAP ? 3 : 1);
       }
-      if (kit === 1 && j.foot === 'flat') { c.set(ax, ay + 1, R(Tr), 2); c.set(ax + 1, ay + 1, R(Tr), 2); c.set(ax + 2, ay + 2, R(Tr), 2); c.set(ax - 1, ay + 2, R(Tr), 3); }
-      if (kit === 3 && j.foot === 'flat') { c.tone(ax + 3, ay + 2, 0); c.tone(ax + 3, ay + 3, 0); }
+      if (j.foot === 'flat') {
+        if (kit === 1) { c.set(ax, ay + 1, R(Tr), 2); c.set(ax + 1, ay + 1, R(Tr), 2); c.set(ax + 2, ay + 2, R(Tr), 3); }
+        else { c.tone(ax + 1, ay, 4); c.tone(ax - 1, ay + 1, 0); c.tone(ax + 3, ay + 2, 3); }
+      }
+      // The ankle joint.
+      c.set(ax, ay - 1, R(STEEL), 1); c.set(ax + 1, ay - 1, R(STEEL), 3);
     }
 
     // --------------------------------------------------------------- torso
@@ -611,112 +783,85 @@ const QDojoAvatars = (() => {
       return m;
     }
 
-    function muscles(ramp_) {
-      const x0 = CX + bx, y0 = by, t = (x, y, l) => c.tone(x0 + x, y0 + y, l);
-      if (L.build === 2 && kit === 4) { // sumo: heavy chest and a round belly
-        for (let x = -5; x <= 7; x++) t(x, 22 + (x > 1 ? 0 : 0), 1);
-        t(1, 21, 1); t(1, 20, 1);
-        for (let x = 5; x <= 10; x++) t(x, 25, 3);
-        t(9, 26, 4); t(10, 27, 3); t(4, 27, 0); t(4, 28, 1);
-        for (let x = -3; x <= 8; x++) t(x, 30, 1);
-        return;
+    function torso() {
+      const x0 = CX + bx, y0 = by;
+      const t = (x, y, l) => c.tone(x0 + x, y0 + y, l), s = (x, y, r, l) => c.set(x0 + x, y0 + y, r, l);
+      const sh = B.sh, heavy = L.build === 2;
+      // Pelvis block, then an exposed midsection of steel ribs, then the chest.
+      shell(rect(M(), x0 - B.waist, y0 + 28, B.waist * 2 + 2, 6), 'pelvis', same, { band: 2, ox: x0, oy: y0 });
+      const mid = and(torsoMask(), rect(M(), 0, y0 + 22, SIZE, 7));
+      c.fill(mid, STEEL, { band: 1 });
+      for (let y = 23; y <= 28; y++) for (let x = -B.waist - 1; x <= B.waist + 2 + B.belly; x++) if (c.filled(x0 + x, y0 + y) && y % 2) t(x, y, x > 2 ? 3 : 2);
+      for (let y = 23; y <= 28; y++) { t(1, y, 0); t(2, y, 4); }
+      const chestEnd = heavy ? 25 : 22;
+      const chest = and(torsoMask(), rect(M(), 0, y0 + 15, SIZE, chestEnd - 15 + 1));
+      shell(chest, 'torso', same, { band: 2, sep: true, ox: x0, oy: y0 }, spotsBox('torso', x0, y0, -sh + 2, sh - 1, 16, chestEnd - 1, 1.4));
+      if (heavy) { // a round belly plate
+        const belly = ell(M(), x0 + 3, y0 + 27, B.waist + 1, 3);
+        shell(belly, 'torso', same, { band: 1, sep: true, ox: x0, oy: y0 }, spotsBox('belly', x0, y0, -2, 8, 25, 29, 1.2));
+        for (let x = -3; x <= 9; x += 4) rivet(x0 + x, y0 + 26);
       }
-      // Pecs: a lit upper edge, a shadow under, a sternum line.
-      for (let x = -5; x <= 7; x++) if (x !== 1) t(x, 22, 1);
-      t(-6, 21, 1); t(8, 21, 1);
-      for (let y = 18; y <= 21; y++) t(1, y, 1);
-      for (let x = 3; x <= 6; x++) t(x, 18, 3);
-      t(4, 19, 4); t(5, 19, 3); t(-2, 18, 3); t(-1, 18, 3);
-      // Abs: a centre line and three rows of blocks, the right side lit.
-      for (let y = 23; y <= 29; y++) t(1, y, 1);
-      for (const y of [24, 26, 28]) { t(-1, y, 1); t(0, y, 1); t(2, y, 1); t(3, y, 1); }
-      for (const y of [23, 25, 27]) { t(2, y, 3); t(3, y, 3); }
-      t(-3, 25, 1); t(-3, 26, 1); t(-3, 27, 1); t(5, 24, 1); t(5, 25, 1);
-      if (L.build === 0) for (const y of [20, 22, 24]) { t(-4, y, 1); t(-3, y, 1); }
+      // Seams, rivets, a vent and a status light.
+      for (let y = 17; y < chestEnd; y++) t(1, y, 1);
+      t(1, 16, 0);
+      rivet(x0 - sh + 3, y0 + 17); rivet(x0 + sh - 1, y0 + 17); rivet(x0 - sh + 4, y0 + chestEnd - 2); rivet(x0 + sh - 2, y0 + chestEnd - 2);
+      for (let x = 4; x <= 6; x++) { t(x, 20, 0); t(x, 21, 3); }
+      s(-2, 19, G, eye); s(-3, 19, G, 1);
+      if (L.pattern === 'Racing stripe') for (let y = 16; y < chestEnd; y++) { s(-1, y, Tr, 3); s(0, y, Tr, 2); }
+      else if (L.pattern === 'Stencil number') glyphs(L.designation.slice(-2), x0 - sh + 3, y0 + 18, STEEL, 0);
+      else if (L.pattern === 'Emblem') emblem(x0 + 3, y0 + 16);
+      gearTorso(x0, y0, t, s);
     }
 
-    function torso() {
-      const m = torsoMask(), x0 = CX + bx, y0 = by;
-      const t = (x, y, l) => c.tone(x0 + x, y0 + y, l), s = (x, y, r, l) => c.set(x0 + x, y0 + y, r, l);
-      const bareMale = BARE_CHEST.has(kit) && !female;
-      const skinTop = BARE_CHEST.has(kit) || kit === 6 || kit === 0;
-      // Shorts/pelvis first, then the torso over it.
-      const pel = rect(M(), CX - B.waist + bx, 28 + by, B.waist * 2 + 2, 6);
-      c.fill(pel, shorts || pants, { band: 2 });
-      if (skinTop) { c.fill(m, S, { band: 2 }); if (bareMale || kit === 0 || kit === 6) muscles(S); }
-      if (kit === 0) { // karate gi: jacket with a deep V and crossed lapels
-        const g = minus(torsoMask(), rows(M(), x0, y0 + 15, [[-2, 4], [-1, 4], [-1, 4], [0, 3], [0, 3], [1, 3], [1, 2], [1, 2], [2, 2]]));
-        if (female) c.fill(rows(M(), x0, y0 + 16, [[-1, 4], [-1, 4], [0, 3], [0, 3], [1, 3]]), Sc, { band: 1 });
-        c.fill(g, Mn, { band: 2 });
-        for (let k = 0; k <= 12; k++) { const x = -3 + Math.round(k * 0.45), y = 15 + k; s(x, y, L.pattern === 'Trim' ? Tr : Mn, 3); t(x - 1, y, 1); }
-        for (let k = 0; k <= 5; k++) { s(5 - Math.round(k * 0.3), 15 + k, L.pattern === 'Trim' ? Tr : Mn, 3); }
-        t(-5, 26, 1); t(-4, 27, 1); t(6, 25, 1); t(7, 26, 1); t(-6, 20, 1); t(-6, 21, 1);
-      } else if (kit === 1) { // open vest over the chest, sports top for women
-        if (female) c.fill(rows(M(), x0 - 4, y0 + 19, [[0, 11], [0, 11], [0, 11], [0, 11], [1, 10]]), Sc, { band: 1 });
-        const v = and(torsoMask(), rect(M(), 0, 0, SIZE, SIZE));
-        minus(v, rect(M(), x0 - 2, y0 + 15, 8, 17));
-        c.fill(v, Mn, { band: 2 });
-        for (let y = 15; y <= 31; y++) { t(-3, y, 3); t(6, y, 1); }
-        s(-4, 16, Mn, 4); s(-3, 16, Mn, 4); s(7, 16, Mn, 4);
-      } else if (kit === 2) { // cyborg: undersuit, chest plate, core light
-        c.fill(m, Sc, { band: 2 });
-        const p = rows(M(), x0, y0 + 17, [[-6, 7], [-7, 8], [-7, 8], [-7, 8], [-6, 8], [-6, 7], [-5, 6], [-3, 5]]);
-        c.fill(p, Mt, { band: 1 });
-        for (let x = -5; x <= 6; x++) t(x, 21, 1);
-        t(1, 18, 1); t(1, 19, 1); t(1, 20, 1);
-        c.fill(ell(M(), x0 + 3, y0 + 23, 1.6, 1.6), Ac, { flat: 3 }); s(3, 22, Ac, 4);
-        for (const y of [26, 28, 30]) for (let x = -3; x <= 4; x++) t(x, y, 1);
-      } else if (kit === 3) { // shinobi: wrapped tunic, crossing strap
-        c.fill(m, Mn, { band: 2 });
-        for (let k = -8; k <= 8; k += 4) for (let y = 23; y <= 31; y++) { const x = k + (y - 23); if (x > -B.waist && x < B.waist) t(x, y, 1); }
-        const strap = cap(M(), x0 - 7, y0 + 17, x0 + 6, y0 + 29, 1.1);
-        c.fill(and(strap, torsoMask()), Sc, { band: 1 });
-        s(0, 23, Tr, 3); s(1, 23, Tr, 2);
-      } else if (kit === 4) { // sumo
-        if (female) c.fill(rows(M(), x0 - 8, y0 + 19, [[0, 18], [0, 19], [0, 19], [0, 19], [1, 18]]), Sc, { band: 1 });
-      } else if (kit === 5 && female) { // wrestling singlet
-        const g = minus(torsoMask(), rows(M(), x0 - 11, y0 + 15, [[0, 9], [0, 7], [0, 5], [0, 4]]));
-        minus(g, rows(M(), x0 + 5, y0 + 15, [[0, 9], [1, 9], [3, 9], [4, 9]]));
-        c.fill(g, Mn, { band: 2 });
-      } else if (kit === 6) { // commando: tank top, dog tags
-        const g = minus(torsoMask(), rows(M(), x0 - 12, y0 + 15, [[0, 9], [0, 7], [0, 5], [0, 4]]));
-        minus(g, rows(M(), x0 + 4, y0 + 15, [[0, 9], [2, 9], [3, 9], [4, 9]]));
-        minus(g, rows(M(), x0 - 1, y0 + 15, [[0, 4], [0, 4], [1, 3]]));
-        c.fill(g, Mn, { band: 2 });
-        t(-4, 27, 1); t(-3, 28, 1); t(5, 26, 1);
-        s(2, 18, WHITE, 1); s(2, 19, WHITE, 1); s(2, 20, Mt, 3); s(3, 20, Mt, 2); s(2, 21, Mt, 2); s(3, 21, Mt, 1);
-      } else if (kit === 7) { // kung-fu: sleeveless jacket, mandarin collar, frog buttons
-        c.fill(m, Mn, { band: 2 });
+    function gearTorso(x0, y0, t, s) {
+      const sh = B.sh;
+      if (kit === 0) { // torn gi jacket, open wide over the chest plate
+        const g = minus(torsoMask(), rows(M(), x0, y0 + 15, [[-2, 5], [-1, 5], [-1, 5], [0, 5], [0, 5], [0, 4], [1, 4], [1, 3], [1, 3], [2, 3]]));
+        minus(g, rect(M(), 0, y0 + 25, SIZE, 10));
+        c.fill(g, Mn, { band: 2, sep: true });
+        for (let k = 0; k <= 9; k++) { const x = -3 + Math.round(k * 0.5); s(x, 15 + k, Mn, 3); }
+        for (let x = -sh; x <= sh + 1; x += 2) if (c.filled(x0 + x, y0 + 24)) s(x, 25, Mn, 1); // tattered hem
+        t(-5, 22, 1); t(-4, 23, 1); t(6, 21, 1);
+      } else if (kit === 1) { // courier: a satchel strap across the chest
+        c.fill(and(cap(M(), x0 - sh + 1, y0 + 16, x0 + sh, y0 + 27, 0.9), torsoMask()), Sc, { band: 1, sep: true });
+        s(4, 23, GOLD, 3);
+      } else if (kit === 2) { // security vest with a badge
+        const v = minus(and(torsoMask(), rect(M(), 0, y0 + 15, SIZE, 13)), rows(M(), x0, y0 + 15, [[-1, 3], [-1, 3], [0, 3], [0, 2], [0, 2], [1, 2]]));
+        c.fill(v, Sc, { band: 2, sep: true });
+        for (let y = 21; y <= 27; y++) t(1, y, 0);
+        for (const [x, y, l] of [[4, 18, 4], [3, 19, 3], [4, 19, 3], [5, 19, 3], [4, 20, 2], [3, 21, 1], [5, 21, 1]]) s(x, y, GOLD, l);
+        for (let x = -5; x <= -2; x++) s(x, 24, Sc, 3); // pocket
+      } else if (kit === 3) { // overalls bib with straps
+        c.fill(and(rows(M(), x0 - 5, y0 + 20, [[0, 10], [0, 10], [0, 10], [0, 11], [0, 11], [0, 11], [0, 11], [0, 11], [0, 11]]), torsoMask()), Mn, { band: 1, sep: true });
+        c.fill(cap(M(), x0 - 4, y0 + 20, x0 - sh + 3, y0 + 15, 0.6), Mn, { band: 1 });
+        c.fill(cap(M(), x0 + 5, y0 + 20, x0 + sh - 2, y0 + 15, 0.6), Mn, { band: 1 });
+        s(-4, 20, GOLD, 4); s(5, 20, GOLD, 4); for (let x = -2; x <= 3; x++) s(x, 22, Mn, 3); s(-2, 23, Mn, 1); s(3, 23, Mn, 1);
+      } else if (kit === 6) { // trooper: webbing straps and a chest plate stencil
+        c.fill(and(cap(M(), x0 - sh + 2, y0 + 15, x0 + 5, y0 + 28, 0.8), torsoMask()), DARK, { band: 1 });
+        c.fill(and(cap(M(), x0 + sh - 1, y0 + 15, x0 - 3, y0 + 28, 0.8), torsoMask()), DARK, { band: 1 });
+        for (let x = 5; x <= 7; x++) s(x, 17, HAZARD, 3);
+      } else if (kit === 7) { // apron over the chest and a mandarin collar
+        c.fill(and(rows(M(), x0 - 4, y0 + 18, [[1, 8], [0, 9], [0, 9], [0, 10], [0, 10], [-1, 11], [-1, 11], [-1, 11], [-1, 12], [-1, 12], [-1, 12], [-1, 12], [-1, 12]]), torsoMask()), WRAP, { band: 1, sep: true });
         for (let x = -3; x <= 4; x++) s(x, 15, Tr, x > 1 ? 3 : 2);
-        for (let y = 16; y <= 29; y++) t(3, y, 1);
-        for (const y of [18, 21, 24, 27]) { s(3, y, Tr, 3); s(4, y, Tr, 2); s(2, y, Tr, 1); }
-        t(-5, 25, 1); t(-4, 26, 1);
-      } else if (kit === 8 && female) { // capoeira crop top
-        c.fill(rows(M(), x0 - 8, y0 + 17, [[1, 17], [0, 18], [0, 18], [0, 18], [0, 18], [1, 17], [2, 16]]), Sc, { band: 1 });
-      } else if (kit === 9) { // mystic: a robe draped over one shoulder, prayer beads
-        if (female) c.fill(rows(M(), x0 - 7, y0 + 17, [[1, 15], [0, 16], [0, 16], [0, 16], [0, 16], [1, 15]]), Sc, { band: 1 });
-        const drape = and(cap(M(), x0 - 6, y0 + 15, x0 + 7, y0 + 30, 2.6), torsoMask());
-        c.fill(drape, Mn, { band: 1, sep: true });
+        s(1, 24, Tr, 1); s(2, 25, Tr, 1); s(4, 27, TOAST, 1); // a sauce stain
+        c.fill(cap(M(), x0 - 3, y0 + 18, x0 - sh + 3, y0 + 15, 0.5), WRAP, { flat: 2 });
+      } else if (kit === 8) { // dance-bot: a speaker cone built into the chest
+        c.fill(ell(M(), x0 + 3, y0 + 19, 3, 3), STEEL, { band: 1, sep: true });
+        c.fill(ell(M(), x0 + 3, y0 + 19, 1.6, 1.6), DARK, { band: 1 });
+        s(3, 19, CHROME, 3); s(4, 18, CHROME, 4); s(0, 17, G, eye); s(6, 17, G, eye);
+      } else if (kit === 9) { // monk: robe over one shoulder and prayer beads of hex nuts
+        const drape = and(cap(M(), x0 - 6, y0 + 15, x0 + 7, y0 + 29, 3.2), torsoMask());
+        c.fill(drape, L.robe, { band: 1, sep: true });
         for (let k = 0; k < 4; k++) { t(-3 + k * 3, 19 + k * 3, 1); t(-2 + k * 3, 20 + k * 3, 3); }
-        const beads = [[-4, 16], [-4, 18], [-3, 20], [-2, 22], [0, 23], [2, 24], [4, 23], [6, 22], [7, 20], [7, 18], [6, 16]];
-        const WOOD = ramp('#b9824a');
-        for (const [x, y] of beads) { s(x, y, WOOD, 3); s(x + 1, y, WOOD, 2); s(x, y + 1, WOOD, 1); s(x + 1, y + 1, WOOD, 0); }
-        s(2, 25, Tr, 3); s(3, 25, Tr, 2); s(2, 26, Tr, 1); s(3, 26, Tr, 1);
-      } else if ((kit === 10 || kit === 11) && female) { // tank / sports top
-        c.fill(rows(M(), x0 - 8, y0 + 17, [[2, 16], [0, 18], [0, 18], [0, 18], [0, 18], [0, 18], [1, 17], [2, 16]]), kit === 10 ? Mn : Sc, { band: 1 });
-      } else if (kit === 8 || kit === 5) {
-        // bare chest, already shaded
+        for (const [x, y] of [[-4, 16], [-4, 18], [-3, 20], [-2, 22], [0, 23], [2, 24], [4, 23], [6, 22], [7, 20], [7, 18], [6, 16]]) { s(x, y, CHROME, 3); s(x + 1, y, CHROME, 1); }
+      } else if (kit === 11 || kit === 4) { // hazard stripes on the chest plate edge
+        const g = and(rect(M(), 0, y0 + 15, SIZE, 2), torsoMask());
+        minus(g, rect(M(), x0 - 3, y0 + 14, 8, 4));
+        hazard(g);
       }
-      if (L.marking === 'Chest tattoo') {
-        const TAT = mixHex(S[1], '#1c2a48', 0.6);
-        for (const [x, y] of [[-4, 19], [-3, 18], [-2, 19], [-3, 20], [-4, 21], [-2, 21], [-3, 22]]) s(x, y, TAT);
-      }
-      // Outfit pattern on the main garment: trim edge, side stripes, emblem.
-      const garment = kit === 0 || kit === 3 || kit === 6 || kit === 7 || (kit === 1) || (kit === 2);
-      if (garment && L.pattern === 'Stripes') {
-        for (let y = 17; y <= 30; y++) { s(-B.sh + 2 + (y > 25 ? 3 : 0), y, Tr, y % 2 ? 2 : 3); }
-      } else if (garment && L.pattern === 'Emblem') {
-        emblem(x0 - 5, y0 + 20);
+      if (L.shoulders === 'Robe') { // open robe fronts down both sides
+        c.fill(and(rows(M(), x0 - sh, y0 + 15, [[0, 3], [0, 3], [0, 3], [0, 3], [0, 3], [0, 3], [0, 3], [0, 3], [1, 3], [1, 3], [2, 4], [3, 5], [3, 5], [3, 5], [3, 5], [3, 5]]), torsoMask()), Tr, { band: 1, sep: true });
+        c.fill(and(rows(M(), x0 + sh - 3, y0 + 15, [[0, 4], [0, 4], [0, 4], [0, 4], [1, 4], [1, 4], [1, 4], [1, 3], [0, 2], [-1, 1], [-2, 0], [-3, -1], [-3, -1], [-3, -1]]), torsoMask()), Tr, { band: 1, sep: true });
       }
     }
 
@@ -724,7 +869,7 @@ const QDojoAvatars = (() => {
       const E_ = [
         [[1, 0], [2, 0], [0, 1], [1, 1], [2, 1], [3, 1], [0, 2], [1, 2], [2, 2], [3, 2], [1, 3], [2, 3]],
         [[1, 0], [2, 0], [0, 1], [3, 1], [0, 2], [2, 2], [3, 2], [1, 3], [2, 3]],
-        [[1, 0], [0, 1], [2, 1], [1, 2], [0, 1], [1, 1]],
+        [[1, 0], [0, 1], [2, 1], [1, 2], [1, 1]],
         [[0, 1], [1, 0], [2, 1], [3, 0], [0, 2], [2, 2], [1, 3], [3, 3]],
         [[0, 0], [3, 0], [1, 1], [2, 1], [1, 2], [2, 2], [1, 3], [0, 2], [3, 2]],
       ][L.emblem];
@@ -736,247 +881,257 @@ const QDojoAvatars = (() => {
       const x0 = CX + bx, y0 = by, w = B.waist + (B.belly ? 1 : 0);
       const s = (x, y, r, l) => c.set(x0 + x, y0 + y, r, l);
       let r = Tr, top = 28, h = 2;
-      if (kit === 0) r = L.sash % 2 ? Sc : toHsl(L.Mn[2])[2] < 0.3 ? Tr : DARK;
-      if (kit === 1 || kit === 6) { r = LEATHER; }
-      if (kit === 2) { r = DARK; h = 3; }
+      if (kit === 0) r = L.sash % 2 ? Sc : DARK;
+      if (kit === 1 || kit === 2 || kit === 6) r = kit === 6 ? DARK : LEATHER;
+      if (kit === 3) { r = LEATHER; h = 1; top = 29; }
       if (kit === 4) { r = Mn; top = 27; h = 5; }
       if (kit === 5 || kit === 10 || kit === 11) { r = Tr; h = kit === 5 ? 1 : 3; }
-      if (kit === 7) { h = 3; }
+      if (kit === 7) h = 3;
       if (kit === 8) { h = 1; top = 29; }
-      if (kit === 9) { r = Tr; }
+      if (kit === 9) r = Tr;
+      // Shorts and skirts hang from the pelvis first.
+      if (LEGWEAR) c.fill(rect(M(), x0 - B.waist, y0 + 29, B.waist * 2 + 2 + (B.belly ? 1 : 0), 5), LEGWEAR[0], { band: 2 });
       const m = rect(M(), x0 - w, y0 + top, w * 2 + 2 + (B.belly ? 1 : 0), h);
       c.fill(m, r, { band: 1, sep: true });
-      // Sash patterns.
       const sash = SASHES[L.sash];
       for (let x = -w; x <= w + 1; x++) for (let y = top; y < top + h; y++) {
         if (sash === 'Striped' && (x + 40) % 3 === 0) c.shift(x0 + x, y0 + y, 1);
         if (sash === 'Checked' && (x + y + 40) % 2 === 0 && h > 1) c.shift(x0 + x, y0 + y, -1);
         if (sash === 'Stitched' && y === top + (h > 2 ? 1 : 0) && x % 2 === 0) c.shift(x0 + x, y0 + y, 2);
       }
-      if (kit === 0 || kit === 3 || kit === 7) { // knot and hanging tails
+      if (kit === 0 || kit === 7) { // knot and hanging tails
         s(3, top, r, 3); s(4, top, r, 3); s(3, top + 1, r, 1); s(4, top + 1, r, 2);
         const tails = cap(M(), x0 + 3, y0 + top + h, x0 + 2, y0 + top + h + 5, 0.8);
         cap(tails, x0 + 5, y0 + top + h, x0 + 6, y0 + top + h + 4, 0.8);
         c.fill(tails, r, { band: 1, sep: true });
       }
-      if (kit === 1 || kit === 6) { s(3, top, Mt, 4); s(4, top, Mt, 3); s(3, top + 1, Mt, 2); s(4, top + 1, Mt, 1); }
+      if (kit === 1 || kit === 2 || kit === 6 || kit === 3) { s(3, top, CHROME, 4); s(4, top, CHROME, 3); s(3, top + 1, CHROME, 2); s(4, top + 1, CHROME, 1); }
+      if (kit === 2) { // a flashlight on the belt
+        c.fill(rect(M(), x0 - w - 1, y0 + top + 1, 2, 5), DARK, { band: 1, sep: true });
+        s(-w - 1, top + 6, HAZARD, 4); s(-w, top + 6, HAZARD, 3);
+      }
       if (kit === 4) { // mawashi front and hanging cords
-        const f = rect(M(), x0 + 1, y0 + top + h, 5, 3); c.fill(f, Mn, { band: 1, sep: true });
+        c.fill(rect(M(), x0 + 1, y0 + top + h, 5, 3), Mn, { band: 1, sep: true });
         for (let x = 0; x <= 7; x += 2) for (let y = top + h; y < top + h + 6; y++) if (!c.filled(x0 + x, y0 + y) || y > top + h + 2) c.set(x0 + x, y0 + y, Sc, y === top + h + 5 ? 1 : 2);
       }
-      if (kit === 8) { // capoeira cord: knot and two ends
+      if (kit === 8) { // capoeira cord
         const e = cap(M(), x0 + 4, y0 + top + 1, x0 + 3, y0 + top + 6, 0.6); cap(e, x0 + 5, y0 + top + 1, x0 + 6, y0 + top + 5, 0.6);
         c.fill(e, Tr, { band: 1 });
       }
-      if (kit === 10 || kit === 11) { // trunk leg openings with a stripe
-        s(-w, top + 3, Tr, 2); s(w + 1, top + 3, Tr, 3);
+      if (kit === 7) { // apron skirt
+        c.fill(rows(M(), x0 - 3, y0 + top + h, [[0, 10], [0, 10], [0, 10], [-1, 10], [-1, 11], [-1, 11]]), WRAP, { band: 1, sep: true });
       }
       if ((kit === 5 || kit === 10 || kit === 11 || kit === 4) && L.pattern === 'Emblem') emblem(x0 + 1, y0 + top + h + 1);
     }
 
     function neck() {
-      const m = cap(M(), CX + 1 + bx, 18 + by, CX + 1 + dx + hx, 14 + dy + hy - jump, B.neck);
-      const r = kit === 3 ? Mn : kit === 2 && L.headgear !== 'Cyber eye' ? Sc : S;
-      c.fill(m, r, { band: 2 });
-      if (r === S) { c.tone(CX + 1 + bx - 1, 15 + by, 1); }
-      if (kit === 6) { // dog tag chain
-        for (let x = -2; x <= 3; x++) c.set(CX + x + bx, 16 + by + (x > 0 ? 1 : 0), WHITE, 1);
-      }
+      const top = [CX + 1 + dx + hx, 14 + dy + hy - jump], bot = [CX + 1 + bx, 18 + by];
+      const m = cap(M(), bot[0], bot[1], top[0], top[1], Math.max(1.8, B.neck - 0.5));
+      c.fill(m, STEEL, { band: 1 });
+      each(m, (x, y) => { if ((y - top[1]) % 2 === 0) c.tone(x, y, x > top[0] ? 4 : 3); });
+      c.set(bot[0] - 2, bot[1] - 2, CABLE, 2); c.set(bot[0] - 2, bot[1] - 3, CABLE, 3);
     }
 
     // ---------------------------------------------------------------- arms
     function arm(side) {
       const state = side ? lead : rear == null ? 'guard' : rear;
       const table = side ? LEAD : REAR;
-      let spec = typeof state === 'number' ? table.guard[state % 3] : table[state] || table.guard[L.stance];
+      let spec = table[state] || table.guard[L.stance];
       if (state === 'guard' || spec === table.guard) spec = table.guard[L.stance];
-      const sh = shoulders[side], R = side ? (x => x) : back;
+      const sh = shoulders[side], R = side ? same : back, part = side ? 'lead-arm' : 'rear-arm';
       const el = [sh[0] + spec[0], sh[1] + spec[1]], fh = [sh[0] + spec[2], sh[1] + spec[3]];
-      const cyber = kit === 2 && side === 1;
-      const upperR = cyber ? Mt : kit === 2 ? Sc : kit === 3 ? S : S;
-      const foreR = cyber || kit === 2 ? Mt : S;
-      const upper = cap(M(), sh[0], sh[1], el[0], el[1], B.upper);
-      c.fill(upper, R(upperR), { band: 2, sep: true });
-      // Deltoid cap and biceps highlight on bare arms.
-      if (upperR === S) {
-        c.shift(sh[0], sh[1] - 1, 1);
-        const mid = [Math.round((sh[0] + el[0]) / 2), Math.round((sh[1] + el[1]) / 2)];
-        c.tone(mid[0] + 1, mid[1], 3); c.tone(mid[0] + 1, mid[1] - 1, 3);
-        if (L.marking === 'Arm tattoo' && side === 1) {
-          const TAT = mixHex(S[1], '#1c2a48', 0.6);
-          for (let k = -1; k <= 1; k++) { c.set(mid[0] + k, mid[1] + 1, TAT); c.set(mid[0] + k, mid[1] + 2 + (k & 1), TAT); }
-        }
+      shell(cap(M(), sh[0], sh[1], el[0], el[1], B.upper - thin), part, R, { sep: true, ox: sh[0], oy: sh[1] }, spotsAlong(part + 'u', sh, el, 1.1));
+      shell(cap(M(), el[0], el[1], fh[0], fh[1], B.fore + 0.2 - thin), part, R, { band: 1, sep: true, ox: el[0], oy: el[1] }, spotsAlong(part + 'f', el, fh, 1.1));
+      // Exposed elbow: a bolted steel joint and a piston along the underside.
+      const er = Math.max(1.5, B.fore - 1);
+      c.fill(ell(M(), el[0], el[1], er, er), R(STEEL), { band: 1, sep: true });
+      c.set(el[0] + 1, el[1] - 1, R(STEEL), 4); c.set(el[0], el[1], R(STEEL), 3);
+      const pa = lerp(sh, el, 0.45), pb = lerp(el, fh, 0.55);
+      c.fill(cap(M(), pa[0], pa[1] + 1, pb[0], pb[1] + 1, 0.5), R(CHROME), { flat: 3, clip: true });
+      // A shoulder cap plate over the socket.
+      const capM = ell(M(), sh[0] + (side ? 1 : -1), sh[1] - 1, B.upper + 0.4, B.upper - 0.2);
+      if (L.shoulders === 'Armour plate' || L.shoulders === 'Hazard pads') {
+        const p = ell(M(), sh[0] + (side ? 1 : -1), sh[1] - 1, B.upper + 1.2, B.upper);
+        shell(p, part + 'p', R, { band: 1, sep: true, ox: sh[0], oy: sh[1] }, [], kit === 6 ? L.plate : L.partMat[part]);
+        if (L.shoulders === 'Hazard pads') hazard(p);
+        else if (side) c.set(sh[0] + 2, sh[1] - 2, R(HAZARD), 3);
+      } else {
+        shell(capM, part, R, { band: 1, sep: true, ox: sh[0], oy: sh[1] });
+        rivet(sh[0] + (side ? 2 : -1), sh[1] - 1);
       }
-      if (kit === 0) { // gi sleeve over the shoulder
-        const e = [Math.round(sh[0] + (el[0] - sh[0]) * 0.55), Math.round(sh[1] + (el[1] - sh[1]) * 0.55)];
-        c.fill(cap(M(), sh[0], sh[1], e[0], e[1], B.upper + 0.7), R(Mn), { band: 2, sep: true });
+      if (kit === 11) { // prajiad armband
+        const e = lerp(sh, el, 0.6);
+        c.fill(cap(M(), e[0], e[1], e[0], e[1], B.upper + 0.2), R(Tr), { band: 1 });
       }
-      if (kit === 11 || kit === 9) { // prajiad cord or gold armband
-        const e = [Math.round(sh[0] + (el[0] - sh[0]) * 0.6), Math.round(sh[1] + (el[1] - sh[1]) * 0.6)];
-        c.fill(cap(M(), e[0], e[1], e[0], e[1], B.upper + 0.3), R(kit === 9 ? GOLD : Tr), { band: 1 });
+      if (kit === 0) { // torn gi sleeve over the shoulder
+        const e = lerp(sh, el, 0.45);
+        c.fill(cap(M(), sh[0], sh[1], e[0], e[1], B.upper + 0.8), R(Mn), { band: 2, sep: true });
       }
-      const fore = cap(M(), el[0], el[1], fh[0], fh[1], B.fore);
-      c.fill(fore, R(foreR), { band: 1, sep: true });
-      if (foreR === S) { const m2 = [Math.round((el[0] * 2 + fh[0]) / 3), Math.round((el[1] * 2 + fh[1]) / 3)]; c.tone(m2[0] + 1, m2[1] - 1, 3); }
-      if (cyber) { c.tone(el[0], el[1], 0); c.set(el[0] + 1, el[1], Ac, 3); }
-      // Wrist gear.
-      const near = t => [Math.round(fh[0] + (el[0] - fh[0]) * t), Math.round(fh[1] + (el[1] - fh[1]) * t)];
+      const near = t => lerp(fh, el, t);
       const wrist = (r, t0, t1, extra = 0.3) => c.fill(cap(M(), ...near(t0), ...near(t1), B.fore + extra), R(r), { band: 1, sep: true });
       const g = L.gloves;
       if (g === 'Tape wraps' || g === 'Hand wraps') wrist(WRAP, 0.25, 0.45, 0.2);
-      if (g === 'Leather gloves' || g === 'Fingerless gloves') wrist(g === 'Leather gloves' ? LEATHER : DARK, 0.25, 0.4, 0.4);
-      if (g === 'Spiked bracelets') {
-        wrist(DARK, 0.25, 0.5, 0.5);
-        const p = near(0.37); c.set(p[0], p[1] - 3, WHITE, 3); c.set(p[0] + 2, p[1] - 2, WHITE, 2); c.set(p[0] - 2, p[1] + 2, WHITE, 1);
-      }
-      if (kit === 3) wrist(Sc, 0.25, 0.75, 0.2);
-      if (kit === 5) wrist(WRAP, 0.25, 0.4, 0.2);
-      // Shoulder pads sit on top of the upper arm.
-      if (L.shoulders !== 'None') {
-        if (side === 1 || L.shoulders === 'Pauldron') {
-          const p = ell(M(), sh[0] + (side ? 1 : -1), sh[1] - 1, 3.4, 2.6);
-          c.fill(p, R(L.shoulders === 'Studded pad' ? LEATHER : Mt), { band: 1, sep: true });
-          if (L.shoulders === 'Studded pad') { c.set(sh[0] - 1, sh[1] - 2, WHITE, 3); c.set(sh[0] + 2, sh[1] - 1, WHITE, 2); }
-          if (L.shoulders === 'Pauldron') c.set(sh[0] + (side ? 2 : -2), sh[1] - 2, Ac, 3);
-        }
-      }
-      hand(fh, spec[4] || 'fist', side, R);
+      if (g === 'Work gloves' || g === 'Fingerless gloves') wrist(g === 'Work gloves' ? LEATHER : DARK, 0.25, 0.4, 0.4);
+      hand(fh, spec[4] || 'fist', side, R, part);
     }
 
-    function hand([hx0, hy0], type, side, R) {
+    function hand([hx0, hy0], type, side, R, part) {
       const g = L.gloves, heavy = B.fist;
-      const cover = g === 'Boxing gloves' ? Tr : g === 'Leather gloves' ? LEATHER : g === 'Armoured gauntlets' ? Mt : g === 'Tape wraps' || g === 'Hand wraps' ? WRAP : S;
       if (g === 'Boxing gloves') {
-        const m = ell(M(), hx0 + 0.5, hy0, 4, 3.6);
-        c.fill(m, R(Tr), { band: 2, sep: true });
+        c.fill(ell(M(), hx0 + 0.5, hy0, 4, 3.6), R(Tr), { band: 2, sep: true });
         c.set(hx0 - 3, hy0 + 2, R(WRAP), 2); c.set(hx0 - 2, hy0 + 3, R(WRAP), 2);
         c.set(hx0 + 1, hy0 - 2, R(Tr), 4); c.tone(hx0, hy0 + 1, 1); c.tone(hx0 - 1, hy0 + 1, 1);
         return;
       }
-      if (type === 'open') {
+      if (g === 'Oven mitt' && side === 1) {
+        c.fill(rows(M(), hx0, hy0 - 3, [[-2, 2], [-3, 3], [-3, 4], [-3, 4], [-3, 4], [-3, 3], [-2, 2]]), R(Tr), { band: 2, sep: true });
+        c.set(hx0 + 3, hy0 - 3, R(Tr), 3); c.set(hx0 + 4, hy0 - 4, R(Tr), 4);
+        for (let x = -2; x <= 2; x += 2) c.tone(hx0 + x, hy0, 1);
+        return;
+      }
+      const cover = g === 'Work gloves' ? LEATHER : g === 'Tape wraps' || g === 'Hand wraps' ? WRAP : null;
+      if (type === 'open') { // three claw fingers
         const m = rows(M(), hx0, hy0 - 2, [[-1, 3], [-2, 4 + heavy], [-2, 4 + heavy], [-2, 3]]);
         rect(m, hx0 - 1, hy0 - 3, 2, 1);
-        c.fill(m, R(cover === WRAP ? S : cover), { band: 1, sep: true });
-        c.tone(hx0 + 1, hy0 - 1, 1); c.tone(hx0 + 2, hy0, 1); c.tone(hx0 + 1, hy0 + 1, 1);
+        if (cover && cover !== WRAP) c.fill(m, R(cover), { band: 1, sep: true }); else shell(m, part, R, { band: 1, sep: true, ox: hx0, oy: hy0 });
+        c.tone(hx0 + 2, hy0 - 1, 0); c.tone(hx0 + 2, hy0 + 1, 0); c.tone(hx0 + 1, hy0, 1);
         return;
       }
       const m = rows(M(), hx0, hy0 - 3, [[-2, 2 + heavy], [-3, 3 + heavy], [-3, 3 + heavy], [-3, 3 + heavy], [-3, 3 + heavy], [-2, 2 + heavy]]);
-      c.fill(m, R(cover), { band: 1, sep: true });
-      // Knuckles facing forward and up: a highlight row, finger creases, a thumb.
+      if (cover) c.fill(m, R(cover), { band: 1, sep: true }); else shell(m, part, R, { band: 1, sep: true, ox: hx0, oy: hy0 });
+      // Blocky knuckle segments facing forward, a bolt on the back of the hand.
       const k = hx0 + heavy;
-      c.tone(k - 1, hy0 - 3, 3); c.tone(k + 1, hy0 - 3, 4); c.tone(k + 2, hy0 - 2, 4);
-      c.tone(k + 1, hy0 - 1, 1); c.tone(k + 2, hy0 - 1, 1); c.tone(k + 1, hy0 + 1, 1); c.tone(k + 2, hy0 + 1, 1);
-      c.tone(hx0 - 2, hy0, 3); c.tone(hx0 - 1, hy0, 3); c.tone(hx0 - 2, hy0 + 1, 1); c.tone(hx0 - 1, hy0 + 1, 1);
-      if (g === 'Fingerless gloves') { for (let x = hx0 - 1; x <= k + 3; x++) c.set(x, hy0 - 3, R(S), 3); c.set(k + 3, hy0 - 2, R(S), 2); }
+      for (let y = hy0 - 2; y <= hy0 + 1; y++) c.tone(k + 1, y, 1);
+      c.tone(k + 2, hy0 - 3, 4); c.tone(k + 2, hy0 - 1, 3); c.tone(k + 2, hy0 + 1, 3); c.tone(k + 3, hy0 - 2, 4);
+      c.tone(hx0 - 1, hy0 - 1, 4); c.tone(hx0 - 1, hy0, 0);
+      if (g === 'Fingerless gloves') for (let x = hx0 - 1; x <= k + 3; x++) c.tone(x, hy0 - 3, 3);
     }
 
     // ---------------------------------------------------------------- head
-    function backHair() {
-      const style = HAIR[L.hairstyle];
-      if (!style) return;
-      const m = M(), o = (x, y) => [HX + x, HY + y];
-      if (style.pony) { cap(m, ...o(1, -2), ...o(-3, -1), 1.8); cap(m, ...o(-3, -1), ...o(-5, 5), 1.9); cap(m, ...o(-5, 5), ...o(-4, 11), 1.3); }
-      if (style.tail) { cap(m, ...o(-1, 3), ...o(-3, 8), 1.5); cap(m, ...o(-3, 8), ...o(-3, 12), 1.1); }
-      if (style.braid) for (let k = 0; k < 7; k++) ell(m, HX - 2 - Math.floor(k * 0.6), HY + 7 + k * 2.2, 1.6, 1.3);
-      if (style.long) rows(m, HX, HY + 3, [[-2, 3], [-3, 3], [-3, 3], [-3, 3], [-4, 3], [-4, 2], [-4, 2], [-4, 2], [-4, 2], [-4, 2], [-4, 2], [-4, 1], [-4, 1], [-4, 1], [-3, 0], [-3, 0]]);
-      c.fill(m, H, { band: 2 });
-      if (style.braid) for (let k = 0; k < 7; k++) { c.tone(HX - 2 - Math.floor(k * 0.6), HY + 8 + k * 2.2 | 0, 0); }
-      if (style.braid) { const e = [HX - 6, HY + 22]; c.set(e[0], e[1], Tr, 3); c.set(e[0] + 1, e[1], Tr, 2); }
-      if (style.long) for (let y = 6; y <= 17; y += 1) c.tone(HX - 1 - (y % 3), HY + y, 1);
-      if (style.pony || style.tail) { c.set(HX + (style.pony ? 1 : -1), HY + (style.pony ? -2 : 3), Tr, 2); c.set(HX + (style.pony ? 0 : -2), HY + (style.pony ? -2 : 3), Tr, 3); }
+    function headSil() {
+      return L.masked ? MASK_SIL : HEAD_SIL[L.head];
     }
-
     function head() {
-      const hm = rows(M(), HX, HY, female ? HEAD.f : L.build === 2 ? HEAD.h : HEAD.m);
-      c.fill(hm, S, { band: 2 });
-      face();
-      hair();
-      headgear();
-    }
-
-    function face() {
-      const brow = L.hairstyle && L.hairstyle !== 'Bald' && L.hairstyle !== 'Armoured braid' ? H : S;
-      // Ear, jaw line and cheekbone.
-      hd(2, 5, S, 3); hd(3, 5, S, 2); hd(3, 6, S, 0); hd(2, 6, S, 2); hd(2, 7, S, 1);
-      hd(5, 9, S, 1); hd(6, 10, S, 1); hd(10, 6, S, 3);
-      // Nose and mouth.
-      hd(13, 6, S, 3); hd(12, 7, S, 1); hd(13, 7, S, 1);
-      const ex = L.expression;
-      if (ex === 3) { hd(8, 9, S, 0); hd(9, 9, WHITE, 3); hd(10, 9, WHITE, 2); hd(11, 9, S, 0); hd(9, 10, S, 1); }
-      else if (ex === 1) { hd(8, 9, S, 0); hd(9, 9, S, 0); hd(10, 9, S, 0); hd(8, 10, S, 1); hd(10, 8, S, 1); }
-      else { hd(9, 9, S, 0); hd(10, 9, S, 0); hd(10, 10, S, 3); }
-      if (female) { hd(9, 9, '#9e3c4e'); hd(10, 9, '#b8505e'); }
-      // Brows by expression.
-      const bl = brow === H ? 0 : 0;
-      if (ex === 1) { hd(7, 3, brow, bl); hd(8, 4, brow, bl); hd(9, 4, brow, bl); hd(11, 4, brow, bl); hd(12, 3, brow, bl); }
-      else if (ex === 2) { hd(7, 3, brow, bl); hd(8, 3, brow, bl); hd(9, 3, brow, bl); hd(11, 3, brow, bl); hd(12, 3, brow, bl); }
-      else { hd(7, 4, brow, bl); hd(8, 4, brow, bl); hd(9, 4, brow, bl); hd(11, 4, brow, bl); hd(12, 4, brow, bl); }
-      if (female) { hd(7, 4, S, 1); }
-      // Eyes: white, iris, a lash for women; a lid line when blinking.
-      if (blink || ex === 2) {
-        hd(7, 5, S, 0); hd(8, 5, S, 0); hd(11, 5, S, 0);
-        if (ex === 2 && !blink) { hd(8, 6, E, 1); hd(11, 6, E, 1); }
+      const R = headMat.R;
+      const hm = rows(M(), HX, HY, headSil());
+      if (L.topper === 1 || L.topper === 2) antenna();
+      if (L.masked) {
+        c.fill(hm, Mn, { band: 2 });
+        mask();
       } else {
-        hd(7, 5, WHITE, 2); hd(8, 5, E, 1); hd(8, 6, S, 1); hd(7, 6, S, 1);
-        hd(11, 5, E, 1); hd(12, 5, WHITE, 1);
-        if (female) { hd(6, 5, INK); hd(6, 4, INK); }
+        c.fill(hm, R, { band: 2, chrome: headMat.kind === 'chrome' });
+        weather(hm, headMat, R, 'head', spotsBox('head', HX, HY, 1, 11, 1, 10, 1.2), HX, HY);
+        [visor, crt, skull, smile, bucket, lens, radio][L.head](R);
       }
-      if (!L.faceShown) return;
-      // Facial hair.
-      const f = L.facial, stub = mixHex(S[1], H[0], 0.3);
-      if (f === 1) for (let y = 8; y <= 11; y++) for (let x = 4; x <= 12; x++) if ((x + y) % 2 === 0 && y + x > 14 && (y > 9 || x > 8) && c.filled(HX + x, HY + y) && !(y === 9 && x >= 9 && x <= 10)) hd(x, y, stub);
-      if (f === 2 || f === 3) { hd(9, 8, H, 1); hd(10, 8, H, 2); hd(11, 8, H, 2); hd(12, 8, H, 3); }
-      if (f === 3) { hd(9, 10, H, 1); hd(10, 10, H, 2); hd(10, 11, H, 1); hd(9, 11, H, 1); hd(8, 10, H, 1); }
-      if (f === 4) {
-        const bm = rows(M(), HX, HY + 7, [[3, 4], [3, 5], [4, 12], [4, 12], [5, 11], [6, 10]]);
-        c.fill(bm, H, { band: 1 });
-        hd(10, 9, S, 0); hd(11, 9, S, 0); hd(12, 9, H, 1);
-      }
-      if (f === 5) { hd(4, 8, H, 1); hd(5, 9, H, 1); hd(6, 10, H, 1); hd(7, 11, H, 1); hd(8, 11, H, 1); hd(9, 11, H, 2); }
-      // Scars.
-      if (L.scar === 1) { hd(9, 3, S, 4); hd(9, 4, S, 4); hd(9, 6, S, 4); hd(10, 5, S, 0); }
-      if (L.scar === 2) { hd(9, 7, S, 4); hd(10, 8, S, 4); hd(8, 7, S, 0); }
-      if (L.scar === 3) { hd(11, 6, WRAP, 3); hd(12, 6, WRAP, 2); hd(13, 6, WRAP, 2); }
-      // Markings.
-      if (L.marking === 'Face paint') { for (let x = 4; x <= 12; x++) { if (x < 7 || x === 9 || x === 10 || x === 12) hd(x, 5, Tr, x < 6 ? 1 : 2); hd(x, 6, Tr, x < 6 ? 0 : 1); } }
-      if (L.marking === 'Cheek stripes') { hd(8, 7, Tr, 2); hd(8, 8, Tr, 1); hd(10, 7, Tr, 3); hd(10, 8, Tr, 2); }
+      headgear();
+      if (L.quirk === 7) headphones();
+      if (L.quirk === 9) { hd(2, 2, TOAST, 3); hd(3, 2, TOAST, 4); hd(4, 3, TOAST, 3); hd(3, 3, TOAST, 2); hd(3, 2, WHITE, 3); }
+      if (L.quirk === 1) cone();
+      if (L.topper === 4) rotor();
+    }
+    function ear() { hd(1, 5, STEEL, 1); hd(2, 5, STEEL, 3); hd(1, 6, STEEL, 0); hd(2, 6, STEEL, 2); hd(2, 4, STEEL, 4); }
+
+    function visor(R) {
+      for (let x = 5; x <= 13; x++) { hd(x, 3, R, 0); hd(x, 4, G, x >= 10 && x <= 12 ? shine : eye); hd(x, 5, G, blink ? 0 : 2); }
+      hd(12, 4, blink ? G : WHITE, blink ? 1 : 3);
+      for (let x = 6; x <= 12; x++) hd(x, 2, R, 3);
+      for (const x of [9, 11]) { hd(x, 8, R, 0); hd(x, 9, R, 0); }
+      hd(10, 8, R, 3); hd(12, 8, R, 3);
+      ear();
+    }
+    function crt(R) {
+      for (let y = 1; y <= 10; y++) for (let x = -1; x <= 3; x++) c.shift(HX + x, HY + y, -1);
+      for (const y of [3, 5, 7]) for (let x = 0; x <= 2; x++) hd(x, y, R, 0);
+      const SCR = [mixHex(G[0], '#000000', 0.55), mixHex(G[0], '#000000', 0.3), G[0], G[1], G[2]];
+      for (let y = 2; y <= 8; y++) for (let x = 5; x <= 12; x++) hd(x, y, SCR, y % 2 ? 0 : 1);
+      hd(12, 2, SCR, 4); hd(11, 2, SCR, 3);
+      if (blink) { hd(6, 5, G, 3); hd(7, 5, G, 3); hd(10, 5, G, 3); hd(11, 5, G, 3); }
+      else { hd(7, 4, G, 4); hd(7, 5, G, 3); hd(10, 4, G, 4); hd(10, 5, G, 3); }
+      hd(7, 7, G, 3); hd(8, 8, G, 3); hd(9, 8, G, 3); hd(10, 7, G, 3);
+      hd(10, 10, CHROME, 4); hd(12, 10, CHROME, 3); hd(7, 10, R, 0); hd(8, 10, R, 0);
+    }
+    function skull(R) {
+      for (const [x, y] of [[6, 4], [7, 4], [6, 5], [7, 5], [6, 6], [10, 4], [11, 4], [12, 4], [10, 5], [11, 5], [12, 5], [11, 6]]) hd(x, y, STEEL, 0);
+      hd(7, 5, G, shine); hd(11, 5, G, shine); hd(12, 5, G, eye); hd(6, 5, G, blink ? 0 : 1);
+      hd(13, 7, STEEL, 0); hd(12, 8, STEEL, 0); hd(8, 7, R, 1); hd(9, 8, R, 1);
+      for (let x = 6; x <= 12; x++) { hd(x, 9, x % 2 ? R : STEEL, x % 2 ? 4 : 0); if (x < 12) hd(x, 10, x % 2 ? STEEL : R, x % 2 ? 0 : 3); }
+      hd(3, 3, R, 4); hd(3, 4, R, 0); hd(9, 2, R, 4);
+    }
+    function smile(R) {
+      c.fill(ell(M(), HX + 9.5, HY + 6, 4, 4.6), ENAMEL, { band: 1, sep: true });
+      hd(8, 4, G, eye); hd(8, 5, G, shine); hd(11, 4, G, eye); hd(11, 5, G, shine);
+      if (blink) { hd(8, 4, ENAMEL, 1); hd(11, 4, ENAMEL, 1); }
+      for (const [x, y] of [[7, 7], [8, 8], [9, 8], [10, 8], [11, 8], [12, 7], [7, 2], [8, 2], [11, 2], [12, 2]]) hd(x, y, PAINT_INK);
+      hd(7, 6, BLUSH); hd(12, 6, BLUSH);
+      ear();
+    }
+    function bucket(R) {
+      for (let x = 0; x <= 13; x++) { c.tone(HX + x, HY + 2, 1); c.tone(HX + x, HY + 9, 1); }
+      for (let x = 5; x <= 13; x++) { hd(x, 5, G, x >= 9 && x <= 11 ? shine : eye); hd(x, 6, R, 0); hd(x, 4, R, 0); }
+      c.tone(HX + 8, HY + 1, 1); c.tone(HX + 9, HY + 1, 0); c.tone(HX + 4, HY + 7, 3);
+      rivet(HX + 3, HY + 3); rivet(HX + 12, HY + 7);
+      // A handle arching over the top.
+      c.fill(or(or(cap(M(), HX - 1, HY + 5, HX, HY - 1, 0.5), cap(M(), HX, HY - 1, HX + 6, HY - 3, 0.5)), cap(M(), HX + 6, HY - 3, HX + 12, HY - 1, 0.5)), STEEL, { flat: 3 });
+      hd(12, 0, STEEL, 2);
+    }
+    function lens(R) {
+      c.fill(ell(M(), HX + 10, HY + 5, 3, 3), STEEL, { band: 1, sep: true });
+      c.fill(ell(M(), HX + 10, HY + 5, 1.8, 1.8), G, { flat: blink ? 0 : 2 });
+      hd(10, 5, G, shine); hd(11, 4, blink ? G : WHITE, blink ? 1 : 3);
+      for (const x of [8, 10, 12]) hd(x, 9, R, 0);
+      ear();
+    }
+    function radio(R) {
+      for (let x = 3; x <= 10; x++) hd(x, -2, STEEL, x > 7 ? 3 : 2);
+      hd(3, -1, STEEL, 1); hd(10, -1, STEEL, 2);
+      hd(7, 3, G, shine); hd(8, 3, G, eye); hd(11, 3, G, shine); hd(12, 3, G, eye);
+      for (let y = 5; y <= 9; y++) for (let x = 6; x <= 12; x++) hd(x, y, x % 2 ? R : STEEL, x % 2 ? 3 : 0);
+      c.fill(ell(M(), HX + 2.5, HY + 5.5, 1.6, 1.6), CHROME, { band: 1, sep: true });
+      hd(2, 5, PAINT_INK); hd(3, 1, R, 4);
+    }
+    function mask() {
+      for (const [x, y] of [[6, 4], [7, 4], [8, 4], [9, 4], [6, 5], [9, 5], [6, 6], [7, 6], [8, 6], [9, 6], [10, 4], [11, 4], [12, 4], [13, 4], [10, 5], [13, 5], [10, 6], [11, 6], [12, 6], [13, 6]]) hd(x, y, Tr, 2);
+      hd(7, 5, G, eye); hd(8, 5, G, shine); hd(11, 5, G, eye); hd(12, 5, G, shine);
+      for (const [x, y] of [[9, 8], [10, 8], [11, 8], [12, 8], [9, 10], [10, 10], [11, 10], [12, 10], [9, 9], [12, 9]]) hd(x, y, Tr, 2);
+      hd(10, 9, STEEL, 0); hd(11, 9, STEEL, 1);
+      const g = L.headgear;
+      if (g === 'Flame mask') for (const [x, y, l] of [[5, 4, 3], [4, 3, 3], [3, 2, 2], [2, 3, 2], [5, 6, 2], [4, 7, 2], [3, 7, 1], [2, 8, 1], [5, 1, 3], [4, 0, 3]]) hd(x, y, Tr, l);
+      if (g === 'Star mask') for (const [x, y] of [[3, 2], [2, 3], [3, 3], [4, 3], [3, 4], [1, 4], [5, 4], [2, 5], [4, 5]]) hd(x, y, Tr, 3);
+      if (g === 'Stripe mask') for (let x = -1; x <= 12; x++) { hd(x, x < 4 ? 1 : x < 8 ? 0 : 1, Tr, 3); hd(x, x < 4 ? 2 : x < 8 ? 1 : 2, Tr, 2); }
+      for (let y = 5; y <= 9; y += 2) { hd(-1, y, WRAP, 2); hd(0, y + 1, WRAP, 1); }
     }
 
-    function hair() {
-      const st = HAIR[L.hairstyle];
-      if (!st) return;
-      if (L.hairstyle === 'Bald') { hd(5, 1, S, 4); hd(6, 1, S, 4); hd(4, 2, S, 3); return; }
-      const hm = rows(M(), HX, HY + st.top, st.rows);
-      const covered = ['Bandana', 'Backwards cap', 'Beret', 'Head guard'].includes(L.headgear);
-      if (covered) { // no spikes or buns poking through a cap
-        if (HY > 0) minus(hm, rect(M(), 0, 0, SIZE, HY));
-        if (st.crest || st.buzz) return;
-        if (st.rows.length) c.fill(hm, H, { band: 2 });
-        return;
+    function antenna() {
+      if (L.topper === 1) {
+        c.fill(cap(M(), HX + 3, HY + 1, HX + 1, HY - 4, 0.5), STEEL, { flat: 3 });
+        c.fill(ell(M(), HX + 1, HY - 4, 1, 1), CABLE, { band: 1 }); c.set(HX + 1, HY - 5, CABLE, 4);
+      } else {
+        c.fill(or(cap(M(), HX + 5, HY + 1, HX + 2, HY - 4, 0.5), cap(M(), HX + 7, HY + 1, HX + 10, HY - 4, 0.5)), CHROME, { flat: 3 });
+        c.set(HX + 2, HY - 4, CHROME, 4); c.set(HX + 10, HY - 4, CHROME, 4);
       }
-      if (st.spikes) for (const [tx, ty, a, b, y] of st.spikes) tri(hm, HX + tx, HY + ty, HX + a, HX + b, HY + y);
-      if (st.bun) ell(hm, HX + st.bun[0], HY + st.bun[1], st.bun[2], st.bun[3]);
-      if (st.buns) { ell(hm, HX + 0, HY - 1, 2.3, 2.1); ell(hm, HX + 7, HY - 2, 2.3, 2.1); }
-      if (st.crest) { cap(hm, HX - 1, HY + 3, HX + 2, HY - 3, 1.6); cap(hm, HX + 2, HY - 3, HX + 8, HY - 4, 1.8); cap(hm, HX + 8, HY - 4, HX + 11, HY - 1, 1.4); }
-      if (st.tips) for (const [x, y] of st.tips) put(hm, HX + x, HY + y);
-      if (st.buzz) { // close-cropped: recolour the scalp
-        const scalp = and(rows(M(), HX, HY, [[3, 8], [1, 10], [0, 11], [0, 7], [0, 3], [0, 2], [0, 1]]), rows(M(), HX, HY, HEAD.m));
-        const stub = ramp(mixHex(S[2], H[2], 0.6));
-        c.fill(scalp, stub, { band: 2 });
-      }
-      if (st.rows.length || st.spikes || st.crest || st.bun || st.buns) c.fill(hm, H, { band: 2 });
-      // Strands: a few darker lines sweeping back, a glossy highlight up front.
-      const t = (x, y, l) => { const xx = HX + x, yy = HY + y; if (xx >= 0 && yy >= 0 && xx < SIZE && yy < SIZE && hm.a[at(xx, yy)]) c.tone(xx, yy, l); };
-      t(2, 0, 1); t(3, 1, 1); t(6, -1, 1); t(7, 0, 1); t(0, 2, 1); t(-1, 3, 0); t(4, 0, 3); t(8, -1, 4); t(9, -1, 3); t(5, -1, 4);
-      if (st.bun) { c.set(HX + 2, HY - 1, Tr, 2); c.set(HX + 3, HY - 1, Tr, 3); }
-      if (st.buns) { c.set(HX + 1, HY, Tr, 3); c.set(HX + 7, HY - 1, Tr, 3); }
+    }
+    function rotor() {
+      c.fill(rect(M(), HX + 5, HY - 3, 2, 3), STEEL, { band: 1 });
+      const blade = rect(M(), HX - 1, HY - 4, 15, 1);
+      c.fill(blade, CHROME, { flat: 3 });
+      hd(5, -4, STEEL, 1); hd(6, -4, STEEL, 2); hd(-1, -4, CHROME, 1); hd(13, -4, CHROME, 4);
+    }
+    function cone() {
+      const m = tri(M(), HX + 6, HY - 5, HX + 2, HX + 10, HY - 1);
+      c.fill(m, CONE, { band: 1, sep: true });
+      for (let x = 3; x <= 9; x++) if (c.filled(HX + x, HY - 3)) c.set(HX + x, HY - 3, WHITE, x > 6 ? 3 : 2);
+      c.fill(rect(M(), HX + 1, HY - 1, 11, 2), CONE, { band: 1, sep: true });
+    }
+    function headphones() {
+      c.fill(or(or(cap(M(), HX + 1, HY + 4, HX + 2, HY - 1, 0.6), cap(M(), HX + 2, HY - 1, HX + 8, HY - 2, 0.6)), cap(M(), HX + 8, HY - 2, HX + 10, HY, 0.6)), DARK, { band: 1 });
+      c.fill(ell(M(), HX + 2, HY + 5.5, 1.8, 2.2), DARK, { band: 1, sep: true });
+      hd(2, 5, G, eye); hd(3, 4, Tr, 3);
     }
 
     function headgear() {
       const g = L.headgear;
-      const base = rows(M(), HX, HY, female ? HEAD.f : L.build === 2 ? HEAD.h : HEAD.m);
-      const st = HAIR[L.hairstyle];
-      if (st && st.rows.length) or(base, rows(M(), HX, HY + st.top, st.rows));
+      const base = rows(M(), HX, HY, headSil());
+      const boxy = L.head === 1 || L.head === 6;
       const band = (y0, h, r, tails) => {
         const m = and(rect(M(), HX - 2, HY + y0, 17, h), base);
         c.fill(m, r, { band: 1, sep: true });
@@ -987,184 +1142,220 @@ const QDojoAvatars = (() => {
           c.fill(t, r, { band: 1 });
         }
       };
-      if (g === 'Hachimaki') band(2, 2, L.palette === 'Classic white' ? Sc : L.pattern === 'Trim' ? WRAP : Tr, true); // never white gi + red band
-      else if (g === 'Headband') band(2, 1, Tr, kit !== 6);
+      const by0 = boxy ? 0 : L.head === 4 ? 2 : 1;
+      if (g === 'Hachimaki') band(by0, 2, L.palette === 'Classic white' ? Sc : Tr, true); // never white gi + red band
+      else if (g === 'Headband' || g === 'Sweatband') band(by0, g === 'Sweatband' ? 2 : 1, g === 'Sweatband' ? WRAP : Tr, g === 'Headband');
       else if (g === 'Mongkhon') {
-        band(2, 1, Tr, false);
-        const t = cap(M(), HX - 1, HY + 2, HX - 5, HY - 3, 0.8); c.fill(t, Tr, { band: 1 });
-        c.set(HX - 3, HY - 1, WRAP, 3); c.set(HX + 5, HY + 2, WRAP, 3);
+        band(by0, 1, Tr, false);
+        c.fill(cap(M(), HX - 1, HY + by0, HX - 5, HY - 3, 0.8), Tr, { band: 1 });
+        c.set(HX - 3, HY - 1, WRAP, 3); c.set(HX + 5, HY + by0, WRAP, 3);
       } else if (g === 'Bandana') {
-        const m = and(rows(M(), HX, HY - 2, [[3, 9], [1, 11], [0, 12], [-1, 12], [-1, 12], [-1, 11]]), or(rect(M(), 0, 0, SIZE, HY + 4), M()));
+        const m = and(rows(M(), HX, HY - 2, [[3, 9], [1, 11], [0, 12], [-1, 13], [-1, 13], [-1, 13]]), rect(M(), 0, 0, SIZE, HY + 3));
         c.fill(m, Tr, { band: 1, sep: true });
-        for (let x = 0; x <= 11; x += 3) c.tone(HX + x, HY + 1 + (x % 2), 4);
-        const t = cap(M(), HX - 1, HY + 2, HX - 5, HY + 5, 0.9); cap(t, HX - 1, HY + 2, HX - 4, HY + 7, 0.8); c.fill(t, Tr, { band: 1 });
-      } else if (g === 'Backwards cap') {
-        const m = rows(M(), HX, HY - 3, [[3, 9], [1, 11], [0, 12], [-1, 12], [-1, 12], [-1, 12]]);
-        rect(m, HX - 5, HY + 1, 5, 2);
-        c.fill(m, Mn, { band: 2, sep: true });
-        c.set(HX + 5, HY - 3, Tr, 3); c.set(HX + 12, HY + 2, Tr, 2);
-      } else if (g === 'Beret') {
-        const m = ell(M(), HX + 5, HY - 1, 7, 2.6); c.fill(m, Tr, { band: 1, sep: true });
-        c.fill(rect(M(), HX - 1, HY + 1, 13, 1), LEATHER, { band: 1 });
-        c.set(HX + 2, HY - 3, Tr, 4);
+        for (let x = 0; x <= 11; x += 3) c.tone(HX + x, HY + (x % 2), 4);
+        const t = cap(M(), HX - 1, HY + 1, HX - 5, HY + 4, 0.9); cap(t, HX - 1, HY + 1, HX - 4, HY + 6, 0.8); c.fill(t, Tr, { band: 1 });
+      } else if (g === 'Courier cap' || g === 'Backwards cap' || g === 'Security cap') {
+        const m = rows(M(), HX, HY - 3, g === 'Security cap' ? [[0, 13], [0, 13], [1, 12], [1, 12]] : [[3, 9], [1, 11], [0, 12], [0, 12]]);
+        if (g === 'Backwards cap') rect(m, HX - 4, HY, 4, 1); else rect(m, HX + 10, HY, 6, 1);
+        c.fill(m, g === 'Security cap' ? Sc : Mn, { band: 2, sep: true });
+        if (g === 'Security cap') { hd(8, -2, GOLD, 4); hd(9, -2, GOLD, 3); hd(8, -1, GOLD, 2); for (let x = 1; x <= 12; x++) hd(x, 0, DARK, 1); }
+        else c.set(HX + 6, HY - 3, Tr, 3);
+      } else if (g === 'Straw hat') {
+        c.fill(rows(M(), HX, HY - 3, [[3, 10], [2, 11], [2, 11]]), STRAW, { band: 1, sep: true });
+        c.fill(rect(M(), HX - 4, HY, 22, 1), STRAW, { band: 1, sep: true });
+        for (let x = 2; x <= 11; x++) hd(x, -1, Tr, 2);
+        for (let x = -3; x <= 17; x += 3) c.tone(HX + x, HY, 1);
+      } else if (g === 'Warning beacon') {
+        c.fill(rect(M(), HX + 4, HY - 1, 5, 1), STEEL, { band: 1, sep: true });
+        c.fill(ell(M(), HX + 6, HY - 2, 1.8, 1.6), HAZARD, { band: 1, sep: true });
+        hd(7, -3, HAZARD, 4); hd(6, -2, HAZARD, 3);
+      } else if (g === 'Combat helmet' || g === 'Hard hat') {
+        const r = g === 'Hard hat' ? HAZARD : L.P;
+        const m = rows(M(), HX, HY - 2, [[3, 10], [1, 12], [0, 13], [0, 13], [-1, 14]]);
+        if (g === 'Hard hat') rect(m, HX - 2, HY + 2, 18, 1);
+        c.fill(m, r, { band: 2, sep: true });
+        if (g === 'Hard hat') for (let y = -2; y <= 1; y++) c.tone(HX + 7, HY + y, 3);
+        else { c.tone(HX + 5, HY, 0); c.tone(HX + 6, HY, 0); c.set(HX + 9, HY, HAZARD, 3); }
+      } else if (g === 'Chef hat') {
+        c.fill(rect(M(), HX + 1, HY - 1, 11, 2), WHITE, { band: 1, sep: true });
+        c.fill(or(ell(M(), HX + 4, HY - 3, 3, 2), ell(M(), HX + 9, HY - 3, 3, 2)), WHITE, { band: 1, sep: true });
+        c.tone(HX + 6, HY - 3, 1);
       } else if (g === 'Head guard') {
-        const m = rows(M(), HX, HY - 2, [[3, 9], [1, 11], [0, 12], [-1, 12], [-1, 12], [-1, 7], [-1, 6], [-1, 6], [-1, 5], [0, 6], [0, 7], [1, 8], [2, 8]]);
+        const m = rows(M(), HX, HY - 2, [[3, 9], [1, 11], [0, 12], [-1, 12], [-1, 12], [-1, 5], [-1, 5], [-1, 5], [-1, 4], [0, 5], [0, 5]]);
         c.fill(m, Tr, { band: 2, sep: true });
         for (let y = 0; y <= 8; y += 2) c.tone(HX + 1, HY + y, 1);
-        c.tone(HX + 6, HY + 5, 1); c.tone(HX + 6, HY + 6, 1);
       } else if (g === 'Forehead mark') {
-        hd(9, 2, Tr, 2); hd(9, 3, Tr, 1);
-      } else if (g === 'Visor helmet' || g === 'Crested helmet') {
-        const m = rows(M(), HX, HY - 1, [[3, 9], [1, 11], [0, 12], [-1, 12], [-1, 13], [-1, 13], [-1, 13], [-1, 13], [-1, 13], [-1, 12], [0, 12], [1, 12], [3, 11]]);
-        c.fill(m, Mt, { band: 2 });
-        // Faceplate with a mouth grille, a glowing visor under a brow ridge,
-        // an ear disc and a ridge over the crown.
-        c.fill(rows(M(), HX, HY + 5, [[7, 13], [7, 13], [7, 12], [8, 12], [8, 11]]), Mt, { band: 1, max: 2 });
-        for (let x = 9; x <= 11; x++) { c.tone(HX + x, HY + 7, 0); c.tone(HX + x, HY + 9, 0); }
-        for (let x = 5; x <= 13; x++) { c.tone(HX + x, HY + 1, 4); c.tone(HX + x, HY + 2, 0); }
-        c.fill(rect(M(), HX + 5, HY + 3, 9, 2), Ac, { band: 1, min: 2 });
-        hd(12, 3, WHITE, 3); hd(13, 3, Ac, 4); hd(5, 4, Ac, 1);
-        hd(1, 4, Mt, 0); hd(2, 4, Mt, 1); hd(1, 5, Mt, 1); hd(2, 5, Ac, 3); hd(1, 6, Mt, 0); hd(2, 6, Mt, 1);
-        for (let x = 2; x <= 8; x += 2) c.tone(HX + x, HY - 1, 4);
-        if (g === 'Crested helmet') { const cr = tri(M(), HX + 1, HY - 4, HX + 3, HX + 9, HY - 2); c.fill(cr, Tr, { band: 1, sep: true }); }
-      } else if (g === 'Cyber eye') {
-        const p = rows(M(), HX, HY + 2, [[8, 12], [7, 12], [7, 13], [8, 12]]);
-        c.fill(p, Mt, { band: 1, sep: true });
-        hd(11, 4, Ac, 4); hd(10, 4, Ac, 3); hd(11, 5, Ac, 2);
-      } else if (kit === 3) { // shinobi hood; only the eyes show
-        const m = rows(M(), HX, HY - 2, [[3, 9], [1, 11], [0, 12], [-1, 12], [-1, 12], [-1, 12], [-1, 13], [-1, 13], [-1, 14], [-1, 13], [-1, 13], [0, 13], [1, 12], [3, 11]]);
-        minus(m, rect(M(), HX + 6, HY + 4, 8, 2));
-        c.fill(m, Mn, { band: 2 });
-        const low = and(rect(M(), HX + 4, HY + 6, 12, 6), m);
-        c.fill(low, g === 'Hood and faceplate' ? Mt : Sc, { band: 1 });
-        for (let x = 6; x <= 12; x += 2) c.tone(HX + x, HY + 8, 1);
-        c.tone(HX + 4, HY + 3, 0); c.tone(HX + 2, HY + 1, 1);
-        for (let x = 6; x <= 13; x++) c.tone(HX + x, HY + 3, 3);
-      } else if (/mask$/.test(g)) { // wrestling mask
-        const m = rows(M(), HX, HY - 1, [[3, 9], [1, 11], [0, 12], [-1, 12], [-1, 12], [-1, 13], [-1, 13], [-1, 14], [-1, 13], [-1, 13], [0, 12], [1, 12], [3, 10]]);
-        c.fill(m, Mn, { band: 2 });
-        // Eye and mouth holes ringed in trim.
-        for (const [x, y] of [[6, 4], [7, 4], [8, 4], [9, 4], [6, 5], [9, 5], [6, 6], [7, 6], [8, 6], [9, 6], [10, 4], [11, 4], [12, 4], [10, 5], [12, 5], [10, 6], [11, 6], [12, 6]]) hd(x, y, Tr, 2);
-        hd(7, 5, WHITE, 2); hd(8, 5, blink ? S : E, blink ? 0 : 1); hd(11, 5, blink ? S : E, blink ? 0 : 1);
-        for (const [x, y] of [[9, 8], [10, 8], [11, 8], [12, 8], [9, 10], [10, 10], [11, 10], [12, 10], [9, 9], [12, 9]]) hd(x, y, Tr, 2);
-        hd(10, 9, S, 0); hd(11, 9, S, 1);
-        if (g === 'Flame mask') for (const [x, y, l] of [[5, 4, 3], [4, 3, 3], [3, 2, 2], [2, 3, 2], [5, 6, 2], [4, 7, 2], [3, 7, 1], [2, 8, 1], [5, 1, 3], [4, 0, 3]]) hd(x, y, Tr, l);
-        if (g === 'Star mask') for (const [x, y] of [[3, 2], [2, 3], [3, 3], [4, 3], [3, 4], [1, 4], [5, 4], [2, 5], [4, 5]]) hd(x, y, Tr, 3);
-        if (g === 'Stripe mask') for (let x = -1; x <= 12; x++) { hd(x, x < 4 ? 1 : x < 8 ? 0 : 1, Tr, 3); hd(x, x < 4 ? 2 : x < 8 ? 1 : 2, Tr, 2); }
-        for (let y = 5; y <= 9; y += 2) { hd(-1, y, WRAP, 2); hd(0, y + 1, WRAP, 1); }
+        hd(9, 1, Tr, 3); hd(9, 2, Tr, 1); hd(10, 1, Tr, 2);
+      }
+    }
+
+    // ------------------------------------------------------ front details
+    function duck() { // a rubber duck riding on the rear shoulder
+      const [sx, sy] = shoulders[0];
+      c.fill(ell(M(), sx - 2, sy - 4, 2.4, 1.6), DUCK, { band: 1, sep: true });
+      c.fill(ell(M(), sx - 1, sy - 7, 1.5, 1.5), DUCK, { band: 1, sep: true });
+      c.set(sx + 1, sy - 7, CONE, 3); c.set(sx + 1, sy - 6, CONE, 2); c.set(sx - 1, sy - 8, INK);
+    }
+    function front() {
+      const x0 = CX + bx, y0 = by, s = (x, y, r, l) => c.set(x0 + x, y0 + y, r, l);
+      if (L.shoulders === 'Towel') { // a towel around the neck, both ends hanging down the chest
+        const m = or(cap(M(), x0 - 1, y0 + 14, x0 - 4, y0 + 23, 1.3), cap(M(), x0 + 3, y0 + 14, x0 + 5, y0 + 22, 1.3));
+        c.fill(m, WHITE, { band: 1, sep: true });
+        for (const y of [17, 20]) { c.tone(x0 - 3, y0 + y, 1); c.tone(x0 + 4, y0 + y, 1); }
+        s(-5, 23, Tr, 2); s(-4, 23, Tr, 3); s(-3, 23, Tr, 3); s(4, 22, Tr, 2); s(5, 22, Tr, 3); s(6, 22, Tr, 3);
+      }
+      if (L.quirk === 3) { // necktie
+        c.fill(rect(M(), x0 + 1, y0 + 16, 2, 2), Tr, { band: 1, sep: true });
+        c.fill(rows(M(), x0 + 1, y0 + 18, [[0, 1], [0, 1], [-1, 1], [-1, 2], [-1, 2], [-1, 2], [0, 1]]), Tr, { band: 1, sep: true });
+        c.tone(x0 + 1, y0 + 19, 1); c.tone(x0 + 2, y0 + 21, 1);
+      }
+      if (L.quirk === 4) { // a toaster slot, toast ready
+        for (let x = -2; x <= 3; x++) { s(x, 18, STEEL, 0); s(x, 19, STEEL, 2); }
+        c.fill(rows(M(), x0 - 1, y0 + 15, [[0, 3], [0, 3], [0, 3]]), TOAST, { band: 1, sep: true });
+        s(-1, 15, TOAST, 1); s(2, 15, TOAST, 1); s(0, 15, TOAST, 0); s(1, 15, TOAST, 0);
+      }
+      if (L.quirk === 6) { // HELLO MY NAME IS sticker, blank
+        c.fill(rect(M(), x0 - 6, y0 + 18, 5, 4), WHITE, { flat: 2, sep: true });
+        for (let x = -6; x <= -2; x++) s(x, 18, CABLE, 3);
+        s(-5, 20, INK); s(-4, 20, CHIP, 1);
+      }
+      if (L.quirk === 2) { // duct tape, criss-crossed
+        const key = mix(L.seed + 3), ux = -4 + key % 5, uy = 17 + (key >>> 4) % 4;
+        c.fill(and(or(cap(M(), x0 + ux - 2, y0 + uy - 1, x0 + ux + 2, y0 + uy + 1, 0.6), cap(M(), x0 + ux - 2, y0 + uy + 1, x0 + ux + 2, y0 + uy - 1, 0.6)), torsoMask()), TAPE, { band: 1 });
       }
     }
   }
 
   // ---- Collectible card -----------------------------------------------------
-  // 64×64: a frame, a kit-specific pixel scene, the fighter at 1:1, and a blank
-  // name plate. No names or live stats are baked in.
+  // 64×64: a riveted scrap-metal frame, a kit-specific scrapyard scene, the
+  // fighter at 1:1, and a blank name plate. No names or live stats baked in.
   function artwork(identity, body) {
-    const L = look(identity), kit = L.kit, a = L.accent, seed = roll(identity, 'scene');
+    const L = look(identity), kit = L.kit, a = GLOWS[L.glow][1], seed = roll(identity, 'scene');
     const parts = [];
     const r = (x, y, w, h, c) => { if (w > 0 && h > 0) parts.push(`<path fill="${c}" d="M${x} ${y}h${w}v${h}h-${w}z"/>`); };
     const bands = (list, y0) => { let y = y0; for (const [c, h] of list) { r(2, y, 60, h, c); y += h; } return y; };
     const dither = (y, c) => { for (let x = 2 + (y & 1); x < 62; x += 2) r(x, y, 1, 1, c); };
     const half = (rad, y) => { let w = 0; while ((w + 1) * (w + 1) + y * y <= rad * rad + rad) w++; return w; };
     const circle = (cx, cy, rad, c) => { for (let y = -rad; y <= rad; y++) { const w = half(rad, y); r(cx - w, cy + y, w * 2 + 1, 1, c); } };
-    const stars = (n, y1, c) => { let s = seed; for (let i = 0; i < n; i++) { s = mix(s + i); r(3 + s % 58, 3 + (s >>> 8) % (y1 - 3), 1, 1, c); } };
+    const specks = (n, x0, y0, w, h, c, k = 0) => { let s = seed + k; for (let i = 0; i < n; i++) { s = mix(s + i); r(x0 + s % w, y0 + (s >>> 8) % h, 1, 1, c); } };
+    const text = (str, x, y, c) => { for (const ch of str) { const g = FONT[ch] || FONT[' ']; for (let k = 0; k < 15; k++) if (g[k] === '1') r(x + k % 3, y + (k / 3 | 0), 1, 1, c); x += 4; } };
+    const hazardBar = (x, y, w, h) => { r(x, y, w, h, '#1a1a1a'); for (let i = 0; i < w; i += 4) r(x + i, y, Math.min(2, w - i), h, '#f2c230'); };
+    const rain = c => { let s = seed + 99; for (let i = 0; i < 22; i++) { s = mix(s + i); r(3 + s % 58, 3 + (s >>> 8) % 42, 1, 3, c); } };
+    const smog = (y, c) => { r(2, y, 60, 1, c); dither(y + 1, c); };
     r(0, 0, 64, 64, INK);
     const floorY = 50;
-    if (kit === 0) { // Sunset dojo: striped sun over a wooden hall
-      bands([['#3b2458', 8], ['#6a2f68', 6], ['#a8416a', 6], ['#e0645a', 6], ['#f39a58', 8], ['#f7c46a', 16]], 2);
-      dither(16, '#a8416a'); dither(22, '#e0645a'); dither(28, '#f39a58'); dither(36, '#f7c46a');
-      circle(44, 26, 10, '#ffe08a'); for (const y of [26, 29, 32, 34]) r(34, y, 21, 1, '#f39a58');
-      r(2, 30, 60, 3, '#4a2a2a'); r(2, 33, 60, 17, '#6e3f2c');
-      for (let x = 2; x < 62; x += 10) { r(x, 33, 1, 17, '#4a2a22'); r(x + 1, 36, 7, 11, '#e7d7b0'); r(x + 1, 41, 7, 1, '#b99a72'); r(x + 4, 36, 1, 11, '#b99a72'); }
-      r(2, 28, 60, 2, '#8a3b2e'); r(2, 27, 60, 1, '#c95a3a');
-      r(2, floorY, 60, 11, '#8a5a36'); for (let y = floorY + 2; y < 61; y += 3) r(2, y, 60, 1, '#6c4228');
-    } else if (kit === 1) { // Midnight rooftop: skyline and water tower
-      bands([['#101433', 20], ['#16193f', 12], ['#1e1f4c', 16]], 2); stars(18, 26, '#8a8fc4');
-      r(46, 6, 5, 5, '#e8e2c8'); r(47, 5, 3, 1, '#e8e2c8'); r(45, 7, 1, 3, '#e8e2c8'); r(48, 7, 2, 2, '#cfc6a6');
-      let s = seed;
-      for (let x = 2; x < 62;) { s = mix(s + x); const w = 5 + s % 6, h = 12 + (s >>> 5) % 18; r(x, floorY - h, w, h, '#0c0e26'); for (let y = floorY - h + 2; y < floorY - 2; y += 3) for (let xx = x + 1; xx < x + w - 1; xx += 2) if (mix(s + y * 7 + xx) % 3 === 0) r(xx, y, 1, 1, '#e8c860'); x += w + 1; }
-      r(8, 18, 8, 7, '#3a2a2a'); r(9, 25, 1, 7, '#3a2a2a'); r(14, 25, 1, 7, '#3a2a2a'); r(8, 17, 8, 1, '#5a3a3a');
-      r(2, floorY, 60, 11, '#3a3d52'); r(2, floorY, 60, 1, '#6a6d86'); for (let x = 4; x < 62; x += 8) r(x, floorY + 3, 5, 1, '#2c2e40');
-    } else if (kit === 2) { // Reactor chamber: panels and a core ring
-      r(2, 2, 60, 48, '#1a2236'); for (let x = 2; x < 62; x += 8) r(x, 2, 1, 48, '#26324c'); for (let y = 8; y < 50; y += 10) r(2, y, 60, 1, '#26324c');
-      circle(32, 25, 18, '#2a3a58'); circle(32, 25, 16, a); circle(32, 25, 15, '#1a2a44'); circle(32, 25, 12, '#223452');
-      r(4, 4, 4, 46, '#3a4a66'); r(56, 4, 4, 46, '#3a4a66'); r(5, 4, 1, 46, '#5a6e90'); r(57, 4, 1, 46, '#5a6e90');
-      r(2, floorY, 60, 11, '#2a3448'); for (let x = 2; x < 62; x += 4) r(x, floorY, 2, 2, '#e0b030'); for (let x = 4; x < 62; x += 4) r(x, floorY, 2, 2, '#1a1a22');
-    } else if (kit === 3) { // Moon gate at night
-      bands([['#141233', 24], ['#1c1a45', 24]], 2); stars(14, 40, '#9a98d0');
-      circle(40, 16, 10, '#f1e8c8'); r(36, 12, 3, 2, '#d8cda6'); r(43, 18, 2, 2, '#d8cda6'); r(38, 20, 2, 1, '#d8cda6');
-      for (let y = 2; y < 50; y++) { const d = Math.abs(y - 28); const w = d < 22 ? half(22, d) : 0; r(2, y, Math.max(0, 32 - w - 2), 1, '#2d2350'); r(32 + w, y, Math.max(0, 30 - w), 1, '#2d2350'); }
-      for (const x of [5, 9, 55]) { r(x, 6, 2, 44, '#2f5a3a'); for (let y = 10; y < 50; y += 7) r(x, y, 2, 1, '#1f3a28'); r(x + 2, 12 + x % 5, 3, 1, '#3f7a4a'); }
-      r(2, floorY, 60, 11, '#2c2848'); for (let x = 2; x < 62; x += 6) r(x, floorY + 1 + (x % 4), 4, 1, '#3a3660');
-    } else if (kit === 4) { // Clay ring under a hanging roof
-      // Warm hall, a hanging roof with bunting and corner tassels, a raised
-      // clay ring edged with straw bales.
-      r(2, 2, 60, 48, '#3a2418'); for (let x = 4; x < 62; x += 6) r(x, 14, 2, 26, '#2e1c12');
-      for (let x = 8; x < 60; x += 12) { r(x, 18, 4, 6, '#e8b860'); r(x + 1, 19, 2, 4, '#fff0b8'); r(x + 1, 24, 2, 1, '#8a5a2a'); }
-      r(2, 2, 60, 5, '#24160f'); r(2, 7, 60, 2, '#4a2c1c'); r(4, 9, 56, 3, '#5a2a6a'); for (let x = 6; x < 60; x += 8) r(x, 12, 4, 2, '#5a2a6a');
-      r(4, 9, 56, 1, '#7a4a8a');
-      r(4, 12, 2, 8, '#d23a2a'); r(58, 12, 2, 8, '#2a4ad2'); r(3, 20, 4, 3, '#b82a1e'); r(57, 20, 4, 3, '#1e36a8');
-      r(2, 40, 60, 10, '#8a5a36'); r(2, 40, 60, 1, '#a8744a');
-      r(6, 42, 52, 8, '#c9975e'); r(4, 44, 56, 6, '#c9975e'); r(6, 42, 52, 1, '#e0b27a');
-      r(2, floorY, 60, 11, '#b27f4a'); r(2, floorY, 60, 1, '#d2a066');
-      for (let x = 3; x < 61; x += 5) { r(x, floorY + 2, 4, 3, '#e8d49a'); r(x, floorY + 4, 4, 1, '#b8a468'); r(x + 1, floorY + 2, 1, 1, '#f8ecc0'); }
-    } else if (kit === 5) { // Arena lights: spotlights, crowd, ropes
-      r(2, 2, 60, 48, '#150f22');
-      for (let y = 2; y < 50; y++) { const w = 4 + (y >> 2); r(20 - (w >> 1), y, w, 1, '#231a36'); r(44 - (w >> 1), y, w, 1, '#231a36'); }
-      let s = seed; for (let y = 22; y < 38; y += 3) for (let x = 2 + (y % 2) * 2; x < 62; x += 4) { s = mix(s + x + y); r(x, y, 3, 2, ['#2a2040', '#322648', '#1f1830'][s % 3]); if (s % 23 === 0) r(x + 1, y, 1, 1, '#ffffff'); }
-      for (const [y, col] of [[38, '#c8323c'], [42, '#e8e4dc'], [46, '#3a5ac8']]) r(2, y, 60, 1, col);
-      r(3, 36, 3, 14, '#8a8a96'); r(58, 36, 3, 14, '#8a8a96');
-      r(2, floorY, 60, 11, '#d6d2dc'); r(2, floorY, 60, 1, '#f2eef4'); for (let x = 2; x < 62; x += 7) r(x, floorY + 4, 4, 1, '#bcb8c4');
-    } else if (kit === 6) { // Jungle base: palms, sandbags, a hangar
-      bands([['#e8a860', 10], ['#e8c080', 10], ['#c8d0a0', 8], ['#8aa070', 20]], 2);
-      r(36, 18, 24, 20, '#5a6048'); r(38, 14, 20, 4, '#6a7058'); r(40, 22, 16, 16, '#2a2e22'); r(47, 20, 2, 18, '#4a5040');
-      for (const [x, h] of [[8, 30], [18, 24]]) { r(x, floorY - h, 2, h, '#5a3a22'); r(x - 5, floorY - h, 12, 2, '#2f6a2a'); r(x - 7, floorY - h + 2, 4, 2, '#2f6a2a'); r(x + 4, floorY - h + 2, 5, 2, '#2f6a2a'); r(x - 2, floorY - h - 2, 6, 2, '#3f8a38'); }
-      for (let x = 2; x < 34; x += 5) { r(x, 44, 5, 3, '#b8a070'); r(x + 2, 41, 5, 3, '#c8b080'); }
-      r(2, floorY, 60, 11, '#8a7a50'); for (let x = 2; x < 62; x += 5) r(x + (x % 3), floorY + 3, 2, 1, '#6a5a38');
-    } else if (kit === 7) { // Lantern market: stalls, strings of lanterns
-      bands([['#2a1830', 16], ['#3a2034', 32]], 2);
-      for (let x = 2; x < 62; x += 12) { r(x, 20, 11, 30, '#4a2a26'); r(x, 20, 11, 3, '#8a2a24'); r(x + 2, 28, 7, 8, '#241410'); r(x + 3, 30, 5, 1, '#e8b050'); }
-      for (let x = 4; x < 62; x += 7) { const y = 8 + ((x * 3) % 5); r(x, y, 4, 5, '#d8342c'); r(x + 1, y, 2, 5, '#f05a3a'); r(x, y - 1, 4, 1, '#e8b050'); r(x, y + 5, 4, 1, '#e8b050'); }
-      r(2, 7, 60, 1, '#5a3a30');
-      r(2, floorY, 60, 11, '#4a3a3a'); for (let x = 2; x < 62; x += 8) { r(x, floorY + 2, 7, 3, '#5a4848'); r(x + 4, floorY + 6, 7, 3, '#5a4848'); }
-    } else if (kit === 8) { // Harbour at dusk: sea, boats, a pier
-      bands([['#e87a4a', 8], ['#f0a060', 8], ['#f4c880', 8], ['#3a6a8a', 6], ['#2a5070', 6], ['#1e3e5a', 12]], 2);
-      dither(10, '#f0a060'); dither(18, '#f4c880');
-      circle(20, 25, 6, '#fff0b0'); r(12, 26, 17, 1, '#f4c880'); r(2, 26, 60, 0, '#000');
-      for (let y = 34; y < 50; y += 3) r(6 + (y % 5), y, 10, 1, '#5a8aaa');
-      r(40, 30, 14, 4, '#3a2a22'); r(46, 18, 1, 12, '#3a2a22'); r(47, 19, 6, 9, '#e8e0cc');
-      r(2, floorY, 60, 11, '#8a6a48'); for (let x = 2; x < 62; x += 6) r(x, floorY, 1, 11, '#6a4e34');
-    } else if (kit === 9) { // Mountain temple: daylight peaks and a pagoda
-      bands([['#7aa8d8', 12], ['#9cc0e2', 10], ['#c4dcec', 10], ['#dce8ee', 16]], 2);
-      for (let y = 18; y < 50; y++) { const w = (y - 18) * 2; r(18 - (w >> 1), y, w, 1, '#6a84a6'); r(40 - (w >> 2), y, w >> 1, 1, '#5a7496'); }
-      r(15, 18, 6, 2, '#f4f4f8'); r(38, 26, 5, 2, '#f4f4f8');
-      for (let k = 0; k < 4; k++) { r(46 - k, 14 + k * 8, 12 + k * 2, 2, '#3a2a3a'); r(48 - k, 16 + k * 8, 8 + k * 2, 6, '#8a3a2e'); }
-      r(4, 10, 10, 2, '#ffffff'); r(6, 8, 6, 2, '#ffffff'); r(26, 6, 8, 2, '#ffffff');
-      r(2, floorY, 60, 11, '#9a9084'); for (let x = 2; x < 62; x += 9) r(x, floorY + 2, 8, 4, '#aaa296');
-    } else if (kit === 10) { // Boxing gym: brick wall, heavy bag, ropes
-      r(2, 2, 60, 48, '#6a3428'); for (let y = 2; y < 50; y += 4) { r(2, y, 60, 1, '#4a2218'); for (let x = 2 + ((y >> 2) % 2) * 4; x < 62; x += 8) r(x, y, 1, 4, '#4a2218'); }
-      r(8, 2, 1, 10, '#8a8a8a'); r(5, 12, 7, 18, '#9a2a2a'); r(6, 12, 2, 18, '#c23a3a'); r(5, 16, 7, 1, '#4a1414'); r(5, 26, 7, 1, '#4a1414');
-      r(46, 6, 12, 8, '#e8d8a8'); r(47, 7, 10, 6, '#c83a2a'); r(49, 9, 6, 2, '#e8d8a8');
-      for (const [y, col] of [[36, '#e8e4dc'], [41, '#c8323c'], [46, '#e8e4dc']]) r(2, y, 60, 1, col);
-      r(2, floorY, 60, 11, '#3a5aa8'); r(2, floorY, 60, 1, '#6a8ad8');
-    } else { // River stadium: warm lamps over the ring
-      bands([['#1e2a3a', 14], ['#26364a', 14], ['#2e4258', 20]], 2);
-      for (let x = 6; x < 62; x += 14) { r(x, 6, 6, 3, '#f0c060'); r(x + 2, 9, 2, 2, '#fff0b0'); r(x + 2, 2, 2, 4, '#3a3a3a'); }
-      let s = seed; for (let y = 24; y < 38; y += 3) for (let x = 2 + (y % 2) * 2; x < 62; x += 4) { s = mix(s + x * 3 + y); r(x, y, 3, 2, ['#3a3040', '#2e2a3c', '#443848'][s % 3]); }
-      for (const [y, col] of [[39, '#d83a3a'], [43, '#e8c050'], [47, '#3a6ad8']]) r(2, y, 60, 1, col);
-      r(2, floorY, 60, 11, '#c8b890'); r(2, floorY, 60, 1, '#e8d8b0');
+    if (kit === 0) { // Collapsed dojo: smoggy sunset through a broken roof
+      bands([['#2a1d17', 8], ['#4a2a22', 6], ['#7a3a22', 6], ['#b0552a', 6], ['#d9823a', 22]], 2);
+      dither(16, '#7a3a22'); dither(22, '#b0552a'); dither(28, '#d9823a');
+      circle(44, 24, 7, '#f2c26a'); for (const y of [23, 26, 28]) r(37, y, 15, 1, '#d9823a');
+      r(2, 30, 60, 20, '#3a2418'); for (let x = 2; x < 62; x += 10) { r(x, 30, 1, 20, '#24160f'); r(x + 1, 33, 7, 12, '#8a7456'); r(x + 4, 33, 1, 12, '#5a4a36'); }
+      r(13, 36, 3, 4, '#24160f'); r(33, 34, 4, 6, '#24160f'); r(45, 38, 3, 3, '#24160f'); // torn paper screens
+      r(2, 28, 60, 2, '#5a2a1e'); r(2, 10, 26, 2, '#24160f'); r(20, 12, 2, 18, '#24160f'); r(30, 6, 2, 8, '#24160f'); // broken beams
+      for (let k = 0; k < 8; k++) r(26 + k * 2, 6 + k, 2, 1, '#24160f');
+      r(3, 14, 17, 7, '#e7d7b0'); r(3, 20, 17, 1, '#8a3b12'); text('DOJO', 4, 15, '#8a3b12');
+      r(2, floorY, 60, 11, '#6e4a30'); for (let y = floorY + 2; y < 61; y += 3) r(2, y, 60, 1, '#553722');
+      specks(10, 2, floorY, 60, 5, '#8a3b12');
+    } else if (kit === 1) { // Flooded underpass: concrete, acid rain, a pink sign
+      r(2, 2, 60, 48, '#16302f'); r(2, 2, 60, 8, '#2a3a3a'); r(2, 10, 60, 2, '#0d1a1a');
+      for (const x of [8, 30, 52]) { r(x, 12, 6, 38, '#3a4a48'); r(x, 12, 1, 38, '#5a6a66'); r(x + 5, 12, 1, 38, '#243030'); }
+      r(3, 14, 11, 7, '#0d1a1a'); r(4, 15, 9, 5, '#ff4fa0'); text('24', 5, 15, '#0d1a1a');
+      r(40, 22, 8, 5, '#0d1a1a'); r(41, 23, 6, 3, '#36e0ff');
+      rain('#3aa597');
+      r(2, floorY, 60, 11, '#1e3a3c'); for (let y = floorY + 1; y < 61; y += 2) r(4 + (y * 7) % 11, y, 12, 1, '#2e5a5a');
+      r(18, floorY + 3, 9, 1, '#ff4fa0'); r(41, floorY + 5, 6, 1, '#36e0ff');
+    } else if (kit === 2) { // Dead mall: dark shopfronts, a glowing vending machine
+      r(2, 2, 60, 48, '#1e1a24'); r(2, 2, 60, 6, '#2a2432');
+      for (let x = 2; x < 62; x += 15) { r(x, 12, 14, 30, '#12101a'); r(x + 1, 13, 12, 18, '#243040'); r(x + 1, 22, 12, 1, '#12101a'); r(x + 7, 13, 1, 18, '#12101a'); }
+      r(3, 9, 22, 4, '#3aa597'); text('SALE', 5, 8, '#e8edf2'); r(26, 16, 3, 3, '#12101a'); // crooked sign
+      r(46, 18, 10, 24, '#8a2a2a'); r(47, 19, 8, 12, '#ffd27a'); for (let y = 21; y < 31; y += 3) r(47, y, 8, 1, '#c28a3a'); r(48, 34, 6, 3, '#12101a');
+      r(2, 42, 60, 8, '#2a2432'); for (let x = 2; x < 62; x += 6) r(x, 42, 3, 1, '#4b5563');
+      r(2, floorY, 60, 11, '#3a3440'); for (let x = 2; x < 62; x += 8) { r(x, floorY, 1, 11, '#2a2432'); } r(2, floorY + 5, 60, 1, '#2a2432');
+      specks(8, 2, floorY, 60, 10, '#8a3b12');
+    } else if (kit === 3) { // Dust-bowl farm: orange sky, broken windmill, dead corn
+      bands([['#8a3b12', 10], ['#c2551b', 10], ['#d9823a', 10], ['#e0a060', 18]], 2);
+      dither(12, '#c2551b'); dither(22, '#d9823a'); dither(32, '#e0a060');
+      circle(16, 18, 5, '#f7d08a');
+      r(44, 14, 2, 36, '#3a2418'); r(40, 48, 10, 2, '#3a2418'); for (let k = 0; k < 6; k++) { r(45 - k * 2, 13 - k, 2, 1, '#3a2418'); r(45 + k, 13 + k * 2, 1, 2, '#3a2418'); r(46 + k * 2, 12, 2, 1, '#3a2418'); }
+      for (let x = 2; x < 36; x += 4) { r(x, 36, 1, 14, '#6a4a22'); r(x - 1, 38 + (x % 3), 1, 2, '#8a6a32'); r(x + 1, 41 - (x % 2), 1, 2, '#8a6a32'); }
+      r(2, 44, 60, 1, '#3a2418'); for (let x = 36; x < 62; x += 6) r(x, 41, 1, 9, '#3a2418');
+      r(2, floorY, 60, 11, '#9a6a3a'); specks(20, 2, floorY, 60, 11, '#7a4a22');
+    } else if (kit === 4) { // Container yard: stacked rusty containers, a crane
+      bands([['#2a1d17', 16], ['#3a2a22', 32]], 2);
+      r(40, 4, 2, 30, '#4b5563'); r(20, 4, 36, 2, '#4b5563'); for (let x = 22; x < 56; x += 3) r(x, 6, 1, 1, '#9aa6b2'); r(24, 6, 1, 12, '#9aa6b2'); r(22, 18, 5, 3, '#f2c230');
+      const cols = ['#8a3b12', '#3aa597', '#c2551b', '#34507e', '#6b7042'];
+      let s = seed; for (let row = 0; row < 3; row++) for (let x = 2 - row * 5; x < 62; x += 14) { s = mix(s + x + row); const c = cols[s % cols.length]; r(Math.max(2, x), 38 - row * 9, Math.min(13, 62 - Math.max(2, x)), 8, c); for (let k = 1; k < 13; k += 2) r(Math.max(2, x) + k, 39 - row * 9, 1, 6, mixHex(c, '#000000', 0.3)); }
+      r(2, floorY, 60, 11, '#4a4034'); hazardBar(2, floorY, 60, 2); specks(10, 2, floorY + 3, 60, 8, '#8a3b12');
+    } else if (kit === 5) { // Junk arena: tyres, chain ropes, drone crowd
+      r(2, 2, 60, 48, '#0d0f12');
+      for (let y = 2; y < 50; y++) { const w = 4 + (y >> 2); r(18 - (w >> 1), y, w, 1, '#1d2226'); r(46 - (w >> 1), y, w, 1, '#1d2226'); }
+      let s = seed; for (let y = 16; y < 34; y += 3) for (let x = 2 + (y % 2) * 2; x < 62; x += 4) { s = mix(s + x + y); r(x, y, 3, 2, ['#1a1e22', '#22282e', '#15181c'][s % 3]); if (s % 13 === 0) r(x + 1, y, 1, 1, s % 2 ? '#36e0ff' : '#ff4fa0'); }
+      for (const y of [37, 42]) for (let x = 2; x < 62; x += 2) r(x, y + (x % 4 ? 0 : 1), 2, 1, '#9aa6b2');
+      for (let x = 4; x < 62; x += 9) { circle(x, 47, 3, '#15181c'); r(x - 1, 46, 3, 3, '#2b313b'); }
+      r(2, floorY, 60, 11, '#5a4a3a'); r(2, floorY, 60, 1, '#8a7456'); specks(12, 2, floorY + 2, 60, 9, '#3a2a22');
+    } else if (kit === 6) { // Bunker ruins: concrete, barbed wire, searchlights
+      bands([['#101418', 20], ['#16302f', 28]], 2);
+      for (let y = 2; y < 40; y++) { r(12 + (y >> 1), y, 3, 1, '#1e3a38'); r(48 - (y >> 2), y, 2, 1, '#1e3a38'); }
+      r(2, 30, 60, 20, '#3a3e38'); r(2, 30, 60, 2, '#555a50'); r(18, 36, 26, 4, '#0d0f12'); r(20, 37, 22, 2, '#1a1e1a');
+      for (let x = 2; x < 62; x += 3) { r(x, 27, 2, 1, '#6b7483'); r(x + 1, 26 + (x % 2) * 2, 1, 1, '#6b7483'); }
+      for (let x = 4; x < 62; x += 6) { r(x, 44, 5, 3, '#6b7042'); r(x + 2, 41, 5, 3, '#7a8050'); }
+      r(4, 32, 11, 7, '#c2551b'); text('NO', 6, 33, '#f2c230');
+      r(2, floorY, 60, 11, '#4a4a3e'); specks(14, 2, floorY, 60, 11, '#2e2e26');
+    } else if (kit === 7) { // Noodle stall in the rain
+      bands([['#101422', 16], ['#1a1830', 32]], 2);
+      r(4, 20, 56, 30, '#2a1d17'); r(2, 16, 60, 4, '#8a3b12'); for (let x = 2; x < 62; x += 6) r(x, 16, 3, 4, '#c2551b');
+      r(6, 26, 52, 10, '#16100c'); r(8, 28, 48, 6, '#3a2418'); circle(20, 30, 2, '#9aa6b2'); circle(34, 30, 2, '#9aa6b2');
+      for (let k = 0; k < 4; k++) r(19 + (k % 2), 22 - k * 2, 1, 2, '#6b7483');
+      r(44, 4, 16, 7, '#0d0f12'); text('EAT', 46, 5, '#ff4fa0'); r(45, 11, 14, 1, '#ff4fa0');
+      for (let x = 6; x < 62; x += 12) { r(x, 21, 4, 5, '#e0342b'); r(x + 1, 22, 2, 3, '#ff8a5a'); }
+      rain('#3a4a6a');
+      r(2, floorY, 60, 11, '#2a2a30'); for (let x = 2; x < 62; x += 8) r(x, floorY + 3, 6, 1, '#3a3a44'); r(8, floorY + 6, 10, 1, '#ff4fa0');
+    } else if (kit === 8) { // Neon plaza: cracked tiles under a flickering arch
+      bands([['#140c24', 24], ['#1e1030', 24]], 2);
+      for (let y = 6; y < 50; y++) { const d = Math.abs(y - 28), w = d < 22 ? half(22, d) : 0; if (w) { r(32 - w - 1, y, 1, 1, '#ff4fa0'); r(32 + w, y, 1, 1, '#36e0ff'); } }
+      r(10, 8, 44, 1, '#ff4fa0'); r(10, 9, 44, 1, '#8a2a5a');
+      specks(16, 3, 3, 58, 20, '#6a5a9a');
+      r(5, 30, 6, 20, '#2a1a3a'); r(53, 34, 6, 16, '#2a1a3a'); r(6, 31, 4, 3, '#36e0ff'); r(54, 35, 4, 3, '#ff4fa0');
+      r(2, floorY, 60, 11, '#3a2a4a'); for (let x = 2; x < 62; x += 6) r(x, floorY, 1, 11, '#2a1a3a'); for (let y = floorY + 3; y < 61; y += 4) r(2, y, 60, 1, '#2a1a3a');
+      r(20, floorY + 2, 1, 5, '#140c24'); r(21, floorY + 6, 3, 1, '#140c24');
+    } else if (kit === 9) { // Radio-tower shrine at dusk, prayer flags
+      bands([['#2a1d3a', 10], ['#4a2a4a', 10], ['#8a4a4a', 10], ['#c27a4a', 18]], 2);
+      dither(12, '#4a2a4a'); dither(22, '#8a4a4a'); dither(32, '#c27a4a');
+      for (let y = 6; y < 50; y++) { const w = (y - 6) >> 2; r(44 - w, y, 1, 1, '#1a1420'); r(46 + w, y, 1, 1, '#1a1420'); if (y % 5 === 0) r(44 - w, y, w * 2 + 3, 1, '#1a1420'); }
+      r(45, 3, 1, 3, '#1a1420'); r(44, 3, 3, 1, '#e0342b');
+      for (let y = 34; y < 50; y++) { const w = (y - 34) * 2; r(10 - (w >> 2), y, w, 1, '#3a2a30'); }
+      const flags = ['#e0342b', '#f2c230', '#3aa597', '#e8edf2', '#36e0ff'];
+      for (let k = 0; k < 10; k++) r(4 + k * 4, 16 + (k * k) % 3 + (k > 5 ? 10 - k : k) , 3, 3, flags[k % 5]);
+      r(2, floorY, 60, 11, '#5a4a44'); for (let x = 2; x < 62; x += 9) r(x, floorY + 2, 8, 4, '#6a5a52');
+    } else if (kit === 10) { // Rust-belt gym: brick, a taped heavy bag, a poster
+      r(2, 2, 60, 48, '#5a2a1e'); for (let y = 2; y < 50; y += 4) { r(2, y, 60, 1, '#3a1a12'); for (let x = 2 + ((y >> 2) % 2) * 4; x < 62; x += 8) r(x, y, 1, 4, '#3a1a12'); }
+      r(8, 2, 1, 10, '#9aa6b2'); r(5, 12, 7, 18, '#6a2a22'); r(6, 12, 2, 18, '#8a3a2e'); r(5, 18, 7, 2, '#a9aeb5'); r(5, 25, 7, 1, '#a9aeb5');
+      r(45, 6, 14, 10, '#e7d7b0'); r(46, 7, 12, 8, '#8a3b12'); text('GYM', 46, 8, '#e7d7b0');
+      specks(30, 2, 2, 60, 34, '#8a3b12', 5);
+      for (const [y, col] of [[36, '#a9aeb5'], [41, '#8a3b12'], [46, '#a9aeb5']]) r(2, y, 60, 1, col);
+      r(2, floorY, 60, 11, '#34507e'); r(2, floorY, 60, 1, '#5a7aa8'); r(30, floorY + 4, 6, 3, '#a9aeb5');
+    } else { // Demolition site: a wrecking ball, half a building, hazard fence
+      bands([['#3a3a3e', 12], ['#5a4a44', 12], ['#8a6a54', 24]], 2);
+      dither(14, '#5a4a44'); dither(26, '#8a6a54');
+      r(4, 16, 22, 34, '#4a3e38'); for (let y = 18; y < 48; y += 5) for (let x = 6; x < 24; x += 5) r(x, y, 3, 3, '#1e1a18');
+      r(20, 16, 6, 8, '#8a6a54'); r(22, 24, 4, 5, '#8a6a54'); // bitten corner
+      r(34, 4, 26, 2, '#f2c230'); r(56, 4, 2, 46, '#f2c230'); r(42, 6, 1, 14, '#6b7483'); circle(42, 23, 4, '#2b313b'); r(41, 21, 2, 1, '#6b7483');
+      specks(24, 26, 28, 30, 20, '#b09078');
+      r(2, floorY, 60, 11, '#7a6a5a'); hazardBar(2, floorY - 4, 60, 2); for (let x = 2; x < 62; x += 10) r(x, floorY - 6, 1, 6, '#1a1a1a');
+      specks(12, 2, floorY + 2, 60, 9, '#5a4a3a');
     }
     // Ground shadow under the fighter, then the fighter at 1:1.
-    const shadow = ['#6c4228', '#2a2c3e', '#1a2030', '#221e3a', '#9a6a3a', '#b6b2bc', '#6a5a38', '#3a2c2c', '#6a4e34', '#7a7266', '#2a4a90', '#a89870'][kit];
-    r(18, floorY + 1, 30, 1, shadow); r(15, floorY, 36, 1, shadow);
+    const floor = ['#6e4a30', '#1e3a3c', '#3a3440', '#9a6a3a', '#4a4034', '#5a4a3a', '#4a4a3e', '#2a2a30', '#3a2a4a', '#5a4a44', '#34507e', '#7a6a5a'][kit];
+    r(15, floorY, 36, 1, mixHex(floor, '#000000', 0.3)); r(18, floorY + 1, 30, 1, mixHex(floor, '#000000', 0.4));
     parts.push(`<g transform="translate(8 5)">${body}</g>`);
-    // Frame: dark outer line, accent bevel, blank name plate.
+    // Frame: rusted steel bevel, rivets, hazard-striped name plate with glow lights.
     r(0, 0, 64, 2, INK); r(0, 62, 64, 2, INK); r(0, 0, 2, 64, INK); r(62, 0, 2, 64, INK);
-    r(1, 1, 62, 1, a); r(1, 1, 1, 62, a); r(1, 62, 62, 1, '#3a3246'); r(62, 1, 1, 62, '#3a3246');
-    r(2, 55, 60, 7, '#140f1a'); r(2, 55, 60, 1, '#4a4058'); r(4, 57, 56, 3, '#221a2c'); r(4, 57, 2, 3, a); r(58, 57, 2, 3, a);
+    r(1, 1, 62, 1, '#9aa6b2'); r(1, 1, 1, 62, '#9aa6b2'); r(1, 62, 62, 1, '#4b5563'); r(62, 1, 1, 62, '#4b5563');
+    specks(6, 2, 1, 60, 1, '#c2551b', 7);
+    for (const [x, y] of [[1, 1], [62, 1], [1, 62], [62, 62]]) r(x, y, 1, 1, '#e8edf2');
+    r(2, 55, 60, 7, '#15181c'); r(2, 55, 60, 1, '#4b5563'); hazardBar(2, 61, 60, 1);
+    r(4, 57, 56, 3, '#22282e'); r(4, 57, 2, 3, a); r(58, 57, 2, 3, a);
     return parts.join('');
   }
-
   function assets(identity) {
     if (!cache.has(identity)) {
       if (cache.size >= 256) cache.delete(cache.keys().next().value);
@@ -1209,10 +1400,10 @@ const QDojoAvatars = (() => {
   }
 
   function render(identity, className = '') {
-    // A portrait crop at 24px; full character on the mat; artwork on big cards.
+    // A portrait crop at 24px; the full robot on the mat; artwork on big cards.
     const classes = String(className).split(/\s+/).filter(c => /^[a-zA-Z0-9_-]+$/.test(c));
     const mode = classes.includes('avatar-sm') ? 'portrait' : classes.includes('avatar-xl') ? 'artwork' : 'sprite';
     return `<span class="avatar ${classes.join(' ')}" aria-hidden="true">${svg(identity, mode)}</span>`;
   }
-  return Object.freeze({ version: VERSION, size: SIZE, render, svg, traits, frames, strip, signature, clips: CLIPS });
+  return Object.freeze({ version: VERSION, size: SIZE, render, svg, traits, bio, frames, strip, signature, clips: CLIPS });
 })();

@@ -68,7 +68,7 @@
 <div class="crt" aria-hidden="true"></div>
 <main class="ring">
   <h1>SPARRING</h1>
-  <p class="lede">ONE 48×48 SPRITE PER FIGHTER, DRAWN FROM ITS QUBIC IDENTITY. FRAMES ARE INTEGER PIXEL MOVES OF A SMALL SKELETON; THE FEET STAY PLANTED UNLESS THEY KICK, STEP OR JUMP. PICK A MOVE, THEN CLICK A FIGHTER. SPACE THROWS THE MOVE FROM BOTH SIDES.</p>
+  <p class="lede">ONE 48×48 SALVAGED ROBOT PER FIGHTER, DRAWN FROM ITS QUBIC IDENTITY. FRAMES ARE INTEGER PIXEL MOVES OF A SMALL SKELETON; THE FEET STAY PLANTED UNLESS THEY KICK, STEP OR JUMP. PICK A MOVE, THEN CLICK A FIGHTER. SPACE THROWS THE MOVE FROM BOTH SIDES.</p>
   <div class="mat">
     <button class="fighter left" id="f-left" aria-label="Left fighter"><span class="tag"></span><span class="hp"></span><span class="avatar" data-anim="manual"></span></button>
     <button class="fighter" id="f-right" aria-label="Right fighter"><span class="tag"></span><span class="hp"></span><span class="avatar" data-anim="manual"></span></button>
@@ -84,7 +84,7 @@
     <h2>FRAME SHEET</h2>
     <div id="sheet"></div>
   </section>
-  <p class="note"><b>WHAT THIS IS.</b> The fighter art from the spectator page, animated. Idle breathes at 5 frames a second with a blink. Jab, kick and the hit reaction run at 12; block, duck and throw at 10; the bow and recover at 6; exhausted at 5; the salute and the fall at 8. Frame zero of idle is the static sprite byte for byte. In auto spar each fighter has five hit points; the fall and the salute play at the end, then both bow and reset. On the real page a fighter's card plays the signature move its identity picked: <span id="sigs"></span>.</p>
+  <p class="note"><b>WHAT THIS IS.</b> The robot fighters from the spectator page, animated. Idle breathes at 5 frames a second with a blink. Jab, kick and the hit reaction run at 12; block, duck and throw at 10; the bow and recover at 6; exhausted at 5; the salute and the fall at 8. Frame zero of idle is the static sprite byte for byte. In auto spar each fighter has five hit points; the fall and the salute play at the end, then both bow and reset. On the real page a fighter's card plays the signature move its identity picked: <span id="sigs"></span>.</p>
 </main>
 <script src="avatars.js"></script>
 <script src="anim.js"></script>
@@ -141,7 +141,8 @@
     const out = [];
     els.forEach((_, k) => {
       const f = fighter(k), t = QDojoAvatars.traits(f.identity);
-      out.push(`<div class="who">${esc(f.name)} · ${t.archetype.toUpperCase()} · ${t.stance.toUpperCase()} · SIGNATURE ${QDojoAvatars.signature(f.identity).toUpperCase()}</div>`);
+      out.push(`<div class="who">${esc(f.name)} · ${esc(t.archetype.toUpperCase())} · ${esc(t.finish.toUpperCase())} · ${esc(t.headUnit.toUpperCase())} · ${esc(t.stance.toUpperCase())} · SIGNATURE ${QDojoAvatars.signature(f.identity).toUpperCase()}</div>`);
+      if (QDojoAvatars.bio) out.push(`<div class="who bio">${esc(QDojoAvatars.bio(f.identity))}</div>`);
       for (const [clip, spec] of Object.entries(QDojoAvatars.clips)) {
         out.push(`<div class="row"><span class="k">${clip.toUpperCase()}<br>${spec.fps} FPS</span>${QDojoAvatars.frames(f.identity, clip).map(b =>
           `<div class="frame"><svg viewBox="0 0 ${QDojoAvatars.size || 32} ${QDojoAvatars.size || 32}" shape-rendering="crispEdges">${b}</svg></div>`).join('')}</div>`);
