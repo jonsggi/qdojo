@@ -1,6 +1,6 @@
 /* QDOJO site shell: header, section tabs, backdrop, footer, reading type,
  * title screen and guide. Loaded after style.css and combat.css by the combat
- * site only (legacy.html keeps the old cabinet untouched).
+ * site.
  *
  * Two faces: Press Start 2P for everything a cabinet would print (labels,
  * titles, badges, numbers) and Pixelify Sans for sentences, which stay
@@ -217,7 +217,6 @@ body.still .title-logo { animation: none; }
 .foot-col h4 { margin: 0 0 4px; font-size: 9px; color: var(--yellow); letter-spacing: 1px; }
 .foot-col a { font-family: var(--font-body); font-size: 15px; color: var(--grey); }
 .foot-col a:hover { color: var(--cyan); }
-.foot-col a.nav-legacy { color: var(--magenta); }
 .foot-bottom { display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: center; justify-content: space-between; padding: 12px var(--gutter) 16px; border-top: 2px solid #1b2360; max-width: 1280px; margin: 0 auto; }
 .foot-bottom .foot-left { font-size: 8px; color: var(--grey); line-height: 1.9; flex: 1 1 400px; }
 .foot-bottom .foot-right { display: flex; gap: 8px; }

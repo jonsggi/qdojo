@@ -393,13 +393,6 @@ async function main() {
     await page.waitForSelector('#digest');
     await must(new URL(page.url()).pathname === '/' && page.url().endsWith('#rules'), 'combat.html redirects to / and keeps the hash');
   });
-  await step('legacy', async (page, base) => {
-    await page.goto(base + 'legacy.html');
-    await page.waitForSelector('.legacy-banner');
-    await must(/RIDDLES ARE RETIRED/.test(await text(page, '.legacy-banner')), 'the retired banner');
-    await page.waitForTimeout(800);
-    await shot(page, 'legacy', false);
-  });
 
   // ---- reduced motion: the same information, nothing moving ----
   if (facts.settledRanked) await step('reduced-motion', async (page, base) => {

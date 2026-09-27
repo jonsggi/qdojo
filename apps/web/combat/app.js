@@ -961,7 +961,6 @@
     ['RATING / BELT', 'Integer rating from 1000; the first 10 ranked fights are placement (PROVISIONAL, white). Belts are display only.'],
     ['SAMPLE', 'No live export was found, so the site shows a devnet sample: fake QU, synthetic fighters.'],
     ['STALE', 'The live export has not been rewritten for over ' + Math.round(L.STALE_MS / 60000) + ' minutes: the house exporter may be down, and what you see may be old.'],
-    ['LEGACY', 'The retired riddle arcade, kept read-only so its history stays reachable.'],
   ];
   function viewHelp() {
     setView(screen('HELP', 'EVERY WORD ON THIS SITE') + '<section class="panel"><h3>GLOSSARY</h3><dl class="kv help-kv">' +
