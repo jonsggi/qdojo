@@ -78,7 +78,7 @@ body.still .bd-grid, body.still .bd-stars { animation: none; }
 @media (max-width: 1180px) {
   .hud-tick .hud-fresh, .hud-rules { display: none; }
 }
-@media (max-width: 1000px) {
+@media (max-width: 1120px) {
   .hud-bar { flex-wrap: wrap; }
   .hud-menu { display: inline-flex; align-items: center; gap: 8px; order: 2; margin-left: auto;
     font-family: var(--font-pixel); font-size: 9px; color: var(--yellow); background: transparent;
@@ -623,3 +623,16 @@ img.sensei { width: 128px; height: 160px; image-rendering: pixelated; display: b
 .ff-filters .ff-row { margin-top: 8px; }
 @media (min-width: 700px) { .ff-filters > summary { display: none; } }
 @media (max-width: 699px) { .ff-hint { display: none; } }
+
+/* ---- inspection fixes 2026-09-28 (V-03, V-07, V-08) --------------------- */
+pre.code { display: block; max-width: 100%; overflow-x: auto; }
+:focus-visible { outline: 3px solid var(--hazard); outline-offset: 2px; }
+a:focus-visible, .btn:focus-visible, .npc-card:focus-visible, .chip:focus-visible, .ff-card:focus-visible { outline: 3px solid var(--hazard); outline-offset: 2px; }
+[data-player]:focus { outline: none; }
+[data-player]:focus-visible { outline: 3px solid var(--hazard); outline-offset: 4px; }
+.kpis { grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); }
+.kpi { min-width: 0; }
+.kpi b { overflow-wrap: anywhere; }
+@media (max-width: 640px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.kpi b .qu { white-space: normal; }
+@media (max-width: 400px) { .kpi b { font-size: 12px; } }

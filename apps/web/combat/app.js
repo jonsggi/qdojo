@@ -352,11 +352,15 @@
   // Only fights index.json lists are requested: a live export keeps the most
   // recent ~200, and asking for a pruned file is a 404, not information.
   const listed = id => DEC.test(String(id)) && (!D.known || D.known.has(String(id)));
-  const summaryOf = id => (listed(id) ? fetchJson('fights/' + id + '.json').catch(() => null) : Promise.resolve(null));
+  // A fight the export no longer lists is still in the read API, when it is up.
+  const markDone = (id, j) => { if (j && j.phase === 'DONE') D.done.add(String(id)); return j; };
+  const summaryOf = id => (listed(id) ? fetchJson('fights/' + id + '.json').catch(() => null)
+    : D.api && DEC.test(String(id)) ? apiJson('fights/' + id).then(j => markDone(id, j)).catch(() => null) : Promise.resolve(null));
   // A replay exists once a round resolved or the fight ended; a live fight
   // still in its first round has none yet, so it is not requested.
   const hasReplay = s => !!s && (s.phase === 'DONE' || Number(s.round_index) > 0 || !!(s.state && s.state.round_index > 0));
-  const replayOf = id => (listed(id) ? fetchJson('fights/' + id + '/replay.json').catch(() => null) : Promise.resolve(null));
+  const replayOf = id => (listed(id) ? fetchJson('fights/' + id + '/replay.json').catch(() => null)
+    : D.api && DEC.test(String(id)) ? apiJson('fights/' + id + '/replay').catch(() => null) : Promise.resolve(null));
   const replayFor = s => (hasReplay(s) ? replayOf(s.fight_id) : Promise.resolve(null));
   async function activeIds() {
     const book = await fetchJson('book.json').catch(() => null);
@@ -453,6 +457,9 @@
       Promise.all(liveIds.map(async id => { const s = await summaryOf(id); return { s, rp: await replayFor(s) }; })),
       Promise.all(finishedIds.map(summaryOf)),
     ]);
+    // The book can still list a fight whose summary already says DONE: that one is a result.
+    live.filter(x => x.s && x.s.phase === 'DONE').forEach(x => finished.push(x.s));
+    for (let i = live.length - 1; i >= 0; i--) if (!live[i].s || live[i].s.phase === 'DONE') live.splice(i, 1);
     const recent = !live.length && !finished.filter(Boolean).length ? await latestDone(3) : [];
     if (tok !== viewToken) return;
     const cards = live.filter(x => x.s).map(({ s }) => '<section class="panel panel-cyan arena-card" data-fight="' + esc(s.fight_id) + '">' +
@@ -806,8 +813,10 @@
     const index = await fetchJson('index.json');
     if (index && index.names) FIGHTER_NAMES = index.names;
     const page = DEC.test(pageArg || '') ? Math.max(1, Number(pageArg)) : 1;
-    const r = await loadResults(index, page);
+    let r = await loadResults(index, page);
     if (tok !== viewToken) return;
+    // A page past the end (an old link, a typed URL) shows the last page instead of an empty one.
+    if (r.pages >= 1 && page > r.pages) { history.replaceState(null, '', '#results/' + r.pages); r = await loadResults(index, r.pages); if (tok !== viewToken) return; }
     const { done, active, missing } = r;
     const feed = done.map(s => {
       const out = summaryOutcome(s), w = out.outcome ? out.outcome.winner : null;
@@ -1074,6 +1083,9 @@
       '<div class="tscroll"><table class="beats"><thead><tr><th>RND</th><th>BEAT</th><th>' + esc(names.A) + '</th><th class="num">HP</th><th class="num">ST</th><th>' + esc(names.B) + '</th><th class="num">HP</th><th class="num">ST</th><th>WHAT HAPPENED</th></tr></thead><tbody>' + rows + '</tbody></table></div></details>';
 
     root.classList.toggle('compact', !!opts.compact);
+    // The replay keys (arrows, space, home/end) listen here, so the player can take focus.
+    root.dataset.player = '1';
+    if (!root.hasAttribute('tabindex')) root.tabIndex = -1;
     const els = {};
     for (const s of ['A', 'B']) {
       const c = $('.corner-' + s, root);
@@ -1375,6 +1387,7 @@
     }
     if (tok !== viewToken) return;
     if (!summary && !replay) return notFound('Fight #' + id + ' is not in this export.');
+    if ((summary && summary.phase === 'DONE') || (!summary && replay)) D.done.add(String(id));
     const fighters = (replay || summary).fighters;
     const names = { A: 'A ' + short(fighters.A.fighter_id), B: 'B ' + short(fighters.B.fighter_id) };
     const live = summary && summary.phase !== 'DONE';
@@ -2344,7 +2357,10 @@
       if (tok === viewToken) setView(screen('ERROR') + '<section class="panel panel-red"><h3>COULD NOT RENDER</h3><p>' + esc(e.message) + '</p></section>');
     }
     if (tok !== viewToken) return;
-    if (navigated && name !== 'practice' && !(name === 'fighters' && document.activeElement && document.activeElement.id === 'ff-q')) $('#view').focus({ preventScroll: true });
+    if (navigated) window.scrollTo(0, 0);
+    const playerRoot = name === 'fight' ? $('#view [data-player]') : null;
+    if (navigated && playerRoot) playerRoot.focus({ preventScroll: true });
+    else if (navigated && name !== 'practice' && !(name === 'fighters' && document.activeElement && document.activeElement.id === 'ff-q')) $('#view').focus({ preventScroll: true });
     if (!navigated) window.scrollTo(0, y);
   }
 
