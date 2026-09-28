@@ -377,7 +377,7 @@ same two instruments as §8. The campaign ran all rulesets below on the same
 fresh seed suite `moves-20260928` at full budgets. Candidate 3's report is
 [validation-report-candidate-3.md](validation-report-candidate-3.md); the
 design-phase reports (candidate 2 and LAST STAND alone on the same seeds)
-are in [proposals/data/](proposals/data/). Under candidate 3 the pools add
+are in [proposals/reports/](proposals/reports/). Under candidate 3 the pools add
 spam and cycles with both new moves and two scripted users (`stander`,
 `feinter`); mixed-v1 and scout-v1 use the new moves only under candidate 3
 (their candidate 1 and 2 plans are unchanged), and the planners value an

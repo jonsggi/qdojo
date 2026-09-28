@@ -2288,7 +2288,7 @@
     }
     return out.join('');
   }
-  const REASONS = ['HIT', 'BLOCKED', 'EVADED', 'THROW_INTERRUPTED', 'THROW_CLASH', 'INSUFFICIENT_STAMINA', 'RECOVERY_PUNISHED', 'GUARD_STRAIN', 'OPENING_EARNED', 'OPENING_USED', 'OPENING_EXPIRED', 'POWER_USED', 'POWER_WASTED', 'KO', 'DOUBLE_KO'];
+  const REASONS = ['HIT', 'BLOCKED', 'EVADED', 'THROW_INTERRUPTED', 'THROW_CLASH', 'INSUFFICIENT_STAMINA', 'RECOVERY_PUNISHED', 'GUARD_STRAIN', 'OPENING_EARNED', 'OPENING_USED', 'OPENING_EXPIRED', 'POWER_USED', 'POWER_WASTED', 'KO', 'DOUBLE_KO', 'STAND_BONUS', 'GUARD_BROKEN', 'FEINT_BAITED'];
 
   // The fixed purpose text, plus what this ruleset's matrix adds to it
   // (candidate 2: jab out-trades kick, duck counters a jab).
