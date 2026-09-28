@@ -44,8 +44,8 @@ All issues are **Open**.
 | [AUD-006](issues/AUD-006-house-fighter-disclosure.md) | P1 / outside stakes | Publish affiliations and resolve author-participation rules | Code/docs policy conflict; not evidence of cheating |
 | [AUD-007](issues/AUD-007-live-pot-matching.md) | P1 / advertised money | Match live pot calculations to house-fighter exclusions | Browser helper mismatch reproduced |
 | [AUD-008](issues/AUD-008-verification-scope.md) | P1 / public trust | Separate hash consistency from independent verification | Replacement hash and empty-check success reproduced |
-| [AUD-009](issues/AUD-009-freeze-nft-art-and-allocation.md) | P1 / NFT release | Freeze art/traits and define allocation/duplicate policy | Documented preview limitations; no mint exists here |
-| [AUD-010](issues/AUD-010-nft-ownership-and-rights.md) | P1 / NFT release | Define ownership, identity binding and artwork rights | Unresolved product/release decisions |
+| [AUD-009](issues/AUD-009-freeze-nft-art-and-allocation.md) | P1 / NFT release | Freeze art/traits and define allocation/duplicate policy | **Mitigated** f8a734e: freeze/verify pipeline and duplicate check; allocation and contact sheet open |
+| [AUD-010](issues/AUD-010-nft-ownership-and-rights.md) | P1 / NFT release | Define ownership, identity binding and artwork rights | **Mitigated** f8a734e: rules R1–R6 proposed in docs/nft.md and enforced in the simulation; licence open |
 
 P0 means address before resuming money-moving operation. P1 means resolve before
 the stated launch/use gate. Priorities are risk-based recommendations, not CVSS
