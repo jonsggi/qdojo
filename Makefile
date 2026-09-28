@@ -7,13 +7,15 @@ test:
 # The core compiles every packaged ruleset as a table and a build selects one
 # (QDOJO_RULESET, default 1 = candidate 1): check and run both builds.
 cpp-test:
-	for r in 1 2; do printf '#include "combat_core.h"\n#include "sha256.h"\n' | g++ -std=c++17 -x c++ -fsyntax-only -Wall -Wextra -Werror -Wconversion -fno-exceptions -fno-rtti -nostdinc++ -DQDOJO_RULESET=$$r -Icontracts/combat_core - || exit 1; done
+	for r in 1 2 3; do printf '#include "combat_core.h"\n#include "sha256.h"\n' | g++ -std=c++17 -x c++ -fsyntax-only -Wall -Wextra -Werror -Wconversion -fno-exceptions -fno-rtti -nostdinc++ -DQDOJO_RULESET=$$r -Icontracts/combat_core - || exit 1; done
 	g++ -std=c++17 -O2 -Wall -Wextra -Werror -o contracts/combat_core/test_combat_core contracts/combat_core/test_combat_core.cpp
 	contracts/combat_core/test_combat_core .
 	g++ -std=c++17 -O2 -Wall -Wextra -Werror -DQDOJO_RULESET=2 -o contracts/combat_core/test_combat_core_c2 contracts/combat_core/test_combat_core.cpp
 	contracts/combat_core/test_combat_core_c2 .
+	g++ -std=c++17 -O2 -Wall -Wextra -Werror -DQDOJO_RULESET=3 -o contracts/combat_core/test_combat_core_c3 contracts/combat_core/test_combat_core.cpp
+	contracts/combat_core/test_combat_core_c3 .
 contract-test:
-	for r in 1 2; do printf '#include "combat_contract.h"\n' | g++ -std=c++17 -x c++ -fsyntax-only -Wall -Wextra -Werror -Wconversion -fno-exceptions -fno-rtti -nostdinc++ -DQDOJO_RULESET=$$r -Icontracts/combat_contract - || exit 1; done
+	for r in 1 2 3; do printf '#include "combat_contract.h"\n' | g++ -std=c++17 -x c++ -fsyntax-only -Wall -Wextra -Werror -Wconversion -fno-exceptions -fno-rtti -nostdinc++ -DQDOJO_RULESET=$$r -Icontracts/combat_contract - || exit 1; done
 	g++ -std=c++17 -O2 -Wall -Wextra -Werror -o contracts/combat_contract/test_contract contracts/combat_contract/test_contract.cpp
 	contracts/combat_contract/test_contract packages/qdojo/tests/combat/fixtures/contract/*.journal
 # Qubic Core tooling for contracts/qubic/QDOJO.h (clones and builds in QDOJO_QUBIC_WORK, default /tmp/qdojo-qubic; -j1).

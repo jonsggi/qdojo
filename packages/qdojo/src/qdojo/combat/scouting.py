@@ -70,7 +70,7 @@ def summarize(fights: list[dict]) -> dict:
         for r in f["rounds"]:
             counts = by_round.setdefault(str(r["round_index"]), {a.name: 0 for a in SUBMITTED})
             for a in r["plan"]["actions"]:
-                counts[a] += 1
+                counts[a] = counts.get(a, 0) + 1          # candidate 3 adds LAST_STAND and FEINT
             if r["plan"]["power_slot"] != -1:
                 used = True
                 k = str(r["round_index"])

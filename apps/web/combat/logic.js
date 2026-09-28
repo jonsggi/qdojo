@@ -575,7 +575,7 @@
     return { kind: 'other', short: String(o.result || '?'), text: String(o.result || 'Unknown result') + '.' };
   }
 
-  const lc = n => NAMES[n].toLowerCase();
+  const lc = n => NAMES[n].toLowerCase().replace('_', ' ');
 
   /* Sentences for one side of one executed beat, from that side's trace and
    * the opponent's. who/them are display names. */
@@ -586,18 +586,23 @@
     switch (t.effective) {
       case ID.RECOVER: return 'Recovering leaves a fighter wide open: any attack lands in full, and being hit cuts the recovery.';
       case ID.EXHAUSTED: return 'An unaffordable move becomes EXHAUSTED: no move at all, so the attack lands in full.';
-      case ID.DUCK: return 'Ducking dodges jabs and throws, but not a kick.';
-      case ID.BLOCK: return 'A block stops jabs and kicks, but not a throw.';
-      case ID.THROW: return 'A throw loses to a jab or a kick: it is interrupted and takes the hit.';
+      case ID.DUCK: return o.effective === ID.LAST_STAND ? 'A last stand is a wild low swing: a duck does not escape it.'
+        : 'Ducking dodges jabs and throws, but not a kick.';
+      case ID.BLOCK: return (o.reasons || []).includes('GUARD_BROKEN')
+        ? 'The guard was down after the feint: the strike went straight through the block.'
+        : 'A block stops jabs and kicks, but not a throw.';
+      case ID.THROW: return 'A throw loses to any strike: it is interrupted and takes the hit.';
       case ID.JAB:
         if (o.effective === ID.DUCK) return 'The duck slipped under the jab and countered.';
         return 'Both attacked on the same beat, so both hits landed: a trade.';
       case ID.KICK: return 'Both attacked on the same beat, so both hits landed: a trade.';
+      case ID.LAST_STAND: return 'A last stand holds nothing back, so it trades: both hits landed.';
+      case ID.FEINT: return 'A feint is only a bluff: any real strike catches it for a glancing hit.';
       default: return null;
     }
   }
 
-  // openingDamage: the ruleset's opening bonus (4 in candidate 1, 8 in candidate 2).
+  // openingDamage: the ruleset's opening bonus (4 in candidate 1, 8 in candidates 2 and 3).
   function explainSide(t, o, who, them, openingDamage = 4) {
     const out = [];
     const poss = x => (x === 'YOU' ? 'YOUR' : x + "'s");
@@ -609,9 +614,12 @@
       out.push(who + ' ' + act + (t.power ? ' (POWER)' : '') + ': paid ' + t.cost_paid + ' stamina.');
       if (t.computed_damage > 0) {
         const parts = ['base ' + t.base_damage];
+        if (t.stand_bonus) parts.push('last stand +' + t.stand_bonus);
         if (t.opening_bonus) parts.push('opening +' + t.opening_bonus);
         if (t.power_bonus) parts.push('power +' + t.power_bonus);
         out.push('Hit ' + them + ' for ' + t.computed_damage + (parts.length > 1 ? ' (' + parts.join(', ') + ')' : '') + '.');
+        if (t.reasons.includes('GUARD_BROKEN')) out.push('The feint had dropped ' + poss(them).toLowerCase() + ' guard: the block did not stop it.');
+        if (t.stand_bonus) out.push('LAST STAND: +' + t.stand_bonus + ' for trailing by ' + (t.before && o.before ? o.before.hp - t.before.hp : t.stand_bonus) + ' HP.');
       } else if (t.reasons.includes('BLOCKED')) out.push('Blocked by ' + them + ': zero HP damage.');
       else if (t.reasons.includes('EVADED')) out.push(them + ' ducked it: zero damage.');
       else if (t.reasons.includes('THROW_INTERRUPTED')) out.push(poss(them) + ' ' + oact + ' interrupted the throw.');
@@ -627,7 +635,7 @@
     } else if (o.computed_damage === 0 && t.effective === ID.BLOCK && o.effective !== ID.BLOCK && [ID.JAB, ID.KICK].includes(o.effective)) {
       out.push('Blocked ' + poss(them) + ' ' + oact + ': HP unchanged.');
     }
-    if (t.strain > 0) out.push('Guard strain: -' + t.strain + ' stamina from blocking a kick (no HP lost).');
+    if (t.strain > 0) out.push('Guard strain: -' + t.strain + ' stamina from blocking a kick' + (t.actual_hp_lost ? '.' : ' (no HP lost).'));
     if (t.recovered > 0) out.push('Recovered +' + t.recovered + ' stamina (now ' + t.after.stamina + ').');
     if (t.reasons.includes('OPENING_EXPIRED')) out.push('Opening expired unused.');
     if (t.reasons.includes('POWER_WASTED')) {
@@ -635,7 +643,10 @@
         (o.effective === ID.BLOCK ? 'this one was blocked.' : o.effective === ID.DUCK ? 'this one was ducked.' : t.effective === ID.EXHAUSTED ? 'the move was never made.' : 'this one did not land.'));
     }
     if (t.effective === ID.DUCK && t.computed_damage > 0) out.push('Countered the ' + oact + ' from the duck.');
-    if (t.reasons.includes('OPENING_EARNED')) out.push('Earned an OPENING: +' + openingDamage + ' on the next beat if it lands.');
+    if (t.reasons.includes('FEINT_BAITED')) {
+      out.push('The feint baited the ' + oact + ': GUARD BREAK opening. Next beat a jab, kick or last stand goes through a block, +' + openingDamage + ' if it lands.');
+    } else if (t.reasons.includes('OPENING_EARNED')) out.push('Earned an OPENING: +' + openingDamage + ' on the next beat if it lands.');
+    if (t.effective === ID.FEINT && !t.reasons.includes('FEINT_BAITED') && t.actual_hp_lost === 0) out.push('Nobody bit: the feint did nothing.');
     if (t.reasons.includes('DOUBLE_KO')) out.push('DOUBLE K.O.: both fighters reached 0 HP on the same beat, so the fight is a draw.');
     else if (t.reasons.includes('KO')) out.push(who + ' is knocked out (0 HP) by ' + poss(them) + ' ' + oact + '.');
     return out;
@@ -644,7 +655,7 @@
   /* One sentence for a whole beat: what happened and why, both sides. */
   function beatHeadline(a, b, names) {
     const N = names || { A: 'A', B: 'B' };
-    const act = t => NAMES[t.effective] + (t.power && t.effective !== ID.EXHAUSTED ? ' (POWER)' : '');
+    const act = t => NAMES[t.effective].replace('_', ' ') + (t.power && t.effective !== ID.EXHAUSTED ? ' (POWER)' : '');
     const pair = [['A', a, b], ['B', b, a]];
     if (a.reasons.includes('DOUBLE_KO')) {
       return 'DOUBLE K.O.: ' + N.A + "'s " + act(a) + ' and ' + N.B + "'s " + act(b) + ' land together and both reach 0 HP: a draw.';
@@ -663,12 +674,25 @@
       }
     }
     if (a.actual_hp_lost > 0 && b.actual_hp_lost > 0) {
-      return 'TRADE: ' + N.A + "'s " + act(a) + ' and ' + N.B + "'s " + act(b) + ' both land (' + a.computed_damage + ' and ' + b.computed_damage + ').';
+      const stand = [a, b].find(t => t.stand_bonus);
+      return 'TRADE: ' + N.A + "'s " + act(a) + ' and ' + N.B + "'s " + act(b) + ' both land (' + a.computed_damage + ' and ' + b.computed_damage + ')' +
+        (stand ? ', the last stand +' + stand.stand_bonus + ' for being behind.' : '.');
     }
     for (const [s, t, o] of pair) {
       if (t.computed_damage > 0) {
         const w = s === 'A' ? 'B' : 'A';
+        if (t.reasons.includes('GUARD_BROKEN')) {
+          return 'GUARD BREAK: ' + N[s] + "'s " + act(t) + ' goes through ' + N[w] + "'s block for " + t.computed_damage + ', the guard dropped by the feint.';
+        }
+        if (t.stand_bonus) {
+          return 'LAST STAND: ' + N[s] + ', trailing, hits ' + N[w] + "'s " + NAMES[o.effective] + ' for ' + t.computed_damage + ' (+' + t.stand_bonus + ' for being behind). ' + (causeOf(o, t) || '');
+        }
         return N[s] + "'s " + act(t) + ' hits ' + N[w] + "'s " + NAMES[o.effective] + ' for ' + t.computed_damage + '. ' + causeOf(o, t);
+      }
+    }
+    for (const [s, t, o] of pair) {
+      if (t.reasons.includes('FEINT_BAITED')) {
+        return 'FEINT: ' + N[s] + ' fakes and ' + N[s === 'A' ? 'B' : 'A'] + "'s " + NAMES[o.effective] + ' bites. Guard break next beat.';
       }
     }
     for (const [s, t, o] of pair) {

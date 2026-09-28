@@ -20,7 +20,10 @@
   if (typeof module === 'object' && module && module.exports) module.exports = api;
   if (root) root.QDojoCombat = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
-  const ACTIONS = Object.freeze(['JAB', 'KICK', 'BLOCK', 'DUCK', 'THROW', 'RECOVER', 'EXHAUSTED']);
+  // Action ids are global: 0-6 in every ruleset, 7 LAST_STAND and 8 FEINT in
+  // candidate 3 only (a ruleset's submitted_action_ids says which are legal).
+  const ACTIONS = Object.freeze(['JAB', 'KICK', 'BLOCK', 'DUCK', 'THROW', 'RECOVER', 'EXHAUSTED', 'LAST_STAND', 'FEINT']);
+  const BASE_ACTIONS = ACTIONS.slice(0, 7);
   const NO_POWER = 255;
 
   function fail(msg) { throw new Error('combat: ' + msg); }
@@ -41,9 +44,9 @@
     const names = rules.action_names;
     if (!Array.isArray(names)) fail('ruleset action_names missing');
     const id = {};
-    for (const n of ACTIONS) {
+    for (const n of BASE_ACTIONS) {
       const i = names.indexOf(n);
-      if (i < 0) fail('ruleset lacks action ' + n);
+      if (i < 0 || i !== ACTIONS.indexOf(n)) fail('ruleset lacks action ' + n + ' at its id');
       id[n] = i;
     }
     const count = names.length;
@@ -76,6 +79,19 @@
       // candidate 2's DUCK deals counter damage but is not an attack (no power).
       attacks: new Set(['JAB', 'KICK', 'THROW'].map(n => id[n])),
     };
+    // Candidate 3 (combat.md section 12): LAST_STAND and FEINT, the stand bonus
+    // block and the guard-break opening (2). Absent in candidates 1 and 2.
+    if (rules.last_stand) {
+      for (const n of ['LAST_STAND', 'FEINT']) {
+        const i = names.indexOf(n);
+        if (i !== ACTIONS.indexOf(n)) fail('ruleset with last_stand lacks action ' + n + ' at its id');
+        id[n] = i;
+      }
+      c.stand = { per: nonneg(rules.last_stand.per_hp_behind, 'last_stand.per_hp_behind'), cap: nonneg(rules.last_stand.cap, 'last_stand.cap') };
+    }
+    c.maxOpening = c.stand ? 2 : 1;
+    // Strikes: stopped by a block; a guard-break opening takes them through it.
+    c.strikes = new Set(['JAB', 'KICK', 'LAST_STAND'].filter(n => n in id).map(n => id[n]));
     c.initial = checkState(c, {
       hp: initial.hp, stamina: initial.stamina, opening: initial.opening,
       guard_streak: initial.guard_streak, power_available: initial.power_available,
@@ -90,7 +106,7 @@
     if (!s || typeof s !== 'object') fail(what + ' state must be an object');
     needInt(s.hp, 0, c.limits.hp, what + '.hp');
     needInt(s.stamina, 0, c.limits.stamina, what + '.stamina');
-    needInt(s.opening, 0, 1, what + '.opening');
+    needInt(s.opening, 0, c.maxOpening, what + '.opening');
     needInt(s.guard_streak, 0, c.limits.guard_streak, what + '.guard_streak');
     needInt(s.power_available, 0, 1, what + '.power_available');
     return copyState(s);
@@ -153,9 +169,21 @@
     for (let i = 0; i < 2; i++) {
       const me = side[i], them = side[1 - i];
       me.base = c.damage[me.eff][them.eff];
-      me.openingBonus = me.base > 0 && me.s.opening === 1 ? R.opening_damage : 0;
+      me.broke = false;
+      me.stand = 0;
+      if (c.stand) {
+        // 4a. a feint's guard-break opening (2) takes a strike through a block: its kick damage
+        if (me.s.opening === 2 && c.strikes.has(me.eff) && them.eff === id.BLOCK) {
+          me.base = c.damage[me.eff][id.KICK];
+          me.broke = me.base > 0;
+        }
+        // 4b. LAST STAND: +per_hp_behind for every HP behind, capped, on positive base
+        const behind = them.s.hp - me.s.hp;
+        if (me.eff === id.LAST_STAND && me.base > 0 && behind > 0) me.stand = Math.min(c.stand.cap, c.stand.per * behind);
+      }
+      me.openingBonus = me.base > 0 && me.s.opening > 0 ? R.opening_damage : 0;
       me.powerBonus = me.base > 0 && me.pw && me.eff === me.act ? R.power_damage : 0;
-      me.computed = me.base + me.openingBonus + me.powerBonus;
+      me.computed = me.base + me.stand + me.openingBonus + me.powerBonus;
     }
     const trace = [];
     const after = [];
@@ -176,8 +204,10 @@
       const recovered = Math.min(c.limits.stamina, stamina + gain) - stamina;
       stamina += recovered;
       // 9. opening is replaced every beat
-      const opening = (me.eff === id.DUCK && (them.eff === id.JAB || them.eff === id.THROW)) ||
+      let opening = (me.eff === id.DUCK && (them.eff === id.JAB || them.eff === id.THROW)) ||
         (me.eff === id.JAB && me.computed > 0 && incoming === 0) ? 1 : 0;
+      // candidate 3: a FEINT that baits a BLOCK or a DUCK earns the guard-break opening
+      if (c.stand && me.eff === id.FEINT && (them.eff === id.BLOCK || them.eff === id.DUCK)) opening = 2;
       // 10. guard streak
       const guard = me.eff === id.BLOCK ? Math.min(c.limits.guard_streak, s.guard_streak + 1) : 0;
       // 2. power is spent on the designated slot whatever happens
@@ -187,11 +217,12 @@
         before: copyState(s), after: copyState(next),
         intended: me.act, effective: me.eff, power: me.pw,
         cost: me.cost, cost_paid: me.paid,
-        base_damage: me.base, bonus_damage: me.openingBonus + me.powerBonus,
+        base_damage: me.base, bonus_damage: me.openingBonus + me.powerBonus + me.stand,
         opening_bonus: me.openingBonus, power_bonus: me.powerBonus,
         computed_damage: me.computed, actual_hp_lost: s.hp - hp,
         strain, recovered, reasons: null,
       });
+      if (c.stand) trace[i].stand_bonus = me.stand;
     }
     // 11. reasons, from the finished paired update (explanation only, never logic)
     for (let i = 0; i < 2; i++) trace[i].reasons = reasonsFor(c, side[i], side[1 - i], trace[i], after[1 - i]);
@@ -205,16 +236,19 @@
     if (me.eff === id.EXHAUSTED) out.push('INSUFFICIENT_STAMINA');
     // HIT for any positive computed damage (a candidate 2 duck counter too).
     if (me.computed > 0) out.push('HIT');
-    else if (c.attacks.has(me.eff)) {
+    else if (c.attacks.has(me.eff) || c.strikes.has(me.eff)) {
       if (me.eff === id.THROW && them.eff === id.THROW) out.push('THROW_CLASH');
-      else if (me.eff === id.THROW && c.attacks.has(them.eff) && incoming > 0) out.push('THROW_INTERRUPTED');
+      else if (me.eff === id.THROW && c.strikes.has(them.eff)) out.push('THROW_INTERRUPTED');
       else if (them.eff === id.BLOCK) out.push('BLOCKED');
       else if (them.eff === id.DUCK) out.push('EVADED');
     } else if (me.eff === id.RECOVER && incoming > 0) out.push('RECOVERY_PUNISHED');
     else if (me.eff === id.BLOCK && them.eff === id.KICK) out.push('GUARD_STRAIN');
-    if (t.before.opening === 1) out.push(t.opening_bonus > 0 ? 'OPENING_USED' : 'OPENING_EXPIRED');
+    if (me.broke) out.push('GUARD_BROKEN');
+    if (me.stand > 0) out.push('STAND_BONUS');
+    if (t.before.opening > 0) out.push(t.opening_bonus > 0 ? 'OPENING_USED' : 'OPENING_EXPIRED');
     if (me.pw) out.push(t.power_bonus > 0 ? 'POWER_USED' : 'POWER_WASTED');
-    if (t.after.opening === 1) out.push('OPENING_EARNED');
+    if (c.stand && me.eff === id.FEINT && t.after.opening > 0) out.push('FEINT_BAITED');
+    if (t.after.opening > 0) out.push('OPENING_EARNED');
     const mineOut = t.after.hp === 0, theirsOut = themAfter.hp === 0;
     if (mineOut && theirsOut) out.push('DOUBLE_KO');
     else if (mineOut) out.push('KO');
@@ -300,13 +334,13 @@
     const x = bytesOf(hex, 8, 'state');
     if (x[7] !== 0) fail('state reserved byte must be 0');
     const s = { hp: x[0] | (x[1] << 8), stamina: x[2] | (x[3] << 8), opening: x[4], guard_streak: x[5], power_available: x[6] };
-    if (s.opening > 1 || s.power_available > 1) fail('state flag out of range');
+    if (s.opening > 2 || s.power_available > 1) fail('state flag out of range');   // opening 2: candidate 3's guard break
     return rules ? checkState(compile(rules), s, 'decoded') : s;
   }
   function encodeState(s, rules) {
     if (rules) checkState(compile(rules), s, 'encoded');
     needInt(s.hp, 0, 0xffff, 'hp'); needInt(s.stamina, 0, 0xffff, 'stamina');
-    needInt(s.opening, 0, 1, 'opening'); needInt(s.guard_streak, 0, 0xff, 'guard_streak');
+    needInt(s.opening, 0, 2, 'opening'); needInt(s.guard_streak, 0, 0xff, 'guard_streak');
     needInt(s.power_available, 0, 1, 'power_available');
     return hexOf([s.hp & 0xff, s.hp >> 8, s.stamina & 0xff, s.stamina >> 8, s.opening, s.guard_streak, s.power_available, 0]);
   }
@@ -315,14 +349,15 @@
     const plan = { actions: x.slice(0, 6), power_slot: x[6] === NO_POWER ? -1 : x[6] };
     if (rules) return validatePlan(rules, plan, state);
     // Without a ruleset still refuse what the wire format forbids.
-    plan.actions.forEach(a => { if (a > 5) fail('plan action id ' + a + ' is not legal on the wire'); });
+    // (ids 0-5, and 7-8 for candidate 3; 6 is EXHAUSTED and never submitted)
+    plan.actions.forEach(a => { if (a === 6 || a > 8) fail('plan action id ' + a + ' is not legal on the wire'); });
     if (plan.power_slot > 5) fail('plan power slot ' + x[6] + ' is not legal on the wire');
     return plan;
   }
   function encodePlan(plan, rules, state) {
     const p = rules ? validatePlan(rules, plan, state) : plan;
     if (!Array.isArray(p.actions) || p.actions.length !== 6) fail('plan must have six actions');
-    p.actions.forEach(a => needInt(a, 0, 5, 'plan action'));
+    p.actions.forEach(a => { needInt(a, 0, 8, 'plan action'); if (a === 6) fail('plan action 6 (EXHAUSTED) is never submitted'); });
     needInt(p.power_slot, -1, 5, 'power_slot');
     return hexOf(p.actions.concat([p.power_slot < 0 ? NO_POWER : p.power_slot]));
   }

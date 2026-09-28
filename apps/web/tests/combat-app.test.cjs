@@ -43,7 +43,8 @@ test('embedded ruleset equals docs/combat-v1.json and hashes to the manifest dig
 
 test('every embedded ruleset equals its docs/ file; the page picks the one the manifest names', async () => {
   const all = globalThis.QDojoRulesets;
-  assert.equal(all.length, 2);
+  assert.equal(all.length, 3);
+  assert.deepEqual(clone(all[2]), readJson(path.join(ROOT, 'docs/combat-v1-candidate-3.json')));
   assert.equal(all[0], R);
   assert.deepEqual(clone(all[1]), readJson(path.join(ROOT, 'docs/combat-v1-candidate-2.json')));
   const sha = L.defaultSha256();

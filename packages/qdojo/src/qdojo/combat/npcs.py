@@ -106,13 +106,16 @@ def fixed(pattern: Sequence[Action]) -> Policy:
 
 
 def _extended(rules) -> bool:
-    """A prototype ruleset with more than the six combat-v1 actions (candidate 3
-    trials). Candidate 1 and 2 draw exactly as before: their fixtures are frozen."""
+    """A ruleset with more than the six candidate 1/2 actions (candidate 3:
+    LAST_STAND and FEINT). Candidate 1 and 2 draw exactly as before: their
+    NPC fixtures are frozen."""
     return len(rules.submitted) > 6
 
 
-# LAST_STAND weights for mixed-v1 under a prototype ruleset: only when behind.
+# Candidate 3 weights for mixed-v1, used only when trailing in HP: LAST_STAND
+# and FEINT (the feint sets up a strike through the leader's block).
 MIXED_STAND_WEIGHT, MIXED_STAND_LOW_WEIGHT = 3, 1
+MIXED_FEINT_WEIGHT, MIXED_FEINT_LOW_WEIGHT = 2, 1
 
 
 def random_v1(rules, obs, rng):
@@ -131,7 +134,8 @@ def _mixed_action(me, rng, rules=None, opp=None):
     if rules is not None and _extended(rules):
         behind = opp is not None and me.hp < opp.hp
         stand = (MIXED_STAND_LOW_WEIGHT if low else MIXED_STAND_WEIGHT) if behind else 0
-        return submitted(rules)[rng.weighted(tuple(weights) + (stand,))]
+        feint = (MIXED_FEINT_LOW_WEIGHT if low else MIXED_FEINT_WEIGHT) if behind else 0
+        return submitted(rules)[rng.weighted(tuple(weights) + (stand, feint))]
     return SUBMITTED[rng.weighted(weights)]
 
 
@@ -153,8 +157,8 @@ def mixed_v1(rules, obs, rng):
 
 def opponent_counts(history, n: int = 6) -> list[int]:
     """One pseudocount per legal action plus every executed effective action; EXHAUSTED omitted.
-    n = 8 under a prototype ruleset (index 6, EXHAUSTED, stays 0)."""
-    counts = [1] * 6 + ([0, 1] if n == 8 else [])
+    n = 9 under candidate 3 (index 6, EXHAUSTED, stays 0)."""
+    counts = [1] * 6 + ([0, 1, 1] if n == 9 else [])
     for round_actions in history:
         for a in round_actions:
             if a is not Action.EXHAUSTED:
@@ -171,7 +175,8 @@ def scout_v1(rules, obs, rng):
     if not obs.opponent_history:
         return mixed_v1(rules, obs, rng)
     acts = submitted(rules)
-    counts = opponent_counts(obs.opponent_history, 8 if _extended(rules) else 6)
+    ext = _extended(rules)
+    counts = opponent_counts(obs.opponent_history, 9 if ext else 6)
     modal = max(acts, key=lambda a: (counts[int(a)], -int(a)))
     me, opp = obs.self_state, obs.opponent_state
     actions, slot = [], NO_POWER
@@ -183,7 +188,10 @@ def scout_v1(rules, obs, rng):
                 for opp_action in acts:
                     n = counts[int(opp_action)]
                     me2, _, tr = resolve_beat(rules, me, opp, cand, opp_action, round_index=obs.round_index)
-                    total += n * (4 * (tr.a.computed_damage - tr.b.computed_damage) + me2.stamina - me.stamina)
+                    v = 4 * (tr.a.computed_damage - tr.b.computed_damage) + me2.stamina - me.stamina
+                    if ext:              # candidate 3: an opening (a feint's included) is worth half its bonus
+                        v += 2 * rules.opening_damage * (me2.opening > 0)
+                    total += n * v
                 scores.append(total)
             best = max(scores)
             tied = [acts[k] for k, s in enumerate(scores) if s == best]

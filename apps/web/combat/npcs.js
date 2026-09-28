@@ -132,6 +132,11 @@
   const MIXED_WEIGHTS = [3, 2, 2, 2, 1, 2];
   const MIXED_LOW_WEIGHTS = [1, 0, 2, 2, 0, 5];
   const MIXED_LOW_STAMINA = 12;
+  // Candidate 3 (LAST_STAND 7, FEINT 8): mixed-v1 weighs them only when trailing
+  // in HP. Candidates 1 and 2 draw exactly as before (frozen fixtures).
+  const MIXED_STAND_WEIGHT = 3, MIXED_STAND_LOW_WEIGHT = 1, MIXED_FEINT_WEIGHT = 2, MIXED_FEINT_LOW_WEIGHT = 1;
+  const extended = rules => rules.submitted_action_ids.length > 6;
+  const actsOf = rules => (extended(rules) ? rules.submitted_action_ids.slice() : SUBMITTED);
   const POWER_MARGIN = 4;
   const POWER_ROUND = 2;
 
@@ -160,7 +165,8 @@
 
   function randomV1(rules, obs, rng) {
     const actions = [];
-    for (let i = 0; i < 6; i++) actions.push(SUBMITTED[rng.uniform(6)]);
+    const acts = actsOf(rules);
+    for (let i = 0; i < 6; i++) actions.push(acts[rng.uniform(acts.length)]);
     let slot = -1;
     if (obs.self.power_available === 1) {
       const eligible = [-1].concat(actions.map((a, i) => (ATTACKS.has(a) ? i : -1)).filter(i => i >= 0));
@@ -169,8 +175,16 @@
     return { actions, power_slot: slot };
   }
 
-  function mixedAction(me, rng) {
-    return SUBMITTED[rng.weighted(me.stamina < MIXED_LOW_STAMINA ? MIXED_LOW_WEIGHTS : MIXED_WEIGHTS)];
+  function mixedAction(me, rng, rules, opp) {
+    const low = me.stamina < MIXED_LOW_STAMINA;
+    const weights = low ? MIXED_LOW_WEIGHTS : MIXED_WEIGHTS;
+    if (rules && extended(rules)) {
+      const behind = !!opp && me.hp < opp.hp;
+      const stand = behind ? (low ? MIXED_STAND_LOW_WEIGHT : MIXED_STAND_WEIGHT) : 0;
+      const feint = behind ? (low ? MIXED_FEINT_LOW_WEIGHT : MIXED_FEINT_WEIGHT) : 0;
+      return actsOf(rules)[rng.weighted(weights.concat([stand, feint]))];
+    }
+    return SUBMITTED[rng.weighted(weights)];
   }
 
   // The projection assumes an opponent who only RECOVERs: a resource estimate,
@@ -179,7 +193,7 @@
     let me = obs.self, opp = obs.opponent, slot = -1;
     const actions = [];
     for (let i = 0; i < 6; i++) {
-      const a = mixedAction(me, rng);
+      const a = mixedAction(me, rng, rules, opp);
       const power = wantsPower(rules, obs, me, a, slot !== -1);
       if (power) slot = i;
       actions.push(a);
@@ -188,36 +202,39 @@
     return { actions, power_slot: slot };
   }
 
-  function opponentCounts(history) {
-    const counts = [1, 1, 1, 1, 1, 1];
+  function opponentCounts(history, n) {
+    const counts = n === 9 ? [1, 1, 1, 1, 1, 1, 0, 1, 1] : [1, 1, 1, 1, 1, 1];
     for (const round of history) for (const a of round) if (a !== X) counts[a]++;
     return counts;
   }
 
   function scoutV1(rules, obs, rng) {
     if (!obs.opponent_history || obs.opponent_history.length === 0) return mixedV1(rules, obs, rng);
-    const counts = opponentCounts(obs.opponent_history);
-    let modal = 0;
-    for (let i = 1; i < 6; i++) if (counts[i] > counts[modal]) modal = i;
+    const ext = extended(rules), acts = actsOf(rules);
+    const counts = opponentCounts(obs.opponent_history, ext ? 9 : 6);
+    let modal = acts[0];
+    for (const i of acts) if (counts[i] > counts[modal]) modal = i;
     let me = obs.self, opp = obs.opponent, slot = -1;
     const actions = [];
     for (let i = 0; i < 6; i++) {
       let a;
       if (rng.uniform(4) < 3) {
         // Every candidate is scored from the same projected snapshot.
-        const scores = SUBMITTED.map(cand => {
+        const scores = acts.map(cand => {
           let total = 0;
-          for (const oa of SUBMITTED) {
+          for (const oa of acts) {
             const r = E.resolveBeat(rules, me, opp, cand, oa, false, false);
-            total += counts[oa] * (4 * (r.trace[0].computed_damage - r.trace[1].computed_damage) + r.a.stamina - me.stamina);
+            let v = 4 * (r.trace[0].computed_damage - r.trace[1].computed_damage) + r.a.stamina - me.stamina;
+            if (ext) v += 2 * rules.opening_damage * (r.a.opening > 0 ? 1 : 0);   // candidate 3: value an opening
+            total += counts[oa] * v;
           }
           return total;
         });
         const best = Math.max.apply(null, scores);
-        const tied = SUBMITTED.filter((_, k) => scores[k] === best);
+        const tied = acts.filter((_, k) => scores[k] === best);
         a = tied.length > 1 ? tied[rng.uniform(tied.length)] : tied[0];
       } else {
-        a = mixedAction(me, rng);
+        a = mixedAction(me, rng, rules, opp);
       }
       const power = wantsPower(rules, obs, me, a, slot !== -1);
       if (power) slot = i;

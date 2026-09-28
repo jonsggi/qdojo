@@ -2184,10 +2184,10 @@
   }
 
   async function viewRules(tok) {
-    const moves = NAMES.map((n, i) => '<tr><td class="num">' + i + '</td><td>' + actionTag(n) + (R.submitted_action_ids.includes(i) ? '' : ' <span class="muted">(internal)</span>') + '</td><td class="num">' +
+    const moves = R.action_names.map((n, i) => '<tr><td class="num">' + i + '</td><td>' + actionTag(n) + (R.submitted_action_ids.includes(i) ? '' : ' <span class="muted">(internal)</span>') + '</td><td class="num">' +
       R.base_costs[i] + (n === 'BLOCK' ? ' + ' + R.block_streak_cost + '&times;guard' : '') + '</td><td class="wraptd">' + esc(purposeOf(n, i)) + '</td></tr>').join('');
-    const matrix = '<tr><th>ATTACKER \\ DEFENDER</th>' + NAMES.map(n => '<th class="num">' + n + '</th>').join('') + '</tr>' +
-      R.damage.map((row, i) => '<tr><th>' + NAMES[i] + '</th>' + row.map(v => '<td class="num' + (v ? ' dmg' : ' zero') + '">' + v + '</td>').join('') + '</tr>').join('');
+    const matrix = '<tr><th>ATTACKER \\ DEFENDER</th>' + R.action_names.map(n => '<th class="num">' + n + '</th>').join('') + '</tr>' +
+      R.damage.map((row, i) => '<tr><th>' + R.action_names[i] + '</th>' + row.map(v => '<td class="num' + (v ? ' dmg' : ' zero') + '">' + v + '</td>').join('') + '</tr>').join('');
     const I = R.initial;
     setView(screen('RULES', esc(rulesLabel(R.semantic_version)) + ' (' + esc(R.semantic_version) + ') &middot; EVERY NUMBER BELOW IS READ FROM THE RULESET') +
       '<section class="panel panel-cyan"><h3>RULESET DIGEST</h3><p id="digest" class="muted">Computing&hellip;</p><p class="tiny">SOURCE: ' + esc(RULES_INFO.source.toUpperCase()) + '. ' + esc(RULES_INFO.note) + '</p></section>' +

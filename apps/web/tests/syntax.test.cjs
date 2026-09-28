@@ -21,7 +21,7 @@ const read = name => fs.readFileSync(path.join(WEB, name), 'utf8');
 const scriptsOf = html => [...html.matchAll(/<script src="([a-z0-9_/-]+\.js)"/g)].map(m => m[1]);
 const stylesOf = html => [...html.matchAll(/<link rel="stylesheet" href="([a-z0-9_/-]+\.css)"/g)].map(m => m[1]);
 
-for (const name of ['anim.js', 'avatars.js', 'combat/engine.js', 'combat/ruleset.js',
+for (const name of ['anim.js', 'avatars.js', 'combat/engine.js', 'combat/ruleset.js', 'combat/moves.js',
   'combat/npcs.js', 'combat/logic.js', 'combat/stages.js', 'combat/app.js', 'tests/e2e/run.cjs']) {
   test(`${name} parses as a whole file`, () => {
     // a leading #! line is valid for node but not for vm.Script

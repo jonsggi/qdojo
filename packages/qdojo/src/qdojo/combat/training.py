@@ -13,7 +13,7 @@ from ..hashing import sha256
 from . import codec, npcs, planner, scouting
 from .engine import new_fight, resolve_beat, resolve_round
 from .rules import CANDIDATE_1_DIGEST, Ruleset, RulesetError, by_digest, candidate_1
-from .types import SUBMITTED, Action, FighterState, FightState, Plan, Reason, RoundResult
+from .types import SUBMITTED, Action, FighterState, FightState, Plan, Reason, RoundResult, submitted
 
 REPLAY_SCHEMA = "qdojo.combat.replay.v1"
 TAG_PRACTICE_FIGHTER = b"qdojo/combat/practice-fighter/v1\0"
@@ -246,7 +246,7 @@ def explain(replay: dict, slot: str, rules: Ruleset | None = None) -> list[str]:
             theirs = Action[them["effective"]] if them["effective"] != "EXHAUSTED" else None
             hint = ""
             if theirs is not None:
-                best =max(SUBMITTED, key=lambda x: (_score(rules, before, opp_before, x, theirs)[0], -int(x)))
+                best = max(submitted(rules), key=lambda x: (_score(rules, before, opp_before, x, theirs)[0], -int(x)))
                 if best.name != me["intended"]:
                     _, tr = _score(rules, before, opp_before, best, theirs)
                     hint = (f" Hindsight, against their recorded {theirs.name}: {best.name} would have dealt "

@@ -1,8 +1,9 @@
 /* The packaged combat-v1 rulesets, embedded for offline pages (practice,
  * rules) and as the fallback when an export lacks its ruleset artifact.
  *
- * Logical copies of docs/combat-v1.json (candidate 1) and
- * docs/combat-v1-candidate-2.json (candidate 2). The page never trusts a copy
+ * Logical copies of docs/combat-v1.json (candidate 1),
+ * docs/combat-v1-candidate-2.json (candidate 2) and docs/combat-v1-candidate-3.json
+ * (candidate 3). The page never trusts a copy
  * on its own word: it recomputes SHA256("qdojo/combat/rules/v1\0" ||
  * canonical JSON) and uses the copy whose digest equals the manifest's
  * ruleset_digest, so replays of either candidate verify.
@@ -81,5 +82,38 @@
       [0, 0, 0, 0, 0, 0, 0],
     ],
   };
-  return deepFreeze([candidate1, candidate2]);
+  // Candidate 3 (docs/combat.md section 12): candidate 2 plus LAST_STAND (7) and FEINT (8).
+  const candidate3 = {
+    semantic_version: 'combat-v1-candidate-3',
+    rounds: 3,
+    beats_per_round: 6,
+    initial: { hp: 120, stamina: 48, opening: 0, guard_streak: 0, power_available: 1 },
+    limits: { hp: 120, stamina: 48, guard_streak: 3 },
+    action_names: ['JAB', 'KICK', 'BLOCK', 'DUCK', 'THROW', 'RECOVER', 'EXHAUSTED', 'LAST_STAND', 'FEINT'],
+    submitted_action_ids: [0, 1, 2, 3, 4, 5, 7, 8],
+    base_costs: [6, 12, 4, 4, 9, 0, 0, 8, 2],
+    block_streak_cost: 3,
+    block_strain: 6,
+    ordinary_recovery: 2,
+    recover_unhit: 18,
+    recover_hit: 6,
+    exhausted_recovery: 6,
+    break_recovery: 10,
+    opening_damage: 8,
+    power_damage: 12,
+    power_cost: 4,
+    damage: [
+      [8, 10, 0, 0, 8, 12, 12, 8, 4],
+      [4, 14, 0, 18, 14, 18, 18, 14, 8],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [4, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 20, 0, 0, 18, 18, 0, 8],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [8, 8, 0, 8, 8, 12, 12, 8, 4],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    ],
+    last_stand: { per_hp_behind: 1, cap: 16 },
+  };
+  return deepFreeze([candidate1, candidate2, candidate3]);
 });

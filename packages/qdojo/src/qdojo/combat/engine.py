@@ -11,7 +11,7 @@ from dataclasses import replace
 
 from .rules import Ruleset, candidate_1
 from .types import (
-    ATTACKS, NO_POWER, Action, BeatTrace, FighterState, FightState, Outcome, Plan,
+    ATTACKS, NO_POWER, STRIKES, Action, BeatTrace, FighterState, FightState, Outcome, Plan,
     PlanError, Reason, Result, RoundResult, SideTrace, StateError,
 )
 
@@ -56,7 +56,7 @@ def _prepare(rules, s: FighterState, intended: Action, power: bool):
     return Action.EXHAUSTED, cost, 0, s.stamina, power_available
 
 
-def _reasons(rules, s, nxt, intended, own, opp, power, base, dealt, incoming, strain):
+def _reasons(rules, s, nxt, intended, own, opp, power, base, dealt, incoming, strain, broke=False, stand=0):
     """Explanatory codes only; nothing reads these to decide an outcome."""
     r = []
     if own is Action.EXHAUSTED:
@@ -66,12 +66,16 @@ def _reasons(rules, s, nxt, intended, own, opp, power, base, dealt, incoming, st
     elif own in ATTACKS or own is Action.LAST_STAND:
         if own is Action.THROW and opp is Action.THROW:
             r.append(Reason.THROW_CLASH)
-        elif own is Action.THROW and opp in (Action.JAB, Action.KICK):
+        elif own is Action.THROW and opp in (Action.JAB, Action.KICK, Action.LAST_STAND):
             r.append(Reason.THROW_INTERRUPTED)
         elif opp is Action.BLOCK:
             r.append(Reason.BLOCKED)
         elif opp is Action.DUCK:
             r.append(Reason.EVADED)
+    if broke:
+        r.append(Reason.GUARD_BROKEN)
+    if stand:
+        r.append(Reason.STAND_BONUS)
     if own is Action.RECOVER and incoming > 0:
         r.append(Reason.RECOVERY_PUNISHED)
     if own is Action.BLOCK and opp is Action.KICK:
@@ -80,6 +84,8 @@ def _reasons(rules, s, nxt, intended, own, opp, power, base, dealt, incoming, st
         r.append(Reason.OPENING_USED if base > 0 else Reason.OPENING_EXPIRED)
     if power:
         r.append(Reason.POWER_USED if base > 0 and own is intended else Reason.POWER_WASTED)
+    if own is Action.FEINT and nxt.opening:
+        r.append(Reason.FEINT_BAITED)
     if nxt.opening:
         r.append(Reason.OPENING_EARNED)
     return r
@@ -106,15 +112,21 @@ def resolve_beat(rules: Ruleset, a: FighterState, b: FighterState,
 
     # 4. Base damage from the matrix, both looked up from effective actions.
     base = [rules.damage[eff[0]][eff[1]], rules.damage[eff[1]][eff[0]]]
-    # 4b. PROTOTYPE LAST_STAND: +per_hp_behind per HP the striker trails, capped,
-    #     from round from_round on; only on positive base damage, like every bonus.
-    if rules.last_stand is not None:
-        per, cap, first = rules.last_stand
-        live = round_index is not None and round_index >= first     # a projection without a round: no bonus
+    c3 = rules.last_stand is not None
+    broke, stand = [False, False], [0, 0]
+    if c3:
+        per, cap = rules.last_stand
         for i in (0, 1):
+            # 4a. A feint's guard-break opening (2): a strike meeting a block is
+            #     not stopped; it deals what it would deal to a KICK.
+            if snaps[i].opening == 2 and eff[i] in STRIKES and eff[1 - i] is Action.BLOCK:
+                base[i] = rules.damage[eff[i]][Action.KICK]
+                broke[i] = base[i] > 0
+            # 4b. LAST STAND: +per_hp_behind for every HP the striker trails, capped;
+            #     like every bonus, only on positive base damage.
             behind = snaps[1 - i].hp - snaps[i].hp
-            if eff[i] is Action.LAST_STAND and base[i] > 0 and behind > 0 and live:
-                base[i] += min(cap, per * behind)
+            if eff[i] is Action.LAST_STAND and base[i] > 0 and behind > 0:
+                stand[i] = min(cap, per * behind)
 
     # 5. Bonuses only turn positive base damage into more damage.
     dealt, opening_bonus, power_bonus = [], [], []
@@ -123,7 +135,7 @@ def resolve_beat(rules: Ruleset, a: FighterState, b: FighterState,
         pb = rules.power_damage if base[i] > 0 and powers[i] and eff[i] is intents[i] else 0
         opening_bonus.append(ob)
         power_bonus.append(pb)
-        dealt.append(base[i] + ob + pb)
+        dealt.append(base[i] + stand[i] + ob + pb)
 
     sides, nexts = [], []
     for i in (0, 1):
@@ -147,9 +159,12 @@ def resolve_beat(rules: Ruleset, a: FighterState, b: FighterState,
             gain = rules.ordinary_recovery
         after_recovery = min(rules.max_stamina, stamina + gain)
 
-        # 9. The old opening always expires; a new one is earned two ways only.
+        # 9. The old opening always expires; a new one is earned two ways only
+        #    (candidate 3: a third, a FEINT that baits a BLOCK or a DUCK, earns 2).
         opening = int((own is Action.DUCK and opp in (Action.JAB, Action.THROW))
                       or (own is Action.JAB and dealt[i] > 0 and incoming == 0))
+        if c3 and own is Action.FEINT and opp in (Action.BLOCK, Action.DUCK):
+            opening = 2
 
         # 10. Guard streak counts consecutive effective blocks, saturating.
         guard = min(rules.max_guard_streak, s.guard_streak + 1) if own is Action.BLOCK else 0
@@ -159,11 +174,12 @@ def resolve_beat(rules: Ruleset, a: FighterState, b: FighterState,
         sides.append(dict(
             before=s, after=nxt, intended=intents[i], effective=own, power=powers[i],
             cost=cost, cost_paid=paid, base_damage=base[i], opening_bonus=opening_bonus[i],
-            power_bonus=power_bonus[i], bonus_damage=opening_bonus[i] + power_bonus[i],
+            power_bonus=power_bonus[i], bonus_damage=opening_bonus[i] + power_bonus[i] + stand[i],
             computed_damage=dealt[i], actual_hp_lost=s.hp - hp, strain=strain,
             recovered=after_recovery - stamina,
             reasons=_reasons(rules, s, nxt, intents[i], own, opp, powers[i],
-                             base[i], dealt[i], incoming, strain)))
+                             base[i], dealt[i], incoming, strain, broke[i], stand[i]),
+            stand_bonus=stand[i] if c3 else None))
 
     # 11. Knockout is judged only after both halves are complete.
     ko = [n.hp == 0 for n in nexts]

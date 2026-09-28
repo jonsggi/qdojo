@@ -26,7 +26,7 @@ sys.path.insert(0, str(ROOT / "packages/qdojo/src"))
 from qdojo.combat.codec import encode_plan, encode_state  # noqa: E402
 from qdojo.combat.engine import new_fight, resolve_round  # noqa: E402
 from qdojo.combat.rules import CANDIDATE_1, KNOWN, by_digest, by_version  # noqa: E402
-from qdojo.combat.types import ATTACKS, SUBMITTED, Action, Plan  # noqa: E402
+from qdojo.combat.types import ATTACKS, SUBMITTED, Action, Plan, submitted  # noqa: E402
 
 OUT = ROOT / "packages/qdojo/tests/combat/fixtures"
 TRACED = 200
@@ -40,9 +40,12 @@ STYLES = {
 }
 
 
-def _plan(rng: random.Random, style: str, power_available: int) -> Plan:
+def _plan(rng: random.Random, style: str, power_available: int, rules=None) -> Plan:
     weights = STYLES[style]
-    actions = rng.choices(SUBMITTED, weights=weights, k=6)
+    acts = SUBMITTED
+    if rules is not None and len(rules.submitted) > 6:     # candidate 3: LAST_STAND and FEINT too
+        acts, weights = submitted(rules), weights + [2, 2]
+    actions = rng.choices(acts, weights=weights, k=6)
     slots = [i for i, a in enumerate(actions) if a in ATTACKS]
     slot = -1
     if power_available and slots and rng.random() < 0.4:
@@ -53,7 +56,8 @@ def _plan(rng: random.Random, style: str, power_available: int) -> Plan:
 def _side(t) -> dict:
     return {"after": encode_state(t.after).hex(), "effective": int(t.effective), "cost_paid": t.cost_paid,
             "base": t.base_damage, "dealt": t.computed_damage, "lost": t.actual_hp_lost,
-            "strain": t.strain, "recovered": t.recovered, "reasons": [r.value for r in t.reasons]}
+            "strain": t.strain, "recovered": t.recovered, "reasons": [r.value for r in t.reasons],
+            **({} if t.stand_bonus is None else {"stand_bonus": t.stand_bonus})}
 
 
 def generate(count: int, seed: int, rules=None):
@@ -65,8 +69,8 @@ def generate(count: int, seed: int, rules=None):
         state = new_fight(rules)
         rounds, detail = [], []
         while state.outcome is None:
-            pa = _plan(rng, styles[0], state.a.power_available)
-            pb = _plan(rng, styles[1], state.b.power_available)
+            pa = _plan(rng, styles[0], state.a.power_available, rules)
+            pb = _plan(rng, styles[1], state.b.power_available, rules)
             res = resolve_round(rules, state, pa, pb)
             rounds.append([encode_plan(pa).hex(), encode_plan(pb).hex(), res.executed,
                            (encode_state(res.end.a) + encode_state(res.end.b)).hex()])
@@ -93,7 +97,7 @@ def main():
         "ruleset_digest": rules.digest.hex(),
         "semantic_version": rules.semantic_version,
         "seed": args.seed,
-        "action_ids": {a.name: int(a) for a in Action},
+        "action_ids": {a.name: int(a) for a in Action if int(a) <= 6 or int(a) in rules.submitted},
         "fights": fights,
         "traced": traced,
     }

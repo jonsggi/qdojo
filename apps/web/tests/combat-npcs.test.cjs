@@ -18,6 +18,8 @@ const FIX = JSON.parse(fs.readFileSync(path.join(FIXDIR, 'npcs-v1.json'), 'utf8'
 // Candidate 2's NPC parity set: the same roster projecting with its numbers.
 const RULES2 = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/combat-v1-candidate-2.json'), 'utf8'));
 const FIX2 = JSON.parse(fs.readFileSync(path.join(FIXDIR, 'npcs-v1-231607f823153747.json'), 'utf8'));
+const RULES3 = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/combat-v1-candidate-3.json'), 'utf8'));
+const FIX3 = JSON.parse(fs.readFileSync(path.join(FIXDIR, 'npcs-v1-cf19b7cfee8ccbdd.json'), 'utf8'));
 
 test('sha256 matches node:crypto on lengths around every block boundary', () => {
   for (let len = 0; len < 200; len++) {
@@ -40,7 +42,7 @@ test('fixture ruleset is the one the page embeds', () => {
   assert.equal(FIX.ruleset_digest, '12085c86a61ffd106430b6690acbd522c5a94f90ed8024585817f4939fe4842c');
 });
 
-for (const [label, fix, rs] of [['candidate 1', FIX, rules], ['candidate 2', FIX2, RULES2]]) {
+for (const [label, fix, rs] of [['candidate 1', FIX, rules], ['candidate 2', FIX2, RULES2], ['candidate 3', FIX3, RULES3]]) {
   test(`every npcs-v1 fixture case reproduces exactly (${label})`, () => {
     const mismatches = [];
     const perNpc = {};

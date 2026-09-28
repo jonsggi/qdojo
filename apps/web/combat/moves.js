@@ -36,8 +36,8 @@
     },
     BLOCK: {
       id: 2, key: '3', label: 'BLOCK',
-      deck: 'Stops jab, kick and last stand. A throw breaks it; each block in a row costs more.',
-      purpose: 'Stops strikes; loses to throw; repeated use costs more',
+      deck: 'Stops jab, kick and last stand. A throw breaks it, so does a strike after a feint; each block in a row costs more.',
+      purpose: 'Stops strikes; loses to throw and to a strike after a feint; repeated use costs more',
       flavour: 'Officer Bolt\'s riot shield, welded on backwards. It still works.',
     },
     DUCK: {
@@ -73,9 +73,9 @@
     },
     FEINT: {
       id: 8, key: '8', label: 'FEINT',
-      deck: 'Fake it. A blocker or ducker is baited; any strike catches you.',
-      purpose: 'Cheap bluff against defence; loses to any attack',
-      flavour: 'A move from the tape nobody could follow: the robot starts a haymaker and stops halfway. Half the yard flinches every time.',
+      deck: 'Fake it (2). If they block or duck: GUARD BREAK, your next strike goes through a block, +8. Any strike catches you.',
+      purpose: 'Cheap bluff: baits a block or a duck into a guard break for the next strike; loses to any real attack',
+      flavour: 'A move from the tape nobody could follow: the robot winds up a haymaker and stops halfway. The blocker flinches, the ducker drops, and the next punch walks straight through.',
       clip: 'feint',
     },
   });

@@ -19,7 +19,8 @@ class Action(IntEnum):
     THROW = 4
     RECOVER = 5
     EXHAUSTED = 6   # internal: an unaffordable action; never submitted
-    LAST_STAND = 7  # candidate-3 PROTOTYPE: legal only where a ruleset lists it (rules.submitted)
+    LAST_STAND = 7  # candidate 3 only: a strike, +1 per HP behind (capped)
+    FEINT = 8       # candidate 3 only: baits a block or duck into a guard-break opening
 
 
 SUBMITTED = tuple(Action)[:6]          # the combat-v1 candidate 1/2 action set
@@ -28,7 +29,8 @@ SUBMITTED = tuple(Action)[:6]          # the combat-v1 candidate 1/2 action set
 def submitted(rules) -> tuple:
     """The actions a plan may carry under this ruleset."""
     return tuple(Action(i) for i in rules.submitted)
-ATTACKS = frozenset({Action.JAB, Action.KICK, Action.THROW})
+ATTACKS = frozenset({Action.JAB, Action.KICK, Action.THROW})       # may carry the power strike
+STRIKES = frozenset({Action.JAB, Action.KICK, Action.LAST_STAND})  # stopped by a block; can break a baited guard
 NO_POWER = -1
 
 
@@ -48,6 +50,10 @@ class Reason(str, Enum):
     POWER_WASTED = "POWER_WASTED"
     KO = "KO"
     DOUBLE_KO = "DOUBLE_KO"
+    # candidate 3
+    STAND_BONUS = "STAND_BONUS"      # own LAST_STAND added its bonus for trailing
+    GUARD_BROKEN = "GUARD_BROKEN"    # own strike went through a block on a feint opening
+    FEINT_BAITED = "FEINT_BAITED"    # own FEINT met a BLOCK or DUCK: guard-break opening earned
 
 
 class Result(str, Enum):
@@ -85,7 +91,7 @@ class FighterState:
     def validate(self, rules: Ruleset) -> "FighterState":
         _check("hp", self.hp, rules.max_hp)
         _check("stamina", self.stamina, rules.max_stamina)
-        _check("opening", self.opening, 1)
+        _check("opening", self.opening, rules.max_opening)
         _check("guard_streak", self.guard_streak, rules.max_guard_streak)
         _check("power_available", self.power_available, 1)
         return self
@@ -114,7 +120,7 @@ class Plan:
                     raise PlanError(f"unknown action {a!r}")
                 out.append(Action[a])
             elif type(a) is int or isinstance(a, Action):
-                if not (0 <= int(a) <= 5 or int(a) == 7):
+                if not (0 <= int(a) <= 5 or int(a) in (7, 8)):
                     raise PlanError(f"unknown action id {a!r}")
                 out.append(Action(int(a)))
             else:
@@ -140,16 +146,18 @@ class SideTrace:
     cost: int               # full cost of the intended action, including power
     cost_paid: int          # 0 when exhausted
     base_damage: int        # dealt, from the matrix
-    opening_bonus: int      # +opening_damage when base > 0 and the pre-beat opening was 1
+    opening_bonus: int      # +opening_damage when base > 0 and the pre-beat opening was 1 (or 2)
     power_bonus: int        # +power_damage when base > 0 on the executed designated slot
-    bonus_damage: int       # opening_bonus + power_bonus
+    bonus_damage: int       # opening_bonus + power_bonus (+ stand_bonus)
     computed_damage: int    # dealt, base + bonus
     actual_hp_lost: int     # received, after clamping at zero
     strain: int             # stamina actually removed by guard strain
     recovered: int          # stamina actually gained after the cap
     reasons: tuple[Reason, ...]
+    stand_bonus: int | None = None   # candidate 3: LAST STAND's bonus (in bonus_damage); None before
 
     def to_json(self) -> dict:
+        extra = {} if self.stand_bonus is None else {"stand_bonus": self.stand_bonus}
         return {
             "before": self.before.to_json(), "after": self.after.to_json(),
             "intended": self.intended.name, "effective": self.effective.name,
@@ -158,7 +166,7 @@ class SideTrace:
             "power_bonus": self.power_bonus, "bonus_damage": self.bonus_damage,
             "computed_damage": self.computed_damage, "actual_hp_lost": self.actual_hp_lost,
             "strain": self.strain, "recovered": self.recovered,
-            "reasons": [r.value for r in self.reasons],
+            "reasons": [r.value for r in self.reasons], **extra,
         }
 
 

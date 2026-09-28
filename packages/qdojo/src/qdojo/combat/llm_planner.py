@@ -236,6 +236,8 @@ def _normalise(actions, power_slot):
                         power_slot = i
                     notes.append(f"action {a!r} read as {base} with the power slot")
                     name = base
+            if name == "LAST STAND" or name == "LASTSTAND":      # candidate 3's two-word action name
+                name = "LAST_STAND"
             if name != a:
                 a = name
         out.append(a)

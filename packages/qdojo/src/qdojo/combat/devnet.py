@@ -34,7 +34,7 @@ from .codec import Code, Op
 from .contract import Manifest, Qualification, development_manifest
 from .ledger import FeeProfile
 from .nft import AssetLedger
-from .rules import CANDIDATE_1, CANDIDATE_2, by_version
+from .rules import CANDIDATE_1, CANDIDATE_2, CANDIDATE_3, by_version
 from .sim import World, _Failing, _Owners, identity
 from .store import StoreError, refuse_legacy
 
@@ -85,10 +85,13 @@ PROFILES = {
              "timing": {1: DEMO_TIMING}, "tiers": {1: 5000, 2: 20000}, "fees": DEMO_FEES},
 }
 PROFILES["demo-c2"] = {**PROFILES["demo"], "ruleset": CANDIDATE_2, "timing": {1: DEMO_C2_TIMING}}
+# "demo-c3": the same arena on candidate 3 (docs/combat.md §12: LAST STAND and FEINT).
+PROFILES["demo-c3"] = {**PROFILES["demo-c2"], "ruleset": CANDIDATE_3}
 
 # Season championship qualification per profile (contract.Qualification): the
 # demo arena scales the distinct-opponent thresholds to its small field.
-QUALIFICATION = {"dev": Qualification(), "demo": Qualification(scale=True), "demo-c2": Qualification(scale=True)}
+QUALIFICATION = {"dev": Qualification(), "demo": Qualification(scale=True), "demo-c2": Qualification(scale=True),
+                 "demo-c3": Qualification(scale=True)}
 
 # Arenas created before devnet.json recorded manifest values replay with these.
 LEGACY_PROFILES = {

@@ -53,6 +53,7 @@ struct Json {
     }
     const Json& operator[](size_t i) const { return a.at(i); }
     size_t size() const { return kind == ARR ? a.size() : o.size(); }
+    bool has(const std::string& k) const { return o.count(k) != 0; }
 };
 
 struct JsonParser {
@@ -233,16 +234,19 @@ static void check_table(const std::string& path, const char* version, const Rule
     CHECK(r["limits"]["hp"].n == T.limit_hp, "limits.hp");
     CHECK(r["limits"]["stamina"].n == T.limit_stamina, "limits.stamina");
     CHECK(r["limits"]["guard_streak"].n == T.limit_guard_streak, "limits.guard_streak");
-    static const char* names[ACTION_COUNT] = {"JAB", "KICK", "BLOCK", "DUCK", "THROW", "RECOVER", "EXHAUSTED"};
-    CHECK(r["action_names"].size() == ACTION_COUNT, "action_names size");
-    for (size_t i = 0; i < ACTION_COUNT && i < r["action_names"].size(); ++i)
+    static const char* names[ACTION_COUNT] = {"JAB", "KICK", "BLOCK", "DUCK", "THROW", "RECOVER", "EXHAUSTED",
+                                              "LAST_STAND", "FEINT"};
+    // Candidates 1 and 2 list 7 actions, candidate 3 all 9; the table pads with zeros.
+    const size_t n = r["action_names"].size();
+    CHECK(n == (T.candidate3 ? 9u : 7u), "action_names size %zu", n);
+    for (size_t i = 0; i < n && i < ACTION_COUNT; ++i)
         CHECK(r["action_names"][i].s == names[i], "action_names[%zu]", i);
-    CHECK(r["submitted_action_ids"].size() == SUBMITTED_ACTION_COUNT, "submitted_action_ids size");
-    for (size_t i = 0; i < r["submitted_action_ids"].size(); ++i)
-        CHECK(r["submitted_action_ids"][i].n == (long long)i, "submitted_action_ids[%zu]", i);
-    CHECK(r["base_costs"].size() == ACTION_COUNT, "base_costs size");
-    for (size_t i = 0; i < ACTION_COUNT && i < r["base_costs"].size(); ++i)
-        CHECK(r["base_costs"][i].n == T.base_costs[i], "base_costs[%zu]", i);
+    uint16_t mask = 0;
+    for (size_t i = 0; i < r["submitted_action_ids"].size(); ++i) mask = uint16_t(mask | (1u << r["submitted_action_ids"][i].n));
+    CHECK(mask == T.submitted_mask, "submitted mask %x", mask);
+    CHECK(r["base_costs"].size() == n, "base_costs size");
+    for (size_t i = 0; i < ACTION_COUNT; ++i)
+        CHECK((i < n ? r["base_costs"][i].n : 0) == T.base_costs[i], "base_costs[%zu]", i);
     CHECK(r["block_streak_cost"].n == T.block_streak_cost, "block_streak_cost");
     CHECK(r["block_strain"].n == T.block_strain, "block_strain");
     CHECK(r["ordinary_recovery"].n == T.ordinary_recovery, "ordinary_recovery");
@@ -253,14 +257,22 @@ static void check_table(const std::string& path, const char* version, const Rule
     CHECK(r["opening_damage"].n == T.opening_damage, "opening_damage");
     CHECK(r["power_damage"].n == T.power_damage, "power_damage");
     CHECK(r["power_cost"].n == T.power_cost, "power_cost");
-    CHECK(r["damage"].size() == ACTION_COUNT, "damage rows");
-    for (size_t i = 0; i < ACTION_COUNT && i < r["damage"].size(); ++i) {
-        CHECK(r["damage"][i].size() == ACTION_COUNT, "damage[%zu] cols", i);
-        for (size_t k = 0; k < ACTION_COUNT && k < r["damage"][i].size(); ++k)
-            CHECK(r["damage"][i][k].n == T.damage[i][k], "damage[%zu][%zu]", i, k);
+    CHECK(r["damage"].size() == n, "damage rows");
+    for (size_t i = 0; i < ACTION_COUNT; ++i)
+        for (size_t k = 0; k < ACTION_COUNT; ++k) {
+            long long want = (i < n && k < n) ? r["damage"][i][k].n : 0;
+            CHECK(want == T.damage[i][k], "damage[%zu][%zu]", i, k);
+        }
+    CHECK(T.max_opening == (T.candidate3 ? 2 : 1), "max opening");
+    if (T.candidate3) {
+        CHECK(r["last_stand"]["per_hp_behind"].n == T.stand_per_hp && r["last_stand"]["cap"].n == T.stand_cap &&
+                  r["last_stand"].size() == 2, "last_stand");
+    } else {
+        CHECK(!r.has("last_stand") && T.stand_cap == 0 && T.stand_per_hp == 0, "no last_stand");
     }
     // No key the core does not know about.
-    CHECK(r.size() == 19, "%s has %zu top-level keys, core mirrors 19", path.c_str(), r.size());
+    const size_t keys = T.candidate3 ? 20 : 19;
+    CHECK(r.size() == keys, "%s has %zu top-level keys, core mirrors %zu", path.c_str(), r.size(), keys);
 
     // Ruleset digest over canonical JSON equals the table's digest.
     std::string pre(TAG_RULES, sizeof(TAG_RULES));
@@ -274,7 +286,9 @@ static void check_table(const std::string& path, const char* version, const Rule
 static void test_constants(const std::string& root) {
     check_table(root + "/docs/combat-v1.json", "combat-v1-candidate-1", CANDIDATE_1);
     check_table(root + "/docs/combat-v1-candidate-2.json", "combat-v1-candidate-2", CANDIDATE_2);
-    CHECK(&RULES == (QDOJO_RULESET == 2 ? &CANDIDATE_2 : &CANDIDATE_1), "selected table");
+    check_table(root + "/docs/combat-v1-candidate-3.json", "combat-v1-candidate-3", CANDIDATE_3);
+    CHECK(&RULES == (QDOJO_RULESET == 3 ? &CANDIDATE_3 : QDOJO_RULESET == 2 ? &CANDIDATE_2 : &CANDIDATE_1),
+          "selected table");
 }
 
 // ----------------------------------------------------------- hand vectors
@@ -446,8 +460,8 @@ static void test_hand_vectors() {
 
 #endif  // QDOJO_RULESET == 1
 
-#if QDOJO_RULESET == 2
-// docs/combat.md "Candidate 2" hand vectors: fresh fighters are (120, 48, 0, 0).
+#if QDOJO_RULESET >= 2
+// docs/combat.md "Candidate 2" hand vectors (candidate 3 keeps every one of them): fresh fighters are (120, 48, 0, 0).
 static void test_hand_vectors() {
     struct Row { uint8_t a, b; int A[4], B[4]; };
     const Row table[] = {
@@ -509,7 +523,60 @@ static void test_hand_vectors() {
         CHECK(s.a.hp == 120 && s.outcome == OUTCOME_HP_TIE, "c2 recover HP_TIE");
     }
 }
-#endif  // QDOJO_RULESET == 2
+#endif  // QDOJO_RULESET >= 2
+
+#if QDOJO_RULESET == 3
+// docs/combat.md "Candidate 3" hand vectors: LAST STAND and FEINT.
+static void test_hand_vectors_c3() {
+    const Fighter f = F();
+    {  // FEINT into BLOCK: baited, guard-break opening 2; the blocker pays 4
+        BeatTrace t = beat(f, f, FEINT, BLOCK);
+        CHECK(same4(t.a.after, 120, 48, 2, 0) && same4(t.b.after, 120, 46, 0, 1), "feint/block");
+        CHECK((t.a.reasons & R_FEINT_BAITED) && (t.a.reasons & R_OPENING_EARNED), "feint baited");
+        // next beat the KICK goes through the block: 14 + 8 opening, and the block still strains
+        BeatTrace t2 = beat(t.a.after, t.b.after, KICK, BLOCK);
+        CHECK(t2.a.dealt == 22 && (t2.a.reasons & R_GUARD_BROKEN) && !(t2.a.reasons & R_BLOCKED), "guard broken");
+        CHECK(same4(t2.b.after, 98, 35, 0, 2), "blocker after a broken guard");
+        BeatTrace t3 = beat(t.a.after, t.b.after, LAST_STAND, BLOCK);
+        CHECK(t3.a.dealt == 16 && same4(t3.a.after, 120, 42, 0, 0), "last stand through a baited block");
+    }
+    {  // FEINT into DUCK: baited too; the duck earns nothing
+        BeatTrace t = beat(f, f, FEINT, DUCK);
+        CHECK(same4(t.a.after, 120, 48, 2, 0) && same4(t.b.after, 120, 46, 0, 0), "feint/duck");
+    }
+    {  // FEINT into JAB: a glancing 4, and the jab earns a clean-hit opening
+        BeatTrace t = beat(f, f, FEINT, JAB);
+        CHECK(same4(t.a.after, 116, 48, 0, 0) && same4(t.b.after, 120, 44, 1, 0), "feint/jab");
+        BeatTrace k = beat(f, f, FEINT, KICK);
+        CHECK(k.a.lost == 8, "feint/kick 8");
+        BeatTrace r = beat(f, f, FEINT, RECOVER);
+        CHECK(same4(r.a.after, 120, 48, 0, 0) && same4(r.b.after, 120, 48, 0, 0), "feint/recover: nothing");
+    }
+    {  // LAST STAND: +1 per HP behind, capped at 16
+        BeatTrace t = beat(F(80), F(110), LAST_STAND, JAB);
+        CHECK(same4(t.a.after, 72, 42, 0, 0) && same4(t.b.after, 86, 44, 0, 0), "stand/jab");
+        CHECK(t.a.stand_bonus == 16 && t.a.dealt == 24 && (t.a.reasons & R_STAND_BONUS), "stand bonus capped");
+        BeatTrace u = beat(F(105), F(110), LAST_STAND, JAB);
+        CHECK(u.a.stand_bonus == 5 && u.a.dealt == 13, "stand bonus 5");
+        BeatTrace v = beat(F(110), F(80), LAST_STAND, JAB);
+        CHECK(v.a.stand_bonus == 0 && v.a.dealt == 8, "no bonus when ahead");
+        BeatTrace w = beat(F(80), F(110), LAST_STAND, BLOCK);
+        CHECK(w.a.dealt == 0 && w.a.stand_bonus == 0 && (w.a.reasons & R_BLOCKED), "stand blocked");
+        BeatTrace x = beat(F(80), F(110), LAST_STAND, KICK);
+        CHECK(x.a.dealt == 24 && x.b.dealt == 14, "stand/kick trade");
+        BeatTrace y = beat(F(110), F(80), THROW, LAST_STAND);
+        CHECK(y.a.dealt == 0 && (y.a.reasons & R_THROW_INTERRUPTED) && y.b.dealt == 24, "throw interrupted by stand");
+    }
+    {  // legality: never powered; candidate 3 accepts the new ids
+        Plan p = plan6(LAST_STAND);
+        CHECK(validate_plan(p, f), "stand plan valid");
+        p.power_slot = 0;
+        CHECK(!validate_plan(p, f), "no power on a last stand");
+        CHECK(validate_plan(plan6(FEINT), f), "feint plan valid");
+        CHECK(!validate_plan(plan6(EXHAUSTED), f), "exhausted never valid");
+    }
+}
+#endif
 
 // Break carry: the literal vector (stamina 55, opening 1, guard 3 -> 60, 1, 3)
 // is not reachable by play (guard 3 needs a final BLOCK, which never earns an
@@ -629,8 +696,9 @@ static uint32_t reason_bit(const std::string& n) {
     static const char* names[] = {"HIT", "BLOCKED", "EVADED", "THROW_INTERRUPTED", "THROW_CLASH",
                                   "INSUFFICIENT_STAMINA", "RECOVERY_PUNISHED", "GUARD_STRAIN",
                                   "OPENING_EARNED", "OPENING_USED", "OPENING_EXPIRED", "POWER_USED",
-                                  "POWER_WASTED", "KO", "DOUBLE_KO"};
-    for (uint32_t i = 0; i < 15; ++i)
+                                  "POWER_WASTED", "KO", "DOUBLE_KO", "STAND_BONUS", "GUARD_BROKEN",
+                                  "FEINT_BAITED"};
+    for (uint32_t i = 0; i < 18; ++i)
         if (n == names[i]) return 1u << i;
     return 1u << 31;  // unknown
 }
@@ -647,6 +715,8 @@ static void check_side(const SideTrace& t, const Json& j, size_t f, size_t r, si
     CHECK(t.lost == j["lost"].n, "fight %zu r%zu b%zu %c lost", f, r, b, side);
     CHECK(t.strain == j["strain"].n, "fight %zu r%zu b%zu %c strain %d want %lld", f, r, b, side, t.strain, j["strain"].n);
     CHECK(t.recovered == j["recovered"].n, "fight %zu r%zu b%zu %c recovered %d want %lld", f, r, b, side, t.recovered, j["recovered"].n);
+    if (j.has("stand_bonus"))
+        CHECK(t.stand_bonus == j["stand_bonus"].n, "fight %zu r%zu b%zu %c stand_bonus", f, r, b, side);
     // Reason codes are descriptive and not normatively defined per side;
     // compare informationally only.
     uint32_t want = 0;
@@ -744,7 +814,11 @@ int main(int argc, char** argv) {
     std::string root = argc > 1 ? argv[1] : ".";
     int before;
     before = g_fail; test_constants(root);    std::printf("ruleset tables vs JSON (build selects %d): %s\n", QDOJO_RULESET, g_fail == before ? "ok" : "FAIL");
-    before = g_fail; test_hand_vectors(); test_break_carry(); std::printf("hand vectors: %s\n", g_fail == before ? "ok" : "FAIL");
+    before = g_fail; test_hand_vectors(); test_break_carry();
+#if QDOJO_RULESET == 3
+    test_hand_vectors_c3();
+#endif
+    std::printf("hand vectors: %s\n", g_fail == before ? "ok" : "FAIL");
     before = g_fail; test_sha256();           std::printf("NIST SHA-256: %s\n", g_fail == before ? "ok" : "FAIL");
     before = g_fail; test_commitment(root);   std::printf("commitment-v1 vector: %s\n", g_fail == before ? "ok" : "FAIL");
     before = g_fail; test_fights(root);       std::printf("fight fixtures: %s\n", g_fail == before ? "ok" : "FAIL");

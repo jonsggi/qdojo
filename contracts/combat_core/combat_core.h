@@ -17,21 +17,24 @@
 // numbers. They are never used as hidden logic. Each bit is from the point
 // of view of the fighter whose SideTrace carries it:
 //   bit  0 HIT                 own computed damage > 0
-//   bit  1 BLOCKED             own effective JAB/KICK met effective BLOCK
+//   bit  1 BLOCKED             own effective JAB/KICK/LAST_STAND met effective BLOCK and dealt 0
 //   bit  2 EVADED              own effective JAB/THROW met effective DUCK
-//   bit  3 THROW_INTERRUPTED   own effective THROW met effective JAB/KICK
+//   bit  3 THROW_INTERRUPTED   own effective THROW met effective JAB/KICK/LAST_STAND
 //   bit  4 THROW_CLASH         both effective THROW
 //   bit  5 INSUFFICIENT_STAMINA intended action unaffordable -> EXHAUSTED
 //   bit  6 RECOVERY_PUNISHED   own effective RECOVER took computed damage > 0
 //   bit  7 GUARD_STRAIN        own effective BLOCK met effective KICK
 //                              (set even when the deducted strain is 0)
-//   bit  8 OPENING_EARNED      new opening == 1
+//   bit  8 OPENING_EARNED      new opening > 0
 //   bit  9 OPENING_USED        pre-beat opening added its bonus
 //   bit 10 OPENING_EXPIRED     pre-beat opening was 1 and was not used
 //   bit 11 POWER_USED          designated power slot added its bonus
 //   bit 12 POWER_WASTED        designated power slot added no bonus
 //   bit 13 KO                  this fighter reached 0 HP, the other did not
 //   bit 14 DOUBLE_KO           both fighters reached 0 HP on this beat
+//   bit 15 STAND_BONUS         own LAST_STAND added its bonus for trailing (candidate 3)
+//   bit 16 GUARD_BROKEN        own strike went through a block on a feint opening (candidate 3)
+//   bit 17 FEINT_BAITED        own FEINT met a BLOCK or DUCK (candidate 3)
 #ifndef QDOJO_COMBAT_CORE_H
 #define QDOJO_COMBAT_CORE_H
 
@@ -43,10 +46,14 @@ namespace qdojo_combat {
 // Every packaged combat-v1 ruleset is compiled in as a table (contracts cannot
 // parse JSON). A build SELECTS one with -DQDOJO_RULESET=<n> (default 1): a
 // deployed contract serves exactly one ruleset, and its manifest must name
-// that ruleset's digest (combat_contract.h checks this). Both tables are
+// that ruleset's digest (combat_contract.h checks this). All tables are
 // always present, so the test runner checks each against its JSON file:
 //   1 = docs/combat-v1.json               "combat-v1-candidate-1"
 //   2 = docs/combat-v1-candidate-2.json   "combat-v1-candidate-2"
+//   3 = docs/combat-v1-candidate-3.json   "combat-v1-candidate-3"
+// Every table has ACTION_COUNT (9) rows and columns; candidates 1 and 2 have
+// zero rows and columns for LAST_STAND and FEINT and exclude them from their
+// submitted mask.
 #ifndef QDOJO_RULESET
 #define QDOJO_RULESET 1
 #endif
@@ -54,9 +61,10 @@ namespace qdojo_combat {
 enum Action : uint8_t {
     JAB = 0, KICK = 1, BLOCK = 2, DUCK = 3, THROW = 4, RECOVER = 5,
     EXHAUSTED = 6,  // internal only; never legal in a submitted plan
+    LAST_STAND = 7, // candidate 3: a strike, +1 per HP behind (capped)
+    FEINT = 8,      // candidate 3: baits a block or duck into a guard-break opening
 };
-static constexpr uint8_t ACTION_COUNT = 7;
-static constexpr uint8_t SUBMITTED_ACTION_COUNT = 6;  // ids 0..5
+static constexpr uint8_t ACTION_COUNT = 9;
 
 struct RulesetTable {
     uint8_t rounds;
@@ -80,66 +88,103 @@ struct RulesetTable {
     uint16_t power_damage;
     uint16_t power_cost;
     uint16_t base_costs[ACTION_COUNT];
-    uint16_t damage[ACTION_COUNT][ACTION_COUNT];  // [attacker][defender], before opening/power
+    uint16_t damage[ACTION_COUNT][ACTION_COUNT];  // [attacker][defender], before bonuses
+    uint16_t submitted_mask;   // bit i: action i may appear in a plan
+    uint8_t max_opening;       // 1; 2 under candidate 3 (a feint's guard-break opening)
+    uint8_t candidate3;        // 1: the LAST STAND, guard-break and feint rules apply
+    uint16_t stand_per_hp;     // LAST STAND bonus per HP behind
+    uint16_t stand_cap;        // LAST STAND bonus cap
     // SHA256("qdojo/combat/rules/v1\0" || canonical JSON of the ruleset file)
     uint8_t digest[32];
 };
 
 // combat-v1-candidate-1 (docs/combat-v1.json).
 static constexpr RulesetTable CANDIDATE_1 = {
-    3, 6,                 // rounds, beats_per_round
-    100, 60, 0, 0, 1,     // initial hp, stamina, opening, guard_streak, power_available
-    100, 60, 3,           // limits hp, stamina, guard_streak
-    3, 6, 2, 18, 6, 6, 10,  // block_streak_cost, block_strain, ordinary, recover_unhit, recover_hit, exhausted, break
-    4, 4, 4,              // opening_damage, power_damage, power_cost
-    {6, 12, 4, 4, 9, 0, 0},
+    3, 6,
+    100, 60, 0, 0, 1,
+    100, 60, 3,
+    3, 6, 2, 18, 6, 6, 10,
+    4, 4, 4,
+    {6, 12, 4, 4, 9, 0, 0, 0, 0},
     {
-        {8, 8, 0, 0, 8, 12, 12},
-        {14, 14, 0, 18, 14, 18, 18},
-        {0, 0, 0, 0, 0, 0, 0},
-        {0, 0, 0, 0, 0, 0, 0},
-        {0, 0, 14, 0, 0, 18, 18},
-        {0, 0, 0, 0, 0, 0, 0},
-        {0, 0, 0, 0, 0, 0, 0},
+        {8, 8, 0, 0, 8, 12, 12, 0, 0},
+        {14, 14, 0, 18, 14, 18, 18, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 14, 0, 0, 18, 18, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0},
     },
+    0x03f, 1, 0, 0, 0,  // submitted mask, max opening, candidate-3 rules, stand per HP, stand cap
     {0x12, 0x08, 0x5c, 0x86, 0xa6, 0x1f, 0xfd, 0x10, 0x64, 0x30, 0xb6, 0x69, 0x0a, 0xcb, 0xd5, 0x22,
      0xc5, 0xa9, 0x4f, 0x90, 0xed, 0x80, 0x24, 0x58, 0x58, 0x17, 0xf4, 0x93, 0x9f, 0xe4, 0x84, 0x2c},
 };
 
-// combat-v1-candidate-2 (docs/combat-v1-candidate-2.json): jab out-trades
-// kick, duck counters a jab, throw punishes block harder, bigger opening and
-// power, 120 HP, 48 stamina. Same engine, action table and encodings as candidate 1.
+// combat-v1-candidate-2 (docs/combat-v1-candidate-2.json): jab out-trades kick, duck counters a jab,
+// throw punishes block harder, bigger opening and power, 120 HP, 48 stamina.
 static constexpr RulesetTable CANDIDATE_2 = {
     3, 6,
     120, 48, 0, 0, 1,
     120, 48, 3,
     3, 6, 2, 18, 6, 6, 10,
     8, 12, 4,
-    {6, 12, 4, 4, 9, 0, 0},
+    {6, 12, 4, 4, 9, 0, 0, 0, 0},
     {
-        {8, 10, 0, 0, 8, 12, 12},
-        {4, 14, 0, 18, 14, 18, 18},
-        {0, 0, 0, 0, 0, 0, 0},
-        {4, 0, 0, 0, 0, 0, 0},
-        {0, 0, 20, 0, 0, 18, 18},
-        {0, 0, 0, 0, 0, 0, 0},
-        {0, 0, 0, 0, 0, 0, 0},
+        {8, 10, 0, 0, 8, 12, 12, 0, 0},
+        {4, 14, 0, 18, 14, 18, 18, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0},
+        {4, 0, 0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 20, 0, 0, 18, 18, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0},
     },
+    0x03f, 1, 0, 0, 0,  // submitted mask, max opening, candidate-3 rules, stand per HP, stand cap
     {0x23, 0x16, 0x07, 0xf8, 0x23, 0x15, 0x37, 0x47, 0xf4, 0xc9, 0x22, 0xfd, 0x59, 0x76, 0xc1, 0xac,
      0x06, 0x62, 0x25, 0x42, 0xcd, 0x5a, 0x39, 0xea, 0xb0, 0x88, 0x87, 0x4d, 0x88, 0x6b, 0x8b, 0x74},
+};
+
+// combat-v1-candidate-3 (docs/combat-v1-candidate-3.json): candidate 2 plus LAST_STAND and FEINT.
+static constexpr RulesetTable CANDIDATE_3 = {
+    3, 6,
+    120, 48, 0, 0, 1,
+    120, 48, 3,
+    3, 6, 2, 18, 6, 6, 10,
+    8, 12, 4,
+    {6, 12, 4, 4, 9, 0, 0, 8, 2},
+    {
+        {8, 10, 0, 0, 8, 12, 12, 8, 4},
+        {4, 14, 0, 18, 14, 18, 18, 14, 8},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0},
+        {4, 0, 0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 20, 0, 0, 18, 18, 0, 8},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0},
+        {8, 8, 0, 8, 8, 12, 12, 8, 4},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0},
+    },
+    0x1bf, 2, 1, 1, 16,  // submitted mask, max opening, candidate-3 rules, stand per HP, stand cap
+    {0xcf, 0x19, 0xb7, 0xcf, 0xee, 0x8c, 0xcb, 0xdd, 0x2a, 0x3b, 0xbf, 0x31, 0x13, 0x2f, 0x83, 0x27,
+     0xea, 0xb6, 0x3a, 0x53, 0x41, 0xca, 0x75, 0x28, 0xd6, 0x82, 0x35, 0x3c, 0x32, 0xc0, 0x1b, 0xf4},
 };
 
 #if QDOJO_RULESET == 1
 static constexpr const RulesetTable& RULES = CANDIDATE_1;
 #elif QDOJO_RULESET == 2
 static constexpr const RulesetTable& RULES = CANDIDATE_2;
+#elif QDOJO_RULESET == 3
+static constexpr const RulesetTable& RULES = CANDIDATE_3;
 #else
-#error "QDOJO_RULESET must be 1 (candidate 1) or 2 (candidate 2)"
+#error "QDOJO_RULESET must be 1, 2 or 3 (candidate 1, 2 or 3)"
 #endif
 
 // The engine, the 7-byte plan codec and the contract assume these shapes.
 static_assert(CANDIDATE_1.rounds == 3 && CANDIDATE_1.beats_per_round == 6, "combat-v1 is 3 x 6");
 static_assert(CANDIDATE_2.rounds == 3 && CANDIDATE_2.beats_per_round == 6, "combat-v1 is 3 x 6");
+static_assert(CANDIDATE_3.rounds == 3 && CANDIDATE_3.beats_per_round == 6, "combat-v1 is 3 x 6");
 
 // The selected ruleset under the names the engine uses.
 static constexpr uint8_t ROUNDS = RULES.rounds;
@@ -166,6 +211,11 @@ static constexpr const uint16_t (&BASE_COSTS)[ACTION_COUNT] = RULES.base_costs;
 // DAMAGE[attacker][defender], before opening/power bonuses.
 static constexpr const uint16_t (&DAMAGE)[ACTION_COUNT][ACTION_COUNT] = RULES.damage;
 static constexpr const uint8_t (&RULESET_DIGEST)[32] = RULES.digest;
+static constexpr uint16_t SUBMITTED_MASK = RULES.submitted_mask;
+static constexpr uint8_t MAX_OPENING = RULES.max_opening;
+static constexpr bool CANDIDATE3_RULES = RULES.candidate3 != 0;
+static constexpr uint16_t STAND_PER_HP = RULES.stand_per_hp;
+static constexpr uint16_t STAND_CAP = RULES.stand_cap;
 
 static constexpr uint8_t NO_POWER_SLOT = 255;  // wire value for power_slot -1
 static constexpr uint32_t STATE_BYTES = 8;
@@ -187,6 +237,9 @@ enum Reason : uint32_t {
     R_POWER_WASTED = 1u << 12,
     R_KO = 1u << 13,
     R_DOUBLE_KO = 1u << 14,
+    R_STAND_BONUS = 1u << 15,   // candidate 3
+    R_GUARD_BROKEN = 1u << 16,  // candidate 3
+    R_FEINT_BAITED = 1u << 17,  // candidate 3
 };
 
 enum Outcome : uint8_t { OUTCOME_NONE = 0, OUTCOME_KO = 1, OUTCOME_DOUBLE_KO = 2, OUTCOME_HP = 3, OUTCOME_HP_TIE = 4 };
@@ -235,6 +288,7 @@ struct SideTrace {
     uint8_t base;           // matrix damage dealt by own effective action
     uint8_t opening_bonus;  // 0 or OPENING_DAMAGE
     uint8_t power_bonus;    // 0 or POWER_DAMAGE
+    uint8_t stand_bonus;    // candidate 3: LAST STAND bonus actually added (0 otherwise)
     uint8_t dealt;          // computed damage dealt to the opponent
     uint8_t lost;           // actual HP lost by this fighter
     uint8_t strain;         // block strain actually deducted from this fighter
@@ -259,10 +313,12 @@ struct RoundResult {
 // ------------------------------------------------------------------ helpers
 inline uint16_t min_u16(uint16_t x, uint16_t y) { return x < y ? x : y; }
 
-inline bool is_attack(uint8_t a) { return a == JAB || a == KICK || a == THROW; }
+inline bool is_attack(uint8_t a) { return a == JAB || a == KICK || a == THROW; }   // may carry power
+inline bool is_strike(uint8_t a) { return a == JAB || a == KICK || a == LAST_STAND; } // a block stops it
+inline bool is_submitted(uint8_t a) { return a < ACTION_COUNT && ((SUBMITTED_MASK >> a) & 1u) != 0; }
 
 inline bool valid_fighter(const Fighter& f) {
-    return f.hp <= LIMIT_HP && f.stamina <= LIMIT_STAMINA && f.opening <= 1 &&
+    return f.hp <= LIMIT_HP && f.stamina <= LIMIT_STAMINA && f.opening <= MAX_OPENING &&
            f.guard_streak <= LIMIT_GUARD_STREAK && f.power_available <= 1;
 }
 
@@ -297,7 +353,7 @@ inline uint16_t action_cost(uint8_t intended, uint8_t guard_streak, bool power) 
 // Plan validation against the round-start fighter (combat.md section 3).
 inline bool validate_plan(const Plan& p, const Fighter& start) {
     for (uint8_t i = 0; i < BEATS_PER_ROUND; ++i)
-        if (p.actions[i] >= SUBMITTED_ACTION_COUNT) return false;
+        if (!is_submitted(p.actions[i])) return false;
     if (p.power_slot == NO_POWER_SLOT) return true;
     if (p.power_slot >= BEATS_PER_ROUND) return false;
     if (!is_attack(p.actions[p.power_slot])) return false;
@@ -329,7 +385,8 @@ inline Half choose(const Fighter& f, uint8_t intended, bool power) {
 }
 
 inline void finish(const Fighter& before, uint8_t intended, const Half& me, const Half& them,
-                   uint16_t my_base, uint16_t my_dealt, uint16_t incoming, SideTrace& t) {
+                   uint16_t my_base, uint16_t my_stand, bool broke, uint16_t my_dealt, uint16_t incoming,
+                   SideTrace& t) {
     Fighter f = before;
     t.before = before;
     t.intended = intended;
@@ -340,6 +397,7 @@ inline void finish(const Fighter& before, uint8_t intended, const Half& me, cons
     t.base = static_cast<uint8_t>(my_base);
     t.opening_bonus = 0;
     t.power_bonus = 0;
+    t.stand_bonus = static_cast<uint8_t>(my_stand);
     uint32_t r = 0;
 
     // step 2: power is spent on its designated slot whatever happens next
@@ -377,6 +435,9 @@ inline void finish(const Fighter& before, uint8_t intended, const Half& me, cons
     bool duck_earn = me.effective == DUCK && (them.effective == JAB || them.effective == THROW);
     bool jab_earn = me.effective == JAB && my_dealt > 0 && incoming == 0;
     f.opening = (duck_earn || jab_earn) ? 1 : 0;
+    // candidate 3: a FEINT that baits a BLOCK or a DUCK earns the guard-break opening (2)
+    bool baited = CANDIDATE3_RULES && me.effective == FEINT && (them.effective == BLOCK || them.effective == DUCK);
+    if (baited) f.opening = 2;
     t.new_opening = f.opening;
     // step 10: replace guard streak
     if (me.effective == BLOCK) {
@@ -389,9 +450,15 @@ inline void finish(const Fighter& before, uint8_t intended, const Half& me, cons
 
     // descriptive reasons
     if (my_dealt > 0) r |= R_HIT;
-    if ((me.effective == JAB || me.effective == KICK) && them.effective == BLOCK) r |= R_BLOCKED;
-    if ((me.effective == JAB || me.effective == THROW) && them.effective == DUCK) r |= R_EVADED;
-    if (me.effective == THROW && (them.effective == JAB || them.effective == KICK)) r |= R_THROW_INTERRUPTED;
+    if ((me.effective == JAB || me.effective == KICK || me.effective == LAST_STAND) && them.effective == BLOCK &&
+        my_dealt == 0)
+        r |= R_BLOCKED;
+    if ((me.effective == JAB || me.effective == THROW) && them.effective == DUCK && my_dealt == 0) r |= R_EVADED;
+    if (me.effective == THROW && (them.effective == JAB || them.effective == KICK || them.effective == LAST_STAND))
+        r |= R_THROW_INTERRUPTED;
+    if (broke) r |= R_GUARD_BROKEN;
+    if (my_stand > 0) r |= R_STAND_BONUS;
+    if (baited) r |= R_FEINT_BAITED;
     if (me.effective == THROW && them.effective == THROW) r |= R_THROW_CLASH;
     if (me.effective == RECOVER && incoming > 0) r |= R_RECOVERY_PUNISHED;
     if (f.opening) r |= R_OPENING_EARNED;
@@ -407,7 +474,7 @@ inline void finish(const Fighter& before, uint8_t intended, const Half& me, cons
 inline Error resolve_beat(const Fighter& a, const Fighter& b, uint8_t intent_a, uint8_t intent_b,
                           bool power_a, bool power_b, BeatTrace& out) {
     if (!valid_fighter(a) || !valid_fighter(b)) return BAD_STATE;
-    if (intent_a >= SUBMITTED_ACTION_COUNT || intent_b >= SUBMITTED_ACTION_COUNT) return BAD_ACTION;
+    if (!is_submitted(intent_a) || !is_submitted(intent_b)) return BAD_ACTION;
     if (power_a && (!is_attack(intent_a) || a.power_available != 1)) return BAD_ACTION;
     if (power_b && (!is_attack(intent_b) || b.power_available != 1)) return BAD_ACTION;
 
@@ -417,21 +484,39 @@ inline Error resolve_beat(const Fighter& a, const Fighter& b, uint8_t intent_a, 
     // step 4: both base damages from effective actions
     uint16_t base_a = DAMAGE[ha.effective][hb.effective];
     uint16_t base_b = DAMAGE[hb.effective][ha.effective];
+    uint16_t stand_a = 0, stand_b = 0;
+    bool broke_a = false, broke_b = false;
+    if (CANDIDATE3_RULES) {
+        // 4a: a guard-break opening (2) takes a strike through a block, dealing its kick damage
+        if (a.opening == 2 && is_strike(ha.effective) && hb.effective == BLOCK) {
+            base_a = DAMAGE[ha.effective][KICK];
+            broke_a = base_a > 0;
+        }
+        if (b.opening == 2 && is_strike(hb.effective) && ha.effective == BLOCK) {
+            base_b = DAMAGE[hb.effective][KICK];
+            broke_b = base_b > 0;
+        }
+        // 4b: LAST STAND adds its bonus for every HP behind, capped, on positive base
+        if (ha.effective == LAST_STAND && base_a > 0 && b.hp > a.hp)
+            stand_a = min_u16(STAND_CAP, static_cast<uint16_t>(STAND_PER_HP * (b.hp - a.hp)));
+        if (hb.effective == LAST_STAND && base_b > 0 && a.hp > b.hp)
+            stand_b = min_u16(STAND_CAP, static_cast<uint16_t>(STAND_PER_HP * (a.hp - b.hp)));
+    }
     // step 5: bonuses only on positive base
     uint16_t dealt_a = 0, dealt_b = 0;
     if (base_a > 0) {
-        dealt_a = base_a;
+        dealt_a = static_cast<uint16_t>(base_a + stand_a);
         if (a.opening) dealt_a = static_cast<uint16_t>(dealt_a + OPENING_DAMAGE);
         if (power_a && ha.effective == intent_a) dealt_a = static_cast<uint16_t>(dealt_a + POWER_DAMAGE);
     }
     if (base_b > 0) {
-        dealt_b = base_b;
+        dealt_b = static_cast<uint16_t>(base_b + stand_b);
         if (b.opening) dealt_b = static_cast<uint16_t>(dealt_b + OPENING_DAMAGE);
         if (power_b && hb.effective == intent_b) dealt_b = static_cast<uint16_t>(dealt_b + POWER_DAMAGE);
     }
     // steps 6-10, each side reading only snapshots and the paired values
-    detail::finish(a, intent_a, ha, hb, base_a, dealt_a, dealt_b, out.a);
-    detail::finish(b, intent_b, hb, ha, base_b, dealt_b, dealt_a, out.b);
+    detail::finish(a, intent_a, ha, hb, base_a, stand_a, broke_a, dealt_a, dealt_b, out.a);
+    detail::finish(b, intent_b, hb, ha, base_b, stand_b, broke_b, dealt_b, dealt_a, out.b);
     // step 11
     bool ko_a = out.a.after.hp == 0, ko_b = out.b.after.hp == 0;
     out.terminal = (ko_a || ko_b) ? 1 : 0;

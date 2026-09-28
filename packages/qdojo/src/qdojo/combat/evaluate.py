@@ -69,7 +69,10 @@ def _round_value(rules, me, opp, mine: Plan, theirs: Plan, round_index: int = 0)
         return 10_000
     if a.hp == 0 and b.hp > 0:
         return -10_000
-    return 8 * ((a.hp - me.hp) - (b.hp - opp.hp)) + (a.stamina - b.stamina)
+    v = 8 * ((a.hp - me.hp) - (b.hp - opp.hp)) + (a.stamina - b.stamina)
+    if rules.last_stand is not None:                    # candidate 3: value an opening carried out of the round
+        v += 4 * rules.opening_damage * ((a.opening > 0) - (b.opening > 0))
+    return v
 
 
 @dataclass
@@ -141,12 +144,15 @@ def best_response_opening(rules: Ruleset, opponent: npcs.Policy, samples: int = 
     return best, best_v / samples
 
 
-def _beat_value(a, b) -> int:
+def _beat_value(a, b, rules=None) -> int:
     if b.hp == 0 and a.hp > 0:
         return 10**6
     if a.hp == 0 and b.hp > 0:
         return -10**6
-    return 8 * (a.hp - b.hp) + (a.stamina - b.stamina)
+    v = 8 * (a.hp - b.hp) + (a.stamina - b.stamina)
+    if rules is not None and rules.last_stand is not None:     # candidate 3: an opening held is worth half its bonus
+        v += 4 * rules.opening_damage * ((a.opening > 0) - (b.opening > 0))
+    return v
 
 
 def beam_response(rules: Ruleset, me, opp, opp_plans: list[Plan], beam: int = 48, round_index: int = 0) -> Plan:
@@ -184,7 +190,7 @@ def _beam(rules, me, opp, opp_plans, beam, round_index=0):
                         if d:
                             nxt.append((sa, sb))
                             fin.append(True)
-                            total += _beat_value(sa, sb)
+                            total += _beat_value(sa, sb, rules)
                             continue
                         ob = opp_plans[k]
                         na, nb, _ = resolve_beat(rules, sa, sb, a, ob.actions[i], pw, ob.power_slot == i,
@@ -192,7 +198,7 @@ def _beam(rules, me, opp, opp_plans, beam, round_index=0):
                         ko = na.hp == 0 or nb.hp == 0
                         nxt.append((na, nb))
                         fin.append(ko)
-                        total += _beat_value(na, nb)
+                        total += _beat_value(na, nb, rules)
                     grown.append((total, acts + (a,), i if pw else slot, tuple(nxt), tuple(fin)))
         grown.sort(key=lambda e: -e[0])
         entries = grown[:beam]
@@ -293,10 +299,12 @@ def pools(rules: Ruleset | None = None) -> dict[str, dict[str, npcs.Policy]]:
     spams["spam-jab-spend-power"] = spam(J, 0)
     cycles = {f"cycle-{x.name.lower()}-{y.name.lower()}": pattern([x, y] * 3)
               for x, y in itertools.combinations(SUBMITTED, 2)}
-    if len(rules.submitted) > 6:                      # prototype: spam and cycles with the new action too
-        LS = Action.LAST_STAND
-        spams["spam-last-stand"] = spam(LS)
-        cycles.update({f"cycle-{x.name.lower()}-last-stand": pattern([x, LS] * 3) for x in SUBMITTED})
+    if len(rules.submitted) > 6:                      # candidate 3: spam and cycles with the new actions too
+        for new in (Action.LAST_STAND, Action.FEINT):
+            tag = new.name.lower().replace("_", "-")
+            spams[f"spam-{tag}"] = spam(new)
+            cycles.update({f"cycle-{x.name.lower()}-{tag}": pattern([x, new] * 3) for x in SUBMITTED})
+        cycles["cycle-feint-last-stand"] = pattern([Action.FEINT, Action.LAST_STAND] * 3)
     misc = {
         "repeat-last-winner": repeat_last_winner,
         "stall-guard": pattern([B, D, R, B, D, R], None),
@@ -310,8 +318,9 @@ def pools(rules: Ruleset | None = None) -> dict[str, dict[str, npcs.Policy]]:
         "thrower": pattern([T, R, T, D, T, R]),
     }
     scripts = {f"script-vs-{v}": strong_script(rules, v) for v in ("mixed-v1", "random-v1", "scout-v1", "kicker-v1")}
-    if len(rules.submitted) > 6:                      # a scripted user of the new action
+    if len(rules.submitted) > 6:                      # a scripted user of each new action
         held_out_styles["stander"] = pattern([J, Action.LAST_STAND, R, J, Action.LAST_STAND, B])
+        held_out_styles["feinter"] = pattern([Action.FEINT, K, J, Action.FEINT, Action.LAST_STAND, R])
     fixed_style = {k: roster[k] for k in ("jabber-v1", "turtle-v1", "kicker-v1")} | held_out_styles
     return {
         "roster": roster,

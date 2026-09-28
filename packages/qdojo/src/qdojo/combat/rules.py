@@ -24,10 +24,11 @@ CANDIDATE_1_DIGEST = "12085c86a61ffd106430b6690acbd522c5a94f90ed8024585817f4939f
 CANDIDATE_2 = "combat-v1-candidate-2"
 CANDIDATE_2_DIGEST = "231607f823153747f4c922fd5976c1ac06622542cd5a39eab088874d886b8b74"
 # Every packaged ruleset, by semantic version, with the digest its file must hash to.
-KNOWN = {CANDIDATE_1: CANDIDATE_1_DIGEST, CANDIDATE_2: CANDIDATE_2_DIGEST}
-# Trial rulesets (prototypes under measurement; never deployed, no parity
-# fixtures, Python engine only): loaded by version without a pinned digest.
-TRIALS = ("combat-v1-candidate-3-trial-a", "combat-v1-candidate-3-trial-b")
+# Candidate 3 (docs/combat.md §12): candidate 2 plus LAST_STAND (7) and FEINT (8).
+CANDIDATE_3 = "combat-v1-candidate-3"
+CANDIDATE_3_DIGEST = "cf19b7cfee8ccbdd2a3bbf31132f8327eab63a5341ca7528d682353c32c01bf4"
+KNOWN = {CANDIDATE_1: CANDIDATE_1_DIGEST, CANDIDATE_2: CANDIDATE_2_DIGEST, CANDIDATE_3: CANDIDATE_3_DIGEST}
+TRIALS: tuple[str, ...] = ()        # unpinned rulesets under measurement (none now)
 
 _KEYS = {
     "semantic_version", "rounds", "beats_per_round", "initial", "limits",
@@ -37,10 +38,9 @@ _KEYS = {
     "power_damage", "power_cost",
 }
 _ACTION_NAMES = ["JAB", "KICK", "BLOCK", "DUCK", "THROW", "RECOVER", "EXHAUSTED"]
-# Candidate-3 PROTOTYPE (docs/proposals/candidate-3-moves.md): one more
-# submitted action, id 7, and its rule block. Trial rulesets only; no engine
-# but Python knows it yet.
-_ACTION_NAMES_X = _ACTION_NAMES + ["LAST_STAND"]
+# Candidate 3 (docs/combat.md §12) adds two submitted actions: LAST_STAND (7)
+# and FEINT (8), and the LAST STAND bonus block. EXHAUSTED stays 6.
+_ACTION_NAMES_X = _ACTION_NAMES + ["LAST_STAND", "FEINT"]
 _KEYS_X = _KEYS | {"last_stand"}
 
 
@@ -80,8 +80,9 @@ class Ruleset:
     power_damage: int
     power_cost: int
     submitted: tuple[int, ...] = (0, 1, 2, 3, 4, 5)
-    # LAST_STAND (prototype): (bonus per HP behind, bonus cap, first round index it is active)
-    last_stand: tuple[int, int, int] | None = None
+    # Candidate 3: LAST_STAND's (bonus per HP behind, bonus cap); None before.
+    last_stand: tuple[int, int] | None = None
+    max_opening: int = 1          # 2 under candidate 3: a FEINT's guard-break opening
 
 
 def _int(value, where):
@@ -96,7 +97,7 @@ def parse(doc: dict) -> Ruleset:
     if not isinstance(doc, dict) or set(doc) != keys:
         raise RulesetError(f"ruleset keys differ: {sorted(set(doc) ^ keys) if isinstance(doc, dict) else doc!r}")
     names = _ACTION_NAMES_X if extended else _ACTION_NAMES
-    submitted = list(range(6)) + ([7] if extended else [])
+    submitted = list(range(6)) + ([7, 8] if extended else [])
     if doc["action_names"] != names or doc["submitted_action_ids"] != submitted:
         raise RulesetError("action table differs from combat-v1")
     n = len(names)
@@ -130,10 +131,11 @@ def parse(doc: dict) -> Ruleset:
             "recover_hit", "exhausted_recovery", "break_recovery", "opening_damage",
             "power_damage", "power_cost")},
         submitted=tuple(submitted),
-        last_stand=(tuple(_int(doc["last_stand"][k], "last_stand." + k) for k in ("per_hp_behind", "cap", "from_round"))
+        last_stand=(tuple(_int(doc["last_stand"][k], "last_stand." + k) for k in ("per_hp_behind", "cap"))
                     if extended else None),
+        max_opening=2 if extended else 1,
     )
-    if extended and set(doc["last_stand"]) != {"per_hp_behind", "cap", "from_round"}:
+    if extended and set(doc["last_stand"]) != {"per_hp_behind", "cap"}:
         raise RulesetError("last_stand keys differ")
     # The engine and the byte codec assume these shapes; a ruleset outside them
     # is a new semantic version, not a parameter change.
@@ -158,8 +160,6 @@ def load_file(path: Path, expect_digest: str | None = None) -> Ruleset:
 @cache
 def by_version(version: str) -> Ruleset:
     """A packaged ruleset by semantic version, refusing to load if its bytes drifted."""
-    if version in TRIALS:
-        return load_file(RULESET_DIR / "trials" / f"{version}.json")
     if version not in KNOWN:
         raise RulesetError(f"unknown ruleset {version!r}; known: {', '.join(KNOWN)}")
     return load_file(RULESET_DIR / f"{version}.json", KNOWN[version])
@@ -184,6 +184,11 @@ def artifact(version: str) -> dict:
 def candidate_1() -> Ruleset:
     """The frozen combat-v1 candidate 1, refusing to load if its bytes drifted."""
     return by_version(CANDIDATE_1)
+
+
+def candidate_3() -> Ruleset:
+    """combat-v1 candidate 3: candidate 2 plus LAST STAND and FEINT (docs/combat.md §12)."""
+    return by_version(CANDIDATE_3)
 
 
 def candidate_2() -> Ruleset:

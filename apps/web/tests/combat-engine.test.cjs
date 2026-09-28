@@ -21,7 +21,7 @@ const plan = (actions, power_slot = -1) => ({ actions, power_slot });
 
 test('loads as a plain script and defines QDojoCombat', () => {
   const api = runInContext(fs.readFileSync(ENGINE, 'utf8') + '\nQDojoCombat;', createContext({}));
-  assert.deepEqual([...api.ACTIONS], ['JAB', 'KICK', 'BLOCK', 'DUCK', 'THROW', 'RECOVER', 'EXHAUSTED']);
+  assert.deepEqual([...api.ACTIONS], ['JAB', 'KICK', 'BLOCK', 'DUCK', 'THROW', 'RECOVER', 'EXHAUSTED', 'LAST_STAND', 'FEINT']);
   assert.equal(typeof api.resolveRound, 'function');
 });
 
@@ -206,7 +206,7 @@ test('codecs round-trip', () => {
 
 const fixtureFiles = fs.readdirSync(FIXDIR).filter(n => /^fights-[0-9a-f]+\.json$/.test(n));
 // One parity set per packaged ruleset; each replays under its own numbers.
-const RULESETS = ['docs/combat-v1.json', 'docs/combat-v1-candidate-2.json']
+const RULESETS = ['docs/combat-v1.json', 'docs/combat-v1-candidate-2.json', 'docs/combat-v1-candidate-3.json']
   .map(p => JSON.parse(fs.readFileSync(path.join(ROOT, p), 'utf8')));
 const rulesFor = doc => {
   const r = RULESETS.find(x => x.semantic_version === doc.semantic_version);
@@ -218,6 +218,7 @@ function sideDetail(t) {
   return {
     after: E.encodeState(t.after), effective: t.effective, cost_paid: t.cost_paid, base: t.base_damage,
     dealt: t.computed_damage, lost: t.actual_hp_lost, strain: t.strain, recovered: t.recovered, reasons: t.reasons,
+    stand_bonus: t.stand_bonus,
   };
 }
 
@@ -315,4 +316,39 @@ test('candidate 2 hand vectors (docs/combat.md "Candidate 2")', () => {
   assert.equal(pk.trace[1].actual_hp_lost, 38);
   assert.equal(pk.a.stamina, 34);
   assert.throws(() => b2(f2(), f2(), DUCK, JAB, true, false), /attack/);   // no power on a duck
+});
+
+test('candidate 3 hand vectors (docs/combat.md "Candidate 3")', () => {
+  const c3 = RULESETS[2];
+  const [LS, FEINT] = [7, 8];
+  const f3 = (over = {}) => Object.assign({ hp: 120, stamina: 48, opening: 0, guard_streak: 0, power_available: 1 }, over);
+  const b3 = (a, b, ia, ib) => E.resolveBeat(c3, a, b, ia, ib, false, false);
+  const fb = b3(f3(), f3(), FEINT, BLOCK);
+  assert.deepEqual([tuple(fb.a), tuple(fb.b)], [[120, 48, 2, 0], [120, 46, 0, 1]]);
+  assert.deepEqual(fb.trace[0].reasons, ['FEINT_BAITED', 'OPENING_EARNED']);
+  const kb = b3(fb.a, fb.b, KICK, BLOCK);
+  assert.equal(kb.trace[0].computed_damage, 22);
+  assert.deepEqual(kb.trace[0].reasons, ['HIT', 'GUARD_BROKEN', 'OPENING_USED']);
+  assert.deepEqual(tuple(kb.b), [98, 35, 0, 2]);
+  const sj = b3(f3({ hp: 80 }), f3({ hp: 110 }), LS, JAB);
+  assert.equal(sj.trace[0].stand_bonus, 16);
+  assert.deepEqual(sj.trace[0].reasons, ['HIT', 'STAND_BONUS']);
+  assert.deepEqual([tuple(sj.a), tuple(sj.b)], [[72, 42, 0, 0], [86, 44, 0, 0]]);
+  const fj = b3(f3(), f3(), FEINT, JAB);
+  assert.deepEqual([tuple(fj.a), tuple(fj.b)], [[116, 48, 0, 0], [120, 44, 1, 0]]);
+  assert.throws(() => E.resolveBeat(c3, f3(), f3(), LS, JAB, true, false), /attack/);   // never powered
+  assert.throws(() => E.resolveBeat(RULESETS[1], f3(), f3(), LS, JAB, false, false), /submitted/);   // not in candidate 2
+  assert.equal(E.encodePlan({ actions: [7, 8, 0, 1, 2, 3], power_slot: -1 }), '07080001020 3ff'.replace(' ', ''));
+});
+
+test('moves.js has display strings for every action, with ids and deck keys', () => {
+  const M = require('../combat/moves.js');
+  E.ACTIONS.forEach((n, i) => {
+    assert.ok(M[n], n);
+    assert.equal(M[n].id, i, n);
+    assert.equal(typeof M[n].purpose, 'string');
+    if (n !== 'EXHAUSTED') assert.ok(M[n].deck && M[n].key === String(i < 6 ? i + 1 : i), n);
+  });
+  assert.equal(M.LAST_STAND.key, '7');
+  assert.equal(M.FEINT.key, '8');
 });
