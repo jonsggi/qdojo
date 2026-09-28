@@ -187,7 +187,7 @@
     for (const key of Array.from(D.cache.keys())) {
       const rel = key.slice(D.base.length);
       const fm = /^fights\/(\d+)(\.json|\/replay\.json)$/.exec(rel);
-      const volatile = /^(index|book|manifest|cups|duels|seasons|results|market|economics)\.json$/.test(rel) || /^events\//.test(rel) || /^fighters\//.test(rel) || (fm && !done.has(fm[1]));
+      const volatile = /^(index|book|manifest|cups|duels|seasons|results|market|economics|titles)\.json$/.test(rel) || /^events\//.test(rel) || /^fighters\//.test(rel) || (fm && !done.has(fm[1]));
       if (volatile) D.cache.delete(key);
     }
     apiCache.clear();
@@ -196,7 +196,7 @@
     await probeApi();
     paintSource();
     const name = currentRoute()[0];
-    if (['arena', 'title', 'book', 'results', 'leaderboard', 'cups', 'cup', 'duels', 'duel', 'season', 'market', 'economy'].includes(name) || (name === 'fight' && D.tick !== before)) repaint();
+    if (['arena', 'title', 'book', 'results', 'leaderboard', 'titles', 'cups', 'cup', 'duels', 'duel', 'season', 'market', 'economy'].includes(name) || (name === 'fight' && D.tick !== before)) repaint();
   }
 
   function paintSource() {
@@ -255,6 +255,110 @@
     const lab = L.outcomeLabel(x);
     return '<span class="rbadge rbadge-' + lab.kind + '" title="' + esc(lab.text) + '">' + esc(lab.short) + '</span>';
   }
+
+  // ---- belts and title belts (display only; competition.md §1 and §7) ------------
+
+  // The rank ladder is published per fighter (belt, belt_rank, belt_stripes,
+  // dan); an older export without those fields shows its colour only. Belts
+  // are an overlay on the site: the fighter art itself stays rank-free (AVATARS.md).
+  const BELT_LABEL = { white: 'WHITE', yellow: 'YELLOW', orange: 'ORANGE', green: 'GREEN', blue: 'BLUE', purple: 'PURPLE', brown: 'BROWN', black: 'BLACK', red: 'RED' };
+  const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V'];
+  const ORD = ['', '1ST', '2ND', '3RD', '4TH', '5TH'];
+  function beltText(f) {
+    if (!f || f.provisional) return 'PROVISIONAL';
+    const b = BELT_LABEL[f.belt] ? f.belt : 'other';
+    if (b === 'black' && f.dan) return 'BLACK BELT, ' + ORD[f.dan] + ' DAN';
+    if (b === 'red') return 'RED BELT, GRANDMASTER';
+    const n = Number(f.belt_stripes || 0);
+    return (BELT_LABEL[b] || String(f.belt || '?').toUpperCase()) + ' BELT' + (n ? ', ' + n + ' STRIPE' + (n === 1 ? '' : 'S') : '');
+  }
+  // A small cloth belt: colour band, a knot, and a black tab carrying the
+  // stripes (0-3 bars) or the dan numeral. `big` for the fighter card.
+  function beltBadge(f, big) {
+    if (!f) return '';
+    if (f.provisional) {
+      return '<span class="belt belt-sm belt-white belt-prov" title="Provisional: ' + esc(f.placement_fights) + ' of 10 placement fights">PROVISIONAL ' + esc(f.placement_fights) + '/10</span>';
+    }
+    const b = BELT_LABEL[f.belt] ? f.belt : 'other';
+    const n = Math.max(0, Math.min(3, Number(f.belt_stripes || 0)));
+    const tab = b === 'black' && f.dan ? '<span class="belt-tab"><b class="belt-dan">' + ROMAN[f.dan] + '</b></span>'
+      : b === 'red' ? '<span class="belt-tab"><b class="belt-dan">GM</b></span>'
+      : '<span class="belt-tab">' + '<i></i>'.repeat(n) + '</span>';
+    return '<span class="belt belt-sm belt-' + b + ' belt-r' + esc(f.belt_rank == null ? 'x' : f.belt_rank) + (big ? ' belt-big' : '') + '" title="' + esc(beltText(f)) + ' (display only)">' +
+      '<span class="belt-name">' + esc(BELT_LABEL[b] || String(f.belt || '?').toUpperCase()) + '</span>' + tab + '</span>';
+  }
+
+  // Title belt art: small pixel championship belts, one grid unit per pixel.
+  // Leather straps with stitching, side plates and a centre plate:
+  // lineal = gold with a hubcap and a red gem; season = chrome with a tape;
+  // cup = bronze with a bottle cap.
+  const TITLE_KINDS = {
+    lineal: { name: 'THE SCRAP HEAP BELT', short: 'LINEAL', plate: ['#fff1a0', '#f2c230', '#b07a10', '#5a3406'] },
+    season: { name: 'THE MONTAGE BELT', short: 'SEASON', plate: ['#ffffff', '#c9d1d8', '#7d8894', '#2a3036'] },
+    cup: { name: 'THE BOTTLE CAP BELT', short: 'CUP', plate: ['#ffc58a', '#c87a3a', '#8a4a1a', '#3a1a06'] },
+  };
+  function titleBeltSvg(kind, cls) {
+    const k = TITLE_KINDS[kind] || TITLE_KINDS.lineal;
+    const [hi, base, lo, edge] = k.plate;
+    const r = (x, y, w, h, c) => '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" fill="' + c + '"/>';
+    let s = '';
+    // Straps with stitching and a buckle end.
+    s += r(0, 6, 48, 8, '#1a100a') + r(0, 7, 48, 6, '#3a2414') + r(0, 7, 48, 1, '#5a3a20');
+    for (let x = 1; x < 48; x += 3) s += r(x, 8, 2, 1, '#8a6a3a') + r(x, 11, 2, 1, '#8a6a3a');
+    s += r(0, 6, 2, 8, '#6b7682') + r(46, 6, 2, 8, '#6b7682');
+    // Side plates with rivets.
+    for (const x of [6, 36]) {
+      s += r(x, 4, 6, 12, edge) + r(x + 1, 5, 4, 10, base) + r(x + 1, 5, 4, 1, hi) + r(x + 1, 14, 4, 1, lo);
+      s += r(x + 2, 7, 2, 2, lo) + r(x + 2, 11, 2, 2, lo);
+    }
+    // Centre plate.
+    s += r(14, 1, 20, 18, edge) + r(15, 2, 18, 16, base) + r(15, 2, 18, 2, hi) + r(15, 16, 18, 2, lo) + r(16, 4, 1, 11, hi);
+    for (const [x, y] of [[16, 3], [31, 3], [16, 15], [31, 15]]) s += r(x, y, 1, 1, '#fffbe6');
+    if (kind === 'season') {
+      // A videotape: THE MONTAGE, PART II.
+      s += r(18, 6, 12, 8, '#111') + r(19, 7, 10, 3, '#e6ddcf') + r(20, 11, 3, 2, '#c9d1d8') + r(25, 11, 3, 2, '#c9d1d8') + r(21, 11, 1, 2, '#111') + r(26, 11, 1, 2, '#111') + r(20, 8, 8, 1, '#e0342b');
+    } else if (kind === 'cup') {
+      // A bottle cap, crimped edge and all.
+      s += r(20, 5, 8, 10, '#6a0c08') + r(19, 6, 10, 8, '#6a0c08') + r(20, 6, 8, 8, '#e0342b') + r(21, 7, 6, 6, '#ff7a5a') + r(22, 8, 4, 4, '#e0342b');
+      for (const [x, y] of [[21, 4], [25, 4], [18, 8], [29, 8], [21, 15], [25, 15], [18, 11], [29, 11]]) s += r(x, y, 2, 1, '#6a0c08');
+      s += r(23, 9, 2, 2, '#fff1a0');
+    } else {
+      // A hubcap from SENSEI's first students, with a red gem.
+      s += r(19, 4, 10, 12, '#2a3036') + r(18, 5, 12, 10, '#2a3036') + r(19, 5, 10, 10, '#c9d1d8') + r(20, 6, 8, 8, '#8c99a6');
+      s += r(23, 5, 2, 10, '#e6ecf0') + r(19, 9, 10, 2, '#e6ecf0') + r(22, 8, 4, 4, '#6a0c08') + r(23, 8, 2, 4, '#e0342b') + r(22, 9, 4, 2, '#e0342b') + r(23, 9, 1, 1, '#ffd0c8');
+    }
+    return '<svg class="tbelt tbelt-' + esc(kind) + (cls ? ' ' + cls : '') + '" viewBox="0 0 48 20" shape-rendering="crispEdges" role="img" aria-label="' + esc(k.name) + '"><title>' + esc(k.name) + '</title>' + s + '</svg>';
+  }
+  // The belts a fighter holds right now, as small icons.
+  function heldBelts(t) {
+    const holds = (t && t.holds) || [];
+    return holds.length ? '<span class="held">' + holds.map(k => titleBeltSvg(k, 'tbelt-xs')).join('') + '</span>' : '';
+  }
+
+  // titles.json (the export) or the API's /titles; both carry the same body.
+  // An export that predates title belts does not list the schema: nothing is fetched.
+  async function loadTitles() {
+    const listed = D.manifest && (D.manifest.supported_schemas || []).includes('qdojo.combat.titles.v1');
+    return viaApi(() => apiJson('titles'), () => (listed ? fetchJson('titles.json') : Promise.resolve(null))).catch(() => null);
+  }
+  // Title facts for one fight: from its own document when the exporter
+  // published them, else from titles.json (recent title fights and reigns).
+  function titleOf(s, T) {
+    if (!s) return { title: false, champ: null };
+    if (s.title_fight != null) return { title: !!s.title_fight, champ: s.new_champion || null };
+    const id = String(s.fight_id);
+    const lin = T && T.lineal;
+    if (!lin) return { title: false, champ: null };
+    const rec = (lin.recent_title_fights || []).find(x => String(x.fight_id) === id);
+    if (rec) return { title: true, champ: rec.changed ? rec.challenger : null };
+    const won = (lin.history || []).find(r => String(r.from_fight) === id && r.won_from);
+    if (won) return { title: true, champ: won.holder };
+    const live = s.phase && s.phase !== 'DONE' && s.mode === 'ranked' && s.fighters && lin.holder && [s.fighters.A.fighter_id, s.fighters.B.fighter_id].includes(lin.holder);
+    return { title: !!live, champ: null };
+  }
+  const titleTag = (x, big) => (x && x.title ? '<span class="tf-tag' + (big ? ' tf-big' : '') + '" title="The lineal SCRAP HEAP BELT is on the line (display only)">TITLE FIGHT</span>' : '') +
+    (x && x.champ ? ' <span class="tf-tag tf-new' + (big ? ' tf-big' : '') + '">NEW CHAMPION!</span>' : '');
+  const signed = n => (n > 0 ? '+' : n < 0 ? '-' : '') + numberFmt(Math.abs(n));
 
   function screen(title, sub) {
     return '<h2 class="screen-title">' + esc(title) + (sub ? '<small>' + sub + '</small>' : '') + '</h2>';
@@ -422,7 +526,7 @@
       const s = list[i % list.length];
       const out = summaryOutcome(s);
       box.innerHTML = '<a class="attract-card" href="#fight/' + esc(s.fight_id) + '">' +
-        '<span class="attract-kicker">' + (s.phase === 'DONE' ? 'RESULT' : '<b class="live-dot">LIVE</b>') + ' &middot; FIGHT #' + esc(s.fight_id) + ' &middot; ' + esc(String(s.mode || '').toUpperCase()) + '</span>' +
+        '<span class="attract-kicker">' + (s.phase === 'DONE' ? 'RESULT' : '<b class="live-dot">LIVE</b>') + ' &middot; FIGHT #' + esc(s.fight_id) + ' &middot; ' + esc(String(s.mode || '').toUpperCase()) + (s.title_fight ? ' ' + titleTag({ title: true }) : '') + '</span>' +
         '<span class="attract-arena"><canvas class="stage-bg" aria-hidden="true"></canvas><span class="stage-name" aria-hidden="true"></span>' +
         '<span class="attract-vs">' + standee(s.fighters.A.fighter_id) + '<span class="vs vs-fire">VS</span>' + standee(s.fighters.B.fighter_id) + '</span></span>' +
         '<span class="attract-names">' + esc(short(s.fighters.A.fighter_id)) + ' &middot; ' + esc(short(s.fighters.B.fighter_id)) + '</span>' +
@@ -454,15 +558,17 @@
       Promise.all(finishedIds.map(summaryOf)),
     ]);
     const recent = !live.length && !finished.filter(Boolean).length ? await latestDone(3) : [];
+    const T = await loadTitles();
     if (tok !== viewToken) return;
-    const cards = live.filter(x => x.s).map(({ s }) => '<section class="panel panel-cyan arena-card" data-fight="' + esc(s.fight_id) + '">' +
+    const cards = live.filter(x => x.s).map(({ s }) => '<section class="panel panel-cyan arena-card' + (titleOf(s, T).title ? ' arena-title' : '') + '" data-fight="' + esc(s.fight_id) + '">' +
       '<h3>FIGHT #' + esc(s.fight_id) + ' &middot; ' + esc(String(s.mode || '').toUpperCase()) + ' &middot; ROUND ' + (s.round_index + 1) + '/' + R.rounds + '</h3>' +
+      (titleOf(s, T).title ? '<p class="tf-banner">' + titleBeltSvg('lineal', 'tbelt-sm') + titleTag(titleOf(s, T), true) + '</p>' : '') +
       '<div class="arena-status"><p>' + phaseBadge(s) + '</p><p class="acted-row">' + actedHtml(s) + '</p></div>' +
       '<div class="arena-player"></div>' +
       '<p class="tiny muted">HP and stamina are the confirmed state after the last resolved round; plans stay sealed until revealed. <a href="#fight/' + esc(s.fight_id) + '">FULL REPLAY AND VERIFICATION &#9654;</a></p></section>').join('');
     const resultCard = (s, label) => {
       const out = summaryOutcome(s);
-      return '<section class="panel panel-yellow result-card"><h3>' + label + ' &middot; FIGHT #' + esc(s.fight_id) + '</h3>' +
+      return '<section class="panel panel-yellow result-card"><h3>' + label + ' &middot; FIGHT #' + esc(s.fight_id) + '</h3>' + (titleOf(s, T).title ? '<p class="tf-banner">' + titleTag(titleOf(s, T)) + '</p>' : '') +
         '<div class="rc-vs">' + fighterLink(s.fighters.A.fighter_id, 'A ' + short(s.fighters.A.fighter_id)) + ' <span class="vs">VS</span> ' + fighterLink(s.fighters.B.fighter_id, 'B ' + short(s.fighters.B.fighter_id)) + '</div>' +
         '<p>' + resultBadge(out) + ' ' + esc(L.outcomeLabel(out).text) + '</p>' + miniBars(stateAB(s)) +
         '<p><a class="btn btn-sm" href="#fight/' + esc(s.fight_id) + '">REPLAY &#9654;</a></p></section>';
@@ -806,24 +912,25 @@
     const index = await fetchJson('index.json');
     if (index && index.names) FIGHTER_NAMES = index.names;
     const page = DEC.test(pageArg || '') ? Math.max(1, Number(pageArg)) : 1;
-    const r = await loadResults(index, page);
+    const [r, T] = await Promise.all([loadResults(index, page), loadTitles()]);
     if (tok !== viewToken) return;
     const { done, active, missing } = r;
     const feed = done.map(s => {
+      const tf = titleOf(s, T);
       const out = summaryOutcome(s), w = out.outcome ? out.outcome.winner : null;
       const A_ = s.fighters.A.fighter_id, B_ = s.fighters.B.fighter_id;
       const line = w === 'A' || w === 'B'
         ? fighterLink(w === 'A' ? A_ : B_) + ' <span class="beat">BEAT</span> ' + fighterLink(w === 'A' ? B_ : A_)
         : fighterLink(A_) + ' <span class="beat">&middot;</span> ' + fighterLink(B_);
-      return '<li class="feed-row"><a class="feed-id" href="#fight/' + esc(s.fight_id) + '">#' + esc(s.fight_id) + '</a>' +
+      return '<li class="feed-row' + (tf.title ? ' feed-title' : '') + '"><a class="feed-id" href="#fight/' + esc(s.fight_id) + '">#' + esc(s.fight_id) + '</a>' +
         '<span class="feed-mode">' + esc(String(s.mode || '').toUpperCase()) + '</span>' +
-        '<span class="feed-line">' + line + '</span>' + resultBadge(out) + ' <span class="feed-how">' + esc(howText(s)) + '</span>' +
+        '<span class="feed-line">' + (tf.title ? titleTag(tf) + ' ' : '') + line + '</span>' + resultBadge(out) + ' <span class="feed-how">' + esc(howText(s)) + '</span>' +
         '<span class="feed-tick tiny muted">TICK ' + esc(s.result && s.result.tick) + '</span>' +
         '<a class="btn btn-sm" href="#fight/' + esc(s.fight_id) + '">REPLAY</a></li>';
     }).join('');
     const pager = pagerHtml(n => '#results/' + n, r.page, r.pages);
     setView(screen('RESULTS', esc(r.total) + ' FINISHED &middot; ' + esc(active.length) + ' LIVE &middot; SNAPSHOT TICK ' + esc(index.generated_tick)) +
-      liveNowPanel(active) +
+      liveNowPanel(active, T) +
       '<p class="sub-links"><a href="#duels">DUELS &#9654;</a> &middot; <a href="#cups">CUPS &#9654;</a> &middot; <a href="#season">SEASON &#9654;</a></p>' +
       '<section class="panel"><h3>HISTORY' + (r.pages > 1 ? ' &middot; PAGE ' + esc(r.page) + ' OF ' + esc(r.pages) : '') + '</h3>' + pager +
       (feed ? '<ol class="feed">' + feed + '</ol>' : '<p class="muted">No finished fight yet.</p>') + pager +
@@ -832,12 +939,12 @@
 
   // Running fights up front as versus chips; fights whose deadline passed and
   // that wait for the referee's advance fold away, with what that means.
-  function liveNowPanel(active) {
+  function liveNowPanel(active, T) {
     if (!active.length) return '';
     const overdue = active.filter(s => L.livePhase(s, D.tick).overdue), running = active.filter(s => !L.livePhase(s, D.tick).overdue);
     const chip = s => '<a class="live-chip" href="#fight/' + esc(s.fight_id) + '"><span class="lc-id">#' + esc(s.fight_id) + '</span>' +
       '<span class="lc-vs">' + avatar(s.fighters.A.fighter_id, 'avatar-sm') + '<b>' + esc(short(s.fighters.A.fighter_id)) + '</b><i>VS</i><b>' + esc(short(s.fighters.B.fighter_id)) + '</b>' + avatar(s.fighters.B.fighter_id, 'avatar-sm') + '</span>' +
-      '<span class="lc-state">R' + (s.round_index + 1) + '/' + R.rounds + ' ' + phaseBadge(s).replace(/<span class="tiny muted">.*?<\/span>/, '') + '</span></a>';
+      '<span class="lc-state">R' + (s.round_index + 1) + '/' + R.rounds + ' ' + phaseBadge(s).replace(/<span class="tiny muted">.*?<\/span>/, '') + '</span>' + titleTag(titleOf(s, T)) + '</a>';
     return '<section class="panel panel-cyan"><h3>LIVE NOW (' + running.length + ')</h3>' +
       (running.length ? '<div class="live-chips">' + running.map(chip).join('') + '</div>' : '<p class="muted">No round is open right now.</p>') +
       '<p><a class="btn btn-sm" href="#arena">WATCH IN THE ARENA &#9654;</a></p>' +
@@ -855,6 +962,9 @@
     return '<td class="wr" title="' + w + '% wins, ' + d + '% draws of ' + n + ' ranked fights"><span class="wr-bar"><i class="wr-w" style="width:' + w + '%"></i><i class="wr-d" style="width:' + d + '%"></i></span><span class="wr-n">' + w + '%</span></td>';
   }
 
+  // Sort order of the leaderboard table: rating (the ranking) or net QU.
+  let lbSort = 'rating';
+  const netOf = f => Number((f.earnings && f.earnings.net) || 0);
   async function viewLeaderboard(tok) {
     if (needData()) return;
     const index = await fetchJson('index.json');
@@ -873,25 +983,33 @@
       return { rows, forms, full: false };
     });
     if (tok !== viewToken) return;
-    const beltCell = f => f.provisional
-      ? '<span class="belt belt-sm belt-white" title="Provisional: ' + esc(f.placement_fights) + ' of 10 placement fights">PROVISIONAL ' + esc(f.placement_fights) + '/10</span>'
-      : '<span class="belt belt-sm belt-' + esc(f.belt || 'other') + '">' + esc(String(f.belt || '?').toUpperCase()) + '</span>';
+    const beltCell = f => beltBadge(f);
     const formCell = form => form.length ? form.map(x => '<a class="form form-' + x.mark + '" href="#fight/' + esc(x.fight_id) + '" title="#' + esc(x.fight_id) + ' ' + esc(x.how) + '">' + (x.forfeit ? x.mark.toLowerCase() : x.mark) + '</a>').join('') : '<span class="muted">—</span>';
-    const body = rows.map(({ f, faults }, i) => {
+    const rank = new Map(rows.map(({ f }, i) => [f.fighter_id, i + 1]));
+    const order = rows.map((r, i) => ({ ...r, form: forms[i] }));
+    if (lbSort === 'net') order.sort((x, y) => netOf(y.f) - netOf(x.f) || rank.get(x.f.fighter_id) - rank.get(y.f.fighter_id));
+    const hasMoney = rows.some(({ f }) => f.earnings);
+    const body = order.map(({ f, faults, form }) => {
       const r = f.record || {};
-      return '<tr><td class="num rank">' + (i + 1) + '</td><td>' + fighterLink(f.fighter_id) + (f.house_npc ? ' <span class="pill tiny">HOUSE NPC</span>' : '') + ' ' + originBadge(metaOf(f.fighter_id, f).origin) + '</td>' +
+      const net = netOf(f);
+      return '<tr><td class="num rank">' + rank.get(f.fighter_id) + '</td><td>' + fighterLink(f.fighter_id) + heldBelts(f.titles) + (f.house_npc ? ' <span class="pill tiny">HOUSE NPC</span>' : '') + ' ' + originBadge(metaOf(f.fighter_id, f).origin) + '</td>' +
         '<td class="num"><b>' + esc(f.lifetime_rating) + '</b></td><td>' + beltCell(f) + '</td>' +
         '<td class="num">' + esc(r.W || 0) + '</td><td class="num">' + esc(r.D || 0) + '</td><td class="num">' + esc(r.L || 0) + '</td>' + winRateCell(careerOf(f).tot) +
+        (hasMoney ? '<td class="num net ' + (net > 0 ? 'pos' : net < 0 ? 'neg' : '') + '" title="Won ' + esc(numberFmt((f.earnings || {}).won || 0)) + ', lost ' + esc(numberFmt((f.earnings || {}).lost || 0)) + ' fake QU in every mode">' + signed(net) + '</td>' : '') +
         '<td class="num">' + esc(r.FW || 0) + '/' + esc(r.FL || 0) + '</td><td class="num' + (faults ? ' neg' : '') + '">' + faults + '</td>' +
-        '<td class="form-cell">' + formCell(forms[i]) + '</td></tr>';
+        '<td class="form-cell">' + formCell(form) + '</td></tr>';
     }).join('');
+    const sortBtn = (key, label) => '<button class="chip lb-sort' + (lbSort === key ? ' on' : '') + '" data-sort="' + key + '" aria-pressed="' + (lbSort === key) + '">' + label + '</button>';
     setView(screen('LEADERBOARD', 'LIFETIME COMBAT RATING &middot; ' + esc(rows.length) + ' FIGHTERS &middot; SNAPSHOT TICK ' + esc(index.generated_tick)) +
       (rows.length >= 3 ? '<section class="lb-hero" aria-label="Top three"><div class="t-podium">' + podiumHtml(rows) + '</div></section>' : '') +
-      '<section class="panel panel-yellow"><h3>RANKED</h3>' + (rows.length ? '<div class="tscroll"><table class="board"><thead><tr><th class="num">#</th><th>FIGHTER</th><th class="num">RATING</th><th>BELT</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th title="Wins over fought results in every mode: ranked, duels and cups">WIN RATE (ALL)</th><th class="num">FORFEITS W/L</th><th class="num">FAULTS</th><th>FORM (NEWEST FIRST)</th></tr></thead><tbody>' + body + '</tbody></table></div>' : '<p class="muted">No fighters yet.</p>') +
+      '<section class="panel panel-yellow"><h3>RANKED</h3>' + (hasMoney ? '<p class="lb-sorts">SORT BY ' + sortBtn('rating', 'RATING') + ' ' + sortBtn('net', 'NET QU') + ' <a class="lb-titles" href="#titles">TITLE BELTS &#9654;</a></p>' : '') +
+      (rows.length ? '<div class="tscroll"><table class="board"><thead><tr><th class="num">#</th><th>FIGHTER</th><th class="num">RATING</th><th>BELT</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th title="Wins over fought results in every mode: ranked, duels and cups">WIN RATE (ALL)</th>' + (hasMoney ? '<th class="num" title="Fake QU won less lost, every mode, after rake">NET QU</th>' : '') + '<th class="num">FORFEITS W/L</th><th class="num">FAULTS</th><th>FORM (NEWEST FIRST)</th></tr></thead><tbody>' + body + '</tbody></table></div>' : '<p class="muted">No fighters yet.</p>') +
       '<p class="tiny muted">Ratings start at 1000 and move by the integer formula in RULES; W/D/L are ranked contract records, forfeits separate. WIN RATE (ALL) also counts duels and cups. The first 10 ranked fights are placement: shown white and PROVISIONAL. ' +
-      'FORM: W win, L loss, D draw, N no result (double fault or void); lower case is a forfeit. Belts are display only: they change no stats. ' +
+      'FORM: W win, L loss, D draw, N no result (double fault or void); lower case is a forfeit. Belts are display only: they change no stats. Bars on a belt are stripes (progress through its band); a numeral on a black belt is its dan. ' +
+      (hasMoney ? 'NET QU: fake QU won less stakes and entry fees lost, in every mode, after rake. ' : '') +
       'HOUSE fighters are run by the arena operator; OUTSIDE fighters by outside builders. ' +
       (full ? 'Records and form cover every fight in the arena (read API).' : 'Form covers the recent fights still in the export.') + '</p></section>');
+    $$('.lb-sort').forEach(b => b.addEventListener('click', () => { lbSort = b.dataset.sort; viewLeaderboard(tok); }));
   }
 
   // ---- JOIN / HOW TO BUILD A BOT -----------------------------------------------------
@@ -958,7 +1076,10 @@
     ['REPLAY_MATCH', 'Your browser recomputed the commitments and replayed every beat from the revealed plans, and everything matched. Chain inclusion is not proven by this site.'],
     ['COMBAT_VERIFIED', 'Every check passed, including confirmation on chain. A same-source export cannot earn it.'],
     ['HASH_MATCH_ONLY / UNVERIFIED / FAILED', 'Only hashes could be checked / nothing could be checked / something did not match: do not trust that record.'],
-    ['RATING / BELT', 'Integer rating from 1000; the first 10 ranked fights are placement (PROVISIONAL, white). Belts are display only.'],
+    ['RATING / BELT', 'Integer rating from 1000; the first 10 ranked fights are placement (PROVISIONAL, white). Then white (below 640), yellow (640), orange (800), green (960), blue (1120), purple (1280), brown (1440) and black (1600), each colour 160 points wide with 0-3 stripes, one per 40 points. Black belt gains a dan every 60 points (1st dan 1600 to 5th dan 1840); red, grandmaster, from 1900. Belts are display only.'],
+    ['TITLE BELTS', 'Honours, display only. THE SCRAP HEAP BELT (lineal) passes when its holder loses a ranked fight by KO or decision; draws, forfeits, double faults and voids never move it. THE MONTAGE BELT: the latest season champion. THE BOTTLE CAP BELT: the latest cup champion.'],
+    ['TITLE FIGHT', 'A ranked fight with the lineal holder in it. NEW CHAMPION! marks the one where the belt changed hands.'],
+    ['QU WON / NET', 'Fake QU a fighter won (stake or prize gained after rake) and its net after stakes and entry fees lost, over ranked, duels and cups.'],
     ['SAMPLE', 'No live export was found, so the site shows a devnet sample: fake QU, synthetic fighters.'],
     ['STALE', 'The live export has not been rewritten for over ' + Math.round(L.STALE_MS / 60000) + ' minutes: the house exporter may be down, and what you see may be old.'],
     ['LEGACY', 'The retired riddle arcade, kept read-only so its history stays reachable.'],
@@ -1059,7 +1180,8 @@
       '<div class="stage arcade' + (opts.compact ? ' stage-compact' : '') + '"><canvas class="stage-bg" aria-hidden="true"></canvas>' + corner('A') +
       '<div class="center"><span class="ko-emblem" aria-hidden="true">KO</span><div class="clock" aria-hidden="true"><b class="clock-n"></b><small class="clock-l"></small></div>' +
       '<div class="round-no"></div><div class="beat-no"></div><div class="center-note"></div></div>' + corner('B') +
-      '<div class="announcer" aria-hidden="true"><span></span></div><div class="fx-flash" aria-hidden="true"></div></div>' +
+      '<div class="announcer" aria-hidden="true"><span></span></div><div class="fx-flash" aria-hidden="true"></div>' +
+      (opts.finale ? '<div class="finale" aria-hidden="true">' + titleBeltSvg('lineal', 'tbelt-md') + '<b>' + esc(opts.finale) + '</b></div>' : '') + '</div>' +
       '<div class="controls" role="group" aria-label="Replay controls">' +
       '<button class="chip" data-act="first" title="First (Home)">|&#9664;</button>' +
       '<button class="chip" data-act="prev" title="Previous beat (Left)">&#9664;</button>' +
@@ -1167,6 +1289,9 @@
         : f.kind === 'forfeit' ? L.outcomeLabel(opts.replay).text
         : f.kind === 'round' ? 'Round ' + (f.round + 1) + ' begins from the state above.' : 'Both fighters start at HP ' + st.a.hp + ' and stamina ' + st.a.stamina + '.';
       note.className = 'center-note note-' + f.kind;
+      // A title changed hands: the last frame says so (display only).
+      const fin = $('.finale', root);
+      if (fin) fin.classList.toggle('on', idx === frames.length - 1 && (f.kind === 'end' || f.kind === 'unexecuted'));
       // Announcer and winner plate: derived from the frame alone, so motion
       // off shows the same words, only without the entrance.
       const ann = announce(f);
@@ -1374,9 +1499,13 @@
       // that says no round resolved yet means there is no replay to ask for.
       replay = summary ? await replayFor(summary) : await fetchJson('fights/' + id + '/replay.json').catch(() => null);
     }
+    const T = await loadTitles();
     if (tok !== viewToken) return;
     if (!summary && !replay) return notFound('Fight #' + id + ' is not in this export.');
     const fighters = (replay || summary).fighters;
+    const tf = titleOf(summary && summary.title_fight != null ? summary : replay && replay.title_fight != null ? replay : (summary || replay), T);
+    const titleHero = tf.title ? '<section class="tf-hero">' + titleBeltSvg('lineal', 'tbelt-lg') + '<div><b class="tf-hero-h">TITLE FIGHT</b><span>' + esc(TITLE_KINDS.lineal.name) + ' IS ON THE LINE</span>' +
+      (tf.champ ? '<span class="tf-hero-new">NEW CHAMPION: ' + esc(short(tf.champ)) + '</span>' : '') + '</div></section>' : '';
     const names = { A: 'A ' + short(fighters.A.fighter_id), B: 'B ' + short(fighters.B.fighter_id) };
     const live = summary && summary.phase !== 'DONE';
     const liveBanner = live
@@ -1385,7 +1514,7 @@
         '<p>Committed: ' + esc((summary.committed || []).join(', ') || 'none') + ' &middot; revealed: ' + esc((summary.revealed || []).join(', ') || 'none') + '. Plans stay sealed until revealed.</p>' +
         '<p class="muted">The replay below shows only completed rounds and trails the authoritative round. Deadlines are time, never health.</p></section>'
       : '';
-    const head = screen('FIGHT #' + id, esc(String((replay || summary).mode || '').toUpperCase()) + ' &middot; ' + esc(R.semantic_version.toUpperCase()));
+    const head = screen('FIGHT #' + id, esc(String((replay || summary).mode || '').toUpperCase()) + ' &middot; ' + esc(R.semantic_version.toUpperCase())) + titleHero;
     const vs = '<div class="vsline">' + fighterLink(fighters.A.fighter_id, names.A) + ' <span class="vs">VS</span> ' + fighterLink(fighters.B.fighter_id, names.B) +
       ' <span id="level-slot">' + (replay ? '<span class="level level-PENDING">VERIFYING&hellip;</span>' : '') + '</span> <span id="series-slot"></span></div>';
     if (!replay) {
@@ -1397,17 +1526,31 @@
     const lab = L.outcomeLabel(replay);
     setView(head + vs + liveBanner +
       '<section class="panel panel-cyan result-panel"><h3>RESULT</h3><p>' + resultBadge(replay) + ' ' + esc(lab.text) + '</p>' +
+      (tf.champ ? '<p class="tf-result">' + titleTag(tf) + ' ' + fighterLink(tf.champ) + ' takes ' + esc(TITLE_KINDS.lineal.name) + '.</p>' : tf.title ? '<p class="tf-result">' + titleTag(tf) + ' The belt stays where it was.</p>' : '') +
       (derived.error ? '<p class="neg">The engine refused this record: ' + esc(derived.error) + '</p>' : '') + '</section>' +
       '<section class="panel player-panel"><h3>REPLAY &middot; RE-DERIVED FROM REVEALED PLANS</h3><div id="player"></div></section>' +
       '<section class="panel verify-panel" id="verify"><h3>VERIFICATION</h3><p class="muted">Recomputing digests and commitments&hellip;</p></section>' +
       plansPanel(replay));
-    track(createPlayer($('#player'), { frames, ids: { A: fighters.A.fighter_id, B: fighters.B.fighter_id }, names, links: true, replay, stageSeed: id, autoplay: true }));
+    track(createPlayer($('#player'), { frames, ids: { A: fighters.A.fighter_id, B: fighters.B.fighter_id }, names, links: true, replay, stageSeed: id, autoplay: true, finale: tf.champ ? 'NEW CHAMPION!' : null }));
+    cornerBelts($('#player'), fighters);
     seriesLink(id, replay.mode).then(html => { if (tok === viewToken && $('#series-slot')) $('#series-slot').innerHTML = html; }).catch(() => {});
     markScrollers($('#view'));
     const v = await L.verifyReplay(replay, { rules: R, manifest: D.manifest, sha256: SHA }).catch(e => ({ checks: [{ id: 'error', label: 'Verification', status: 'FAIL', evidence: e.message, details: [] }], level: 'FAILED' }));
     if (tok !== viewToken) return;
     $('#level-slot').innerHTML = levelBadge(v.level);
     $('#verify').innerHTML = '<h3>VERIFICATION</h3>' + verifyHtml(v);
+  }
+
+  // Each corner's current belt next to its name (the fighter files are cached).
+  function cornerBelts(root, fighters) {
+    for (const s of ['A', 'B']) {
+      const id = fighters[s].fighter_id;
+      if (!HEX64.test(id || '')) continue;
+      fetchJson('fighters/' + id + '.json').then(f => {
+        const name = root && $('.corner-' + s + ' .corner-name', root);
+        if (f && name && !(name.nextElementSibling && name.nextElementSibling.classList.contains('belt'))) name.insertAdjacentHTML('afterend', beltBadge(f) + heldBelts(f.titles));
+      }).catch(() => {});
+    }
   }
 
   function verifyHtml(v) {
@@ -1524,18 +1667,83 @@
       '<h4>RESULTS BY MODE (REPLAYED)</h4><div class="tscroll"><table><thead><tr><th>MODE</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num">FW</th><th class="num">FL</th></tr></thead><tbody>' + (results || '<tr><td colspan="6" class="muted">none</td></tr>') + '</tbody></table></div>';
   }
 
+  // The top of a fighter page: an arcade character card. Everything on it is
+  // from the export or the API; the sprite is the rank-free fighter art with
+  // the belt and title belts beside it, never baked in.
+  function fighterCard(hex, f, career) {
+    const e = f.earnings || null, t = f.titles || {}, st = f.streak || null;
+    const tot = career.tot, fought = career.fought;
+    const wr = fought ? Math.round(100 * tot.W / fought) : null;
+    const net = e ? Number(e.net) : 0;
+    const stat = (label, value, sub, cls) => '<div class="fc-stat' + (cls ? ' ' + cls : '') + '"><span>' + label + '</span><b>' + value + '</b>' + (sub ? '<small>' + sub + '</small>' : '') + '</div>';
+    const held = (t.holds || []).map(k => '<span class="fc-held" title="' + esc(TITLE_KINDS[k].name) + '">' + titleBeltSvg(k, 'tbelt-sm') + '<small>' + TITLE_KINDS[k].short + '</small></span>').join('');
+    const seasons = t.season_titles || [];
+    return '<div class="fcard"><div class="fcard-art"><span class="fc-plate">' + esc(short(hex)) + '</span>' +
+      '<span class="avatar avatar-card" data-anim="idle" data-identity="' + esc(hex) + '">' + (A ? A.svg(hex, 'sprite') : '') + '</span>' +
+      '<div class="fc-belt">' + beltBadge(f, true) + '<small>' + esc(beltText(f)) + '</small></div>' +
+      (held ? '<div class="fc-helds">' + held + '</div>' : '') + '</div>' +
+      '<div class="fcard-body">' +
+      (e ? '<div class="fc-money"><div class="fc-big"><span>QU WON</span><b>' + esc(numberFmt(e.won)) + '</b></div>' +
+        '<div class="fc-big fc-net ' + (net > 0 ? 'pos' : net < 0 ? 'neg' : '') + '"><span>NET</span><b>' + signed(net) + '</b></div></div>' : '') +
+      '<div class="fc-stats">' +
+      stat('RATING', esc(f.lifetime_rating), f.provisional ? 'PLACEMENT ' + esc(f.placement_fights) + '/10' : '') +
+      stat('RECORD', esc(tot.W) + '-' + esc(tot.D) + '-' + esc(tot.L), 'W-D-L, ALL MODES') +
+      stat('WIN RATE', wr == null ? '&mdash;' : wr + '%', fought ? esc(fought) + ' FOUGHT' : '', 'fc-wr" style="--wr:' + (wr || 0) + '%') +
+      (st ? stat('STREAK', esc(st.current), 'BEST ' + esc(st.best)) : '') +
+      stat('CUPS WON', esc(t.cup_titles || 0), '') +
+      stat('SEASONS WON', esc(seasons.length), seasons.length ? seasons.slice(-4).map(x => 'S' + esc(x)).join(' ') : '') +
+      stat('TITLE REIGNS', esc(t.lineal_reigns || 0), t.lineal_defenses ? esc(t.lineal_defenses) + ' DEFENCES' : '') +
+      (e && e.biggest_win ? stat('BIGGEST WIN', esc(numberFmt(e.biggest_win.amount)), esc(String(e.biggest_win.mode).toUpperCase())) : '') +
+      '</div>' + (e ? '<p class="fc-note">FAKE QU on a simulated chain: won is the net gain from won contests and cups after rake; net takes off stakes and entry fees lost.</p>' : '') +
+      '</div></div>';
+  }
+
+  // Lineal reigns of one fighter: every one from the API, else the export's last 100.
+  async function fighterReigns(hex, T) {
+    if (D.api) {
+      try { return { items: (await apiJson('titles/lineal?holder=' + hex + '&per_page=200')).items, full: true }; } catch (e) { /* static below */ }
+    }
+    return { items: ((T && T.lineal && T.lineal.history) || []).filter(r => r.holder === hex), full: false };
+  }
+
+  function titlesPanel(hex, f, T, reigns) {
+    const t = f.titles;
+    if (!t && !T) return '';
+    const x = t || {};
+    const card = (kind, n, sub) => '<div class="tp-belt' + (n ? '' : ' tp-none') + '">' + titleBeltSvg(kind, 'tbelt-md') + '<b>' + esc(n) + '&times;</b><span>' + esc(TITLE_KINDS[kind].name) + '</span><small>' + sub + '</small></div>';
+    const rows = (reigns.items || []).slice(0, 10).map(r => '<tr><td class="num"><a href="#fight/' + esc(r.from_fight) + '">#' + esc(r.from_fight) + '</a></td><td>' + (r.won_from ? 'from ' + fighterLink(r.won_from) : '<span class="muted">first holder</span>') + '</td>' +
+      '<td class="num">' + esc(r.defenses) + '</td><td>' + (r.to_fight ? '<a href="#fight/' + esc(r.to_fight) + '">#' + esc(r.to_fight) + '</a> to ' + fighterLink(r.lost_to) + ' <span class="tiny muted">' + esc(r.how === 'HP' ? 'DECISION' : r.how || '') + '</span>' : '<b class="pos">HOLDS IT</b>') + '</td></tr>').join('');
+    return '<section class="panel panel-yellow titles-panel"><h3>TITLES</h3><div class="tp-belts">' +
+      card('lineal', x.lineal_reigns || 0, (x.holds || []).includes('lineal') ? 'CHAMPION NOW' : 'REIGNS &middot; ' + esc(x.lineal_defenses || 0) + ' DEFENCES') +
+      card('season', (x.season_titles || []).length, (x.season_titles || []).length ? (x.season_titles || []).map(s => 'S' + esc(s)).join(' ') : 'SEASON TITLES') +
+      card('cup', x.cup_titles || 0, (x.holds || []).includes('cup') ? 'LATEST CUP CHAMPION' : 'CUP TITLES') + '</div>' +
+      (rows ? '<h4>SCRAP HEAP BELT REIGNS (LATEST ' + Math.min(10, reigns.items.length) + ' OF ' + esc(x.lineal_reigns || reigns.items.length) + ')</h4><div class="tscroll"><table class="reigns"><thead><tr><th class="num">WON IN</th><th>TAKEN</th><th class="num">DEFENCES</th><th>LOST</th></tr></thead><tbody>' + rows + '</tbody></table></div>' : '') +
+      '<p class="tiny muted">Title belts are honours, display only. <a href="#titles">ALL TITLES &#9654;</a></p></section>';
+  }
+
+  function pursePanel(f) {
+    const e = f.earnings;
+    if (!e) return '';
+    const row = (label, m) => '<tr><td>' + label + '</td><td class="num pos">' + esc(numberFmt(m.won)) + '</td><td class="num neg">' + esc(numberFmt(m.lost)) + '</td><td class="num ' + (Number(m.net) > 0 ? 'pos' : Number(m.net) < 0 ? 'neg' : '') + '">' + signed(Number(m.net)) + '</td><td class="num">' + esc(numberFmt(m.rake)) + '</td></tr>';
+    return '<section class="panel purse-panel"><h3>PURSE (FAKE QU)</h3><div class="tscroll"><table><thead><tr><th>MODE</th><th class="num">WON</th><th class="num">LOST</th><th class="num">NET</th><th class="num">RAKE PAID</th></tr></thead><tbody>' +
+      row('RANKED', e.ranked) + row('DUELS', e.duel) + row('CUPS', e.cup) + row('<b>ALL</b>', e) + '</tbody></table></div>' +
+      '<p class="tiny muted">Cup prizes include ' + esc(numberFmt(e.prize_sponsorship || 0)) + ' of house sponsorship. ' +
+      (e.biggest_win ? 'Biggest single win ' + esc(numberFmt(e.biggest_win.amount)) + ' (' + esc(e.biggest_win.ref.replace(':', ' #')) + '). ' : '') +
+      (f.owner_credit != null ? 'The owner\'s withdrawable contract credit: ' + esc(numberFmt(f.owner_credit)) + '. ' : '') +
+      'Won is stake or prize gained after rake; lost is stakes and entry fees lost. Refunds (draws, double faults, voids) count as neither. Simulated execution fees are the operator\'s, not a fighter\'s.</p></section>';
+  }
+
   async function viewFighter(tok, hex, pageArg) {
     if (needData()) return;
     if (!HEX64.test(hex || '')) return notFound('A fighter ID is 64 lowercase hex digits.');
     const page = DEC.test(pageArg || '') ? Math.max(1, Number(pageArg)) : 1;
-    const d = await loadFighter(hex, page);
+    const [d, T] = await Promise.all([loadFighter(hex, page), loadTitles()]);
     if (tok !== viewToken) return;
     if (!d) return notFound('Fighter ' + short(hex) + ' is not in this export.');
     const f = d.f;
     const meta = metaOf(hex, f);
     const s = L.fighterStats(hex, d.scout);
     const rec = f.record || {};
-    const beltCls = f.provisional ? 'belt-other' : 'belt-' + esc(f.belt || 'other');
     const faults = Object.entries(f.faults_by_epoch || {});
     const fightRows = d.rows.map(x => {
       const src = x.replay || x.summary;
@@ -1552,12 +1760,14 @@
     const pager = pagerHtml(n => '#fighter/' + hex + '/' + n, d.page, d.pages);
     const listTitle = d.full ? 'ALL FIGHTS (' + esc(d.total) + ')' + (d.pages > 1 ? ' &middot; PAGE ' + esc(d.page) + ' OF ' + esc(d.pages) : '') : 'RECENT FIGHTS (' + d.rows.length + ')';
     const career = careerOf(f);
+    const reigns = await fighterReigns(hex, T);
+    if (tok !== viewToken) return;
     setView(screen('FIGHTER', '<span class="id wrap">' + esc(hex) + '</span>') +
       '<section class="panel panel-yellow fighter-panel"><h3>' + esc(meta.name ? meta.name.toUpperCase() : short(hex)) + (f.house_npc ? ' &middot; HOUSE NPC' : '') + '</h3>' +
       (A && A.bio ? '<p class="bio">' + esc(A.bio(hex)) + '</p>' : '') +
-      '<p class="badges">' + originBadge(meta.origin) + ' ' + driverBadge(meta.driver) + ' ' + foundingBadge(meta.asset) + (meta.asset ? ' <span class="drv drv-nft" title="Simulated fighter NFT">NFT ' + esc(meta.asset.name || '') + '</span>' : '') + '</p><div class="fprofile">' +
-      avatar(hex, 'avatar-xl') + '<dl class="kv">' +
-      '<dt>RATING</dt><dd><b class="big">' + esc(f.lifetime_rating) + '</b> ' + (f.provisional ? '<span class="belt belt-sm belt-white" title="Placement: the first 10 ranked fights">PROVISIONAL ' + esc(f.placement_fights) + '/10</span>' : '<span class="belt belt-sm ' + beltCls + '">' + esc(String(f.belt || '').toUpperCase()) + ' BELT</span>') + '</dd>' +
+      '<p class="badges">' + originBadge(meta.origin) + ' ' + driverBadge(meta.driver) + ' ' + foundingBadge(meta.asset) + (meta.asset ? ' <span class="drv drv-nft" title="Simulated fighter NFT">NFT ' + esc(meta.asset.name || '') + '</span>' : '') + '</p>' +
+      fighterCard(hex, f, career) + '<details class="fdetails" open><summary>DETAILS</summary><div class="fprofile"><dl class="kv">' +
+      '<dt>RATING</dt><dd><b class="big">' + esc(f.lifetime_rating) + '</b> ' + beltBadge(f) + ' <span class="muted">' + esc(beltText(f)) + '</span></dd>' +
       '<dt>RANKED</dt><dd>' + esc(rec.W || 0) + 'W ' + esc(rec.D || 0) + 'D ' + esc(rec.L || 0) + 'L &middot; forfeits ' + esc(rec.FW || 0) + ' won / ' + esc(rec.FL || 0) + ' lost <span class="muted">(contract record)</span></dd>' +
       '<dt>CAREER</dt><dd>' + esc(career.all) + ' finished fights in all modes' + (d.full && f.first_fight ? ' since fight #' + esc(f.first_fight) : '') + ' <span class="muted">(table below)</span></dd>' +
       '<dt>RANKED FIGHTS</dt><dd>' + esc(f.placement_fights) + (f.provisional ? ' of 10 placement fights' : '') + '</dd>' +
@@ -1565,7 +1775,8 @@
       '<dt>FAULTS</dt><dd>' + (faults.length ? faults.map(([k, v]) => 'epoch ' + esc(k) + ': ' + esc(v)).join(', ') : '<span class="pos">none</span>') + '</dd>' +
       '<dt>SEASONS</dt><dd>' + Object.entries(f.season_ratings || {}).map(([k, v]) => 'S' + esc(k) + ' ' + esc(v)).join(', ') + '</dd>' +
       '<dt>OWNER</dt><dd>' + ownerLink((meta.asset && meta.asset.owner) || f.owner) + (f.operator !== f.owner ? ' &middot; operator <span class="id">' + esc(String(f.operator).slice(0, 8)) + '&hellip;</span>' : ' (self-operated)') + '</dd>' +
-      '</dl></div></section>' +
+      '</dl></div></details></section>' +
+      titlesPanel(hex, f, T, reigns) + pursePanel(f) +
       '<section class="panel panel-yellow"><h3>CAREER</h3>' + careerTable(f) + '<p class="tiny muted">Every finished fight in the arena, by mode. Ratings and belts come from RANKED fights only. Forfeits are missed deadlines; NO RESULT is a double fault or a void.</p></section>' +
       '<section class="panel panel-cyan" id="scout">' + scoutHtml(hex, s, d) + '</section>' +
       '<section class="panel"><h3>OWNERSHIP (SIMULATED NFT)</h3>' + nftHistory(meta.asset) +
@@ -1862,6 +2073,18 @@
     return text;
   }
 
+  // The belt ladder and the title belts, as competition.md §1 and §7 define them.
+  function beltRulesPanel() {
+    const ladder = [['white', 0, '0-639'], ['yellow', 1, '640-799'], ['orange', 2, '800-959'], ['green', 3, '960-1119'], ['blue', 4, '1120-1279'], ['purple', 5, '1280-1439'], ['brown', 6, '1440-1599']]
+      .map(([b, r, band]) => '<li>' + beltBadge({ belt: b, belt_rank: r, belt_stripes: 3 }) + ' <span class="tiny">' + band + '</span></li>').join('') +
+      [1, 2, 3, 4, 5].map(d => '<li>' + beltBadge({ belt: 'black', belt_rank: 6 + d, dan: d }) + ' <span class="tiny">' + (1540 + 60 * d) + '+</span></li>').join('') +
+      '<li>' + beltBadge({ belt: 'red', belt_rank: 12 }) + ' <span class="tiny">1900+</span></li>';
+    return '<section class="panel"><h3>BELTS AND TITLES</h3><p class="tiny">Belts come from lifetime rating after the 10 placement fights (until then: white, PROVISIONAL). Each colour is 160 points wide; its 0-3 stripes mark every 40 points. ' +
+      'A black belt gains a dan every 60 points; red is the grandmaster. Display only: no belt or title changes a stat, a stake, a purse or what a fighter may enter.</p><ul class="belt-ladder">' + ladder + '</ul>' +
+      '<p class="tiny">' + titleBeltSvg('lineal', 'tbelt-sm') + ' <b>THE SCRAP HEAP BELT</b> (lineal) goes to the winner of the first ranked fight decided in combat, and passes only when its holder loses a ranked fight by KO or decision. A draw is a defence; forfeits, double faults and voids never move it. ' +
+      titleBeltSvg('season', 'tbelt-sm') + ' <b>THE MONTAGE BELT</b>: the latest season champion. ' + titleBeltSvg('cup', 'tbelt-sm') + ' <b>THE BOTTLE CAP BELT</b>: the latest cup champion.</p></section>';
+  }
+
   async function viewRules(tok) {
     const moves = NAMES.map((n, i) => '<tr><td class="num">' + i + '</td><td>' + actionTag(n) + (R.submitted_action_ids.includes(i) ? '' : ' <span class="muted">(internal)</span>') + '</td><td class="num">' +
       R.base_costs[i] + (n === 'BLOCK' ? ' + ' + R.block_streak_cost + '&times;guard' : '') + '</td><td class="wraptd">' + esc(purposeOf(n, i)) + '</td></tr>').join('');
@@ -1887,6 +2110,7 @@
       '<div class="tscroll"><table class="matrix">' + matrix + '</table></div></section>' +
       '<section class="panel"><h3>SIMULTANEOUS RESOLUTION</h3><p class="tiny">Each beat both actions are read from the same pre-beat snapshot: costs, both damages, strain, recovery, opening and guard are computed for both sides before either state changes. ' +
       'A jab and a kick trade: both land, even if one of them knocks out. There is no initiative, no random roll, no critical hit, and slot A/B order never matters.</p></section>' +
+      beltRulesPanel() +
       '<section class="panel"><h3>VERIFICATION LEVELS</h3><p class="tiny">Every replay page recomputes the fight in your browser and shows each check as PASS, FAIL or UNAVAILABLE:</p><ol class="rules-list">' +
       '<li>The ruleset digest matches the manifest.</li><li>The input transactions are confirmed on chain (a same-source export cannot prove this: UNAVAILABLE).</li>' +
       '<li>Every revealed plan and salt hashes to its commitment and round-start digest.</li><li>An independent integer replay reproduces every state and the outcome.</li>' +
@@ -1992,7 +2216,8 @@
 
       '<section class="panel" id="g-compete"><h3>COMPETING</h3><ul class="plain rules-list prose">' +
       '<li><b>RANKED</b>: automatic matchmaking. Ratings start at 1000; the first 10 fights are placement.</li>' +
-      '<li><b>BELTS</b>: white to black, earned by rating. Display only: a belt never changes a stat.</li>' +
+      '<li><b>BELTS</b>: white, yellow, orange, green, blue, purple, brown, black, earned by rating, with up to three stripes inside each colour; black belts count dans (I to V) and red is the grandmaster. Display only: a belt never changes a stat.</li>' +
+      '<li><b>TITLE BELTS</b>: THE SCRAP HEAP BELT changes hands only when its holder loses a ranked fight in combat; the season and cup champions wear the other two. See <a href="#titles">TITLES</a>.</li>' +
       '<li><b>DUELS</b>: a challenge between two fighters over a series.</li>' +
       '<li><b>CUPS</b>: bracket tournaments with check-in.</li>' +
       '<li><b>SEASONS</b>: ratings snapshot per season; lifetime rating continues.</li></ul></section>' +
@@ -2037,6 +2262,75 @@
 
   // ---- TITLE extras: what the game is, who is winning, what just happened -------------
 
+  // ---- CHAMPIONS and TITLES -------------------------------------------------------------
+
+  const LINEAL_LORE = 'Welded from the hubcaps of SENSEI\'s first students (they bowed too low, and the hubcaps fell off). ' +
+    'Forklift Unit 7 polishes it every morning and has never once worn it. It changes hands only in combat: ' +
+    'lose a ranked fight by knockout or decision while wearing it, and it is the winner\'s. A forfeit is not a fight, and the belt knows it.';
+  const sprite = (id, cls, anim) => '<span class="avatar ' + cls + '" data-anim="' + (anim || 'idle') + '" data-identity="' + esc(id) + '">' + (A ? A.svg(id, 'sprite') : '') + '</span>';
+  function champsHtml(T) {
+    if (!T || !T.lineal) return '<p class="muted">No title belts in this export yet.</p>';
+    const L1 = T.lineal, S = T.season || {}, C = T.cup || {};
+    const vacant = kind => '<div class="champ champ-vacant">' + titleBeltSvg(kind, 'tbelt-md') + '<b>VACANT</b><span>' + esc(TITLE_KINDS[kind].name) + '</span></div>';
+    const lineal = L1.holder
+      ? '<a class="champ champ-lineal" href="#fighter/' + esc(L1.holder) + '">' + sprite(L1.holder, 'avatar-champ', 'win') + titleBeltSvg('lineal', 'tbelt-lg') +
+        '<b class="champ-name">' + esc(short(L1.holder)) + '</b><span class="champ-belt">' + esc(L1.name) + '</span>' +
+        '<small>' + esc(L1.defenses) + ' DEFENCE' + (L1.defenses === 1 ? '' : 'S') + ' &middot; CHAMPION SINCE FIGHT #' + esc(L1.since_fight) + ' &middot; ' + esc(L1.reigns_total) + ' REIGNS SO FAR</small></a>'
+      : vacant('lineal');
+    const season = S.champion
+      ? '<a class="champ champ-season" href="#fighter/' + esc(S.champion) + '">' + sprite(S.champion, 'avatar-champ-sm') + titleBeltSvg('season', 'tbelt-md') +
+        '<b class="champ-name">' + esc(short(S.champion)) + '</b><span class="champ-belt">' + esc(S.name) + '</span><small>SEASON ' + esc(S.season) + ' CHAMPION</small></a>'
+      : vacant('season');
+    const cupWins = C.champion && C.wins ? C.wins[C.champion] || 0 : 0;
+    const cup = C.champion
+      ? '<a class="champ champ-cup" href="#fighter/' + esc(C.champion) + '">' + sprite(C.champion, 'avatar-champ-sm') + titleBeltSvg('cup', 'tbelt-md') +
+        '<b class="champ-name">' + esc(short(C.champion)) + '</b><span class="champ-belt">' + esc(C.name) + '</span><small>WON CUP #' + esc(C.cup_id) + ' &middot; ' + esc(cupWins) + ' CUP' + (cupWins === 1 ? '' : 'S') + ' IN ALL</small></a>'
+      : vacant('cup');
+    return lineal + '<div class="champs-side">' + season + cup + '</div>';
+  }
+
+  async function viewTitles(tok) {
+    if (needData()) return;
+    const index = await fetchJson('index.json').catch(() => null);
+    if (index && index.names) FIGHTER_NAMES = index.names;
+    const T = await loadTitles();
+    let hist = (T && T.lineal && T.lineal.history) || [], full = false;
+    if (D.api) {
+      try { hist = (await apiJson('titles/lineal?per_page=200')).items; full = true; } catch (e) { /* the export's last 100 */ }
+    }
+    if (tok !== viewToken) return;
+    if (!T || !T.lineal) {
+      setView(screen('TITLES', 'NO TITLE BELTS YET') + '<section class="panel"><h3>NO TITLES</h3><p class="muted">This export has no titles.json yet: title belts appear once the exporter publishes them.</p></section>');
+      return;
+    }
+    const L1 = T.lineal;
+    const how = r => (r === 'HP' ? 'DECISION' : r === 'KO' ? 'KO' : r || '');
+    const reignRows = hist.map((r, i) => '<tr' + (r.to_fight ? '' : ' class="reign-now"') + '><td class="num">' + esc(L1.reigns_total - i) + '</td><td>' + fighterLink(r.holder) + '</td>' +
+      '<td class="num"><a href="#fight/' + esc(r.from_fight) + '">#' + esc(r.from_fight) + '</a></td><td>' + (r.won_from ? fighterLink(r.won_from) : '<span class="muted">FIRST HOLDER</span>') + '</td>' +
+      '<td class="num">' + esc(r.defenses) + ' <span class="tiny muted">' + esc(r.wins) + 'W ' + esc(r.draws) + 'D</span></td>' +
+      '<td>' + (r.to_fight ? '<a href="#fight/' + esc(r.to_fight) + '">#' + esc(r.to_fight) + '</a> ' + fighterLink(r.lost_to) + ' <span class="tiny muted">' + esc(how(r.how)) + '</span>' : '<b class="pos">CHAMPION</b>') + '</td></tr>');
+    const reignTable = rows => '<div class="tscroll"><table class="reigns"><thead><tr><th class="num">#</th><th>CHAMPION</th><th class="num">WON IN</th><th>TAKEN FROM</th><th class="num">DEFENCES</th><th>LOST IN</th></tr></thead><tbody>' + rows.join('') + '</tbody></table></div>';
+    const recent = (L1.recent_title_fights || []).slice(0, 12).map(x => '<li class="feed-row feed-title"><a class="feed-id" href="#fight/' + esc(x.fight_id) + '">#' + esc(x.fight_id) + '</a>' +
+      '<span class="feed-mode">RANKED</span><span class="feed-line">' + titleTag({ title: true, champ: x.changed ? x.challenger : null }) + ' ' + fighterLink(x.holder) + ' <span class="beat">VS</span> ' + fighterLink(x.challenger) + '</span>' +
+      '<span class="feed-how">' + esc(x.kind === 'COMBAT' ? (x.winner ? how(x.result) + ' ' + short(x.winner) : 'DRAW') : x.kind.replace('_', ' ')) + '</span></li>').join('');
+    const counts = Object.entries(T.fighters || {}).sort((a, b) => (b[1].lineal_reigns + 3 * b[1].season_titles.length + 2 * b[1].cup_titles) - (a[1].lineal_reigns + 3 * a[1].season_titles.length + 2 * a[1].cup_titles) || b[1].lineal_defenses - a[1].lineal_defenses);
+    const countRows = counts.map(([h, x]) => '<tr><td>' + fighterLink(h) + heldBelts(x) + '</td><td class="num">' + esc(x.lineal_reigns) + '</td><td class="num">' + esc(x.lineal_defenses) + '</td><td class="num">' + esc(x.best_reign_defenses) + '</td>' +
+      '<td class="num">' + esc(x.season_titles.length) + (x.season_titles.length ? ' <span class="tiny muted">' + x.season_titles.map(s => 'S' + esc(s)).join(' ') + '</span>' : '') + '</td><td class="num">' + esc(x.cup_titles) + '</td></tr>').join('');
+    const seasons = ((T.season && T.season.history) || []).map(x => '<li><b>S' + esc(x.season) + '</b> ' + (x.champion ? fighterLink(x.champion) : '<span class="muted">NO CHAMPION</span>') + '</li>').join('');
+    setView(screen('TITLES', 'THREE BELTS &middot; HONOURS ONLY: A BELT CHANGES NO STAT, STAKE OR ACCESS') +
+      '<section class="champs champs-wide">' + champsHtml(T) + '</section>' +
+      '<section class="panel panel-yellow lineal-panel"><h3>' + esc(L1.name) + '</h3><div class="lineal-lore">' + titleBeltSvg('lineal', 'tbelt-xl') + '<p class="lore">' + esc(LINEAL_LORE) + '</p></div>' +
+      '<p class="tiny muted">' + esc(L1.rules) + ' The first holder won the arena\'s first ranked fight decided in combat. A ranked fight with the holder in it is a TITLE FIGHT.</p>' +
+      '<h4>LINEAGE' + (full ? ' (' + esc(L1.reigns_total) + ' REIGNS)' : ' (LATEST ' + esc(hist.length) + ' OF ' + esc(L1.reigns_total) + ')') + '</h4>' +
+      (reignRows.length ? reignTable(reignRows.slice(0, 20)) + (reignRows.length > 20 ? '<details class="more-reigns"><summary>' + (reignRows.length - 20) + ' EARLIER REIGNS</summary>' + reignTable(reignRows.slice(20)) + '</details>' : '') : '<p class="muted">Nobody has won a ranked fight in combat yet.</p>') + '</section>' +
+      (recent ? '<section class="panel panel-cyan"><h3>RECENT TITLE FIGHTS</h3><ol class="feed">' + recent + '</ol></section>' : '') +
+      '<section class="panel"><h3>TITLE COUNTS</h3>' + (countRows ? '<div class="tscroll"><table class="tcounts"><thead><tr><th>FIGHTER</th><th class="num">LINEAL REIGNS</th><th class="num">DEFENCES</th><th class="num">BEST REIGN</th><th class="num">SEASONS</th><th class="num">CUPS</th></tr></thead><tbody>' + countRows + '</tbody></table></div>' : '<p class="muted">No titles won yet.</p>') + '</section>' +
+      '<div class="cols"><section class="panel"><h3>' + esc((T.season && T.season.name) || 'THE MONTAGE BELT') + '</h3><p class="tiny muted">The champion of the most recent finished season that crowned one (SEASON tab: the qualification rules).</p>' + (seasons ? '<ol class="season-list">' + seasons + '</ol>' : '<p class="muted">No season has finished yet.</p>') + '</section>' +
+      '<section class="panel"><h3>' + esc((T.cup && T.cup.name) || 'THE BOTTLE CAP BELT') + '</h3><p class="tiny muted">The champion of the latest completed cup. Cup wins in all:</p>' +
+      (Object.keys((T.cup && T.cup.wins) || {}).length ? '<ol class="season-list">' + Object.entries(T.cup.wins).map(([h, n]) => '<li>' + fighterLink(h) + ' <b>' + esc(n) + '</b></li>').join('') + '</ol>' : '<p class="muted">No cup completed yet.</p>') + '</section></div>');
+    if (ANIM) ANIM.mount($('#view'));
+  }
+
   // The top three on blocks, gold in the middle. rows: L.leaderboard() output.
   function podiumHtml(rows) {
     const top = rows.slice(0, 3);
@@ -2046,6 +2340,7 @@
       return '<a class="pod pod-' + (i + 1) + '" href="#fighter/' + esc(f.fighter_id) + '">' +
         '<span class="avatar avatar-pod" data-anim="' + (i === 0 ? 'win' : 'idle') + '" data-identity="' + esc(f.fighter_id) + '">' + (A ? A.svg(f.fighter_id, 'sprite') : '') + '</span>' +
         '<span class="pod-name">' + esc(short(f.fighter_id)) + '</span><span class="pod-rating">' + esc(f.lifetime_rating) + '</span>' +
+        '<span class="pod-belt">' + beltBadge(f) + heldBelts(f.titles) + '</span>' +
         '<span class="pod-block"><b>' + (i + 1) + '</b></span></a>';
     }).join('');
   }
@@ -2058,9 +2353,15 @@
       '<li><i class="t-ico t-ico-seal" aria-hidden="true"></i><b>SEAL THE PLAN</b><span>Both bots commit in secret. No peeking, no take-backs.</span></li>' +
       '<li><i class="t-ico t-ico-fight" aria-hidden="true"></i><b>FIGHT</b><span>Six beats resolve at once. Three rounds. Last one standing.</span></li>' +
       '</ol><p class="t-more"><a href="#guide">THE FULL GUIDE &#9654;</a></p></section>' +
+      '<section class="t-champs"><h3 class="t-h">CHAMPIONS</h3><div id="t-champs" class="champs"><p class="muted">LOADING&hellip;</p></div><p class="t-more"><a href="#titles">TITLE HISTORY &#9654;</a></p></section>' +
       '<div class="t-cols"><section class="t-top"><h3 class="t-h">TOP FIGHTERS</h3><div id="t-podium" class="t-podium"><p class="muted">LOADING&hellip;</p></div><p class="t-more"><a href="#leaderboard">FULL RANKINGS &#9654;</a></p></section>' +
       '<section class="t-latest"><h3 class="t-h">LATEST RESULTS</h3><ol id="t-latest" class="t-feed"><li class="muted">LOADING&hellip;</li></ol><p class="t-more"><a href="#results">ALL RESULTS &#9654;</a></p></section></div>';
-    if (!D.manifest) { $('#t-podium').innerHTML = $('#t-latest').innerHTML = '<p class="muted">No data yet.</p>'; return; }
+    if (!D.manifest) { $('#t-podium').innerHTML = $('#t-latest').innerHTML = $('#t-champs').innerHTML = '<p class="muted">No data yet.</p>'; return; }
+    loadTitles().then(T => {
+      if (tok !== viewToken || !$('#t-champs')) return;
+      $('#t-champs').innerHTML = champsHtml(T);
+      if (ANIM) ANIM.mount($('#t-champs'));
+    });
     const index = await fetchJson('index.json').catch(() => null);
     if (index && index.names) FIGHTER_NAMES = index.names;
     const hexes = ((index && index.fighters) || []).filter(h => HEX64.test(h));
@@ -2143,12 +2444,12 @@
   // ---- router and chrome -------------------------------------------------------------
 
   // Sub-pages light up the nav entry they belong to.
-  const NAV_PARENT = { book: 'arena', fight: 'results', fights: 'results', duel: 'results', duels: 'results', fighter: 'leaderboard', owner: 'leaderboard', season: 'leaderboard', market: 'leaderboard', economy: 'leaderboard', cup: 'cups', rules: 'guide', help: 'guide', story: 'guide' };
+  const NAV_PARENT = { book: 'arena', fight: 'results', fights: 'results', duel: 'results', duels: 'results', fighter: 'leaderboard', owner: 'leaderboard', season: 'leaderboard', titles: 'leaderboard', market: 'leaderboard', economy: 'leaderboard', cup: 'cups', rules: 'guide', help: 'guide', story: 'guide' };
   // Each nav section can hold several screens: they show as tabs under the header.
   const SECTION_TABS = {
     arena: [['arena', 'LIVE'], ['book', 'MATCHMAKING']],
     results: [['results', 'FIGHTS'], ['duels', 'DUELS']],
-    leaderboard: [['leaderboard', 'LEADERBOARD'], ['season', 'SEASON'], ['market', 'MARKET'], ['economy', 'ECONOMY']],
+    leaderboard: [['leaderboard', 'LEADERBOARD'], ['titles', 'TITLES'], ['season', 'SEASON'], ['market', 'MARKET'], ['economy', 'ECONOMY']],
     guide: [['guide', 'HOW IT WORKS'], ['story', 'STORY'], ['rules', 'RULES'], ['help', 'GLOSSARY'], ['llms.txt', 'FOR AGENTS']],
   };
   function paintNav(name) {
@@ -2209,6 +2510,7 @@
       else if (name === 'duels') await viewDuels(tok);
       else if (name === 'duel') await viewDuel(tok, rest[0]);
       else if (name === 'season') await viewSeason(tok);
+      else if (name === 'titles') await viewTitles(tok);
       else if (name === 'market') await viewMarket(tok);
       else if (name === 'economy') await viewEconomy(tok);
       else if (name === 'owner') await viewOwner(tok, rest[0]);
