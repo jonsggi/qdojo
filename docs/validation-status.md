@@ -14,6 +14,11 @@ The full measurements are in
 ceiling. Report: [validation-report-candidate-2.md](validation-report-candidate-2.md);
 comparison with candidate 1 on the same seeds: [model.md §8](model.md#8-balance-measurements-candidate-1-and-candidate-2).
 
+**Candidate 3** (2026-09-28, [combat.md §12](combat.md#12-candidate-3)):
+11 of 11 gates on held-out seeds, the resource gate by a small margin.
+Report: [validation-report-candidate-3.md](validation-report-candidate-3.md);
+comparison: [model.md §9](model.md#9-candidate-3-last-stand-and-feint).
+
 ## Mechanical correctness (hard gate): passed
 
 - Every hand vector in [combat.md](combat.md) §8, in Python, C++ and the

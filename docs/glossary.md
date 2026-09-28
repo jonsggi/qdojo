@@ -31,7 +31,10 @@
 | **Stamina** | Pays for moves, 0 to 60. `RECOVER` and the break refill it |
 | **Break recovery** | +10 stamina between rounds, capped at 60 |
 | **Exhausted** | What an unaffordable move becomes: pays nothing, deals nothing, takes damage as an open target, recovers 6 |
-| **Opening** | Earned by ducking a jab or throw, or by landing a clean jab. +4 damage on the very next beat if it lands; otherwise it expires |
+| **Opening** | Earned by ducking a jab or throw, or by landing a clean jab (candidate 3: or by a feint that baits a block or duck). +4 damage (8 in candidates 2 and 3) on the very next beat if it lands; otherwise it expires |
+| **Guard break** | Candidate 3: the opening a baited feint earns (opening = 2). On the next beat a jab, kick or last stand goes through a block |
+| **LAST STAND** | Candidate 3, action 7: a strike worth +1 damage per HP its fighter trails, up to +16. Blocked; a kick out-trades it |
+| **FEINT** | Candidate 3, action 8: a cheap bluff. Against a block or duck it earns a guard break; any strike catches it |
 | **Guard / guard streak** | Consecutive blocks. Each costs 3 more stamina than the last, up to 3 in a row |
 | **Strain** | The 6 extra stamina a blocker pays when it blocks a kick. Never HP |
 | **Power strike** | Once per fight: a marked `JAB`, `KICK` or `THROW` deals +4 for +4 cost. Spent even if it misses |
@@ -51,7 +54,7 @@
 | **Timeout / forfeit** | Missing a commit or reveal deadline loses the whole contest to a compliant opponent. Shown as TIMEOUT, never as a knockout |
 | **Double fault** | Both sides missed a deadline: no winner, stakes returned, a fault for each, no rating change |
 | **Void** | The contract could not run (service gap): stakes returned, no fault, no rating change |
-| **Ruleset / ruleset digest** | The exact combat parameters, and the SHA-256 that identifies them (`combat-v1-candidate-1`, `12085c86…`; `combat-v1-candidate-2`, `231607f8…`) |
+| **Ruleset / ruleset digest** | The exact combat parameters, and the SHA-256 that identifies them (`combat-v1-candidate-1`, `12085c86…`; `combat-v1-candidate-2`, `231607f8…`; `combat-v1-candidate-3`, `cf19b7cf…`) |
 | **Reference contract** | The Python contract in `combat/contract.py` that every other implementation must match |
 | **Devnet** | A persistent simulated chain running the reference contract, with its own QU (no monetary value) and synthetic identities; local on a builder's machine, or the public arena today |
 | **Simulated chain** | `SimChain`: the devnet plus latency, dropped and reordered transactions, and execution fees |

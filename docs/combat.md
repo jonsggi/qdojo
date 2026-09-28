@@ -1,9 +1,9 @@
-# Combat rules: combat-v1 candidates 1 and 2
+# Combat rules: combat-v1 candidates 1, 2 and 3
 
 > **Purpose:** every mechanical rule: state, actions, the damage matrix, exact beat resolution and hand-checkable vectors. \
 > **Audience:** bot builders who want exact numbers; implementers; reviewers. Scope and money are in [spec.md](spec.md). \
-> **Status:** normative. Sections 1-10 are candidate 1 ([combat-v1.json](combat-v1.json), digest `12085c86…`); [section 11](#11-candidate-2) is candidate 2 ([combat-v1-candidate-2.json](combat-v1-candidate-2.json), digest `231607f8…`): the same engine and encodings with rebalanced numbers. Both are implemented in Python (`combat/engine.py`), C++ (`contracts/combat_core/`, one table per candidate) and the browser (`apps/web/combat/engine.js`); all three agree on 10,000 frozen fights per candidate. The §5 and §11.2 matrices are machine-checked against their JSON files by `docs/reference/check_docs.py`. Balance: see [validation-status.md](validation-status.md) and [model.md §8](model.md#8-balance-measurements-candidate-1-and-candidate-2). \
-> **Last verified:** 2026-09-26 (§8 and §11.3 vectors run in the test suite)
+> **Status:** normative. Sections 1-10 are candidate 1 ([combat-v1.json](combat-v1.json), digest `12085c86…`); [section 11](#11-candidate-2) is candidate 2 ([combat-v1-candidate-2.json](combat-v1-candidate-2.json), digest `231607f8…`): the same engine and encodings with rebalanced numbers; [section 12](#12-candidate-3) is candidate 3 ([combat-v1-candidate-3.json](combat-v1-candidate-3.json), digest `cf19b7cf…`): candidate 2 plus two moves, LAST STAND and FEINT. All three are implemented in Python (`combat/engine.py`), C++ (`contracts/combat_core/`, one table per candidate) and the browser (`apps/web/combat/engine.js`); all three agree on 10,000 frozen fights per candidate. The §5, §11.2 and §12.2 matrices are machine-checked against their JSON files by `docs/reference/check_docs.py`. Balance: see [validation-status.md](validation-status.md) and [model.md §8](model.md#8-balance-measurements-candidate-1-and-candidate-2). \
+> **Last verified:** 2026-09-28 (§8, §11.3 and §12.4 vectors run in the test suite)
 
 ## Contents
 
@@ -18,6 +18,7 @@
 - [9. Trace and explanation requirements](#9-trace-and-explanation-requirements)
 - [10. Bot optimization and uncertainty](#10-bot-optimization-and-uncertainty)
 - [11. Candidate 2](#11-candidate-2)
+- [12. Candidate 3](#12-candidate-3)
 
 ## 1. Design contract
 
@@ -34,7 +35,11 @@ Strategic depth comes from resource budgeting, predicting actions, exploiting
 recovery, counter opportunities, guard fatigue, a limited power strike and
 adapting between rounds. Surprises come from concealed plans and privately
 randomized bot decisions. There is NO settlement RNG, critical-hit roll,
-house-selected modifier, comeback damage multiplier or hidden damage rule.
+house-selected modifier or hidden damage rule. No hidden catch-up rule
+either: the one comeback tool, LAST STAND (candidate 3, §12), is a move
+both fighters can see, choose and counter, and FEINT, the bluff that opens a
+guard, is a move like any other. Their numbers are in the ruleset and their
+effects are in every trace.
 
 These choices create hypotheses about engagement, not proof of lasting depth.
 Ship only after the adversarial evaluation in [model.md](model.md).
@@ -434,3 +439,125 @@ build with `-DQDOJO_RULESET=2` and `apps/web/tests/combat-engine.test.cjs`.
   action a role (model.md §8), so the cost of a new action id was not
   justified. The proposals are recorded in
   [AUD-021](../audits/issues/AUD-021-balance-kick-duck.md).
+
+## 12. Candidate 3
+
+`combat-v1-candidate-3`, digest
+`cf19b7cfee8ccbdd2a3bbf31132f8327eab63a5341ca7528d682353c32c01bf4`,
+file [combat-v1-candidate-3.json](combat-v1-candidate-3.json).
+
+Candidate 3 is candidate 2 plus two submitted actions: **LAST_STAND** (id 7)
+and **FEINT** (id 8). EXHAUSTED stays id 6. Every number of candidate 2 is
+unchanged, and so is every rule of sections 2-10 unless this section says
+otherwise. Candidates 1 and 2 stay loadable; under them action bytes 7 and 8
+are illegal (BAD_PLAN).
+
+### 12.1 Changes from candidate 2, and why
+
+| Change | Why (measured, [model.md §9](model.md#9-candidate-3-last-stand-and-feint)) |
+|---|---|
+| New move LAST STAND: a strike whose damage grows by 1 per HP its fighter trails, up to +16 | Late comebacks: the leader after round 2 won 86% of candidate 2's simulated live field and only 14% of fights finished within 8 HP. The bonus is public, deterministic and counterable (block it, kick into it). |
+| New move FEINT: a cheap bluff that, if it baits a BLOCK or a DUCK, opens the guard for the next strike | Variety, a real answer to turtling other than THROW, and a way for a trailing fighter to get a LAST STAND through the block that the leader will put up. |
+| Opening can be 2 (a guard-break opening) | FEINT's reward; state encoding unchanged (the opening byte). |
+| §1 amended | No hidden catch-up rule; LAST STAND is the one explicit comeback tool. |
+
+### 12.2 Damage matrix
+
+| Attacker / defender | JAB | KICK | BLOCK | DUCK | THROW | RECOVER | EXHAUSTED | LAST_STAND | FEINT |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| JAB | 8 | 10 | 0 | 0 | 8 | 12 | 12 | 8 | 4 |
+| KICK | 4 | 14 | 0 | 18 | 14 | 18 | 18 | 14 | 8 |
+| BLOCK | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| DUCK | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| THROW | 0 | 0 | 20 | 0 | 0 | 18 | 18 | 0 | 8 |
+| RECOVER | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| EXHAUSTED | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| LAST_STAND | 8 | 8 | 0 | 8 | 8 | 12 | 12 | 8 | 4 |
+| FEINT | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+LAST STAND's damage is before its bonus; a guard-broken strike against a
+BLOCK uses its KICK column instead of the BLOCK column (§12.3).
+
+### 12.3 The two moves
+
+| ID | Action | Cost | Purpose and weakness |
+|---|---|---:|---|
+| 7 | LAST_STAND | 8 | Comeback strike: +1 per HP behind (max +16). Hits a duck, interrupts a throw. Stopped by a block; a kick out-trades it unless it is 7 or more behind. Never powered. |
+| 8 | FEINT | 2 | Bluff: against a BLOCK or DUCK earns the guard-break opening. Deals nothing; any strike catches it for a glancing hit. |
+
+Rules, in the order of §6:
+
+1. **Cost.** LAST_STAND 8, FEINT 2. Power may never be designated on either
+   (§3: power is for JAB, KICK or THROW).
+2. **Stand bonus (step 4b).** When the effective action is LAST_STAND and its
+   base damage is positive: `stand_bonus = min(16, 1 × (opponent HP − own HP))`
+   from the pre-beat snapshots, 0 when level or ahead. It is added before
+   the opening and power bonuses: `computed = base + stand + opening + power`.
+   It counts in `bonus_damage` and has its own trace field `stand_bonus`.
+3. **Guard break (step 4a).** A fighter whose pre-beat opening is **2**, whose
+   effective action is a strike (JAB, KICK or LAST_STAND) and whose opponent's
+   effective action is BLOCK uses the matrix's KICK column instead of the
+   BLOCK column: JAB 10, KICK 14, LAST_STAND 8 (+ its stand bonus). The block
+   still costs its stamina and still suffers strain from a KICK. A THROW
+   needs no guard break: it beats a block anyway.
+4. **Opening bonus (step 5).** An opening of 1 or 2 adds `opening_damage` (8)
+   when the base damage is positive, as before.
+5. **New opening (step 9).** FEINT against an effective BLOCK or DUCK sets the
+   new opening to **2**; otherwise the rules of §6 step 9 apply (a duck that
+   slips a jab or throw, or a clean jab, sets 1). A duck earns nothing
+   against a feint. Opening 2 lasts one beat like any opening, and carries
+   through a round break like any opening.
+6. **Guard streak, recovery, strain.** Both moves reset the guard streak and
+   recover the ordinary +2. FEINT and LAST STAND never cause strain.
+
+Reason codes added (§9 order: after the HIT/BLOCKED/EVADED group come
+GUARD_BROKEN, then STAND_BONUS; FEINT_BAITED comes just before
+OPENING_EARNED):
+
+| Code | When |
+|---|---|
+| STAND_BONUS | own LAST_STAND added a positive stand bonus |
+| GUARD_BROKEN | own strike went through a BLOCK on a guard-break opening |
+| FEINT_BAITED | own FEINT met a BLOCK or DUCK |
+
+THROW_INTERRUPTED also covers a throw meeting a LAST_STAND, and BLOCKED
+covers a LAST_STAND stopped by a block. C++ reason bits: 15 STAND_BONUS,
+16 GUARD_BROKEN, 17 FEINT_BAITED.
+
+State and plan encodings are unchanged: the opening byte may hold 2 under
+candidate 3, and plan bytes may hold 7 or 8.
+
+### 12.4 Hand-checkable vectors
+
+Both fighters start at (HP 120, stamina 48, opening 0, guard 0, power 1)
+unless stated. Fields are after one beat.
+
+| A / B | A (HP, stamina, opening, guard) | B (HP, stamina, opening, guard) | Codes A / B |
+|---|---|---|---|
+| FEINT / BLOCK | (120,48,2,0) | (120,46,0,1) | FEINT_BAITED, OPENING_EARNED / – |
+| FEINT / DUCK | (120,48,2,0) | (120,46,0,0) | FEINT_BAITED, OPENING_EARNED / – |
+| FEINT / JAB | (116,48,0,0) | (120,44,1,0) | – / HIT, OPENING_EARNED |
+| FEINT / RECOVER | (120,48,0,0) | (120,48,0,0) | – / – |
+| LAST_STAND at 80 / JAB at 110 | (72,42,0,0) | (86,44,0,0) | HIT, STAND_BONUS (8 + 16) / HIT |
+| LAST_STAND at 80 / BLOCK at 110 | (80,42,0,0) | (110,46,0,1) | BLOCKED / – |
+| LAST_STAND at 80 / KICK at 110 | (66,42,0,0) | (86,38,0,0) | HIT, STAND_BONUS / HIT |
+
+- After FEINT / BLOCK, KICK / BLOCK: A's kick goes through for 14 + 8 = 22
+  (HIT, GUARD_BROKEN, OPENING_USED); B = (98, 35, 0, 2): it paid 7 for its
+  second block and 6 of strain.
+- After FEINT / BLOCK, LAST_STAND / BLOCK (level HP): 8 + 8 = 16 through the
+  block.
+- A at 105 plays LAST_STAND into B's JAB at 110: 8 + 5 = 13.
+- A at 80 with an opening plays LAST_STAND into a DUCK at 110: 8 + 16 + 8 = 32.
+- A THROW at 110 into a LAST_STAND at 80: the throw is interrupted (0), the
+  last stand deals 24.
+
+These run in `packages/qdojo/tests/combat/test_candidate3.py`, the C++ build
+with `-DQDOJO_RULESET=3` and `apps/web/tests/combat-engine.test.cjs`.
+
+### 12.5 Selecting it
+
+Devnet profile `demo-c3` (demo-c2's economics and 9/8 timing, candidate 3);
+`qdojo combat train|evaluate --ruleset combat-v1-candidate-3`; C++
+`-DQDOJO_RULESET=3`. The site replays a fight with the ruleset its export
+names. `contracts/qubic/QDOJO.h` still holds candidate 1 only.

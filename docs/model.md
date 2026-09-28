@@ -17,6 +17,7 @@ Historic riddle experiments are [archived](https://github.com/jonsggi/qdojo/blob
 - [6. Farming and adversarial participation](#6-farming-and-adversarial-participation)
 - [7. Acceptance report](#7-acceptance-report)
 - [8. Balance measurements: candidate 1 and candidate 2](#8-balance-measurements-candidate-1-and-candidate-2)
+- [9. Candidate 3: LAST STAND and FEINT](#9-candidate-3-last-stand-and-feint)
 
 ## 1. What success must mean
 
@@ -368,3 +369,79 @@ strain changes did nothing measurable. Rounds × beats of 8×3, 6×4, 5×4
 and 4×4 (HP scaled) did not improve comebacks or history value, widened
 margins and raised exhaustion to 10-11% with 8-beat rounds
 ([combat.md §11.5](combat.md#115-considered-and-not-adopted)).
+
+## 9. Candidate 3: LAST STAND and FEINT
+
+Measured 2026-09-28 for [combat.md §12](combat.md#12-candidate-3), with the
+same two instruments as §8. The campaign ran all rulesets below on the same
+fresh seed suite `moves-20260928` at full budgets. Candidate 3's report is
+[validation-report-candidate-3.md](validation-report-candidate-3.md); the
+design-phase reports (candidate 2 and LAST STAND alone on the same seeds)
+are in [proposals/data/](proposals/data/). Under candidate 3 the pools add
+spam and cycles with both new moves and two scripted users (`stander`,
+`feinter`); mixed-v1 and scout-v1 use the new moves only under candidate 3
+(their candidate 1 and 2 plans are unchanged), and the planners value an
+opening held at the end of a beat or round.
+
+### 9.1 Gates (campaign, same seeds)
+
+| Gate | Candidate 2 | + LAST STAND | Candidate 3 (+ LAST STAND + FEINT) |
+|---|---|---|---|
+| Simple strategies with a counter | 29/29 | 36/36 | 44/44 |
+| Resource/opening ablation (≥ 0.05, LB > 0) | +0.031 (LB 0.007) **FAIL** | +0.047 (LB 0.027) **FAIL** | **+0.052 (LB 0.033) PASS** |
+| History ablation | +0.337 | +0.322 | +0.322 |
+| Draws (≤ 15%) | 2.7% | 7.6% | 5.8% |
+| Fights reaching round 2 | 97.1% | 94.8% | 95.4% |
+| Trailer after round 0 wins (10..40%) | 30.7% | 37.3% | 38.1% |
+| Exhausted beats | 2.6% | 2.4% | 2.3% |
+| Families ≥ 0.45 | reader, search, scout | scout, reader, search | reader 0.656, scout 0.620, search 0.605 |
+| **Gates passed** | **10/11** | **10/11** | **11/11** |
+
+The resource gate passes by a small margin (+0.052 against a 0.05 bar) and
+the trailer band is near its top (38.1% against 40%): both are worth
+re-measuring on the next suite. The hardest new strategy to counter is the
+duck/last-stand cycle (scout-v1 0.614, LB 0.595).
+
+### 9.2 Fight shape (campaign, competent pool)
+
+| | Candidate 2 | + LAST STAND | Candidate 3 |
+|---|---:|---:|---:|
+| Leader after the second round wins | 78.9% | 67.8% | 69.8% |
+| KO / decision | 44.4 / 55.6% | 55.9 / 44.1% | 50.8 / 49.2% |
+| Opening + power bonus per fighter and fight | 5.8 + 6.9 | 4.7 + 5.9 | 5.5 + 6.1 |
+| LAST STAND / FEINT share of beats | – | 8.6% / – | 6.2% / 2.9% |
+| Net HP per beat LAST STAND / FEINT | – | +8.7 / – | +10.2 / −5.6 |
+
+### 9.3 The live-field simulation (40 paired seeds, the 11 live families)
+
+| | Candidate 2 | + LAST STAND | Candidate 3 |
+|---|---:|---:|---:|
+| Leader after the second round wins | 86% | 79% | **76%** |
+| Finishes within 8 HP | 14% | 23% | **24%** |
+| KO / draw | 63% / 2% | 69% / 7% | 66% / 8% |
+| Trailer after round 1 wins | 25% | 33% | 32% |
+| FEINT share of all beats (search / scout / reader / mixed) | – | – | 7% (7 / 6 / 2 / 2%) |
+| LAST STAND share of all beats | – | 9% | 9% |
+| Resource ablation vs the competent pool | +0.12 (LB 0.02) | +0.20 (LB 0.11) | +0.20 (LB 0.10) |
+| Net HP per beat JAB / KICK / THROW / LAST STAND / FEINT | +4.2 / +5.3 / +3.2 / – / – | +3.6 / +5.0 / +2.4 / +7.5 / – | +4.2 / +5.5 / +0.9 / +7.6 / −4.9 |
+
+### 9.4 How FEINT was chosen
+
+The design-phase FEINT (an opening against a block, duck or recovery) was
+used, but it made fights wider, not closer. Variants measured with LAST
+STAND in the live-field simulation (16-32 paired seeds; "live" is the 11
+live families):
+
+| FEINT variant | Leader after round 2 | Close finishes | Planner use |
+|---|---:|---:|---:|
+| none (LAST STAND only) | 78-79% | 23-24% | – |
+| opening vs block/duck/recover, heavy hits (12/18/18), strain 6 on a baited block | 79% | 17% | 4-14% |
+| + a baited opening breaks the next block for any strike | 79% | 18-20% | 3-10% |
+| only a LAST STAND breaks the block, no bonus | 78% | 19-20% | 3-9% |
+| glancing hits (4/8/8), mixed-v1 feinting at random | 79% | 18% | 4-10% |
+| **chosen: glancing hits, +8 guard-break opening for any strike, block/duck only, mixed-v1 feints only when trailing** | **76%** | **24%** | **6-7%** |
+
+The deciding finding: when the scripted-weight NPC (mixed-v1) feints at
+random, it is punished and fights get wider; when it feints only when
+trailing (to open the leader's guard for a last stand) and the competent
+planners feint on reads, FEINT keeps LAST STAND's gains and is used.

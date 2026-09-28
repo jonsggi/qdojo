@@ -39,18 +39,33 @@ Words: an OWNER holds a FIGHTER; the owner's BOT queues, commits and reveals;
 each round the bot runs a PLANNER (your program) that returns a PLAN. A ROUND
 is six BEATS. Deadlines are chain TICKS. Glossary: docs/glossary.md.
 
-## Rules: two rulesets, one engine
+## Rules: three rulesets, one engine
 
-Two packaged rulesets share every rule below except the numbers. The site
-calls them RULES V1 and RULES V2. THE LIVE ARENA RUNS V2
-(combat-v1-candidate-2, digest 231607f8...). V1 (combat-v1-candidate-1,
-digest 12085c86...) is the original; older fights and the recorded sample
-were played under it and still verify under it. Every fight names its ruleset_digest; the observation your
-planner receives carries it too, and /data/combat/v1/manifest.json and
-rulesets/{digest}.json give the exact numbers. Exact matrices: docs/combat.md
-(candidate 2 in section 11).
+Three packaged rulesets share every rule below. The site calls them RULES
+V1, V2 and V3. THE LIVE ARENA RUNS V3 (combat-v1-candidate-3, digest
+cf19b7cf...): V2's numbers plus two moves, LAST_STAND and FEINT. V2
+(combat-v1-candidate-2, digest 231607f8...) and V1 (combat-v1-candidate-1,
+digest 12085c86...) are older; fights played under them still verify under
+them. Every fight names its ruleset_digest; the observation your planner
+receives carries it too, and /data/combat/v1/manifest.json and
+rulesets/{digest}.json give the exact numbers. Exact matrices:
+docs/combat.md (candidate 2 in section 11, candidate 3 in section 12).
 
-V2, combat-v1-candidate-2 (live):
+V3, combat-v1-candidate-3 (live): everything in V2 below, plus
+- LAST_STAND (action 7, cost 8): a strike dealing 8 to JAB/KICK/DUCK/THROW/
+  LAST_STAND, 12 to RECOVER/EXHAUSTED, 4 to FEINT, PLUS 1 for every HP you
+  trail the opponent by (at most +16; nothing when level or ahead). Blocked
+  for 0. A KICK hits it for 14, a JAB for 8; it interrupts a THROW. It can
+  never carry the power strike.
+- FEINT (action 8, cost 2): deals nothing. If the opponent BLOCKs or DUCKs,
+  you earn a GUARD BREAK opening (opening = 2): on your next beat a JAB, KICK
+  or LAST_STAND goes through a BLOCK (dealing what it would deal to a KICK)
+  and gets the +8 opening bonus. A strike catches a feint for a glancing hit:
+  JAB 4, KICK 8, THROW 8, LAST_STAND 4.
+- New reason codes: STAND_BONUS, GUARD_BROKEN, FEINT_BAITED; traces carry
+  stand_bonus. Under V1 and V2 the actions 7 and 8 are illegal.
+
+V2, combat-v1-candidate-2:
 - Start: HP 120, stamina 48 (also the cap), one power strike per fight.
 - Cost: JAB 6, KICK 12, BLOCK 4 (+3 per consecutive block, up to 3 in a
   row), DUCK 4, THROW 9, RECOVER 0.
@@ -80,6 +95,8 @@ Both:
 - End: 0 HP is a knockout (both at 0 on the same beat: draw). After round 3
   higher HP wins; equal HP draws. A missed deadline forfeits the whole
   contest (TIMEOUT), never shown as a knockout.
+- Action names in plans: JAB, KICK, BLOCK, DUCK, THROW, RECOVER, and under
+  V3 also LAST_STAND and FEINT.
 - Timing on the live arena: commit window 9 ticks, reveal window 8 ticks
   (a tick is about 1.5 s). Your planner has a few seconds, not tens.
 - Ranked rating: integer, zero-sum, starts at 1000; the first 10 ranked

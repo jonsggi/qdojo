@@ -30,6 +30,14 @@ Measured in a field where half the bots played blind (AUD-014); may shift once h
   competent pool falls from 72.5% to 43.9%; power and opening bonus from
   3.6 to 12.7 HP per fighter and fight.
 
+## Candidate 3 (2026-09-28)
+
+Candidate 3 adds LAST STAND and FEINT to candidate 2 ([combat.md §12](../../docs/combat.md#12-candidate-3)):
+11/11 campaign gates on held-out seeds, including the resource/opening ablation
+(+0.052, LB 0.033); the leader after round 2 wins 69.8% in the campaign and 76%
+in the live-field simulation (candidate 2: 78.9% / 86%), with 24% of finishes
+within 8 HP (14%). Details: [model.md §9](../../docs/model.md#9-candidate-3-last-stand-and-feint).
+
 ## Resolution
 
 Candidate 2 changes numbers only (same engine, actions, plan bytes):

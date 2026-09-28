@@ -2,7 +2,7 @@
 
 > **Purpose:** the design and measurement for combat-v1 candidate 3: which new move, its exact rules, and the evidence. \
 > **Audience:** the owner; the presentation track (deck, sprites, rules page); implementers of the C++ and browser engines. \
-> **Status:** proposal. Measured on a Python-only prototype (trial rulesets `combat-v1-candidate-3-trial-a` and `-trial-b`, branch `work/moves`). Nothing here is deployed, and no C++, browser, site or sprite support exists yet. \
+> **Status:** decided 2026-09-28. The owner adopted LAST STAND (trial b) **plus FEINT** as combat-v1 candidate 3; the normative rules are [combat.md §12](../combat.md#12-candidate-3) and the measurements [model.md §9](../model.md#9-candidate-3-last-stand-and-feint). This file keeps the design-phase record; its trial rulesets were removed once candidate 3 was implemented. \
 > **Last reviewed:** 2026-09-28
 
 ## Contents
@@ -14,6 +14,17 @@
 - [5. Moves considered and rejected](#5-moves-considered-and-rejected)
 - [6. Risks and open questions](#6-risks-and-open-questions)
 - [7. Recommendation](#7-recommendation)
+
+## 0. Outcome
+
+The owner chose candidate 3 = candidate 2 + LAST STAND (every round, as
+recommended below) + FEINT, and approved amending combat.md §1. FEINT was
+redesigned from the version rejected in §5: it now earns a *guard-break*
+opening against a BLOCK or DUCK, so the next strike goes through a block,
+and a strike catches it for only a glancing hit. See
+[combat.md §12](../combat.md#12-candidate-3) for the rules and
+[model.md §9](../model.md#9-candidate-3-last-stand-and-feint) for how that
+FEINT was chosen and what candidate 3 measures.
 
 ## 1. Summary
 
