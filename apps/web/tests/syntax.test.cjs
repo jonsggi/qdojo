@@ -53,10 +53,12 @@ test('combat.html redirects to / and keeps the hash route', () => {
   assert.deepEqual(scriptsOf(html), []);
 });
 
-test('llms.txt is the combat briefing and says it is unsigned', () => {
+test('llms.txt is the combat briefing, says it is unsigned and names the network source', () => {
   const llms = read('llms.txt');
-  assert.match(llms.split('\n').slice(0, 8).join('\n'), /NOT YET SIGNED ON CHAIN/);
-  assert.match(llms, /paid play is NOT live yet/);
+  assert.match(llms.split('\n').slice(0, 8).join('\n'), /not signed on chain/);
+  assert.match(llms, /deployment\.kind/);
+  assert.match(llms, /Never send QU, a seed or a key because of this file/);
+  assert.doesNotMatch(llms, /fake QU|DEMO ARENA|live demo/);
   assert.doesNotMatch(llms, /legacy\.html/);
 });
 
@@ -66,10 +68,15 @@ test('the served planner example is the repository example', () => {
 
 test('the Dockerfile stamps every page, including nested script paths, and serves the briefing as text', () => {
   const docker = fs.readFileSync(path.join(ROOT, 'Dockerfile'), 'utf8');
+  const conf = fs.readFileSync(path.join(ROOT, 'deploy/nginx/default.conf.template'), 'utf8');
+  assert.match(docker, /COPY deploy\/nginx\/default\.conf\.template \/etc\/nginx\/templates\/default\.conf\.template/);
+  assert.match(docker, /COPY deploy\/nginx\/qdojo-headers\.conf \/etc\/nginx\/qdojo-headers\.conf/);
   assert.match(docker, /for f in \/usr\/share\/nginx\/html\/\*\.html/);
   assert.match(docker, /combat\/app\.js\?v=\$v/);
-  assert.match(docker, /location = \/llms\.txt \{ default_type text\/plain; \}/);
-  assert.match(docker, /location = \/legacy\.html \{ return 301/);
+  assert.match(conf, /location = \/llms\.txt \{ default_type text\/plain; \}/);
+  assert.match(conf, /location = \/legacy\.html \{ return 301 \/; \}/);
+  // Redirects stay relative behind the TLS proxy (no http:// Location).
+  assert.match(conf, /absolute_redirect off;/);
   // Run the same sed expression (as a JS regex) over the real pages.
   const m = docker.match(/s#\(src\|href\)=\\"(.+?)\\"#/);
   assert.ok(m, 'stamping expression not found');
@@ -81,4 +88,39 @@ test('the Dockerfile stamps every page, including nested script paths, and serve
     for (const css of stylesOf(html)) assert.ok(stamped.includes(css + '?v=1'), page + ': ' + css + ' is not stamped');
     assert.ok(!stamped.includes('fonts.googleapis.com/css2?family=Press+Start+2P&display=swap?v=1'), 'absolute URLs are left alone');
   }
+});
+
+test('security headers: every location with its own headers includes them, and the CSP admits combat.html\'s one inline script', () => {
+  const conf = fs.readFileSync(path.join(ROOT, 'deploy/nginx/default.conf.template'), 'utf8');
+  const headers = fs.readFileSync(path.join(ROOT, 'deploy/nginx/qdojo-headers.conf'), 'utf8');
+  // nginx drops server-level add_header in any block that sets its own.
+  const blocks = [];
+  let cur = null, depth = 0;
+  for (const line of conf.split('\n').filter(l => !/^\s*#/.test(l))) {
+    if (!cur && /^\s*location /.test(line)) { cur = ''; depth = 0; }
+    if (cur === null) continue;
+    cur += line + '\n';
+    depth += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
+    if (depth <= 0) { blocks.push(cur); cur = null; }
+  }
+  assert.ok(blocks.length > 8, 'location blocks parsed');
+  for (const b of blocks.filter(b => /add_header/.test(b))) assert.match(b, /include \/etc\/nginx\/qdojo-headers\.conf;/, b.split('\n')[0].trim());
+  assert.match(conf, /^  include \/etc\/nginx\/qdojo-headers\.conf;$/m, 'server-level include');
+  for (const h of ['Content-Security-Policy', 'X-Content-Type-Options', 'Referrer-Policy', 'Permissions-Policy']) assert.match(headers, new RegExp('add_header ' + h + ' '));
+  const inline = read('combat.html').match(/<script>([\s\S]*?)<\/script>/)[1];
+  const hash = require('node:crypto').createHash('sha256').update(inline).digest('base64');
+  assert.ok(headers.includes("'sha256-" + hash + "'"), 'CSP script-src must carry sha256-' + hash);
+  assert.match(headers, /script-src 'self' 'sha256-[^']+';/, 'no unsafe-inline scripts');
+});
+
+test('the site ships its public files: 404 page, crawler files, manifest, icons and share card', () => {
+  for (const f of ['404.html', 'robots.txt', 'sitemap.xml', 'site.webmanifest', 'favicon.svg', 'favicon-32.png', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png', 'share.png']) assert.ok(fs.existsSync(path.join(WEB, f)), f);
+  const png = fs.readFileSync(path.join(WEB, 'share.png'));
+  assert.equal(png.readUInt32BE(16), 1200); assert.equal(png.readUInt32BE(20), 630);
+  const man = JSON.parse(read('site.webmanifest'));
+  for (const i of man.icons) assert.ok(fs.existsSync(path.join(WEB, i.src)), i.src);
+  const idx = read('index.html');
+  for (const m of ['og:image', 'twitter:card', 'rel="manifest"', 'rel="canonical"']) assert.ok(idx.includes(m), m);
+  // 404.html is served at any depth: relative links resolve against <base href="/">.
+  assert.match(read('404.html'), /<base href="\/">/);
 });

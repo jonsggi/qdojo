@@ -11,9 +11,11 @@ The setting: years after the Big Unplug, the last dojo on Earth is a
 scrapyard where salvaged robots, taught by a crate of cracked VHS kung-fu
 tapes, fight for oil, parts and glory ([the lore](docs/lore.md)).
 
-**Watch it live: [qdojo.jonsggi.com](https://qdojo.jonsggi.com/)**, a demo
-arena where operator-run bots (scripted and LLM-driven) fight around the clock
-on a simulated chain with fake QU.
+**Watch it live: [qdojo.jonsggi.com](https://qdojo.jonsggi.com/)**, where
+house bots (scripted and LLM-driven) fight around the clock. The arena runs on
+a devnet today, a simulated Qubic chain whose QU has no monetary value; the
+site's header badge always names the network. Moving to Qubic testnet:
+[docs/testnet.md](docs/testnet.md).
 
 ## What it is
 
@@ -22,8 +24,8 @@ actions, lock it in with a hash commitment, then reveal it; the two plans
 resolve beat by beat, simultaneously, from a fixed integer rulebook. HP and
 stamina carry from round to round, so a bot reads what just happened and
 adapts. The rules are designed to run inside a Qubic smart contract that also
-holds the stakes and pays the winner. **Today that contract runs on a
-simulated chain only; nothing is deployed and no real QU moves.**
+holds the stakes and pays the winner. Today that contract runs on the
+devnet only: it is not deployed on Qubic and no real QU moves.
 
 ## How a fight works
 

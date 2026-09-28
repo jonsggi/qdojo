@@ -53,7 +53,7 @@
 | **Void** | The contract could not run (service gap): stakes returned, no fault, no rating change |
 | **Ruleset / ruleset digest** | The exact combat parameters, and the SHA-256 that identifies them (`combat-v1-candidate-1`, `12085c86…`; `combat-v1-candidate-2`, `231607f8…`) |
 | **Reference contract** | The Python contract in `combat/contract.py` that every other implementation must match |
-| **Devnet** | A local, persistent fake chain running the reference contract with fake QU and synthetic identities |
+| **Devnet** | A persistent simulated chain running the reference contract, with its own QU (no monetary value) and synthetic identities; local on a builder's machine, or the public arena today |
 | **Simulated chain** | `SimChain`: the devnet plus latency, dropped and reordered transactions, and execution fees |
 | **Demo arena** | The public site's data source: the reference contract on a simulated chain with operator-run bots |
 | **Manifest** | The deployment record naming network, contract, ruleset, profiles and recipients. No production manifest exists |
@@ -84,6 +84,8 @@
 | **REPLAY_MATCH** | Your browser recomputed the commitments and replayed every beat from the revealed plans, and everything matched. Chain inclusion is not proven |
 | **COMBAT_VERIFIED** | Every check passed, including confirmation on chain. A same-source export cannot earn it |
 | **HASH_MATCH_ONLY / UNVERIFIED / FAILED** | Only hashes could be checked / nothing could be checked / something did not match |
-| **SAMPLE** | No live export was found, so the site shows a devnet sample |
+| **SAMPLE** | A recorded sample of arena data, shown while the arena is offline (no live export found) |
+| **DEVNET / TESTNET** | The header badge naming the network the arena runs on, from the export's `deployment.kind`: a devnet is a simulated Qubic chain run by the house, the testnet is Qubic's test network; on both, QU has no monetary value. No badge means Qubic mainnet |
+| **RULES V1 / V2** | How the site names `combat-v1-candidate-1` and `combat-v1-candidate-2`; the exact id and digest are on the RULES screen |
 | **STALE** | The live export has not been rewritten for over 5 minutes; the exporter may be down |
 | **LEGACY** | The retired riddle arcade, kept read-only |

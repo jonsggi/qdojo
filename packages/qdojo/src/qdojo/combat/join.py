@@ -246,7 +246,7 @@ class JoinService:
             fl = self.follower
             active = self.db.execute("SELECT COUNT(*) FROM registrations WHERE status IN ('new','active')").fetchone()[0]
             return 200, {"schema": "qdojo.combat.api.join.v1", "enabled": True, "chain": "simulated",
-                         "currency": "fake QU", "network_id": fl.m.network_id.hex() if fl else None,
+                         "currency": "devnet QU", "network_id": fl.m.network_id.hex() if fl else None,
                          "contract_id": fl.m.contract_id.hex() if fl else None, "input_type": INPUT_TYPE,
                          "tx_bytes": TX_LEN, "register_tag": REGISTER_TAG.decode().rstrip("\0"),
                          "tiers": {str(k): v for k, v in fl.m.tiers.items()} if fl else {},
@@ -750,7 +750,7 @@ def cmd_join(a):
 
 
 def add_parser(s):
-    d = s.add_parser("join", help="enter the public demo arena (simulated chain, fake QU) with your own bot")
+    d = s.add_parser("join", help="enter the public arena (a devnet: simulated chain, devnet QU) with your own bot")
     d.add_argument("--arena", default="https://qdojo.jonsggi.com", help="arena site or API base URL")
     d.add_argument("--name", required=True, help="fighter name: 3-16 letters, digits, '-' or '_'")
     d.add_argument("--key", help="seed file for the simulated arena (default ~/.qdojo/combat/join/NAME.seed, "

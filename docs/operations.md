@@ -101,11 +101,15 @@ text. Public deployment must update help, API examples and frontend data togethe
 Check native/Windows onboarding against actual shipped combat commands, rather
 than rebranding the old ./dojo riddle flow.
 
-## 8. The public demo arena (simulated chain)
+## 8. The public devnet arena (simulated chain)
 
-Until a Qubic deployment exists, qdojo.jonsggi.com shows a demo arena. It is
-the reference contract on a simulated chain, with fake QU, simulated fighter
-NFTs and operator-run demo bots, labelled as such on every page.
+Until a Qubic deployment exists, qdojo.jonsggi.com shows the devnet arena. It
+is the reference contract on a simulated chain, with devnet QU (no monetary
+value), fighter NFTs from a simulated asset registry and operator-run house
+bots. The export says so (`index.json` `deployment.kind` = `devnet`), and the
+site words it from there: a DEVNET badge in the header, one line in the
+footer, and the currency on the market and economy screens. Moving to Qubic
+testnet: [testnet.md](testnet.md).
 
 | Piece | Where |
 |---|---|
@@ -114,7 +118,7 @@ NFTs and operator-run demo bots, labelled as such on every page.
 | Lineup | `~/.qdojo/combat/lineup-arena.json` (label, policy / planner / llm, founding, cups, duels, ranked, reliability); without `--lineup`, eight built-in demo bots |
 | Public export | `~/.qdojo/combat/public/combat/v1/`, written by the runner every few ticks |
 | Read API + data server | systemd user unit `qdojo-combat-api` ([deploy/systemd/qdojo-combat-api.service](../deploy/systemd/qdojo-combat-api.service)): `qdojo combat api` on the tailnet (100.101.145.63:8790). It follows the arena journal into `~/.qdojo/combat/readmodel.sqlite` (plus a private `readmodel.replica` snapshot), answers `/api/v1/` ([api.md](api.md) §3.2) and serves the export on every other path. It replaces `qdojo-combat-data` (the plain `http.server`) |
-| Site | Dokploy builds `Dockerfile`; nginx proxies `/data/combat/v1/` to `QDOJO_LIVE_DATA` (falling back to the baked copy) and `/api/v1/` to `QDOJO_LIVE_API` (answering a JSON 503 when it is down, so the site uses the static files) |
+| Site | Dokploy builds `Dockerfile`; nginx ([deploy/nginx/default.conf.template](../deploy/nginx/default.conf.template)) proxies `/data/combat/v1/` to `QDOJO_LIVE_DATA` (falling back to the baked copy) and `/api/v1/` to `QDOJO_LIVE_API` (answering a JSON 503 when it is down, so the site uses the static files). `QDOJO_SITE_URL` is the public origin in share links, canonical URL, robots.txt and sitemap.xml. Every response carries the security headers in [deploy/nginx/qdojo-headers.conf](../deploy/nginx/qdojo-headers.conf) (CSP, nosniff, frame and referrer policy); unknown paths get the styled 404.html |
 
 The `demo` profile differs from the specified development values so a small
 bot population keeps fighting and seasons turn over quickly: 2,400-tick epochs

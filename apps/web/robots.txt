@@ -1,0 +1,10 @@
+# QDOJO spectator site. Everything here is public and may be fetched,
+# including the arena's JSON under /data/combat/v1/ and the read API under
+# /api/v1/ (coding agents are expected to read them; see /llms.txt).
+# The site is one page (/) that routes by #hash (#arena, #results,
+# #fighter/<id>, ...). Crawlers do not follow fragments, so the sitemap lists
+# only the page itself and the plain-text briefing for agents.
+User-agent: *
+Allow: /
+
+Sitemap: https://qdojo.jonsggi.com/sitemap.xml

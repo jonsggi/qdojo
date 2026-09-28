@@ -216,6 +216,8 @@ async function main() {
     await go(page, base, '#title', '.attract-card');
     await must((await text(page, '#hud-source')) === 'SAMPLE', 'the SAMPLE badge without live data');
     await must(await page.isHidden('#hud-stale'), 'no STALE badge on the sample');
+    await must((await text(page, '#hud-net')) === 'DEVNET' && await page.isVisible('#hud-net'), 'the DEVNET network badge from deployment.kind');
+    await must(/recorded sample: the arena is offline/i.test(await text(page, '#foot-net')), 'the offline-sample footer line');
     await shot(page, 'title', false);
   });
   await step('arena', async (page, base) => {
@@ -224,7 +226,7 @@ async function main() {
     const cards = await page.locator('.arena-card').count();
     await must(cards === live, live + ' live fight card(s), got ' + cards);
     const sim = await text(page, '.info-cols');
-    await must(/SIMULATED CHAIN/.test(sim) && /DEMO PROFILE/.test(sim) && /PAIR STARTS/.test(sim), 'SIMULATED CHAIN and DEMO PROFILE panels');
+    await must(/NETWORK: DEVNET/.test(sim) && /devnet QU/.test(sim) && /ARENA LIMITS/.test(sim) && /PAIR STARTS/.test(sim), 'NETWORK: DEVNET and ARENA LIMITS panels');
     // A live fight shows the ticks left before its deadline. "DEADLINE PASSED"
     // means the export is behind the contract (AUD-011, AUD-025): a failure.
     const statuses = (await page.locator('.arena-card .arena-status').allTextContents()).map(t => t.replace(/\s+/g, ' ').trim());
@@ -282,7 +284,7 @@ async function main() {
     await go(page, base, '#fighter/' + facts.fighter, '.drv');
     const panel = await text(page, '.fighter-panel');
     await must(/POLICY: |MODEL: |PLANNER/.test(panel), 'a driver badge');
-    await must(/OWNERSHIP \(SIMULATED NFT\)/.test(await text(page, '#view')), 'the NFT history');
+    await must(/OWNERSHIP \(DEVNET NFT\)/.test(await text(page, '#view')), 'the NFT history');
     await must((await page.locator('a[href^="#owner/"]').count()) > 0, 'an owner link');
     await shot(page, 'fighter');
   });
@@ -346,7 +348,7 @@ async function main() {
       const tampered = await serve([tmpRoot, WEB]);
       await step('tampered', async (page, base) => {
         await go(page, base, '#fight/' + facts.settledRanked.fight_id, '.stage');
-        await must((await text(page, '#hud-source')) === 'LIVE EXPORT', 'the temp copy served as the live export');
+        await must((await text(page, '#hud-source')) === 'LIVE', 'the temp copy served as the live export');
         const v = await expectVerified(page);
         await must(v.level === 'FAILED', 'FAILED, got ' + v.level);
         await must(v.st['Revealed plans and salts match their commitments'] === 'FAIL', 'the commitment check FAILs');
@@ -381,11 +383,32 @@ async function main() {
     await must(/VERIFICATION LEVELS/.test(await text(page, '#view')), 'verification levels');
     await shot(page, 'rules');
   });
+  await step('unknown-route', async (page, base) => {
+    await go(page, base, '#no-such-screen', '.lost');
+    await must(/404/.test(await text(page, '.screen-title')) && /no-such-screen/.test(await text(page, '.lost')), 'a 404 screen naming the route');
+    await must(page.url().endsWith('#no-such-screen'), 'no silent jump to another screen');
+  });
+  // Network wording comes from deployment.kind; no screen carries test-bench
+  // words of its own (the SAMPLE badge and footer line are the one exception,
+  // and this run is on the sample).
+  await step('wording', async (page, base) => {
+    // The exact ruleset id (combat-v1-candidate-2) stays visible as data.
+    const bad = /fake QU|\bdemo\b|not live|(?<!combat-v\d-)candidate|\bpreview\b|play money|test data/i;
+    const hits = [];
+    for (const h of ['#title', '#arena', '#book', '#results', '#leaderboard', '#cups', '#duels', '#season', '#practice', '#join', '#guide', '#rules', '#help', '#story', '#fighter/' + facts.fighter]) {
+      await page.goto(base + h);
+      await page.waitForTimeout(700);
+      const t = await page.evaluate(() => { const c = document.body.cloneNode(true); c.querySelectorAll('#hud-source, #foot-net, #foot-data, script').forEach(n => n.remove()); return c.innerText + ' ' + Array.from(c.querySelectorAll('[title]')).map(n => n.title).join(' '); });
+      const m = bad.exec(t);
+      if (m) hits.push(h + ': "' + t.slice(Math.max(0, m.index - 40), m.index + 40).replace(/\s+/g, ' ') + '"');
+    }
+    await must(!hits.length, 'no test-bench wording, got ' + hits.join(' | '));
+  });
   await step('help', async (page, base) => { await go(page, base, '#help', '.help-kv'); await shot(page, 'help', false); });
   await step('join', async (page, base) => {
     await go(page, base, '#join', '#planner-src');
     await page.waitForFunction(() => !/^Loading/.test(document.querySelector('#planner-src').textContent));
-    await must(/paid play is not live yet/i.test(await text(page, '#view')), 'the not-live statement');
+    await must(/THE NETWORK: DEVNET/.test(await text(page, '#view')) && /no monetary value/i.test(await text(page, '#view')), 'the network statement');
     await shot(page, 'join');
   });
   await step('redirect', async (page, base) => {

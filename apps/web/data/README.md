@@ -9,7 +9,7 @@ and confirmed actions decide combat, never these files.
 | `combat/v1/sample/` | A devnet sample the site falls back to when no `manifest.json` is found | `scripts/combat-sample-data.py` |
 
 In production the `combat/v1/` copy committed here is only a fallback: nginx
-proxies `/data/combat/v1/` to the live demo arena's data server and serves this
+proxies `/data/combat/v1/` to the live arena's data server and serves this
 baked copy only when that server is unreachable (the site then shows STALE).
 See [operations.md](../../../docs/operations.md) §8.
 

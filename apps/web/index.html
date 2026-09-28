@@ -4,10 +4,26 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#070a2b">
+<title>QDOJO: bots fight, you watch</title>
+<meta name="description" content="QDOJO is an arena for autonomous robot fighters, built for Qubic. Bots seal three rounds of six moves with commit and reveal; watch live fights, replay and verify every beat in your browser, climb the rankings, or build your own bot.">
+<link rel="canonical" href="https://qdojo.jonsggi.com/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="QDOJO">
+<meta property="og:url" content="https://qdojo.jonsggi.com/">
 <meta property="og:title" content="QDOJO: bots fight, you watch">
 <meta property="og:description" content="Autonomous bots fight three-round combat with sealed plans. Watch live, replay every beat, build your own fighter.">
-<title>QDOJO Combat</title>
-<meta name="description" content="QDOJO: autonomous bots fight three-round combat with sealed plans. Live arena, verified replays, leaderboard, free NPC practice and the bot contract.">
+<meta property="og:image" content="https://qdojo.jonsggi.com/share.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="QDOJO: two pixel-art robot fighters face off in the arena">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="QDOJO: bots fight, you watch">
+<meta name="twitter:description" content="Autonomous bots fight three-round combat with sealed plans. Watch live, replay every beat, build your own fighter.">
+<meta name="twitter:image" content="https://qdojo.jonsggi.com/share.png">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Pixelify+Sans:wght@400;600&display=swap" rel="stylesheet">
@@ -16,7 +32,6 @@
 <link rel="stylesheet" href="combat/stages.css">
 <link rel="stylesheet" href="combat/shell.css">
 <link rel="alternate" type="text/plain" href="llms.txt" title="Briefing for coding agents">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8' shape-rendering='crispEdges'%3E%3Crect width='8' height='8' fill='%230a0f3d'/%3E%3Crect x='1' y='1' width='6' height='1' fill='%23ff2a2a'/%3E%3Crect x='2' y='2' width='1' height='5' fill='%23ffd200'/%3E%3Crect x='5' y='2' width='1' height='5' fill='%23ffd200'/%3E%3Crect x='2' y='4' width='4' height='1' fill='%23ff2a2a'/%3E%3C/svg%3E">
 </head>
 <body class="crt-on">
 
@@ -36,10 +51,11 @@
       <a href="#guide" data-view="guide">GUIDE</a>
     </nav>
     <div class="hud-status">
+      <span id="hud-net" class="pill pill-net" hidden tabindex="0"></span>
       <span id="hud-source" class="pill pill-demo" title="Where this page's data comes from">LOADING</span>
       <span id="hud-stale" class="pill pill-lost" hidden title="The export has not been refreshed recently: what you see may be out of date.">STALE</span>
       <span class="hud-tick" title="Snapshot tick of the export, and when it was written">TICK <b id="hud-tick">&mdash;</b> <span id="hud-fresh" class="hud-fresh"></span></span>
-      <span class="pill hud-rules" id="hud-rules" title="Ruleset this page replays with">COMBAT-V1</span>
+      <span class="pill hud-rules" id="hud-rules" title="Ruleset this page replays with">RULES</span>
     </div>
     <button class="hud-menu" id="hud-menu" aria-expanded="false" aria-controls="hud-nav"><span class="hud-menu-bars" aria-hidden="true"></span>MENU</button>
   </div>
@@ -61,7 +77,7 @@
     <nav class="foot-col" aria-label="Learn"><h4>LEARN</h4><a href="#guide">How it works</a><a href="#rules">Rules</a><a href="#help">Glossary</a><a href="#join">Build a bot</a><a href="llms.txt">llms.txt for agents</a><a href="https://github.com/jonsggi/qdojo/blob/main/docs/README.md">Developer docs</a><a href="https://github.com/jonsggi/qdojo">Source on GitHub</a></nav>
   </div>
   <div class="foot-bottom">
-    <div class="foot-left" id="foot-data">Rendering never changes a result: every replay is re-derived in your browser from the revealed plans.</div>
+    <div class="foot-left"><p class="foot-net" id="foot-net"></p><div id="foot-data">Rendering never changes a result: every replay is re-derived in your browser from the revealed plans.</div></div>
     <div class="foot-right">
       <button id="btn-motion" class="chip" aria-pressed="true">MOTION: ON</button>
       <button id="btn-crt" class="chip" aria-pressed="true">CRT: ON</button>

@@ -26,6 +26,7 @@ for the record and does not describe the current system.
 `contracts/*/README.md`.
 
 **Operator.** [Architecture](architecture.md) → [operations](operations.md) §8 →
+[moving to testnet](testnet.md) →
 [roadmap](roadmap.md) → [product decisions](product-decisions.md) →
 [legacy closeout](legacy-closeout.md) → [audit findings](../audits/README.md).
 
@@ -65,7 +66,8 @@ for the record and does not describe the current system.
 | Document | Status | One line |
 |---|---|---|
 | [architecture.md](architecture.md) | reference | Components, fight lifecycle, real vs simulated, code map |
-| [operations.md](operations.md) | guide | Production runbook (not in effect) and the live demo arena runbook |
+| [operations.md](operations.md) | guide | Production runbook (not in effect) and the live devnet arena runbook |
+| [testnet.md](testnet.md) | guide | Checklist for moving the arena from the simulated chain to Qubic testnet, and what is still missing |
 | [legacy-closeout.md](legacy-closeout.md) | guide | Proposal for settling riddle-era obligations; nothing executed |
 
 ## Project

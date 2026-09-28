@@ -579,3 +579,12 @@ img.sensei { width: 128px; height: 160px; image-rendering: pixelated; display: b
 }
 .kpi b .qu { font-size: inherit; color: inherit; }
 @media (max-width: 640px) { .kpis { grid-template-columns: 1fr 1fr; gap: 10px; } .kpi { padding: 10px 12px; } .kpi b { font-size: 14px; } }
+
+/* ---- network badge (DEVNET / TESTNET; none on mainnet) ------------------- */
+.pill-net { color: var(--black); background: var(--cyan); border-color: var(--cyan); cursor: help; }
+.pill-net[hidden] { display: none; }
+.foot-bottom .foot-net { margin: 0 0 4px; color: var(--cyan); }
+.foot-bottom .foot-net:empty { display: none; }
+
+/* ---- unknown route -------------------------------------------------------- */
+.lost-links { display: flex; flex-wrap: wrap; gap: 10px; }

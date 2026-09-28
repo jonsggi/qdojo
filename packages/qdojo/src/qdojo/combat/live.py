@@ -50,8 +50,15 @@ DEFAULT_LINEUP = [
     {"label": "kirin", "policy": "jabber-v1", "duels": True, "ranked": False},
 ]
 
-DEPLOYMENT = {"kind": "devnet", "currency": "fake QU", "identities": "synthetic", "chain": "simulated",
-              "bots": "operator-run demo bots", "note": "not a Qubic deployment; nothing here is real money"}
+# What the export says about its network. The site takes every
+# network-dependent word from `kind` (devnet | testnet | mainnet), so the
+# labels stay true when the arena moves (docs/testnet.md). This arena runs the
+# simulated chain (sim.py), so it is always a devnet: its QU has no monetary
+# value and its identities are synthetic.
+CURRENCY = "devnet QU"
+DEPLOYMENT = {"kind": "devnet", "currency": CURRENCY, "identities": "synthetic", "chain": "simulated",
+              "bots": "operator-run house bots",
+              "note": "the QDOJO contract on a simulated Qubic chain run by the operator; devnet QU has no monetary value"}
 
 ISSUER_LABEL = "qdojo-sim-issuer"
 EXPORT_CHECK_EVERY = 10          # exports between checks of the export against the contract
@@ -235,9 +242,9 @@ class Market:
                     for hx, x in sorted(self.listings.items(), key=lambda kv: int(kv[1]["ask"]))]
         sales = [{**x, "name": names.get(x["fighter_id"]), "tick": str(x["tick"]), "price": str(x["price"]),
                   "fee": str(x["fee"]), "bid": str(x["bid"])} for x in self.sales[-50:]][::-1]
-        return {"fee_bps": self.FEE_BPS, "currency": "fake QU", "listings": listings, "sales": sales,
+        return {"fee_bps": self.FEE_BPS, "currency": CURRENCY, "listings": listings, "sales": sales,
                 "stats": {k: (str(v) if isinstance(v, int) else v) for k, v in self.summary().items()},
-                "model": "simulated collectors; value from rating, record and experience; not real demand"}
+                "model": "house-run collectors bid from rating, record and experience"}
 
     def state(self) -> dict:
         return {"listings": self.listings, "sales": self.sales}
@@ -516,7 +523,7 @@ class Arena:
         sponsored += sum(v[2] for v in (h.cups.values() if h is not None else ()) if v[0] == "COMPLETE")
         pnl = credits.get(fee.house, 0) + self.market.fees_collected() - self.chain.burned - sponsored
         return {
-            "currency": "fake QU", "note": "simulated execution fees; not a Qubic cost measurement",
+            "currency": CURRENCY, "note": "execution fees follow the devnet's fee model, not measured Qubic costs",
             "tiers": tiers,
             "events": {"duel_stake_by_format": {k: str(self._stake(v)) for k, v in
                                                 zip(("SINGLE", "BO3", "BO5"), EVENTS["duel_stake"].values())},

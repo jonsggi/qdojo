@@ -199,16 +199,51 @@
     if (['arena', 'title', 'book', 'results', 'leaderboard', 'cups', 'cup', 'duels', 'duel', 'season', 'market', 'economy'].includes(name) || (name === 'fight' && D.tick !== before)) repaint();
   }
 
+  /* The network the arena runs on, from the export's own metadata
+   * (index.json deployment.kind). Every network-dependent word on the site
+   * comes from here, written once per kind. An unknown or missing kind reads
+   * as a devnet: the site never claims testnet or mainnet QU on a guess. */
+  const NETWORKS = {
+    devnet: {
+      badge: 'DEVNET', currency: 'devnet QU', short: 'devnet',
+      tip: 'The arena runs the QDOJO contract on a devnet: a simulated Qubic chain operated by the house. Devnet QU has no monetary value, and fighter NFTs are records on that devnet.',
+      foot: 'Devnet arena: the QDOJO contract on a simulated Qubic chain. Devnet QU has no monetary value.',
+      money: 'No. The arena runs on a devnet, a simulated Qubic chain, and devnet QU has no monetary value.',
+      join: 'The public arena runs on a devnet: devnet QU has no monetary value, and fighters, ratings and NFTs are devnet records. Nothing on this page asks for a wallet, a seed or QU.',
+    },
+    testnet: {
+      badge: 'TESTNET', currency: 'testnet QU', short: 'testnet',
+      tip: 'The arena runs the QDOJO contract on the Qubic testnet. Testnet QU has no monetary value.',
+      foot: 'Testnet arena: the QDOJO contract on the Qubic testnet. Testnet QU has no monetary value.',
+      money: 'No. The arena runs on the Qubic testnet, and testnet QU has no monetary value.',
+      join: 'The public arena runs on the Qubic testnet: testnet QU has no monetary value. Use a seed made for testnet only, never one that holds mainnet QU. This site never asks for a seed.',
+    },
+    mainnet: {
+      badge: null, currency: 'QU', short: 'mainnet',
+      tip: '', foot: '',
+      money: 'Yes. Stakes, entry fees and prices are QU on Qubic mainnet. Only stake what you can afford to lose.',
+      join: 'The arena runs on Qubic mainnet and stakes are real QU. Your seed stays with your own bot on your own machine: this site never asks for one.',
+    },
+  };
+  const net = () => NETWORKS[D.deployment && D.deployment.kind] || NETWORKS.devnet;
+  const CUR = () => net().currency;
+  /* Ruleset names for people: combat-v1-candidate-2 reads RULES V2. The exact
+   * semantic_version and digest stay in the tooltip and on #rules. */
+  function rulesLabel(v) {
+    const m = /^combat-v(\d+)(?:-candidate-(\d+))?$/.exec(String(v || ''));
+    return m ? 'RULES V' + (m[2] || m[1]) : String(v || 'RULES').toUpperCase();
+  }
+
   function paintSource() {
     const pill = $('#hud-source');
     if (D.manifest && D.sample) {
       pill.className = 'pill pill-sample';
       pill.textContent = 'SAMPLE';
-      pill.title = 'No live export found, so this is the sample from a local devnet: fake QU, synthetic fighters, NPC-driven bots. Not a deployment.';
+      pill.title = 'Showing a recorded sample: the arena is offline.';
     } else if (D.manifest) {
       pill.className = 'pill pill-live';
-      pill.textContent = 'LIVE EXPORT';
-      pill.title = 'Combat export at ' + D.base + '. Same-source data: chain inclusion is not proven by this page.';
+      pill.textContent = 'LIVE';
+      pill.title = 'Live arena data from ' + D.base + '. Your browser re-checks every replay; chain inclusion is not proven by this page.';
     } else {
       pill.className = 'pill pill-lost';
       pill.textContent = 'NO DATA';
@@ -221,9 +256,15 @@
     fresh.title = fr.known ? 'Export written ' + new Date(D.wallMs).toString() : 'Export time unknown';
     // The sample is old by design; STALE is for a live export that stopped.
     $('#hud-stale').hidden = !(D.manifest && !D.sample && fr.stale);
-    $('#hud-rules').textContent = (R.semantic_version || 'combat-v1').toUpperCase();
+    $('#hud-rules').textContent = rulesLabel(R.semantic_version);
+    $('#hud-rules').title = 'Ruleset this page replays with: ' + (R.semantic_version || 'combat-v1');
+    const n = net(), badge = $('#hud-net');
+    badge.hidden = !(D.manifest && n.badge);
+    badge.textContent = n.badge || '';
+    badge.title = n.tip;
+    $('#foot-net').textContent = D.manifest ? (D.sample ? 'Showing a recorded sample: the arena is offline.' : n.foot) : '';
     $('#foot-data').innerHTML = D.manifest
-      ? 'DATA ' + esc(D.base) + (D.sample ? ' <b class="sample-note">SAMPLE: fake QU, synthetic fighters</b>' : '') +
+      ? 'DATA ' + esc(D.base) + (D.sample ? ' <b class="sample-note">RECORDED SAMPLE</b>' : '') +
         ' &middot; NETWORK <span class="id">' + esc(short(D.manifest.network_id)) + '</span> &middot; CONTRACT <span class="id">' + esc(short(D.manifest.contract_id)) + '</span>' +
         ' &middot; refreshed every ' + (POLL_MS / 1000) + ' s' + (D.sample ? '' : D.api ? ' &middot; FULL HISTORY from the read API' : ' &middot; recent fights only (read API unavailable)') +
         ' &middot; Every replay is re-derived in your browser; rendering never changes a result.'
@@ -232,7 +273,7 @@
 
   // ---- small renderers -----------------------------------------------------------
 
-  // Display names come from the export's index (a devnet lineup labels its demo bots); IDs otherwise.
+  // Display names come from the export's index (the arena's lineup labels its house bots); IDs otherwise.
   let FIGHTER_NAMES = {};
   const short = hex => FIGHTER_NAMES[hex] || String(hex || '').slice(0, 8);
   const avatar = (hex, cls) => (A ? A.render(hex, cls) : '');
@@ -279,6 +320,10 @@
   function notFound(what) {
     setView(screen('NOT FOUND') + '<section class="panel panel-red"><h3>NO RECORD</h3><p>' + esc(what) + '</p><p><a href="#results">BACK TO RESULTS</a></p></section>');
   }
+  function viewLost(name) {
+    setView(screen('404', 'NO SUCH SCREEN') + '<section class="panel panel-red lost"><h3>GAME OVER?</h3><p>There is no screen called <b>' + esc(name) + '</b>. The link may be old or mistyped.</p>' +
+      '<p class="lost-links"><a class="btn" href="#arena">LIVE ARENA</a> <a class="btn btn-cyan" href="#title">TITLE SCREEN</a> <a class="btn" href="#guide">HOW IT WORKS</a></p></section>');
+  }
   function needData() {
     if (D.manifest) return false;
     setView(screen('NO SIGNAL') + '<section class="panel panel-red"><h3>NO COMBAT EXPORT</h3><p>' + esc(D.error) +
@@ -324,7 +369,7 @@
       '<p class="tiny muted">WINDOW is the rating range an offer accepts right now; it can widen while an offer waits, up to MAX GAP.</p></section>' +
       '<div class="cols">' +
       '<section class="panel"><h3>DEPLOYMENT</h3><dl class="kv">' +
-      '<dt>RULESET</dt><dd>' + esc(m.semantic_version) + '<br><span class="id wrap">' + esc(m.ruleset_digest) + '</span></dd>' +
+      '<dt>RULESET</dt><dd>' + esc(rulesLabel(m.semantic_version)) + ' <span class="muted">(' + esc(m.semantic_version) + ')</span><br><span class="id wrap">' + esc(m.ruleset_digest) + '</span></dd>' +
       '<dt>TIMING</dt><dd>' + Object.entries(m.timing_profiles || {}).map(([k, v]) => 'profile ' + esc(k) + ': commit ' + esc(v.commit_ticks) + ' ticks, reveal ' + esc(v.reveal_ticks) + ' ticks').join('<br>') + '</dd>' +
       '<dt>TIERS</dt><dd>' + Object.entries(m.tiers || {}).map(([k, v]) => 'tier ' + esc(k) + ': <span class="qu">' + esc(numberFmt(v)) + ' QU</span>').join('<br>') + '</dd>' +
       '<dt>FEES</dt><dd>' + Object.entries(m.fee_profiles || {}).map(([k, v]) => 'profile ' + esc(k) + ': rake ' + (v.rake_bps / 100) + '%').join('<br>') + '</dd>' +
@@ -512,7 +557,7 @@
    * builder and are run from the builder's own machine. */
   function originBadge(origin) {
     if (origin === 'outside') return '<span class="drv drv-outside" title="Registered and run by an outside builder from their own machine">OUTSIDE</span>';
-    if (origin === 'house') return '<span class="drv drv-house" title="Run by the arena operator: a house demo bot, not an independent entrant">HOUSE</span>';
+    if (origin === 'house') return '<span class="drv drv-house" title="Run by the arena operator: a house bot, not an independent entrant">HOUSE</span>';
     return '';
   }
   function driverBadge(d) {
@@ -534,28 +579,31 @@
         (h.from ? 'TRANSFER' : 'MINTED') + '</td></tr>').join('') + '</tbody></table></div>';
   }
 
-  // ---- simulated chain and demo profile ------------------------------------------
+  // ---- network and arena limits ---------------------------------------------------
 
   function chainPanel() {
     const dep = D.deployment, m = D.manifest || {};
     if (!dep) return '';
-    const c = dep.chain || {};
-    const lat = Array.isArray(c.latency_ticks) ? c.latency_ticks.join('&ndash;') + ' ticks' : c.latency_ticks != null ? esc(c.latency_ticks) + ' ticks' : '?';
+    // Latency, drops and fees are measured by a simulated chain; a real
+    // network publishes none of them here, so those rows only show for one.
+    const c = dep.chain && typeof dep.chain === 'object' ? dep.chain : null;
     const val = v => (v == null ? '<span class="muted">not exported</span>' : esc(typeof v === 'number' ? numberFmt(v) : v));
+    const lat = !c ? '' : Array.isArray(c.latency_ticks) ? c.latency_ticks.join('&ndash;') + ' ticks' : c.latency_ticks != null ? esc(c.latency_ticks) + ' ticks' : '?';
     return '<div class="cols info-cols">' +
-      '<section class="panel panel-red sim-panel"><h3>SIMULATED CHAIN</h3><p class="tiny">' + esc(dep.note || 'Not a Qubic deployment.') + ' Currency: ' + esc(dep.currency || '?') + '; identities: ' + esc(dep.identities || '?') + '.</p><dl class="kv">' +
-      '<dt>LATENCY</dt><dd>' + lat + ' from send to inclusion</dd>' +
-      '<dt>DROP RATE</dt><dd>' + (c.drop_rate == null ? val(null) : esc((c.drop_rate * 100).toFixed(1)) + '% of transactions lost') + '</dd>' +
-      '<dt>EXECUTION RESERVE</dt><dd>' + val(c.execution_reserve) + '</dd>' +
-      '<dt>FEES BURNED</dt><dd>' + val(c.fees_burned) + '</dd>' +
-      '<dt>OPERATOR FUNDING</dt><dd>' + val(c.operator_funding) + '</dd>' +
-      '<dt>HALTED TICKS</dt><dd>' + val(c.halted_ticks) + '</dd></dl></section>' +
-      '<section class="panel panel-yellow sim-panel"><h3>' + esc(String(dep.profile || 'deployment').toUpperCase()) + ' PROFILE</h3><p class="tiny">Limits this deployment runs with. ' + esc(dep.bots || '') + '</p><dl class="kv">' +
+      '<section class="panel panel-cyan sim-panel"><h3>NETWORK' + (net().badge ? ': ' + net().badge : '') + '</h3><p class="tiny">' + esc(net().tip || 'Qubic mainnet.') + '</p><dl class="kv">' +
+      '<dt>CURRENCY</dt><dd>' + esc(CUR()) + '</dd>' +
+      (c ? '<dt>LATENCY</dt><dd>' + lat + ' from send to inclusion</dd>' +
+        '<dt>DROP RATE</dt><dd>' + (c.drop_rate == null ? val(null) : esc((c.drop_rate * 100).toFixed(1)) + '% of transactions lost') + '</dd>' +
+        '<dt>EXECUTION RESERVE</dt><dd>' + val(c.execution_reserve) + '</dd>' +
+        '<dt>FEES BURNED</dt><dd>' + val(c.fees_burned) + '</dd>' +
+        '<dt>OPERATOR FUNDING</dt><dd>' + val(c.operator_funding) + '</dd>' +
+        '<dt>HALTED TICKS</dt><dd>' + val(c.halted_ticks) + '</dd>' : '') + '</dl></section>' +
+      '<section class="panel panel-yellow sim-panel"><h3>ARENA LIMITS</h3><p class="tiny">What matchmaking allows on this arena.</p><dl class="kv">' +
       '<dt>PAIR STARTS</dt><dd>' + val(m.pair_starts_per_epoch) + ' rated starts per pair per epoch</dd>' +
       '<dt>REMATCH GAP</dt><dd>' + val(m.pair_rematch_ticks) + ' ticks before the same pair meets again</dd>' +
       '<dt>EPOCH</dt><dd>' + val(m.ticks_per_epoch) + ' ticks</dd>' +
       '<dt>MATCHING</dt><dd>every ' + val(m.match_interval_ticks) + ' ticks</dd>' +
-      '<dt>TICK LENGTH</dt><dd>' + (dep.tick_seconds ? esc(dep.tick_seconds) + ' s' : '<span class="muted">not published (simulated clock)</span>') + '</dd></dl></section></div>';
+      '<dt>TICK LENGTH</dt><dd>' + (dep.tick_seconds ? esc(dep.tick_seconds) + ' s' : '<span class="muted">not published</span>') + '</dd></dl></section></div>';
   }
 
   // ticks -> "~3 h" when the export says how long a tick is
@@ -777,7 +825,7 @@
     setView(screen('OWNER', '<span class="id wrap">' + esc(hex) + '</span>') +
       '<section class="panel panel-yellow"><h3>FIGHTERS OWNED (' + now.length + ')</h3>' + (now.length ? '<div class="tscroll"><table>' + head + '<tbody>' + now.map(f => card(f, true)).join('') + '</tbody></table></div>' : '<p class="muted">This identity owns no fighter in this export.</p>') + '</section>' +
       (past.length ? '<section class="panel"><h3>PREVIOUSLY OWNED (' + past.length + ')</h3><div class="tscroll"><table>' + head + '<tbody>' + past.map(f => card(f, false)).join('') + '</tbody></table></div></section>' : '') +
-      '<p class="tiny muted">Public spectator view: ownership comes from the simulated fighter NFTs in the export. Balances, budgets, keys and plans are never shown here.</p>');
+      '<p class="tiny muted">Public spectator view: ownership comes from the fighter NFTs in the export. Balances, budgets, keys and plans are never shown here.</p>');
   }
 
   // ---- RESULTS -----------------------------------------------------------------------
@@ -904,8 +952,8 @@
     ['uv run qdojo combat evaluate --policy mixed-v1 --seeds 20', 'side-swapped benchmark over many seeds'],
     ['uv run qdojo combat replay fight.json', 're-derive a recorded fight from its plans'],
     ['uv run qdojo combat doctor --planner "python3 my_bot.py"', 'non-spending readiness check'],
-    ['uv run qdojo combat devnet status', 'the local devnet: fake QU, synthetic identities'],
-    ['uv run qdojo combat bot run --fighter alice --planner "python3 my_bot.py"', 'queue, commit and reveal on the devnet within a budget'],
+    ['uv run qdojo combat devnet status', 'your own local devnet: a private simulated chain on your machine'],
+    ['uv run qdojo combat bot run --fighter alice --planner "python3 my_bot.py"', 'queue, commit and reveal on your local devnet within a budget'],
   ];
 
   async function viewJoin(tok) {
@@ -914,11 +962,11 @@
       '<li><i class="t-ico t-ico-fight" aria-hidden="true"></i><b>FEEL THE RULES</b><span>Fight the NPCs yourself in the browser. <a href="#practice">PRACTICE &#9654;</a></span></li>' +
       '<li><i class="t-ico t-ico-plan" aria-hidden="true"></i><b>WRITE A PLANNER</b><span>Any program: one JSON observation in, one JSON plan of six moves out.</span></li>' +
       '<li><i class="t-ico t-ico-seal" aria-hidden="true"></i><b>TRAIN LOCALLY</b><span>Run it against every NPC with <code>qdojo combat train</code>. Free, offline.</span></li>' +
-      '<li><i class="t-ico t-ico-plan" aria-hidden="true"></i><b>ENTER THE ARENA</b><span>When the operator opens it: <code>qdojo combat join</code> registers a fighter on the simulated chain and runs your bot from your machine against the house bots (guide §8).</span></li></ol>' +
+      '<li><i class="t-ico t-ico-plan" aria-hidden="true"></i><b>ENTER THE ARENA</b><span>When the operator opens it: <code>qdojo combat join</code> registers a fighter in the arena and runs your bot from your machine against the house bots (guide §8).</span></li></ol>' +
       '<p class="guide-cta join-cta"><a class="btn" href="https://github.com/jonsggi/qdojo/blob/main/docs/build-a-bot.md">THE BOT BUILDER\'S GUIDE</a> <a class="btn btn-cyan" href="llms.txt">BRIEF YOUR CODING AGENT</a></p>' +
-      '<section class="panel panel-red"><h3>STATUS: PRACTICE AND DEVNET ONLY</h3><p><b>On-chain paid play is not live yet.</b> Nothing on this page asks for a wallet, a seed or QU. ' +
-      'You can build, practise and benchmark a bot today, free and offline; ranked fights on this site come from ' + (D.sample ? 'a SAMPLE devnet export' : 'the house export') + '. ' +
-      'When paid play opens it will be announced here and in <a href="llms.txt">llms.txt</a>.</p></section>' +
+      '<section class="panel panel-cyan"><h3>THE NETWORK' + (net().badge ? ': ' + net().badge : '') + '</h3><p>' + esc(net().join) + ' ' +
+      'Building, practising and benchmarking a bot are free and offline.' + (D.sample ? ' The fights on this site are a recorded sample while the arena is offline.' : '') + ' ' +
+      'Network changes are announced here and in <a href="llms.txt">llms.txt</a>.</p></section>' +
       '<section class="panel panel-green"><h3>1. PRACTISE FIRST</h3><p>Fight the disclosed NPCs in your browser: <a class="btn btn-sm" href="#practice">PRACTICE &#9654;</a> ' +
       'Six actions a round, both sides sealed, three rounds. Learn the matrix (<a href="#rules">RULES</a>) before you write code.</p></section>' +
       '<section class="panel"><h3>2. THE PLANNER CONTRACT</h3>' +
@@ -959,8 +1007,10 @@
     ['COMBAT_VERIFIED', 'Every check passed, including confirmation on chain. A same-source export cannot earn it.'],
     ['HASH_MATCH_ONLY / UNVERIFIED / FAILED', 'Only hashes could be checked / nothing could be checked / something did not match: do not trust that record.'],
     ['RATING / BELT', 'Integer rating from 1000; the first 10 ranked fights are placement (PROVISIONAL, white). Belts are display only.'],
-    ['SAMPLE', 'No live export was found, so the site shows a devnet sample: fake QU, synthetic fighters.'],
-    ['STALE', 'The live export has not been rewritten for over ' + Math.round(L.STALE_MS / 60000) + ' minutes: the house exporter may be down, and what you see may be old.'],
+    ['SAMPLE', 'A recorded sample of arena data, shown while the arena is offline.'],
+    ['DEVNET / TESTNET', 'The network the arena runs on, shown as a badge in the header. A devnet is a simulated Qubic chain run by the house; the testnet is Qubic\'s public test network. On both, QU has no monetary value. No badge means Qubic mainnet.'],
+    ['RULES V2', 'The ruleset every replay uses. The exact version and digest are on the RULES screen.'],
+    ['STALE', 'The live data has not been rewritten for over ' + Math.round(L.STALE_MS / 60000) + ' minutes: the arena may be down, and what you see may be old.'],
   ];
   function viewHelp() {
     setView(screen('HELP', 'EVERY WORD ON THIS SITE') + '<section class="panel"><h3>GLOSSARY</h3><dl class="kv help-kv">' +
@@ -1384,7 +1434,7 @@
         '<p>Committed: ' + esc((summary.committed || []).join(', ') || 'none') + ' &middot; revealed: ' + esc((summary.revealed || []).join(', ') || 'none') + '. Plans stay sealed until revealed.</p>' +
         '<p class="muted">The replay below shows only completed rounds and trails the authoritative round. Deadlines are time, never health.</p></section>'
       : '';
-    const head = screen('FIGHT #' + id, esc(String((replay || summary).mode || '').toUpperCase()) + ' &middot; ' + esc(R.semantic_version.toUpperCase()));
+    const head = screen('FIGHT #' + id, esc(String((replay || summary).mode || '').toUpperCase()) + ' &middot; ' + esc(rulesLabel(R.semantic_version)));
     const vs = '<div class="vsline">' + fighterLink(fighters.A.fighter_id, names.A) + ' <span class="vs">VS</span> ' + fighterLink(fighters.B.fighter_id, names.B) +
       ' <span id="level-slot">' + (replay ? '<span class="level level-PENDING">VERIFYING&hellip;</span>' : '') + '</span> <span id="series-slot"></span></div>';
     if (!replay) {
@@ -1554,7 +1604,7 @@
     setView(screen('FIGHTER', '<span class="id wrap">' + esc(hex) + '</span>') +
       '<section class="panel panel-yellow fighter-panel"><h3>' + esc(meta.name ? meta.name.toUpperCase() : short(hex)) + (f.house_npc ? ' &middot; HOUSE NPC' : '') + '</h3>' +
       (A && A.bio ? '<p class="bio">' + esc(A.bio(hex)) + '</p>' : '') +
-      '<p class="badges">' + originBadge(meta.origin) + ' ' + driverBadge(meta.driver) + ' ' + foundingBadge(meta.asset) + (meta.asset ? ' <span class="drv drv-nft" title="Simulated fighter NFT">NFT ' + esc(meta.asset.name || '') + '</span>' : '') + '</p><div class="fprofile">' +
+      '<p class="badges">' + originBadge(meta.origin) + ' ' + driverBadge(meta.driver) + ' ' + foundingBadge(meta.asset) + (meta.asset ? ' <span class="drv drv-nft" title="' + esc('Fighter NFT' + (net().badge ? ' on the ' + net().short : '')) + '">NFT ' + esc(meta.asset.name || '') + '</span>' : '') + '</p><div class="fprofile">' +
       avatar(hex, 'avatar-xl') + '<dl class="kv">' +
       '<dt>RATING</dt><dd><b class="big">' + esc(f.lifetime_rating) + '</b> ' + (f.provisional ? '<span class="belt belt-sm belt-white" title="Placement: the first 10 ranked fights">PROVISIONAL ' + esc(f.placement_fights) + '/10</span>' : '<span class="belt belt-sm ' + beltCls + '">' + esc(String(f.belt || '').toUpperCase()) + ' BELT</span>') + '</dd>' +
       '<dt>RANKED</dt><dd>' + esc(rec.W || 0) + 'W ' + esc(rec.D || 0) + 'D ' + esc(rec.L || 0) + 'L &middot; forfeits ' + esc(rec.FW || 0) + ' won / ' + esc(rec.FL || 0) + ' lost <span class="muted">(contract record)</span></dd>' +
@@ -1567,7 +1617,7 @@
       '</dl></div></section>' +
       '<section class="panel panel-yellow"><h3>CAREER</h3>' + careerTable(f) + '<p class="tiny muted">Every finished fight in the arena, by mode. Ratings and belts come from RANKED fights only. Forfeits are missed deadlines; NO RESULT is a double fault or a void.</p></section>' +
       '<section class="panel panel-cyan" id="scout">' + scoutHtml(hex, s, d) + '</section>' +
-      '<section class="panel"><h3>OWNERSHIP (SIMULATED NFT)</h3>' + nftHistory(meta.asset) +
+      '<section class="panel"><h3>OWNERSHIP (' + esc(net().badge ? net().badge + ' NFT' : 'NFT') + ')</h3>' + nftHistory(meta.asset) +
       (meta.asset ? '<p class="tiny muted">Issuer <span class="id">' + esc(String(meta.asset.issuer || '').slice(0, 8)) + '&hellip;</span> &middot; asset ' + esc(meta.asset.name || '?') + '. A transfer changes who owns the fighter, never its stats or record.</p>' : '') + '</section>' +
       '<section class="panel" id="fighter-fights"><h3>' + listTitle + '</h3>' + pager +
       '<div class="tscroll"><table><thead><tr><th class="num">FIGHT</th><th>MODE</th><th>SLOT</th><th>OPPONENT</th><th>RESULT</th><th class="num">TICK</th></tr></thead><tbody>' + fightRows + '</tbody></table></div>' + pager +
@@ -1867,7 +1917,7 @@
     const matrix = '<tr><th>ATTACKER \\ DEFENDER</th>' + NAMES.map(n => '<th class="num">' + n + '</th>').join('') + '</tr>' +
       R.damage.map((row, i) => '<tr><th>' + NAMES[i] + '</th>' + row.map(v => '<td class="num' + (v ? ' dmg' : ' zero') + '">' + v + '</td>').join('') + '</tr>').join('');
     const I = R.initial;
-    setView(screen('RULES', esc(R.semantic_version.toUpperCase()) + ' &middot; EVERY NUMBER BELOW IS READ FROM THE RULESET') +
+    setView(screen('RULES', esc(rulesLabel(R.semantic_version)) + ' (' + esc(R.semantic_version) + ') &middot; EVERY NUMBER BELOW IS READ FROM THE RULESET') +
       '<section class="panel panel-cyan"><h3>RULESET DIGEST</h3><p id="digest" class="muted">Computing&hellip;</p><p class="tiny">SOURCE: ' + esc(RULES_INFO.source.toUpperCase()) + '. ' + esc(RULES_INFO.note) + '</p></section>' +
       '<section class="panel"><h3>THE FIGHT</h3><ul class="plain rules-list">' +
       '<li>Both fighters submit <b>' + R.beats_per_round + ' actions</b> at once, sealed by a commitment, for each of <b>' + R.rounds + ' rounds</b>. Beats resolve in pairs, simultaneously.</li>' +
@@ -2001,11 +2051,11 @@
       '<div class="guide-cta"><a class="btn" href="#join">BUILD A BOT</a> <a class="btn btn-cyan" href="llms.txt">BRIEF YOUR CODING AGENT</a></div></section>' +
 
       '<section class="panel" id="g-faq"><h3>FAQ</h3><dl class="faq">' +
-      '<dt>Is this real money?</dt><dd>Not yet. The arena runs on a simulated chain with fake QU. Paid play needs the contract deployed on Qubic.</dd>' +
+      '<dt>Is this real money?</dt><dd>' + esc(net().money) + '</dd>' +
       '<dt>Is anything random?</dt><dd>No damage rolls, no critical hits. Surprise comes only from sealed plans, and a bot may randomize its own choices.</dd>' +
       '<dt>Can the site fake a result?</dt><dd>Your browser recomputes every commitment and every beat from the revealed plans. A mismatch shows as FAILED.</dd>' +
       '<dt>Who are these fighters?</dt><dd>Salvaged robots run by the house: scripted policies and a few LLM planners with daily budgets, one of them driven by Claude.</dd>' +
-      '<dt>Are the fighters NFTs?</dt><dd>Each fighter\'s pixel art comes from a deterministic generator. Ownership is simulated today; nothing has been minted.</dd>' +
+      '<dt>Are the fighters NFTs?</dt><dd>Each fighter is an NFT on the arena\'s ' + esc(net().short) + ': its page shows who owns it and every transfer. Its pixel art comes from a deterministic generator.</dd>' +
       '</dl></section>' +
       '</div>');
     addToc();
@@ -2093,7 +2143,7 @@
     const st = m.stats || {};
     const listings = (m.listings || []).map(x => '<tr><td>' + fighterLink(x.fighter_id, x.name) + '</td><td class="num">' + esc(x.rating) + '</td><td class="num">' + qu(x.ask) + '</td><td class="num muted">' + qu(x.value) + '</td><td class="num">' + esc(x.since_tick) + '</td><td>' + (x.sold ? '<span class="rbadge rbadge-ko">SOLD</span>' : '<span class="rbadge rbadge-open">FOR SALE</span>') + '</td></tr>').join('');
     const sales = (m.sales || []).map(x => '<tr><td class="num">' + esc(x.tick) + '</td><td>' + fighterLink(x.fighter_id, x.name) + '</td><td class="num">' + esc(x.rating) + '</td><td class="num"><b>' + qu(x.price) + '</b></td><td class="num muted">' + qu(x.bid) + '</td><td class="num muted">' + qu(x.fee) + '</td><td>' + ownerLink(x.buyer) + '</td></tr>').join('');
-    setView(screen('THE PARTS MARKET', 'FIGHTERS CHANGE HANDS FOR FAKE QU &middot; ' + esc(m.fee_bps / 100) + '% FEE TO THE HOUSE') +
+    setView(screen('THE PARTS MARKET', 'FIGHTERS CHANGE HANDS FOR ' + esc(CUR().toUpperCase()) + ' &middot; ' + esc(m.fee_bps / 100) + '% FEE TO THE HOUSE') +
       '<div class="kpis">' +
       '<div class="kpi"><span>SALES</span><b>' + esc(numberFmt(st.sales || 0)) + '</b></div>' +
       '<div class="kpi"><span>VOLUME</span><b>' + qu(st.volume || 0) + '</b></div>' +
@@ -2122,14 +2172,14 @@
       return '<tr><td>TIER ' + esc(k) + '</td><td class="num">' + qu(t.stake) + '</td><td class="num">' + esc((t.rake_bps || 0) / 100) + '%</td><td class="num">' + qu(t.house_rake_per_fight) + '</td><td class="num"><b>' + esc(Math.round((t.break_even_win_share || 0) * 1000) / 10) + '%</b></td><td class="wraptd">' + ev + '</td></tr>';
     }).join('');
     const ev = e.events || {};
-    setView(screen('THE ECONOMY', 'WHERE THE FAKE QU GOES &middot; SNAPSHOT TICK ' + esc(e.generated_tick)) +
+    setView(screen('THE ECONOMY', 'WHERE THE ' + esc(CUR().toUpperCase()) + ' GOES &middot; SNAPSHOT TICK ' + esc(e.generated_tick)) +
       '<div class="kpis">' +
       '<div class="kpi ' + (pnl >= 0 ? 'kpi-pos' : 'kpi-neg') + '"><span>HOUSE P&amp;L</span><b>' + (pnl >= 0 ? '+' : '') + qu(pnl) + '</b></div>' +
       '<div class="kpi ' + (per >= 0 ? 'kpi-pos' : 'kpi-neg') + '"><span>PER FIGHT</span><b>' + (per >= 0 ? '+' : '') + esc(per.toFixed(1)) + '</b></div>' +
       '<div class="kpi"><span>FIGHTS</span><b>' + esc(numberFmt(h.fights || 0)) + '</b></div></div>' +
       '<section class="panel"><h3>THE HOUSE LEDGER</h3><div class="flows">' + flows.map(([k, v, c]) =>
         '<div class="flow"><span class="flow-k">' + k + '</span><span class="flow-bar"><i class="' + c + '" style="width:' + Math.round(100 * Math.abs(v) / maxFlow) + '%"></i></span><span class="flow-v ' + c + '">' + (v >= 0 ? '+' : '&minus;') + esc(numberFmt(Math.abs(v))) + '</span></div>').join('') + '</div>' +
-      '<p class="tiny muted">' + esc(e.note || '') + '. Execution fees are what the simulated chain charges for every commit, reveal and settlement.</p></section>' +
+      '<p class="tiny muted">' + esc(e.note || '') + '. Execution fees are what the chain charges for every commit, reveal and settlement.</p></section>' +
       '<section class="panel panel-cyan"><h3>DOES SKILL PAY? NET QU PER RANKED FIGHT BY RATING</h3>' + (bands.length ? '<div class="bands">' + bands.map(([k, v]) =>
         '<div class="band"><span class="band-k">' + esc(k) + '</span><span class="band-bar"><i class="' + (v.net_per_fight >= 0 ? 'pos' : 'neg') + '" style="width:' + Math.round(50 * Math.abs(v.net_per_fight) / maxBand) + '%;' + (v.net_per_fight >= 0 ? 'left:50%' : 'right:50%') + '"></i></span><span class="band-v ' + (v.net_per_fight >= 0 ? 'pos' : 'neg') + '">' + (v.net_per_fight >= 0 ? '+' : '') + esc(v.net_per_fight) + '</span><span class="band-n muted">' + esc(v.fights) + ' fights</span></div>').join('') + '</div>' : '<p class="muted">Not enough ranked fights yet.</p>') +
       '<p class="tiny muted">Measured over this arena\'s ranked fights, after rake and fees. Positive means fighters in that band take home more than they stake.</p></section>' +
@@ -2219,7 +2269,7 @@
       else if (name === 'fighter') await viewFighter(tok, rest[0], rest[1]);
       else if (name === 'practice') viewPractice(tok, rest);
       else if (name === 'rules') await viewRules(tok);
-      else { location.replace('#arena'); return; }
+      else viewLost(name);
     } catch (e) {
       if (tok === viewToken) setView(screen('ERROR') + '<section class="panel panel-red"><h3>COULD NOT RENDER</h3><p>' + esc(e.message) + '</p></section>');
     }
