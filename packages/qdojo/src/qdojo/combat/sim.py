@@ -19,6 +19,7 @@ from ..hashing import sha256
 from . import codec
 from .codec import Op
 from .contract import CallResult, CombatContract, Manifest
+from .nft import AssetLedger, Env
 from .types import Plan
 
 
@@ -69,6 +70,34 @@ class World:
         self.transfer_fails.world = self
         self.journal.append({"k": "start", "t": self.tick})
         self.contract = CombatContract(self.manifest, self.owners.get, self._transfer, self.tick)
+        self.nft = AssetLedger()            # fighter NFTs and their market (nft.py)
+
+    # -- fighter NFTs ---------------------------------------------------------
+
+    def nft_env(self) -> Env:
+        def lock_of(fid):
+            f = self.contract.fighters.get(fid)
+            return f.lock if f is not None else None
+        return Env(self.balances, lock_of, self.owners.__setitem__)
+
+    def nft_call(self, who: bytes, op: str, args: dict, amount: int = 0) -> dict:
+        """Execute one NFT operation now and journal it (with its result, which
+        a replay must reproduce). Ownership changes also write the contract's
+        owner table, journalled as "owner" records for the C++ parity port."""
+        rec = {"k": "nft", "t": self.tick, "who": who.hex(), "op": op, "args": args, "amount": amount}
+        self.journal.append(rec)
+        result = self.nft.apply(self.nft_env(), who, op, args, amount, self.tick)
+        rec["code"] = result["code"]
+        return result
+
+    def apply_nft_record(self, rec: dict):
+        """Replay one journalled NFT operation; its result must match."""
+        result = self.nft.apply(self.nft_env(), bytes.fromhex(rec["who"]), rec["op"], rec["args"], rec["amount"],
+                                self.tick)
+        if "code" in rec and result["code"] != rec["code"]:
+            raise ValueError(f"nft replay diverged at tick {rec['t']}: {rec['op']} gave {result['code']}, "
+                             f"journal says {rec['code']}")
+        return result
 
     # -- money --------------------------------------------------------------
 
@@ -97,6 +126,14 @@ class World:
                 w.end()
             elif k == "begin":
                 w.skip_ticks(rec["t"] - w.tick)
+            elif k == "nft":
+                w.journal.append(rec)
+                w.apply_nft_record(rec)
+            elif k == "xfer":
+                frm, to = bytes.fromhex(rec["from"]), bytes.fromhex(rec["to"])
+                w.balances[frm] -= rec["amount"]
+                w.balances[to] = w.balances.get(to, 0) + rec["amount"]
+                w.journal.append(rec)
         w.nonces = {who: last[0] for who, last in w.contract.nonces.items()}
         return w
 
@@ -107,6 +144,7 @@ class World:
         return True
 
     def total(self) -> int:
+        """NFT escrow is an external balance (the market's escrow identity), so it is included."""
         return sum(self.balances.values()) + self.contract.ledger.balance
 
     def check_conservation(self):
@@ -137,6 +175,8 @@ class World:
         """END_TICK for the current tick, then BEGIN_TICK of the next."""
         self.journal.append({"k": "end", "t": self.tick})
         self.contract.end_tick(self.tick)
+        if self.nft.crossed:                # the contract's END_TICK also settles agreed NFT sales
+            self.nft.end_tick(self.nft_env(), self.tick)
         self.tick += 1
         self.contract.begin_tick(self.tick)
 

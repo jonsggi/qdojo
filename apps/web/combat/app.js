@@ -1,7 +1,7 @@
 /* QDOJO combat spectator and owner page (combat.html).
  *
  * Views, by hash: #arena (default), #title, #book, #results (#fights is an
- * alias), #leaderboard, #fight/<id>, #fighter/<hex>, #practice,
+ * alias), #leaderboard, #fight/<id>, #fighter/<hex>, #collection, #nft/<hex>, #practice,
  * #practice/<npc>/<seed>, #join, #rules, #help. The site polls the export
  * every 30 s and repaints live views in place, without a reload.
  *
@@ -1847,6 +1847,7 @@
       '<div class="tscroll"><table><thead><tr><th class="num">FIGHT</th><th>MODE</th><th>SLOT</th><th>OPPONENT</th><th>RESULT</th><th class="num">TICK</th></tr></thead><tbody>' + fightRows + '</tbody></table></div>' + pager +
       (d.full ? '' : '<p class="tiny muted">The static export keeps recent fights only; the full history needs the read API.</p>') + '</section>');
     wireScoutAll(tok, hex, d);
+    nftHook(tok, hex);
   }
 
   // Page through every finished fight's replay (100 per request) and redo the report.
@@ -2503,6 +2504,165 @@
       '<li>Market fee ' + esc((ev.market_fee_bps || 0) / 100) + '% of each sale.</li></ul></section>');
   }
 
+  // ---- FIGHTER NFTS: #collection, #nft/<fighter id> (docs/nft.md) ----------------------
+
+  /* The collection (nfts.json) and one token (nfts/<id>.json) come from the export;
+   * the art is re-rendered here by avatars.js and, where a frozen master exists,
+   * its SVG hash is compared with the frozen one in this browser. No wallet, no
+   * signing: nothing on these pages can buy, sell or move a token. */
+  const NFT_KIT = hex => (A && A.traits ? A.traits(hex) : {});
+  const nftFilter = { kit: '', finish: '', sale: false, sort: 'serial' };
+  function nftTitle(t) { return (t.fighter_name ? String(t.fighter_name).toUpperCase() : short(t.fighter_id).toUpperCase()); }
+  function nftPrice(t) { return t.ask ? Number(t.ask.price) : null; }
+  function nftSaleTag(t) {
+    if (t.sale_pending) return '<span class="nft-tag nft-tag-pending" title="A bid met the ask; it settles the first tick the fighter is idle">SALE PENDING</span>';
+    if (t.ask) return '<span class="nft-tag nft-tag-sale">FOR SALE</span>';
+    return '<span class="nft-tag">NOT LISTED</span>';
+  }
+  function nftCard(t) {
+    const tr = NFT_KIT(t.fighter_id);
+    return '<a class="nft-card' + (t.ask ? ' nft-listed' : '') + '" href="#nft/' + esc(t.fighter_id) + '">' +
+      '<span class="nft-serial">#' + esc(t.serial) + '</span>' + (t.founding ? '<span class="nft-founding" title="Founding fighter">F</span>' : '') +
+      '<span class="nft-art">' + avatar(t.fighter_id, 'avatar-xl') + '</span>' +
+      '<span class="nft-plate"><b>' + esc(nftTitle(t)) + '</b><i>' + esc(t.name) + ' &middot; ' + esc(tr.archetype || '?') + '</i></span>' +
+      '<span class="nft-rows"><span><em>OWNER</em>' + esc(String(t.owner).slice(0, 8)) + '&hellip;</span>' +
+      '<span><em>ASK</em>' + (t.ask ? '<b class="nft-ask">' + esc(numberFmt(t.ask.price)) + '</b>' : '<span class="muted">&mdash;</span>') + '</span>' +
+      '<span><em>LAST SALE</em>' + (t.last_sale ? esc(numberFmt(t.last_sale.price)) : '<span class="muted">&mdash;</span>') + '</span>' +
+      '<span><em>BEST BID</em>' + (t.best_bid ? esc(numberFmt(t.best_bid.price)) : '<span class="muted">&mdash;</span>') + '</span></span>' +
+      '<span class="nft-foot">' + nftSaleTag(t) + (t.frozen ? '<span class="nft-tag nft-tag-frozen" title="Art frozen: content-addressed master and metadata">FROZEN</span>' : '') + '</span></a>';
+  }
+  function howToBuy(coll) {
+    const c = (coll && coll.collection) || {};
+    const issuer = c.issuer ? '<span class="id">' + esc(String(c.issuer).slice(0, 12)) + '&hellip;</span>' : '?';
+    // Where buying stands on each network; the arena's own network is NOW.
+    const kind = D.deployment && NETWORKS[D.deployment.kind] ? D.deployment.kind : 'devnet';
+    const book = 'one-share assets (issuer ' + issuer + ', names ' + esc(c.asset_prefix || 'QF') + '00001&hellip;) on a QX-style book with a ' + esc(((c.policy || {}).market_fee_bps || 250) / 100) + '% fee and a ' + esc(((c.policy || {}).royalty_bps || 250) / 100) + '% creator royalty';
+    const steps = [
+      ['devnet', 'DEVNET', 'Fighters are ' + book + '. The arena\'s house collectors make every bid and sale, in devnet QU (no monetary value).'],
+      ['testnet', 'TESTNET', 'The same assets on Qubic testnet, in testnet QU (no monetary value). A purchase is a QX bid from your own Qubic wallet; this page shows the exact asset and price.'],
+      ['mainnet', 'MAINNET', 'Not before the artwork, rights and release terms are published (audit items AUD-009, AUD-010).'],
+    ];
+    const at = steps.findIndex(x => x[0] === kind);
+    const intro = kind === 'devnet'
+      ? 'Fighters cannot be bought from this site: on the devnet every bid and sale on this page was made by the arena\'s own house collectors.'
+      : 'A purchase is a QX bid you send from your own Qubic wallet, in ' + esc(CUR()) + '.';
+    return '<section class="panel panel-red nft-howto"><h3>HOW TO BUY</h3>' +
+      '<p><b>' + intro + '</b> There is no wallet connection and no button that spends anything.</p>' +
+      '<ol class="plain nft-steps">' + steps.map(([, label, text], i) => '<li><span>' + (i === at ? 'NOW' : i < at ? 'BEFORE' : label) + '</span><div>' + (i === at ? '<b>' + label + ':</b> ' : '') + text + '</div></li>').join('') + '</ol>' +
+      '<p class="tiny muted">The rules a token follows (ownership, operator, rewards, transfer locks, royalties) are in docs/nft.md. Nothing here is an offer or a price promise.</p></section>';
+  }
+
+  async function viewCollection(tok) {
+    if (needData()) return;
+    const coll = await fetchJson('nfts.json').catch(() => null);
+    if (tok !== viewToken) return;
+    if (!coll || !Array.isArray(coll.tokens)) return setView(screen('COLLECTION') + '<section class="panel panel-red"><h3>NO NFT DATA</h3><p>This export has no fighter NFT file yet.</p></section>' + howToBuy(null));
+    const st = coll.stats || {};
+    const kits = [...new Set(coll.tokens.map(t => NFT_KIT(t.fighter_id).archetype).filter(Boolean))].sort();
+    const finishes = [...new Set(coll.tokens.map(t => NFT_KIT(t.fighter_id).finish).filter(Boolean))].sort();
+    const opt = (v, cur, label) => '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(label || v) + '</option>';
+    setView(screen('THE COLLECTION', 'EVERY FIGHTER IS ONE TOKEN &middot; PRICES IN ' + esc(CUR().toUpperCase())) +
+      '<div class="kpis">' +
+      '<div class="kpi"><span>FIGHTERS</span><b>' + esc(numberFmt(st.tokens || coll.tokens.length)) + '</b></div>' +
+      '<div class="kpi"><span>FOR SALE</span><b>' + esc(numberFmt(st.listed || 0)) + '</b></div>' +
+      '<div class="kpi"><span>SALES</span><b>' + esc(numberFmt(st.sales || 0)) + '</b></div>' +
+      '<div class="kpi"><span>VOLUME</span><b>' + qu(st.volume || 0) + '</b></div></div>' +
+      '<div class="nft-filters" role="group" aria-label="Filter the collection">' +
+      '<label>KIT <select id="nft-kit">' + opt('', nftFilter.kit, 'ALL') + kits.map(k => opt(k, nftFilter.kit)).join('') + '</select></label>' +
+      '<label>FINISH <select id="nft-finish">' + opt('', nftFilter.finish, 'ALL') + finishes.map(k => opt(k, nftFilter.finish)).join('') + '</select></label>' +
+      '<label>SORT <select id="nft-sort">' + opt('serial', nftFilter.sort, 'SERIAL') + opt('price', nftFilter.sort, 'ASK, LOW FIRST') + opt('last', nftFilter.sort, 'LAST SALE, HIGH FIRST') + '</select></label>' +
+      '<label class="nft-check"><input type="checkbox" id="nft-sale"' + (nftFilter.sale ? ' checked' : '') + '> FOR SALE ONLY</label>' +
+      '<span class="nft-count tiny" id="nft-count" aria-live="polite"></span></div>' +
+      '<div class="nft-grid" id="nft-grid"></div>' + howToBuy(coll) +
+      '<p class="practice-note">A token is the fighter: its owner registers it, picks its operator and bot, and receives its winnings. Rating, record, belts and titles stay with the fighter when it changes hands. <a href="#market">Market activity</a> &middot; <a href="#economy">where the fees go</a></p>');
+    const paint = () => {
+      let list = coll.tokens.filter(t => {
+        const tr = NFT_KIT(t.fighter_id);
+        return (!nftFilter.kit || tr.archetype === nftFilter.kit) && (!nftFilter.finish || tr.finish === nftFilter.finish) && (!nftFilter.sale || t.ask);
+      });
+      if (nftFilter.sort === 'price') list = list.slice().sort((a, b) => (nftPrice(a) == null) - (nftPrice(b) == null) || (nftPrice(a) || 0) - (nftPrice(b) || 0) || a.serial - b.serial);
+      else if (nftFilter.sort === 'last') list = list.slice().sort((a, b) => Number((b.last_sale || {}).price || -1) - Number((a.last_sale || {}).price || -1) || a.serial - b.serial);
+      $('#nft-grid').innerHTML = list.length ? list.map(nftCard).join('') : '<p class="muted">No fighter matches these filters.</p>';
+      $('#nft-count').textContent = list.length + ' OF ' + coll.tokens.length;
+      if (ANIM) ANIM.mount($('#nft-grid'));
+    };
+    $('#nft-kit').addEventListener('change', e => { nftFilter.kit = e.target.value; paint(); });
+    $('#nft-finish').addEventListener('change', e => { nftFilter.finish = e.target.value; paint(); });
+    $('#nft-sort').addEventListener('change', e => { nftFilter.sort = e.target.value; paint(); });
+    $('#nft-sale').addEventListener('change', e => { nftFilter.sale = e.target.checked; paint(); });
+    paint();
+  }
+
+  const NFT_EVENT = { MINT: 'MINTED', ASK: 'LISTED', DELIST: 'DELISTED', BID: 'BID', CANCEL_BID: 'BID WITHDRAWN', SALE: 'SOLD', TRANSFER: 'TRANSFERRED', CUSTODY: 'TO CUSTODIAN', RELEASE: 'CUSTODY RETURNED', MANAGE: 'MANAGEMENT MOVED' };
+  function nftEventRow(e) {
+    const who = h => (HEX64.test(h || '') ? ownerLink(h) : esc(h || ''));
+    let what = '';
+    if (e.kind === 'MINT') what = 'to ' + who(e.to) + (e.legacy_history ? ' <span class="muted">(imported with ' + esc(e.legacy_history.length) + ' earlier owners)</span>' : '');
+    else if (e.kind === 'SALE') what = who(e.from) + ' &rarr; ' + who(e.to) + ' for ' + qu(e.price) + ' <span class="muted">fee ' + esc(numberFmt(e.fee)) + ', royalty ' + esc(numberFmt(e.royalty)) + '</span>';
+    else if (e.kind === 'TRANSFER' || e.kind === 'CUSTODY' || e.kind === 'RELEASE') what = who(e.from) + ' &rarr; ' + who(e.to) + (e.via ? ' <span class="muted">via ' + esc(e.via) + '</span>' : '');
+    else if (e.kind === 'MANAGE') what = esc(e.from) + ' &rarr; ' + esc(e.to);
+    else what = who(e.from) + (e.price ? ' at ' + qu(e.price) : '') + (e.replaces ? ' <span class="muted">(was ' + esc(numberFmt(e.replaces)) + ')</span>' : '');
+    const cls = e.kind === 'SALE' || e.kind === 'TRANSFER' || e.kind === 'MINT' ? ' class="nft-own"' : '';
+    return '<li' + cls + '><span class="nft-t">T' + esc(e.tick) + '</span><span class="nft-k nft-k-' + esc(String(e.kind).toLowerCase()) + '">' + esc(NFT_EVENT[e.kind] || e.kind) + '</span><span class="nft-w">' + what + '</span></li>';
+  }
+  async function frozenCheck(t) {
+    const el = $('#nft-frozen');
+    if (!el) return;
+    if (!t.frozen) { el.innerHTML = '<span class="nft-tag">NOT FROZEN</span> <span class="tiny muted">This token\'s art is drawn live by the site\'s renderer; no master has been pinned yet.</span>'; return; }
+    let ok = null;
+    try { ok = (await SHA(new TextEncoder().encode(A.svg(t.fighter_id)))) === t.frozen.card_svg_sha256; } catch (e) { ok = null; }
+    el.innerHTML = (ok ? '<span class="nft-tag nft-tag-frozen">FROZEN &middot; ART MATCHES</span>' : ok === false ? '<span class="nft-tag nft-tag-pending">FROZEN &middot; RENDERER DIFFERS</span>' : '<span class="nft-tag nft-tag-frozen">FROZEN</span>') +
+      ' <span class="tiny">' + (ok ? 'This browser re-rendered the card and its SHA-256 equals the frozen master\'s.' : ok === false ? 'The live renderer no longer draws the frozen art; the pinned master below is the token\'s art.' : '') + '</span>' +
+      '<dl class="kv tiny nft-hashes"><dt>CARD SVG</dt><dd class="id wrap">' + esc(t.frozen.card_svg_sha256) + '</dd><dt>PNG MASTER</dt><dd><a href="' + esc(t.frozen.card_png) + '">1024 &times; 1024</a> <span class="id wrap">' + esc(t.frozen.card_png_sha256) + '</span></dd>' +
+      '<dt>METADATA</dt><dd><a href="' + esc(t.frozen.metadata) + '">JSON</a> <span class="id wrap">' + esc(t.frozen.metadata_sha256) + '</span></dd><dt>RENDERER</dt><dd>' + esc(t.frozen.renderer || '?') + '</dd></dl>';
+  }
+  async function viewNft(tok, hex) {
+    if (needData()) return;
+    if (!HEX64.test(hex || '')) return notFound('A fighter ID is 64 lowercase hex digits.');
+    const t = await fetchJson('nfts/' + hex + '.json').catch(() => null);
+    if (tok !== viewToken) return;
+    if (!t) return notFound('No NFT for fighter ' + short(hex) + ' in this export.');
+    const tr = NFT_KIT(hex);
+    const book = t.book || { asks: [], bids: [] };
+    const traitRows = [['KIT', tr.archetype], ['MARTIAL ART', tr.martialArt], ['FORMER JOB', tr.formerJob], ['DESIGNATION', tr.designation], ['MODEL YEAR', tr.modelYear], ['CHASSIS', tr.chassis], ['FINISH', tr.finish], ['RUST', tr.rust], ['PAINT', tr.paint], ['HEAD UNIT', tr.headUnit], ['EYE GLOW', tr.eyeGlow], ['QUIRK', tr.quirk], ['HEADGEAR', tr.headgear], ['GLOVES', tr.gloves], ['CARD SCENE', tr.backdrop], ['SIGNATURE', tr.signature]]
+      .filter(r => r[1] != null && r[1] !== '').map(r => '<dt>' + r[0] + '</dt><dd>' + esc(r[1]) + '</dd>').join('');
+    const orders = (book.asks || []).map(o => '<tr><td><span class="nft-tag nft-tag-sale">ASK</span></td><td class="num"><b>' + qu(o.price) + '</b></td><td>' + ownerLink(o.who) + '</td><td class="num">' + esc(o.tick) + '</td></tr>').join('') +
+      (book.bids || []).map(o => '<tr><td><span class="nft-tag">BID</span></td><td class="num">' + qu(o.price) + '</td><td>' + ownerLink(o.who) + '</td><td class="num">' + esc(o.tick) + '</td></tr>').join('');
+    const sales = (t.sales || []).map(x => '<tr><td class="num">' + esc(x.tick) + '</td><td>' + ownerLink(x.seller) + '</td><td>' + ownerLink(x.buyer) + '</td><td class="num"><b>' + qu(x.price) + '</b></td><td class="num muted">' + esc(numberFmt(x.fee)) + '</td><td class="num muted">' + esc(numberFmt(x.royalty)) + '</td></tr>').join('');
+    const p = t.possessor !== t.owner;
+    setView(screen(nftTitle(t), esc(t.name) + ' &middot; TOKEN #' + esc(t.serial) + (t.founding ? ' &middot; FOUNDING' : '')) +
+      '<div class="nft-hero">' +
+      '<figure class="nft-frame">' + (A ? '<span class="nft-big" role="img" aria-label="Card art of ' + esc(nftTitle(t)) + '">' + A.svg(hex) + '</span>' : '') +
+      '<figcaption>' + nftSaleTag(t) + (t.ask ? ' <b class="nft-ask">' + qu(t.ask.price) + '</b>' : '') + '</figcaption></figure>' +
+      '<div class="nft-side">' +
+      '<section class="panel panel-yellow"><h3>WHO HOLDS IT</h3><dl class="kv">' +
+      '<dt>OWNER</dt><dd>' + ownerLink(t.owner) + ' <span class="tiny muted">registers the fighter, sets its operator and bot, receives its winnings</span></dd>' +
+      '<dt>POSSESSOR</dt><dd>' + ownerLink(t.possessor) + (p ? ' <span class="nft-tag nft-tag-pending">CUSTODIAN</span>' : ' <span class="tiny muted">same as owner</span>') + '</dd>' +
+      '<dt>MANAGED BY</dt><dd>' + esc(t.manager) + (t.manager === 'QDOJO' ? ' <span class="tiny muted">trades here, between contests, with royalty</span>' : ' <span class="tiny muted">trades on QX: no contest lock, no royalty</span>') + '</dd>' +
+      '<dt>CREATOR</dt><dd>' + ownerLink(t.creator) + ' <span class="tiny muted">royalty on resales</span></dd>' +
+      '<dt>FIGHTER</dt><dd>' + fighterLink(hex, t.fighter_name) + (t.rating != null ? ' &middot; rating <b>' + esc(t.rating) + '</b>' : '') + (t.lock && t.lock !== 'IDLE' ? ' &middot; <span class="nft-tag nft-tag-pending" title="Transfers wait until it is idle">' + esc(t.lock) + '</span>' : '') + '</dd>' +
+      '<dt>ASSET</dt><dd>' + esc(t.name) + ' &middot; 1 share &middot; issuer <span class="id">' + esc(String(t.issuer).slice(0, 12)) + '&hellip;</span></dd></dl></section>' +
+      '<section class="panel"><h3>ART AND METADATA</h3><div id="nft-frozen"><span class="muted">checking&hellip;</span></div></section>' +
+      '</div></div>' +
+      '<div class="cols info-cols"><section class="panel panel-cyan"><h3>BIO AND TRAITS</h3>' + (A && A.bio ? '<p class="bio">' + esc(A.bio(hex)) + '</p>' : '') + '<dl class="kv nft-traits">' + traitRows + '</dl>' +
+      '<p class="tiny muted">Traits are cosmetic and follow from the fighter ID; none of them changes a fight. No rarity was designed in.</p></section>' +
+      '<section class="panel panel-yellow"><h3>ORDER BOOK</h3>' + (orders ? '<div class="tscroll"><table><thead><tr><th></th><th class="num">PRICE</th><th>BY</th><th class="num">SINCE TICK</th></tr></thead><tbody>' + orders + '</tbody></table></div>' : '<p class="muted">No open ask or bid.</p>') +
+      '<p class="tiny muted">Bids are held in escrow. A bid that meets the ask trades at the resting order\'s price; while the fighter is in a contest, queue or cup the sale waits and settles the first tick it is idle.</p></section></div>' +
+      '<section class="panel"><h3>PROVENANCE (' + esc((t.history || []).length) + ' EVENTS)</h3><ol class="nft-events">' + (t.history || []).slice().reverse().map(nftEventRow).join('') + '</ol></section>' +
+      '<section class="panel"><h3>SALES</h3>' + (sales ? '<div class="tscroll"><table><thead><tr><th class="num">TICK</th><th>SELLER</th><th>BUYER</th><th class="num">PRICE</th><th class="num">FEE</th><th class="num">ROYALTY</th></tr></thead><tbody>' + sales + '</tbody></table></div>' : '<p class="muted">Never sold.</p>') + '</section>' +
+      howToBuy({ collection: { issuer: t.issuer, asset_prefix: String(t.name).slice(0, 2) } }) +
+      '<p class="practice-note"><a href="#fighter/' + esc(hex) + '">&larr; ' + esc(nftTitle(t)) + '\'s fights</a> &middot; <a href="#collection">the whole collection</a></p>');
+    frozenCheck(t);
+  }
+
+  /* The one hook on the fighter page: a strip naming the fighter's token. */
+  async function nftHook(tok, hex) {
+    const t = await fetchJson('nfts/' + hex + '.json').catch(() => null);
+    const anchor = $('#fighter-fights');
+    if (tok !== viewToken || !t || !anchor) return;
+    anchor.insertAdjacentHTML('beforebegin', '<a class="nft-hook" href="#nft/' + esc(hex) + '"><span class="nft-tag nft-tag-frozen">NFT</span> <b>' + esc(t.name) + ' #' + esc(t.serial) + '</b> <span>owner ' + esc(String(t.owner).slice(0, 8)) + '&hellip;</span> ' + nftSaleTag(t) + (t.ask ? ' <b class="nft-ask">' + qu(t.ask.price) + '</b>' : '') + ' <span class="nft-go">TOKEN PAGE &rarr;</span></a>');
+  }
+
   // ---- FIGHTERS: search and filter the whole roster ----------------------------------
 
   const BELT_ORDER = ['white', 'yellow', 'orange', 'green', 'blue', 'purple', 'brown', 'black', 'red'];
@@ -2626,12 +2786,12 @@
   // ---- router and chrome -------------------------------------------------------------
 
   // Sub-pages light up the nav entry they belong to.
-  const NAV_PARENT = { book: 'arena', fight: 'results', fights: 'results', duel: 'results', duels: 'results', fighter: 'leaderboard', owner: 'leaderboard', season: 'leaderboard', fighters: 'leaderboard', titles: 'leaderboard', market: 'leaderboard', economy: 'leaderboard', cup: 'cups', rules: 'guide', help: 'guide', story: 'guide' };
+  const NAV_PARENT = { book: 'arena', fight: 'results', fights: 'results', duel: 'results', duels: 'results', fighter: 'leaderboard', owner: 'leaderboard', season: 'leaderboard', fighters: 'leaderboard', titles: 'leaderboard', collection: 'leaderboard', nft: 'leaderboard', market: 'leaderboard', economy: 'leaderboard', cup: 'cups', rules: 'guide', help: 'guide', story: 'guide' };
   // Each nav section can hold several screens: they show as tabs under the header.
   const SECTION_TABS = {
     arena: [['arena', 'LIVE'], ['book', 'MATCHMAKING']],
     results: [['results', 'FIGHTS'], ['duels', 'DUELS']],
-    leaderboard: [['leaderboard', 'LEADERBOARD'], ['fighters', 'FIGHTERS'], ['titles', 'TITLES'], ['season', 'SEASON'], ['market', 'MARKET'], ['economy', 'ECONOMY']],
+    leaderboard: [['leaderboard', 'LEADERBOARD'], ['fighters', 'FIGHTERS'], ['titles', 'TITLES'], ['season', 'SEASON'], ['collection', 'NFTS'], ['market', 'MARKET'], ['economy', 'ECONOMY']],
     guide: [['guide', 'HOW IT WORKS'], ['story', 'STORY'], ['rules', 'RULES'], ['help', 'GLOSSARY'], ['llms.txt', 'FOR AGENTS']],
   };
   function paintNav(name) {
@@ -2695,6 +2855,8 @@
       else if (name === 'titles') await viewTitles(tok);
       else if (name === 'fighters') await viewFighters(tok, rest.join('/'));
       else if (name === 'market') await viewMarket(tok);
+      else if (name === 'collection') await viewCollection(tok);
+      else if (name === 'nft') await viewNft(tok, rest[0]);
       else if (name === 'economy') await viewEconomy(tok);
       else if (name === 'owner') await viewOwner(tok, rest[0]);
       else if (name === 'join') await viewJoin(tok);

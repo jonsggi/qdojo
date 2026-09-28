@@ -324,6 +324,53 @@ class Reader:
                     x[k] = str(x[k])
         return self.env("market", {"page": page, "per_page": per, "pages": pages, "total": total, "items": items})
 
+    # -- fighter NFTs (docs/nft.md §6) ---------------------------------------------------
+
+    def nfts(self, q: dict) -> dict:
+        """The collection: every fighter NFT, by serial (or by ask), filtered by owner or for sale."""
+        where, args = [], []
+        owner = _one(q, "owner")
+        if owner is not None:
+            if not HEX64.match(owner):
+                raise ApiError(400, "bad_id", "an owner ID is 64 lowercase hex digits")
+            where.append("owner = ?")
+            args.append(owner)
+        if _one(q, "for_sale") in ("1", "true"):
+            where.append("ask IS NOT NULL")
+        sort = _one(q, "sort") or "serial"
+        if sort not in ("serial", "price", "last_sale"):
+            raise ApiError(400, "bad_query", "sort is serial, price or last_sale")
+        order = {"serial": "serial", "price": "ask IS NULL, ask, serial",
+                 "last_sale": "last_price IS NULL, last_price DESC, serial"}[sort]
+        w = ("WHERE " + " AND ".join(where)) if where else ""
+        total = self.c.execute(f"SELECT COUNT(*) FROM nft_tokens {w}", args).fetchone()[0]
+        page, per, pages = self._page(q, total)
+        items = [json.loads(r[0]) for r in self.c.execute(
+            f"SELECT doc FROM nft_tokens {w} ORDER BY {order} LIMIT ? OFFSET ?", (*args, per, (page - 1) * per))]
+        listed = self.c.execute("SELECT COUNT(*) FROM nft_tokens WHERE ask IS NOT NULL").fetchone()[0]
+        n, volume = self.c.execute("SELECT COUNT(*), COALESCE(SUM(price), 0) FROM sales").fetchone()
+        return self.env("nfts", {"page": page, "per_page": per, "pages": pages, "total": total, "items": items,
+                                 "stats": {"tokens": str(self.c.execute("SELECT COUNT(*) FROM nft_tokens").fetchone()[0]),
+                                           "listed": str(listed), "sales": str(n), "volume": str(volume)}})
+
+    def nft(self, hexid: str) -> dict:
+        r = self.c.execute("SELECT doc FROM nft_tokens WHERE fighter_id = ?", (hexid,)).fetchone()
+        if r is None:
+            raise ApiError(404, "not_found", "no NFT for this fighter")
+        doc = json.loads(r[0])
+        orders = self.c.execute("SELECT side, who, price, tick FROM nft_orders WHERE fighter_id = ? "
+                                "ORDER BY side, price DESC, tick", (hexid,)).fetchall()
+        doc["book"] = {"asks": [{"who": o[1], "price": str(o[2]), "tick": str(o[3])} for o in orders if o[0] == "ask"],
+                       "bids": [{"who": o[1], "price": str(o[2]), "tick": str(o[3])} for o in orders if o[0] == "bid"]}
+        doc["history"] = [{k: (str(v) if isinstance(v, int) and not isinstance(v, bool) else v)
+                           for k, v in json.loads(x[0]).items()}
+                          for x in self.c.execute("SELECT doc FROM nft_events WHERE fighter_id = ? ORDER BY seq",
+                                                  (hexid,))]
+        doc["sales"] = [{k: (str(v) if isinstance(v, int) else v) for k, v in json.loads(x[0]).items()}
+                        for x in self.c.execute("SELECT doc FROM sales WHERE fighter_id = ? ORDER BY seq DESC",
+                                                (hexid,))]
+        return self.env("nft", doc)
+
     def economics(self) -> dict:
         doc = rm.get_meta(self.c, "economics")
         if doc is None:
@@ -626,6 +673,13 @@ class Handler(BaseHTTPRequestHandler):
             return r.search(q), LIVE_CACHE
         if head == "market" and n == 1:
             return r.market(q), LIVE_CACHE
+        if head == "nfts":
+            if n == 1:
+                return r.nfts(q), LIVE_CACHE
+            if n == 2:
+                if not HEX64.match(p[1]):
+                    raise ApiError(400, "bad_id", "a fighter ID is 64 lowercase hex digits")
+                return r.nft(p[1]), LIVE_CACHE
         if head == "economics" and n == 1:
             return r.economics(), LIVE_CACHE
         if head == "titles":

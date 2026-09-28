@@ -10,9 +10,11 @@
 `SimChain` adds exactly these behaviours, deterministically from a seed, so
 bots, the CLI and the live arena run the code path a real node will need.
 
+NFT operations (nft.py) ride the same queue: `submit_nft` is a transaction
+to the QDOJO contract's market with the same latency, reordering and drops,
+executed by `World.nft_call` when included.
+
 Also simulated here, never on a real network:
-- `AssetRegistry`: fighter NFTs (issuer, name, one unit), owners and transfer
-  history, founding status.
 - `FeeModel`: per-call and per-tick execution costs burned from the contract's
   reserve. A dry reserve stops END_TICK, which the contract's heartbeat then
   sees as an objective service gap.
@@ -20,63 +22,12 @@ Also simulated here, never on a real network:
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-from ..hashing import sha256
 from . import codec
 from .codec import Op
 from .contract import CallResult
 from .sim import World
-
-
-# ---- fighter assets --------------------------------------------------------
-
-@dataclass
-class Asset:
-    fighter_id: bytes
-    issuer: bytes
-    name: str
-    founding: bool
-    history: list = field(default_factory=list)      # [(tick, from_owner | None, to_owner)]
-
-    @property
-    def owner(self) -> bytes:
-        return self.history[-1][2]
-
-
-class AssetRegistry:
-    """Simulated fighter NFTs. Ownership changes flow into the World's owner
-    table, which the contract queries (and the journal records)."""
-
-    def __init__(self, world: World, issuer: bytes, name: str = "QDOJOF"):
-        self.world, self.issuer, self.name = world, issuer, name
-        self.assets: dict[bytes, Asset] = {}
-
-    def id_for(self, label: str) -> bytes:
-        return sha256(b"qdojo/combat/sim-asset/v1\0", self.issuer, self.name.encode(), label.encode())
-
-    def issue(self, label: str, owner: bytes, founding: bool = False) -> bytes:
-        fid = self.id_for(label)
-        if fid in self.assets:
-            raise ValueError(f"asset {label!r} already issued")
-        self.assets[fid] = Asset(fid, self.issuer, self.name, founding, [(self.world.tick, None, owner)])
-        self.world.owners[fid] = owner
-        return fid
-
-    def transfer(self, fid: bytes, frm: bytes, to: bytes):
-        a = self.assets[fid]
-        if a.owner != frm:
-            raise ValueError("only the current owner can transfer")
-        a.history.append((self.world.tick, frm, to))
-        self.world.owners[fid] = to
-
-    def public(self, fid: bytes) -> dict | None:
-        a = self.assets.get(fid)
-        if a is None:
-            return None
-        return {"issuer": a.issuer.hex(), "name": a.name, "founding": a.founding,
-                "owner": a.owner.hex(), "history": [{"tick": str(t), "from": f.hex() if f else None, "to": to.hex()}
-                                                    for t, f, to in a.history]}
 
 
 # ---- execution fees --------------------------------------------------------
@@ -99,7 +50,8 @@ class Tx:
     amount: int
     target_tick: int
     status: str = "pending"          # pending, included, dropped
-    result: CallResult | None = None
+    result: CallResult | dict | None = None
+    nft: tuple | None = None         # (op, args) for an NFT operation; frame is then empty
 
 
 @dataclass
@@ -134,6 +86,12 @@ class SimChain:
         self.txs[tx.tx_id] = tx
         self.queue.setdefault(target, []).append(tx.tx_id)
         return Pending(tx.tx_id, target)
+
+    def submit_nft(self, who: bytes, op: str, args: dict, amount: int = 0) -> Pending:
+        """An NFT operation as a transaction: included at a later tick, or dropped."""
+        p = self.submit(who, b"", amount)
+        self.txs[p.tx_id].nft = (op, args)
+        return p
 
     def send(self, who: bytes, op: Op, amount: int = 0, **fields) -> Pending:
         nonce = 0
@@ -183,7 +141,10 @@ class SimChain:
             if self.fees is not None and not self._cost(self.fees.per_call):
                 tx.status = "dropped"
                 continue
-            tx.result = w.raw(tx.who, tx.frame, tx.amount)
+            if tx.nft is not None:
+                tx.result = w.nft_call(tx.who, tx.nft[0], tx.nft[1], tx.amount)
+            else:
+                tx.result = w.raw(tx.who, tx.frame, tx.amount)
             tx.status = "included"
         if halted or (self.fees is not None and not self._cost(self.fees.per_tick)):
             # The contract could not run this tick: no END_TICK. Its heartbeat

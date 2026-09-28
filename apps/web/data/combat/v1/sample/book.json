@@ -6,25 +6,44 @@
  "source": "reference-contract-state",
  "offers": [
   {
-   "offer_id": "100",
+   "offer_id": "90",
+   "kind": "RANKED",
+   "fighter_id": "417f3b23cc4b00870441904617b5ff4520e7bcd0d53664ea4d18b993fc5e9ac0",
+   "rating": 1007,
+   "stake": "5000",
+   "window": 200,
+   "max_gap": 200,
+   "expires_tick": "4205",
+   "opponent_id": null
+  },
+  {
+   "offer_id": "91",
    "kind": "RANKED",
    "fighter_id": "ed566a3dbb6757f19e53f397af3aee53200cda11b107968ae8dec0a86ac73834",
-   "rating": 1042,
-   "stake": "1000",
-   "window": 100,
+   "rating": 933,
+   "stake": "5000",
+   "window": 200,
    "max_gap": 200,
-   "expires_tick": "4418",
+   "expires_tick": "4205",
+   "opponent_id": null
+  },
+  {
+   "offer_id": "92",
+   "kind": "RANKED",
+   "fighter_id": "642d1dc34815dad8cb5f7429cfce9d3776e996b1e2f97df2131cb05dfabf5610",
+   "rating": 992,
+   "stake": "5000",
+   "window": 150,
+   "max_gap": 200,
+   "expires_tick": "4385",
    "opponent_id": null
   }
  ],
  "capacity": {
   "offers": 64,
   "fights": 16,
-  "fights_in_use": 3
+  "fights_in_use": 1
  },
- "active_fights": [
-  "75",
-  "76"
- ],
+ "active_fights": [],
  "next_matching_tick": "4204"
 }

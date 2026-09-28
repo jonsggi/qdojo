@@ -32,10 +32,10 @@ def test_incremental_equals_rebuild_and_survives_a_restart(tmp_path):
     # export (names, owners) that changes between syncs.
     for i in range(1, 1601):
         arena.step()
-        if i >= 700 and not sold:             # one NFT sale, whenever a fighter is idle
-            n, arena.market_every = arena.state["collectors"], 1
+        if i >= 700 and not sold:             # NFT orders every tick until a sale settles (the chain has latency)
+            arena.market_every = 1
             arena._maybe_market()
-            arena.market_every, sold = 0, arena.state["collectors"] > n
+            arena.market_every, sold = 0, bool(arena.market.sales)
         if i % 37 == 0 or i % 101 == 0:
             arena.save()
             if i % 3 == 0:
@@ -136,8 +136,8 @@ def test_origin(meta, npc, want):
 
 
 def test_the_read_model_follows_a_compacting_snapshotting_arena_with_a_priced_market(tmp_path, monkeypatch):
-    """The arena's journal now carries digest checkpoints and market payments
-    ("xfer"), and the arena prunes finished history from its own memory. The
+    """The arena's journal now carries digest checkpoints and NFT operations
+    ("nft": mints, asks, escrowed bids, sales), and the arena prunes finished history from its own memory. The
     read model replays its own full copy: it must index every fight, the
     per-mode records, the full ownership history and every market sale, and
     incremental must equal rebuild."""
@@ -167,7 +167,7 @@ def test_the_read_model_follows_a_compacting_snapshotting_arena_with_a_priced_ma
                       qualification=arena.qualification, extras=arena.extras())
     fl.step()
     kinds = {json.loads(x)["k"] for x in (arena.dir / devnet.JOURNAL).read_text().splitlines()}
-    assert {"digest", "xfer"} <= kinds, "the journal has the new record kinds"
+    assert {"digest", "nft"} <= kinds, "the journal has the new record kinds (market trades are nft records)"
     c = arena.w.contract
     assert c.history.pruned["fights"] > 0 and len(c.fights) < c.next_id["fight"] - 1, "the arena compacted"
     assert fl.replica.contract.event_digest == c.event_digest
@@ -189,8 +189,11 @@ def test_the_read_model_follows_a_compacting_snapshotting_arena_with_a_priced_ma
     # Every market sale, with its price, and the full ownership history.
     assert arena.market.sales and len(full["sales"]) == len(arena.market.sales)
     assert [r[5] for r in full["sales"]] == [x["price"] for x in arena.market.sales]
-    transfers = sum(len(a.history) for a in arena.registry.assets.values())
-    assert transfers > len(arena.registry.assets), "at least one fighter changed hands"
+    led = arena.w.nft
+    transfers = sum(len(led.ownership(f)) for f in led.tokens)
+    assert transfers > len(led.tokens), "at least one fighter changed hands"
+    # The NFT tables mirror the ledger the journal rebuilt.
+    assert len(full["nft_tokens"]) == len(led.tokens) and len(full["nft_events"]) == len(led.events)
     assert len(full["ownership"]) == transfers
     seasons = [json.loads(r[4]) for r in full["seasons"]]
     assert seasons and all(d["qualification"]["opponents"] <= 4 for d in seasons)

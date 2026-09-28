@@ -94,7 +94,7 @@ class JoinError(Exception):
 
 
 def fighter_id_for(name: str) -> bytes:
-    """The simulated NFT's ID, as AssetRegistry.id_for derives it for the arena's issuer."""
+    """The simulated NFT's fighter ID, as SimFighterNFTs.id_for derives it for the arena's issuer."""
     from .live import ISSUER_LABEL
     from .sim import identity
     return sha256(b"qdojo/combat/sim-asset/v1\0", identity(ISSUER_LABEL), b"QDOJOF", (OUTSIDE_LABEL + name).encode())
@@ -464,10 +464,13 @@ class ArenaInbox:
             return reject("name taken")
         if len(outside) >= self.limits.max_outside_fighters:
             return reject("arena full")
-        fid = arena.registry.id_for(OUTSIDE_LABEL + name)
-        if fid.hex() != row["fighter_id"] or fid in arena.registry.assets:
+        fid = arena.nfts.id_for(OUTSIDE_LABEL + name)
+        if fid.hex() != row["fighter_id"] or arena.nfts.token(fid) is not None:
             return reject("asset ID mismatch or already issued")
-        arena.registry.issue(OUTSIDE_LABEL + name, owner)
+        # Minted at registration to the builder, who is also its creator (royalties, docs/nft.md §3).
+        minted = arena.nfts.poll(arena.nfts.issue(arena.nfts.issuer, fid, owner, creator=owner, immediate=True))
+        if minted["code"] != "OK":
+            return reject(f"mint refused: {minted['code']}")
         arena.w.mint(owner, self.limits.grant_qu)
         arena.w.send(roles()["admin"], Op.ADMIN_REGISTER_ASSET, fighter_id=fid, registry_version=1, house_npc=0)
         entry = {"label": name, "origin": "outside", "driver": "builder", "fighter_id": fid.hex(),

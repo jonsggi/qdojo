@@ -91,7 +91,7 @@ exact deadlines and failure rules are in [protocol.md](protocol.md) §4–5.
 | Practice and NPCs | **Real**, local and free | `combat/npcs.py`, `combat/training.py` |
 | Contract logic | **Real code, simulated chain.** The reference contract runs in-process; `SimChain` adds latency, drops, reordering and execution fees | `combat/contract.py`, `combat/chainsim.py` |
 | Contract on Qubic | **Written, not deployed.** Passes Core's contract checker and replays the parity journals in core-lite's harness | `contracts/qubic/QDOJO.h` |
-| Fighter NFTs | **Simulated.** Issuer, name, one unit, owner history and a small market in the demo arena | `combat/chainsim.py` (`AssetRegistry`) |
+| Fighter NFTs | **Simulated behind one port.** One-share assets (issuer, name, owner, possessor, manager), a QX-style market with escrow, fees, royalty and contest locks, journalled; a Qubic adapter stub that builds QX transactions and never sends ([nft.md](nft.md)) | `combat/nft.py`, `combat/nft_qubic.py`, `combat/nft_freeze.py` |
 | Money | **Fake QU only.** No real QU is escrowed or paid | — |
 | Identities | **Synthetic**, derived from labels on the devnet; no seed is read | `combat/sim.py` |
 | Opponent history for planners | **Not built.** `history_manifest` is always empty; planners see only earlier rounds of the current fight | `combat/training.py`, `combat/devnet.py` |

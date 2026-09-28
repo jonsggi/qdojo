@@ -223,11 +223,17 @@ evidence. Contract query methods expose the same bounded logical records.
 **market.json** (`qdojo.combat.market.v1`, demo arena only): the simulated
 fighter market ([operations.md](operations.md) §8). `listings`: fighter ID and
 name, `ask`, `value` (the public value model: rating, record, experience),
-`rating`, `seller`, `since_tick`, `sold` (a price is agreed and the transfer
-waits for the fighter to be idle). `sales`: the latest 50, newest first, with
-`tick`, `price`, `fee`, `bid`, `seller`, `buyer`, and the fighter's rating and
-record at sale. `stats`: sales, volume, fees, median, min and max price.
-`fee_bps` is the market fee. Amounts are decimal strings of fake QU.
+`rating`, `seller`, `since_tick`, `asset`, `best_bid`, `sold` (a bid met the
+ask and the sale waits for the fighter to be idle). `sales`: the latest 50,
+newest first, with `tick`, `price`, `fee`, `royalty`, `ask`, `bid`, `seller`,
+`buyer`, `creator` and the asset `name`. `stats`: sales, volume, fees, royalties, median, min
+and max price, open listings and bids. `fee_bps` and `royalty_bps` are the
+market fee and creator royalty. Amounts are decimal strings of fake QU. The
+market runs on the fighter NFT ledger ([nft.md](nft.md) §3–4).
+
+**nfts.json** (`qdojo.combat.nfts.v1`) and **nfts/{fighter_id}.json**
+(`qdojo.combat.nft.v1`): the fighter NFT collection and one token with its
+order book, provenance and sales ([nft.md](nft.md) §6).
 
 **titles.json** (`qdojo.combat.titles.v1`): the title belts
 ([competition.md](competition.md) §7). `lineal`: `name`, `holder`,
@@ -283,9 +289,10 @@ record, rating change, season, cup, duel and ownership record. It replays
 the journal into its own contract copy and never compacts it, so the arena
 pruning finished history from its own memory does not lose anything here.
 It uses the manifest the arena was created with (devnet.json), checks the
-arena's `digest` checkpoints as it crosses them, and applies market payments
-(`xfer`). Names, full ownership histories and economics come from the export;
-market sales from the arena's `market.json`. It is an
+arena's `digest` checkpoints as it crosses them, and re-executes the fighter
+NFT operations (`nft` records: mints, orders, sales, transfers), so tokens,
+ownership and sales come from the journal too. Names and economics come from
+the export. It is an
 index, never an authority: it replays the same journal the arena does, and
 can be rebuilt from scratch at any time. `qdojo combat api` serves it
 (`combat/api.py`), together with the static export on every other path.
@@ -315,6 +322,8 @@ ended). Lists are newest first; `page` starts at 1, `per_page` defaults to
 | `GET /api/v1/economics` | The latest `economics.json` body |
 | `GET /api/v1/titles` | The `titles.json` body, from the read model's own replay |
 | `GET /api/v1/titles/lineal?holder=&page=&per_page=` | Every lineal reign (titles.json keeps 100), newest first |
+| `GET /api/v1/nfts?owner=&for_sale=1&sort=serial\|price\|last_sale&page=` | Every fighter NFT (`nfts.json` token shape), with collection `stats` |
+| `GET /api/v1/nfts/{fighter_id}` | One token plus `book` (asks, bids), `history` (every event) and `sales` |
 
 `origin` is `house` (run by the operator: demo bots and NPCs) or `outside`
 (registered and run by an outside builder, [build-a-bot.md](build-a-bot.md)

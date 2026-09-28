@@ -112,7 +112,7 @@ testnet: [testnet.md](testnet.md).
 | Piece | Where |
 |---|---|
 | Arena runner | systemd user unit `qdojo-combat-live` on the ops host: `qdojo combat live --profile demo --tick-seconds 1.5 --export-every 6` from the `~/src/qdojo-live` checkout, under `infisical run` so LLM bots get their OpenRouter key from the environment |
-| Arena state | `~/.qdojo/combat/arena/` (devnet journal, devnet.json with the manifest values, `snapshot.pickle` and `snapshot.prev.pickle`, assets.json, chain.json, market.json, bot plan journals) |
+| Arena state | `~/.qdojo/combat/arena/` (devnet journal, devnet.json with the manifest values, `snapshot.pickle` and `snapshot.prev.pickle`, chain.json, market.json, bot plan journals; assets.json only in arenas from before the NFT ledger, imported once) |
 | Lineup | `~/.qdojo/combat/lineup-arena.json` (label, policy / planner / llm, founding, cups, duels, ranked, reliability); without `--lineup`, eight built-in demo bots |
 | Public export | `~/.qdojo/combat/public/combat/v1/`, written by the runner every few ticks |
 | Read API + data server | systemd user unit `qdojo-combat-api` ([deploy/systemd/qdojo-combat-api.service](../deploy/systemd/qdojo-combat-api.service)): `qdojo combat api` on the tailnet (100.101.145.63:8790). It follows the arena journal into `~/.qdojo/combat/readmodel.sqlite` (plus a private `readmodel.replica` snapshot), answers `/api/v1/` ([api.md](api.md) §3.2) and serves the export on every other path. It replaces `qdojo-combat-data` (the plain `http.server`) |
@@ -174,16 +174,22 @@ invariant: fight N …` (a live fight published past its deadline, or a
 finished fight not published final). The site then shows "DEADLINE PASSED";
 restart the unit, which rewrites every non-final fight file.
 
-**Market (AUD-023).** Owners of idle, non-founding fighters list them now and
-then; simulated collectors bid around a value from rating, record and
-experience, and buy when the bid meets the ask. The buyer pays the ask, the
-seller gets it less a 250 bps market fee that goes to the house. Listings and
-sales are in `market.json` next to `economics.json` (per-tier expected value,
-event prices, the house's running P&L) in the public export.
+**Market (AUD-023, [nft.md](nft.md) §4).** Fighters are one-share NFTs on
+the simulated NFT ledger. Owners of non-founding house fighters list them now
+and then; simulated collectors bid (escrowed) around a value from rating,
+record and experience. A sale pays the resting order's price, less a 250 bps
+market fee to the house and a 250 bps royalty to the creator, and completes
+when the fighter is idle; the new owner registers it and a new bot runs it.
+Every NFT operation is a journal record. Listings and sales are in
+`market.json`, the collection in `nfts.json` and `nfts/<id>.json`, next to
+`economics.json` (per-tier expected value, event prices, the house's running
+P&L) in the public export. Frozen art: `qdojo combat nft freeze --arena DIR
+--export DIR --out apps/web/data/nft/v1/live`, then start the arena with
+`--nft-frozen` that directory and `--nft-frozen-url /data/nft/v1/live/`.
 
 The chain is `SimChain`: transactions land 1–3 ticks later, about 2% are
 dropped, execution fees burn a reserve the operator tops up, and fighter NFTs
-come from the simulated `AssetRegistry`, with the simulated market above.
+come from the simulated NFT ledger (`combat/nft.py`), with the market above.
 
 **Read model.** The API's first start replays the whole journal (measured
 2026-09-26: 199,182 records, 5,223 fights, about 4 min on this host, 95 MB

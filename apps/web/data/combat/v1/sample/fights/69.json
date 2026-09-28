@@ -5,49 +5,48 @@
  "generated_tick": "4201",
  "source": "reference-contract-state",
  "fight_id": "69",
- "contest_id": "49",
+ "contest_id": "47",
  "phase": "DONE",
- "round_index": 2,
+ "round_index": 0,
  "state": {
-  "round_index": 2,
+  "round_index": 0,
   "A": {
-   "hp": 0,
-   "stamina": 50,
+   "hp": 100,
+   "stamina": 60,
    "opening": 0,
    "guard_streak": 0,
-   "power_available": 0
+   "power_available": 1
   },
   "B": {
-   "hp": 12,
-   "stamina": 4,
+   "hp": 100,
+   "stamina": 60,
    "opening": 0,
    "guard_streak": 0,
-   "power_available": 0
+   "power_available": 1
   },
-  "outcome": {
-   "winner": "B",
-   "result": "KO"
-  }
+  "outcome": null
  },
- "context_digest": "4af4a4350a1a8bee40e7d5315d86b716abccdf4fb65e8bed31bbf52db2910d16",
- "round_state_digest": "399bb7d108ac6caa770535c908bc66cee1acf5ec2bf2649602565df3e12f29ca",
- "commit_last": "3983",
- "reveal_last": "3995",
- "committed": [],
+ "context_digest": "23c4e61bba83d44721c962129a2e2e0639035c5f498168363921fe61cf6b9005",
+ "round_state_digest": "be7f7e1cdc52a28ad29e486c2902f97885f85535c4a9fc9691b2a78b339d43ff",
+ "commit_last": "3931",
+ "reveal_last": "3943",
+ "committed": [
+  "A"
+ ],
  "revealed": [],
  "result": {
-  "kind": "COMBAT",
-  "winner": "B",
-  "result": "KO",
-  "tick": "3987"
+  "kind": "FORFEIT",
+  "winner": "A",
+  "stage": "COMMIT",
+  "tick": "3931"
  },
  "fighters": {
   "A": {
    "fighter_id": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
-   "owner": "e473ebff086c3a6c2ecd18d4664e229f49df4b600f03c8075696d9406031a6db",
-   "operator": "e473ebff086c3a6c2ecd18d4664e229f49df4b600f03c8075696d9406031a6db",
-   "auth_version": 1,
-   "payout_recipient": "e473ebff086c3a6c2ecd18d4664e229f49df4b600f03c8075696d9406031a6db",
+   "owner": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+   "operator": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+   "auth_version": 2,
+   "payout_recipient": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
    "lifetime_rating": 1000,
    "season_rating": 1000
   },
@@ -61,5 +60,7 @@
    "season_rating": 1000
   }
  },
- "mode": "duel"
+ "mode": "duel",
+ "title_fight": false,
+ "final": true
 }

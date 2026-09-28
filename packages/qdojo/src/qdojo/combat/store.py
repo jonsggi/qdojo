@@ -110,8 +110,8 @@ def replay(manifest: Manifest, head: dict, records: list) -> CombatContract:
             contract.begin_tick(rec["t"] + 1)
         elif k == "begin":
             contract.begin_tick(rec["t"])
-        elif k == "mint":
-            pass                # external balances are not contract state
+        elif k in ("mint", "xfer", "nft"):
+            pass                # external balances and NFT ledger state; the contract sees "owner" records
         elif k == "digest":
             if contract.event_digest.hex() != rec["event_digest"]:
                 raise StoreError("replayed event digest differs from the recorded one")

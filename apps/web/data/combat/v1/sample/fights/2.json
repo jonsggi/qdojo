@@ -11,33 +11,33 @@
  "state": {
   "round_index": 1,
   "A": {
-   "hp": 0,
-   "stamina": 40,
+   "hp": 8,
+   "stamina": 6,
    "opening": 0,
    "guard_streak": 0,
-   "power_available": 1
+   "power_available": 0
   },
   "B": {
-   "hp": 34,
+   "hp": 0,
    "stamina": 42,
    "opening": 0,
    "guard_streak": 0,
    "power_available": 1
   },
   "outcome": {
-   "winner": "B",
+   "winner": "A",
    "result": "KO"
   }
  },
- "context_digest": "ffdf3958e47e0c430e04d8d48fe8fb9d1371056687921e33f66233ca7889698c",
- "round_state_digest": "0156f5bbe9050fba24af18350a41886c78eca5aff8b9b5bc505b6882496d6e71",
+ "context_digest": "e15d94bf06af5929f10762700a2f4615f8677726a75b9d0546da470c80db32ec",
+ "round_state_digest": "f4157687b36baa61b57269cfb598c1ac9368b36579249a86f0898bb48630929a",
  "commit_last": "55",
  "reveal_last": "67",
  "committed": [],
  "revealed": [],
  "result": {
   "kind": "COMBAT",
-  "winner": "B",
+  "winner": "A",
   "result": "KO",
   "tick": "59"
  },
@@ -61,5 +61,7 @@
    "season_rating": 1000
   }
  },
- "mode": "ranked"
+ "mode": "ranked",
+ "title_fight": false,
+ "final": true
 }

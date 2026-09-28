@@ -5,10 +5,11 @@ from types import SimpleNamespace
 
 from qdojo.combat import npcs
 from qdojo.combat.bot import Bot, Budget, policy_chooser
-from qdojo.combat.chainsim import AssetRegistry, FeeModel, SimChain, SimQubicClient
+from qdojo.combat.chainsim import FeeModel, SimChain, SimQubicClient
 from qdojo.combat.codec import Op
 from qdojo.combat.contract import development_manifest
 from qdojo.combat.devnet import DevnetClient
+from qdojo.combat.nft import SimFighterNFTs
 from qdojo.combat.rules import candidate_1
 from qdojo.combat.sim import World, identity
 
@@ -21,13 +22,15 @@ def _setup(tmp_path, n=4, policy=npcs.mixed_v1, **chain_kw):
     w = World(development_manifest(RULES, ADMIN, HOUSE, DEV, SHARE))
     w.mint(ADMIN, 10**12)
     chain = SimChain(w, **chain_kw)
-    registry = AssetRegistry(w, identity("cs-issuer"))
+    registry = SimFighterNFTs(w, chain)
+    registry.genesis(identity("cs-issuer"), HOUSE, identity("cs-escrow"))
     net = SimpleNamespace(world=w, m=w.manifest)
     bots, owners = [], []
     for i in range(n):
         owner = identity(f"cs-owner-{i}")
         w.mint(owner, 10**9)
-        fid = registry.issue(f"fighter-{i}", owner, founding=i < 2)
+        fid = registry.id_for(f"fighter-{i}")
+        registry.issue(registry.issuer, fid, owner, founding=i < 2, immediate=True)
         # Registration happens directly (setup), everything after goes through the chain.
         w.send(ADMIN, Op.ADMIN_REGISTER_ASSET, fighter_id=fid, registry_version=1, house_npc=0)
         w.send(owner, Op.REGISTER_FIGHTER, fighter_id=fid, registry_version=1)
@@ -78,6 +81,9 @@ def test_a_dry_reserve_halts_the_contract_and_voids_unfinished_fights(tmp_path):
 def test_nft_transfer_mid_queue_refunds_and_new_owner_takes_over(tmp_path):
     w, chain, registry, bots, owners = _setup(tmp_path, n=3, latency=(1, 1), seed=7)
     a, b = bots[0], bots[1]
+    # The owner moves the share's management to QX while the fighter is idle
+    # (docs/nft.md §5); QX knows no contest locks, so it can then change hands mid-queue.
+    assert registry.poll(registry.manage(owners[0], a.fighter_id, "QX", immediate=True))["code"] == "OK"
     for _ in range(3):
         a.step()
         chain.advance()
@@ -85,7 +91,10 @@ def test_nft_transfer_mid_queue_refunds_and_new_owner_takes_over(tmp_path):
     assert f.lock == "QUEUED"
     buyer = identity("cs-buyer")
     w.mint(buyer, 10**6)
-    registry.transfer(a.fighter_id, owners[0], buyer)
+    # Through QDOJO a queued fighter cannot change hands (docs/nft.md §2) ...
+    assert registry.poll(registry.transfer(owners[0], a.fighter_id, buyer, immediate=True))["code"] == "NOT_MANAGED"
+    # ... through QX it can; the contract's ownership check handles the rest.
+    assert registry.poll(registry.qx_transfer(owners[0], a.fighter_id, buyer, immediate=True))["code"] == "OK"
     # A second offer makes the next matching pass run; it revalidates ownership
     # and invalidates the transferred fighter's offer (matchmaking.md §4).
     for _ in range(8):

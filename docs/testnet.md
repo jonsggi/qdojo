@@ -22,7 +22,7 @@ guess (`apps/web/combat/app.js`, `NETWORKS`).
 | Qubic client | `packages/qdojo/src/qdojo/qubic/`: K12, FourQ, SchnorrQ, identities, transactions, the node TCP protocol (`node.py`: tick info, entity, broadcast, tick transactions, contract functions, owned assets), byte-identical to qubic-cli (`scripts/crosscheck-signer.py`) | Reusable as is |
 | Arena runtime | `qdojo combat live` drives the reference contract on `SimChain` (`combat/chainsim.py`): simulated latency, drops, fees and asset registry | **MISSING:** a chain adapter that sends `Dispatch` transactions to a Qubic node and reads confirmed state back (§3.6) |
 | Export, read API | Written from the reference contract's state and the devnet journal (`combat/export.py`, `combat/readmodel.py`) | **MISSING:** an exporter and read model fed from confirmed on-chain transactions and contract functions |
-| Fighter NFTs | Simulated `AssetRegistry`; a parallel track adds `nft_backend: sim\|qubic` | Needs `QDOJOF` issuance on chain (§3.7) |
+| Fighter NFTs | `nft_backend: sim` (`combat/nft.py`, [nft.md](nft.md)); `qubic` is a stub (`combat/nft_qubic.py`) that builds the real QX transactions and refuses to send; the live arena refuses to start with it | Realization choice, sending, confirmation and reads (§3.7) |
 | Site | Static nginx image; endpoints from `QDOJO_LIVE_DATA` / `QDOJO_LIVE_API`, public origin from `QDOJO_SITE_URL`; labels from the export | Ready (§3.9) |
 
 ## 2. Decisions before starting
@@ -174,14 +174,30 @@ What exists is the reference contract on `SimChain`. A testnet arena needs:
 
 ### 3.7 NFT backend
 
-- [ ] Use the parallel track's `nft_backend` setting: `sim` keeps the
-      simulated `AssetRegistry` (devnet); `qubic` reads ownership from chain.
-- [ ] **MISSING:** on-chain issuance of one `QDOJOF` asset per fighter (§3.1,
-      decision 4 in §2). Transfers of a contract-managed asset go through
-      `qpi.transferShareOwnershipAndPossession` in the managing contract
-      ([core contracts doc](https://github.com/qubic/core/blob/main/doc/contracts.md)).
-- [ ] The market's house collectors are an arena feature, not a chain one;
-      decide whether they run on testnet at all.
+`nft_backend: sim | qubic` is fixed when an arena is created
+([nft.md](nft.md) §5). A testnet arena is created with `qubic`; today that
+backend is a stub and the live arena refuses to start with it.
+
+- [ ] Pick the realization ([nft.md](nft.md) §5.3, decision 4 in §2):
+      QX assets (proposed for the testnet run; issuance through QX, free on
+      testnet, no royalty or contest lock) or QDOJO-managed assets (the
+      simulated model; needs the proposed opcodes 20–27 in
+      `nft_qubic.QDOJO_PROCEDURES` implemented in `QDOJO.h`).
+- [ ] **MISSING:** the protocol change so AdminRegisterAsset carries the
+      real (issuer, name): the interim issuer = fighter_id, name `QDOJOF`
+      can never be issued, because nobody holds a fighter_id's key.
+- [ ] **MISSING:** signing and sending (`qubic.tx.Transaction.sign`,
+      `Node.broadcast`, targeting the current tick + ~10), confirmation
+      (`Node.tick_transactions`, then re-read the effect, resend when
+      dropped), reads (ownership and possession via `Node.asset_records`, QX
+      books via `querySmartContract`, sales via a QX trade-log indexer) and
+      live QX fees before any write ([nft.md](nft.md) §5.3, steps 1–6).
+- [ ] The market's house owners and collectors are an arena feature, not a
+      chain one; decide whether they trade on testnet at all.
+- [ ] The site's NFT pages already word themselves from `deployment.kind`:
+      on testnet the HOW TO BUY box marks TESTNET as NOW and says a purchase
+      is a QX bid from the buyer's own wallet. Check that sentence is true
+      before the export says `testnet`.
 
 ### 3.8 Data server and read API
 

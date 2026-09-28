@@ -27,8 +27,8 @@ those that apply to combat stay open.
 | [AUD-006](issues/AUD-006-house-fighter-disclosure.md) | **Open**, carries over to combat | P1 / outside stakes | Publish affiliations and resolve author-participation rules |
 | [AUD-007](issues/AUD-007-live-pot-matching.md) | Retired (riddle code removed 2026-09-28, see tag riddle-v0-final) | P1 / advertised money | Match live pot calculations to house-fighter exclusions |
 | [AUD-008](issues/AUD-008-verification-scope.md) | Retired (riddle code removed 2026-09-28, see tag riddle-v0-final); combat shows per-check badges | P1 / public trust | Separate hash consistency from independent verification |
-| [AUD-009](issues/AUD-009-freeze-nft-art-and-allocation.md) | **Open**, applies to fighter NFTs | P1 / NFT release | Freeze art/traits and define allocation/duplicate policy |
-| [AUD-010](issues/AUD-010-nft-ownership-and-rights.md) | **Open**, applies to fighter NFTs | P1 / NFT release | Define ownership, identity binding and artwork rights |
+| [AUD-009](issues/AUD-009-freeze-nft-art-and-allocation.md) | **Mitigated** f8a734e: freeze/verify pipeline and duplicate check; allocation and contact sheet open | P1 / NFT release | Freeze art/traits and define allocation/duplicate policy |
+| [AUD-010](issues/AUD-010-nft-ownership-and-rights.md) | **Mitigated** f8a734e: rules R1–R6 proposed in docs/nft.md and enforced in the simulation; licence open | P1 / NFT release | Define ownership, identity binding and artwork rights |
 
 P0 means address before resuming money-moving operation. P1 means resolve before
 the stated launch/use gate. Priorities are risk-based recommendations, not CVSS

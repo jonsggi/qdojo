@@ -5,21 +5,21 @@
  "generated_tick": "4201",
  "source": "reference-contract-state",
  "fight_id": "60",
- "contest_id": "40",
+ "contest_id": "39",
  "phase": "DONE",
- "round_index": 2,
+ "round_index": 1,
  "state": {
-  "round_index": 2,
+  "round_index": 1,
   "A": {
-   "hp": 58,
-   "stamina": 11,
+   "hp": 26,
+   "stamina": 3,
    "opening": 0,
    "guard_streak": 0,
-   "power_available": 0
+   "power_available": 1
   },
   "B": {
    "hp": 0,
-   "stamina": 45,
+   "stamina": 10,
    "opening": 0,
    "guard_streak": 0,
    "power_available": 0
@@ -29,37 +29,39 @@
    "result": "KO"
   }
  },
- "context_digest": "a6e58f70794da5cb683fcfd17316782090681d0d919c973083f39947f3a79b8b",
- "round_state_digest": "eed08c64ad11eb65e124965706b3bf1602d47ae32da115668936cba9de01cced",
- "commit_last": "3470",
- "reveal_last": "3482",
+ "context_digest": "b3df38dca31fc9889ddd69ec8c3ad6629733fff538e33db8b0fe4c1d199f91e8",
+ "round_state_digest": "f17bb8ab8a6794fc9b0ef8833c3aacf08dfb06927fec6010d1012be96dca8f90",
+ "commit_last": "3446",
+ "reveal_last": "3458",
  "committed": [],
  "revealed": [],
  "result": {
   "kind": "COMBAT",
   "winner": "A",
   "result": "KO",
-  "tick": "3474"
+  "tick": "3450"
  },
  "fighters": {
   "A": {
-   "fighter_id": "861dd00b56ac96f696c85e815c931a01e883a91c66350fefc4d153b95652d071",
-   "owner": "772af50d32b58161d301a8e270aeb23889ea11797ede57b19fa8dc3bb4b1b70c",
-   "operator": "772af50d32b58161d301a8e270aeb23889ea11797ede57b19fa8dc3bb4b1b70c",
-   "auth_version": 1,
-   "payout_recipient": "772af50d32b58161d301a8e270aeb23889ea11797ede57b19fa8dc3bb4b1b70c",
-   "lifetime_rating": 1000,
+   "fighter_id": "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630",
+   "owner": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396",
+   "operator": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396",
+   "auth_version": 2,
+   "payout_recipient": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396",
+   "lifetime_rating": 1016,
    "season_rating": 1000
   },
   "B": {
-   "fighter_id": "c64fb2f8f74ada61c83a5b34c60e025953d25fe0b7c0df602195eedced1d6481",
-   "owner": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
-   "operator": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
-   "auth_version": 2,
-   "payout_recipient": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
-   "lifetime_rating": 1000,
+   "fighter_id": "417f3b23cc4b00870441904617b5ff4520e7bcd0d53664ea4d18b993fc5e9ac0",
+   "owner": "542450e26268095ba06a9e2a8baaf162f4ffe983e0451e5ce22ce2dd8b52947c",
+   "operator": "542450e26268095ba06a9e2a8baaf162f4ffe983e0451e5ce22ce2dd8b52947c",
+   "auth_version": 1,
+   "payout_recipient": "542450e26268095ba06a9e2a8baaf162f4ffe983e0451e5ce22ce2dd8b52947c",
+   "lifetime_rating": 1016,
    "season_rating": 1000
   }
  },
- "mode": "duel"
+ "mode": "cup",
+ "title_fight": false,
+ "final": true
 }
