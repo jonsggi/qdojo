@@ -5,6 +5,8 @@ __pycache__/
 .pytest_cache/
 dist/
 *.conf
+# ...except the site's nginx snippets (seed confs stay ignored everywhere else)
+!deploy/nginx/*.conf
 private/
 data/
 !apps/web/data/

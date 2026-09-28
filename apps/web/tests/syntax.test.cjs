@@ -125,3 +125,14 @@ test('the site ships its public files: 404 page, crawler files, manifest, icons 
   // 404.html is served at any depth: relative links resolve against <base href="/">.
   assert.match(read('404.html'), /<base href="\/">/);
 });
+
+test('every file the Dockerfile copies is tracked in git (an ignored file breaks the image build)', () => {
+  const { execFileSync } = require('node:child_process');
+  const docker = fs.readFileSync(path.join(ROOT, 'Dockerfile'), 'utf8');
+  const tracked = new Set(execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' }).split('\n'));
+  for (const m of docker.matchAll(/^COPY\s+(\S+)\s+\S+/gm)) {
+    const src = m[1].replace(/\/$/, '');
+    const ok = tracked.has(src) || [...tracked].some(f => f.startsWith(src + '/'));
+    assert.ok(ok, `Dockerfile copies ${src}, which git does not track`);
+  }
+});
