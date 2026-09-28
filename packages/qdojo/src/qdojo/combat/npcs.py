@@ -15,7 +15,7 @@ from typing import Callable, Sequence
 from ..hashing import sha256
 from .engine import action_cost, resolve_beat
 from .rules import Ruleset
-from .types import ATTACKS, NO_POWER, SUBMITTED, Action, FighterState, Plan
+from .types import ATTACKS, NO_POWER, SUBMITTED, Action, FighterState, Plan, submitted
 
 TAG_NPC = b"qdojo/npc/v1\0"
 
@@ -105,8 +105,19 @@ def fixed(pattern: Sequence[Action]) -> Policy:
     return policy
 
 
+def _extended(rules) -> bool:
+    """A prototype ruleset with more than the six combat-v1 actions (candidate 3
+    trials). Candidate 1 and 2 draw exactly as before: their fixtures are frozen."""
+    return len(rules.submitted) > 6
+
+
+# LAST_STAND weights for mixed-v1 under a prototype ruleset: only when behind.
+MIXED_STAND_WEIGHT, MIXED_STAND_LOW_WEIGHT = 3, 1
+
+
 def random_v1(rules, obs, rng):
-    actions = [SUBMITTED[rng.uniform(6)] for _ in range(6)]
+    acts = submitted(rules)
+    actions = [acts[rng.uniform(len(acts))] for _ in range(6)]
     slot = NO_POWER
     if obs.self_state.power_available:
         eligible = [NO_POWER] + [i for i, a in enumerate(actions) if a in ATTACKS]
@@ -114,8 +125,13 @@ def random_v1(rules, obs, rng):
     return Plan.of(actions, slot)
 
 
-def _mixed_action(me, rng):
-    weights = MIXED_LOW_WEIGHTS if me.stamina < MIXED_LOW_STAMINA else MIXED_WEIGHTS
+def _mixed_action(me, rng, rules=None, opp=None):
+    low = me.stamina < MIXED_LOW_STAMINA
+    weights = MIXED_LOW_WEIGHTS if low else MIXED_WEIGHTS
+    if rules is not None and _extended(rules):
+        behind = opp is not None and me.hp < opp.hp
+        stand = (MIXED_STAND_LOW_WEIGHT if low else MIXED_STAND_WEIGHT) if behind else 0
+        return submitted(rules)[rng.weighted(tuple(weights) + (stand,))]
     return SUBMITTED[rng.weighted(weights)]
 
 
@@ -126,7 +142,7 @@ def mixed_v1(rules, obs, rng):
     me, opp = obs.self_state, obs.opponent_state
     actions, slot = [], NO_POWER
     for i in range(6):
-        a = _mixed_action(me, rng)
+        a = _mixed_action(me, rng, rules, opp)
         power = _wants_power(rules, obs, me, a, slot != NO_POWER)
         if power:
             slot = i
@@ -135,9 +151,10 @@ def mixed_v1(rules, obs, rng):
     return Plan.of(actions, slot)
 
 
-def opponent_counts(history) -> list[int]:
-    """One pseudocount per legal action plus every executed effective action; EXHAUSTED omitted."""
-    counts = [1] * 6
+def opponent_counts(history, n: int = 6) -> list[int]:
+    """One pseudocount per legal action plus every executed effective action; EXHAUSTED omitted.
+    n = 8 under a prototype ruleset (index 6, EXHAUSTED, stays 0)."""
+    counts = [1] * 6 + ([0, 1] if n == 8 else [])
     for round_actions in history:
         for a in round_actions:
             if a is not Action.EXHAUSTED:
@@ -153,25 +170,26 @@ def scout_v1(rules, obs, rng):
     """
     if not obs.opponent_history:
         return mixed_v1(rules, obs, rng)
-    counts = opponent_counts(obs.opponent_history)
-    modal = SUBMITTED[max(range(6), key=lambda i: (counts[i], -i))]
+    acts = submitted(rules)
+    counts = opponent_counts(obs.opponent_history, 8 if _extended(rules) else 6)
+    modal = max(acts, key=lambda a: (counts[int(a)], -int(a)))
     me, opp = obs.self_state, obs.opponent_state
     actions, slot = [], NO_POWER
     for i in range(6):
         if rng.uniform(4) < 3:
             scores = []
-            for cand in SUBMITTED:
+            for cand in acts:
                 total = 0
-                for opp_action in SUBMITTED:
+                for opp_action in acts:
                     n = counts[int(opp_action)]
-                    me2, _, tr = resolve_beat(rules, me, opp, cand, opp_action)
+                    me2, _, tr = resolve_beat(rules, me, opp, cand, opp_action, round_index=obs.round_index)
                     total += n * (4 * (tr.a.computed_damage - tr.b.computed_damage) + me2.stamina - me.stamina)
                 scores.append(total)
             best = max(scores)
-            tied = [SUBMITTED[k] for k, s in enumerate(scores) if s == best]
+            tied = [acts[k] for k, s in enumerate(scores) if s == best]
             a = tied[rng.uniform(len(tied))] if len(tied) > 1 else tied[0]
         else:
-            a = _mixed_action(me, rng)
+            a = _mixed_action(me, rng, rules, opp)
         power = _wants_power(rules, obs, me, a, slot != NO_POWER)
         if power:
             slot = i

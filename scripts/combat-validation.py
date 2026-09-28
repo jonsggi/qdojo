@@ -24,7 +24,7 @@ sys.path.insert(0, str(ROOT / "packages/qdojo/src"))
 from qdojo.combat import evaluate as E  # noqa: E402
 from qdojo.combat import npcs  # noqa: E402
 from qdojo.combat.engine import resolve_round  # noqa: E402
-from qdojo.combat.rules import CANDIDATE_1, KNOWN, by_version  # noqa: E402
+from qdojo.combat.rules import CANDIDATE_1, KNOWN, TRIALS, by_version  # noqa: E402
 from qdojo.combat.types import FightState  # noqa: E402
 
 
@@ -44,7 +44,7 @@ def main():
     p.add_argument("--search-samples", type=int, default=8)
     p.add_argument("--out", default=str(ROOT / "docs/validation-report.md"))
     p.add_argument("--suite", default="test", help="seed namespace; use a fresh one after any instrument change")
-    p.add_argument("--ruleset", default=CANDIDATE_1, choices=tuple(KNOWN), help="packaged ruleset to validate")
+    p.add_argument("--ruleset", default=CANDIDATE_1, choices=tuple(KNOWN) + TRIALS, help="packaged ruleset to validate")
     a = p.parse_args()
     rules = by_version(a.ruleset)
     pools = E.pools(rules)

@@ -19,9 +19,15 @@ class Action(IntEnum):
     THROW = 4
     RECOVER = 5
     EXHAUSTED = 6   # internal: an unaffordable action; never submitted
+    LAST_STAND = 7  # candidate-3 PROTOTYPE: legal only where a ruleset lists it (rules.submitted)
 
 
-SUBMITTED = tuple(Action)[:6]
+SUBMITTED = tuple(Action)[:6]          # the combat-v1 candidate 1/2 action set
+
+
+def submitted(rules) -> tuple:
+    """The actions a plan may carry under this ruleset."""
+    return tuple(Action(i) for i in rules.submitted)
 ATTACKS = frozenset({Action.JAB, Action.KICK, Action.THROW})
 NO_POWER = -1
 
@@ -108,7 +114,7 @@ class Plan:
                     raise PlanError(f"unknown action {a!r}")
                 out.append(Action[a])
             elif type(a) is int or isinstance(a, Action):
-                if not 0 <= int(a) <= 5:
+                if not (0 <= int(a) <= 5 or int(a) == 7):
                     raise PlanError(f"unknown action id {a!r}")
                 out.append(Action(int(a)))
             else:

@@ -36,7 +36,7 @@ def validate_plan(rules: Ruleset, state: FighterState, plan: Plan) -> None:
     if not isinstance(plan, Plan) or len(plan.actions) != rules.beats_per_round:
         raise PlanError("a plan has exactly six actions")
     for a in plan.actions:
-        if not isinstance(a, Action) or a is Action.EXHAUSTED:
+        if not isinstance(a, Action) or int(a) not in rules.submitted:
             raise PlanError(f"illegal submitted action {a!r}")
     if plan.power_slot != NO_POWER:
         if type(plan.power_slot) is not int or not 0 <= plan.power_slot < rules.beats_per_round:
@@ -63,7 +63,7 @@ def _reasons(rules, s, nxt, intended, own, opp, power, base, dealt, incoming, st
         r.append(Reason.INSUFFICIENT_STAMINA)
     if dealt > 0:
         r.append(Reason.HIT)
-    elif own in ATTACKS:
+    elif own in ATTACKS or own is Action.LAST_STAND:
         if own is Action.THROW and opp is Action.THROW:
             r.append(Reason.THROW_CLASH)
         elif own is Action.THROW and opp in (Action.JAB, Action.KICK):
@@ -87,7 +87,7 @@ def _reasons(rules, s, nxt, intended, own, opp, power, base, dealt, incoming, st
 
 def resolve_beat(rules: Ruleset, a: FighterState, b: FighterState,
                  intent_a: Action, intent_b: Action,
-                 power_a: bool = False, power_b: bool = False, index: int = 0):
+                 power_a: bool = False, power_b: bool = False, index: int = 0, round_index: int | None = None):
     """One simultaneous beat from two snapshots. Returns (a', b', BeatTrace)."""
     snaps = (a, b)
     intents = (Action(intent_a), Action(intent_b))
@@ -96,8 +96,8 @@ def resolve_beat(rules: Ruleset, a: FighterState, b: FighterState,
         s.validate(rules)
         if s.hp == 0:
             raise StateError("a knocked-out fighter cannot act")
-        if act is Action.EXHAUSTED:
-            raise PlanError("EXHAUSTED is never an intended action")
+        if act is Action.EXHAUSTED or int(act) not in rules.submitted:
+            raise PlanError(f"{act.name} is not a legal intended action here")
         if pw and (act not in ATTACKS or not s.power_available):
             raise PlanError("power needs an attack and an unspent power strike")
 
@@ -105,7 +105,16 @@ def resolve_beat(rules: Ruleset, a: FighterState, b: FighterState,
     eff = (prep[0][0], prep[1][0])
 
     # 4. Base damage from the matrix, both looked up from effective actions.
-    base = (rules.damage[eff[0]][eff[1]], rules.damage[eff[1]][eff[0]])
+    base = [rules.damage[eff[0]][eff[1]], rules.damage[eff[1]][eff[0]]]
+    # 4b. PROTOTYPE LAST_STAND: +per_hp_behind per HP the striker trails, capped,
+    #     from round from_round on; only on positive base damage, like every bonus.
+    if rules.last_stand is not None:
+        per, cap, first = rules.last_stand
+        live = round_index is not None and round_index >= first     # a projection without a round: no bonus
+        for i in (0, 1):
+            behind = snaps[1 - i].hp - snaps[i].hp
+            if eff[i] is Action.LAST_STAND and base[i] > 0 and behind > 0 and live:
+                base[i] += min(cap, per * behind)
 
     # 5. Bonuses only turn positive base damage into more damage.
     dealt, opening_bonus, power_bonus = [], [], []
@@ -199,7 +208,8 @@ def resolve_round(rules: Ruleset, start: FightState, plan_a: Plan, plan_b: Plan)
     beats = []
     for i in range(rules.beats_per_round):
         a, b, trace = resolve_beat(rules, a, b, plan_a.actions[i], plan_b.actions[i],
-                                   plan_a.power_slot == i, plan_b.power_slot == i, index=i)
+                                   plan_a.power_slot == i, plan_b.power_slot == i, index=i,
+                                   round_index=start.round_index)
         beats.append(trace)
         if a.hp == 0 or b.hp == 0:
             end = FightState(start.round_index, a, b, terminal(a, b, last))

@@ -19,7 +19,7 @@ from . import npcs
 from .engine import resolve_beat, resolve_round
 from .rules import Ruleset, candidate_1
 from .training import Contestant, run_fight
-from .types import ATTACKS, NO_POWER, SUBMITTED, Action, FightState, Plan
+from .types import ATTACKS, NO_POWER, SUBMITTED, Action, FightState, Plan, submitted
 
 J, K, B, D, T, R = Action.JAB, Action.KICK, Action.BLOCK, Action.DUCK, Action.THROW, Action.RECOVER
 TAG_EVAL = b"qdojo/combat/eval/v1\0"
@@ -56,13 +56,13 @@ def repeat_last_winner(rules, obs, rng):
     return Plan.of(chosen.actions, slot)
 
 
-def _sample_plans(rng: random.Random, n: int):
-    return [tuple(rng.choice(SUBMITTED) for _ in range(6)) for _ in range(n)]
+def _sample_plans(rng: random.Random, n: int, acts=SUBMITTED):
+    return [tuple(rng.choice(acts) for _ in range(6)) for _ in range(n)]
 
 
-def _round_value(rules, me, opp, mine: Plan, theirs: Plan) -> int:
+def _round_value(rules, me, opp, mine: Plan, theirs: Plan, round_index: int = 0) -> int:
     """HP margin gained over one round, plus a small stamina term; KO dominates."""
-    start = FightState(0, me, opp)
+    start = FightState(round_index, me, opp)
     res = resolve_round(rules, start, mine, theirs)
     a, b = res.beats[-1].a.after, res.beats[-1].b.after
     if b.hp == 0 and a.hp > 0:
@@ -94,14 +94,14 @@ class SearchPlanner:
         opp_plans = self._predict(rules, obs, rng)
         power_ok = obs.self_state.power_available and obs.round_index == rules.rounds - 1
         best, best_v = None, None
-        pool = _sample_plans(rng, self.candidates) + [
+        pool = _sample_plans(rng, self.candidates, submitted(rules)) + [
             (J, J, J, R, J, J), (D, K, R, D, K, R), (B, T, R, D, J, R), (T, J, D, K, R, J)]
         for acts in pool:
             slot = NO_POWER
             if power_ok:
                 slot = next((i for i, a in enumerate(acts) if a in ATTACKS), NO_POWER)
             plan = Plan.of(acts, slot)
-            v = sum(_round_value(rules, me, opp, plan, o) for o in opp_plans)
+            v = sum(_round_value(rules, me, opp, plan, o, obs.round_index) for o in opp_plans)
             if best_v is None or v > best_v:
                 best, best_v = plan, v
         return best
@@ -149,15 +149,15 @@ def _beat_value(a, b) -> int:
     return 8 * (a.hp - b.hp) + (a.stamina - b.stamina)
 
 
-def beam_response(rules: Ruleset, me, opp, opp_plans: list[Plan], beam: int = 48) -> Plan:
+def beam_response(rules: Ruleset, me, opp, opp_plans: list[Plan], beam: int = 48, round_index: int = 0) -> Plan:
     """Best-scoring six-action plan against predicted opponent plans, by beam
     search over beats (exact resolution, summed over the predictions). A beam
     that reaches a knockout stops expanding: later actions are never executed."""
-    key = (me, opp, tuple(opp_plans), beam)
+    key = (rules.digest, me, opp, tuple(opp_plans), beam, round_index)
     hit = _BEAM_CACHE.get(key)
     if hit is not None:
         return hit
-    plan = _beam(rules, me, opp, opp_plans, beam)
+    plan = _beam(rules, me, opp, opp_plans, beam, round_index)
     if len(_BEAM_CACHE) > 20_000:          # bounded: the campaign runs on a small host
         _BEAM_CACHE.clear()
     _BEAM_CACHE[key] = plan
@@ -167,14 +167,14 @@ def beam_response(rules: Ruleset, me, opp, opp_plans: list[Plan], beam: int = 48
 _BEAM_CACHE: dict = {}
 
 
-def _beam(rules, me, opp, opp_plans, beam):
+def _beam(rules, me, opp, opp_plans, beam, round_index=0):
     power_ok = bool(me.power_available)
     # Beam entries: (value, actions, power_slot, per-prediction (me, opp) states, finished flags)
     entries = [(0, (), NO_POWER, tuple((me, opp) for _ in opp_plans), tuple(False for _ in opp_plans))]
     for i in range(6):
         grown = []
         for _, acts, slot, states, done in entries:
-            for a in SUBMITTED:
+            for a in submitted(rules):
                 options = [False]
                 if power_ok and slot == NO_POWER and a in ATTACKS:
                     options.append(True)
@@ -187,7 +187,8 @@ def _beam(rules, me, opp, opp_plans, beam):
                             total += _beat_value(sa, sb)
                             continue
                         ob = opp_plans[k]
-                        na, nb, _ = resolve_beat(rules, sa, sb, a, ob.actions[i], pw, ob.power_slot == i)
+                        na, nb, _ = resolve_beat(rules, sa, sb, a, ob.actions[i], pw, ob.power_slot == i,
+                                                 round_index=round_index)
                         ko = na.hp == 0 or nb.hp == 0
                         nxt.append((na, nb))
                         fin.append(ko)
@@ -219,7 +220,7 @@ class KnownPolicyResponse:
         for k in range(self.samples):
             s = npcs.Stream(sha256(TAG_EVAL, b"known", bytes([k])), obs.round_index, obs.round_index)
             preds.append(self.opponent(rules, view, s))
-        return beam_response(rules, obs.self_state, obs.opponent_state, preds, self.beam)
+        return beam_response(rules, obs.self_state, obs.opponent_state, preds, self.beam, obs.round_index)
 
 
 @dataclass
@@ -250,11 +251,12 @@ class ReaderPlanner:
             preds.append(Plan.of(npcs.mixed_v1(rules, generic, stream).actions))
         if self.ignore_resources:
             init = npcs.FighterState.initial(rules)
-            plan = beam_response(rules, replace(init, power_available=me.power_available), init, preds, self.beam)
+            plan = beam_response(rules, replace(init, power_available=me.power_available), init, preds, self.beam,
+                                 obs.round_index)
             if plan.power_slot != NO_POWER and not me.power_available:
                 plan = Plan.of(plan.actions)
             return plan
-        return beam_response(rules, me, opp, preds, self.beam)
+        return beam_response(rules, me, opp, preds, self.beam, obs.round_index)
 
 
 _SCRIPTS: dict[tuple[bytes, str], Plan] = {}
@@ -285,11 +287,16 @@ def pools(rules: Ruleset | None = None) -> dict[str, dict[str, npcs.Policy]]:
     """Named opponent pools. 'baseline' is the model.md §2 exploit list. The
     scripted opponents are best replies computed under `rules` (default
     candidate 1), so each ruleset gets its own competent scripts."""
+    rules = rules or candidate_1()
     roster = {n.id: n.policy for n in npcs.ROSTER.values()}
     spams = {f"spam-{a.name.lower()}": spam(a) for a in SUBMITTED}
     spams["spam-jab-spend-power"] = spam(J, 0)
     cycles = {f"cycle-{x.name.lower()}-{y.name.lower()}": pattern([x, y] * 3)
               for x, y in itertools.combinations(SUBMITTED, 2)}
+    if len(rules.submitted) > 6:                      # prototype: spam and cycles with the new action too
+        LS = Action.LAST_STAND
+        spams["spam-last-stand"] = spam(LS)
+        cycles.update({f"cycle-{x.name.lower()}-last-stand": pattern([x, LS] * 3) for x in SUBMITTED})
     misc = {
         "repeat-last-winner": repeat_last_winner,
         "stall-guard": pattern([B, D, R, B, D, R], None),
@@ -302,8 +309,9 @@ def pools(rules: Ruleset | None = None) -> dict[str, dict[str, npcs.Policy]]:
         "turtle-alt": pattern([B, R, B, D, B, R]),
         "thrower": pattern([T, R, T, D, T, R]),
     }
-    rules = rules or candidate_1()
     scripts = {f"script-vs-{v}": strong_script(rules, v) for v in ("mixed-v1", "random-v1", "scout-v1", "kicker-v1")}
+    if len(rules.submitted) > 6:                      # a scripted user of the new action
+        held_out_styles["stander"] = pattern([J, Action.LAST_STAND, R, J, Action.LAST_STAND, B])
     fixed_style = {k: roster[k] for k in ("jabber-v1", "turtle-v1", "kicker-v1")} | held_out_styles
     return {
         "roster": roster,
