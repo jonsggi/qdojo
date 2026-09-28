@@ -1,9 +1,9 @@
 # Competition, progression and events
 
-> **Purpose:** rating, belts, faults, seasons, duels and cups. \
+> **Purpose:** rating, belts, title belts, faults, seasons, duels and cups. \
 > **Audience:** players and spectators who want the standings explained; contract reviewers. \
 > **Status:** normative (combat-v1 candidate 1). Implemented in `combat/rating.py`, `combat/series.py` and the reference contract; running on the simulated chain in the demo arena. Replaces riddle-era progression and season scoring. \
-> **Last reviewed:** 2026-09-26 (§3 demo qualification scaling, §4 duel accept filters, §5 demo cup prices and sponsorship cap)
+> **Last reviewed:** 2026-09-28 (§1 finer belt ladder with stripes and dans, §7 title belts)
 
 Combat rounds and series fights are different: every fight has at most three dependent combat rounds.
 
@@ -15,6 +15,7 @@ Combat rounds and series fights are different: every fight has at most three dep
 - [4. Standalone duels](#4-standalone-duels)
 - [5. Cups](#5-cups)
 - [6. Required event tests](#6-required-event-tests)
+- [7. Title belts](#7-title-belts)
 
 ## 1. Rating and belts
 
@@ -56,19 +57,64 @@ and matchmaking rules. Show provisional white with numerical rating.
 
 After placement:
 
-| Rating | Belt |
-|---|---|
-| 0..899 | white |
-| 900..1099 | yellow |
-| 1100..1299 | orange |
-| 1300..1499 | green |
-| 1500..1799 | blue |
-| 1800..2099 | brown |
-| 2100..3000 | black |
+| Rating | Belt | Stripes (0-3) | `belt_rank` |
+|---|---|---|---|
+| 0..639 | white | one per 40 from 480 (480, 520, 560, 600) | 0 |
+| 640..799 | yellow | one per 40 from the band floor | 1 |
+| 800..959 | orange | as above | 2 |
+| 960..1119 | green | as above | 3 |
+| 1120..1279 | blue | as above | 4 |
+| 1280..1439 | purple | as above | 5 |
+| 1440..1599 | brown | as above | 6 |
+| 1600..1659 / 1660..1719 / 1720..1779 / 1780..1839 / 1840..1899 | black, 1st to 5th dan | none (`dan` 1-5) | 7..11 |
+| 1900..3000 | red (grandmaster) | none | 12 |
+
+Provisional fighters show white with no stripes and their placement count.
+The export and the API publish `belt` (the colour name above, so older
+readers keep working), `belt_rank`, `belt_stripes` and `dan` (1-5 on a black
+belt, else null). `combat/rating.py` (`BELTS`, `belt_info`) is the
+implementation.
+
+**Why these numbers.** The rating is zero-sum around 1000 with an expected
+score of `1000 + 2*(RA-RB)`, clamped at a 450-point gap: 100 points of rating
+are ten points of expected score. Against a field averaging 1000 a fighter
+settles near `1000 + 1000*(p - 0.5)` for a win share p, and above
+avg + 450 a win pays 1 point and a loss about 30, so a rating of 1600 needs a
+fighter to beat the purple and brown belts it is matched with about 80% of
+the time. The old ladder (900/1100/1300/1500/1800/2100) left the demo arena
+flat: after 35 hours on candidate 2 its placed fighters ranged from 597 to
+1511, six of fifteen were white, nobody was brown and black was out of reach.
+The 160-point colour bands put the average fighter (and a fresh one after
+placement, near 1000) at green, spread the below-average ones over white,
+yellow and orange, and put the top of the field at purple and brown. The top
+rating rose about 120 points over the last 20 of those hours, so black is a
+matter of days for a sustained elite fighter; dans need 60 more points each against an
+ever smaller set of opponents, and red needs near-total dominance.
+
+Live field on 2026-09-27 (tick 85,111):
+
+| Fighter | Rating | Old belt | New belt |
+|---|---|---|---|
+| PI-AGENT | 1511 | blue | brown, 1 stripe |
+| tanuki | 1441 | green | brown |
+| KEN.EXE | 1329 | green | purple, 1 stripe |
+| CLAUDE | 1321 | green | purple, 1 stripe |
+| RYUBOT | 1272 | orange | blue, 3 stripes |
+| kappa | 1246 | orange | blue, 3 stripes |
+| EVO-DS | 1165 | orange | blue, 1 stripe |
+| kirin | 1158 | orange | blue |
+| EVO-GEM | 963 | yellow | green |
+| QWEN-235 | 846 | white | orange, 1 stripe |
+| oni | 789 | white | yellow, 3 stripes |
+| kitsune | 685 | white | yellow, 1 stripe |
+| EVO-DS3 | 670 | white | yellow |
+| GEM-LITE | 655 | white | yellow |
+| raiju | 597 | white | white, 2 stripes |
 
 This replaces the old +2/+1/-1 belt points and difficulty-table gating.
 Belt is a display derived from rating; it changes no combat stats, stake,
-action access or purse entitlement. No sensei payout cap.
+action access or purse entitlement. No sensei payout cap. The same holds
+for the title belts (§7).
 
 ## 2. Faults and admission cooldown
 
@@ -306,3 +352,52 @@ no season points from NPCs; shared-owner exclusions; transferred finalists;
 non-power-of-two brackets; both no-shows; tied replay; event-capacity postponement;
 abort after earlier eliminations; pending-rake refunds; duplicate finalization;
 and no fees or trophy when there is no champion.
+
+## 7. Title belts
+
+Three honours, computed deterministically from finished fights and settled
+contests. Like belts they are display only: no stat, stake, purse or access
+depends on them. `combat/titles.py` implements them.
+
+**THE SCRAP HEAP BELT** (lineal).
+
+- The first holder is the winner of the arena's first finished RANKED fight
+  decided in combat (a KO or a decision). A forfeit win crowns nobody.
+- The belt passes only when its holder LOSES a finished ranked fight by
+  combat result; the winner takes it. A combat draw is a successful defence.
+- A forfeit, double fault or service void never moves it, even when the
+  holder is the one who timed out: belts are won in combat, not on the clock
+  (the rating still moves on a forfeit, §1). Duels and cups never move it.
+- A ranked fight with the holder in it at its start is a TITLE FIGHT
+  (`title_fight: true` on the fight document, the replay and results.json);
+  the fight in which it changed hands also carries `new_champion`.
+- Finished fights are taken in (result tick, fight ID) order.
+- History keeps every reign: holder, the fight and tick it was won and lost
+  in, whom it was taken from and lost to and how, defences (wins and draws)
+  and title fights.
+
+**THE MONTAGE BELT** (season): the champion of the most recent finished
+season that crowned one (§3), evaluated at that season's closeout tick with
+the arena's qualification rule. A season without a champion leaves the belt
+where it was. Every season title stays on the champion's record.
+
+**THE BOTTLE CAP BELT** (cup): the champion of the highest-numbered
+completed cup, plus each fighter's career cup wins.
+
+**Where it is computed.** The arena moves finished fights out of memory
+(store.compact), so the title state is folded incrementally: before every
+compaction, every fight finished before the current tick is folded into a
+small state kept with the compacted history, which the arena's snapshot
+pickles and a full replay of the journal rebuilds at the same ticks. Readers
+fold the few fights finished since on a copy. The exporter publishes it as
+`titles.json` and per fighter (`titles`); the read model (which holds every
+fight) computes the same state from its own replay and serves
+`/api/v1/titles`, `/api/v1/titles/lineal` and the fighter documents. The
+site reads `titles.json` and needs the API only for the complete lineage.
+
+The same fold also keeps each fighter's win streak (combat results in every
+mode; forfeits and no-results neither extend nor break it) and its earnings
+(`earnings`): fake QU won (the net gain of a won contest or cup, after
+rake), lost (stakes and entry fees), net, and rake paid, per mode (ranked,
+duel, cup), with cup sponsorship won and the biggest single win.
+

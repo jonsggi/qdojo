@@ -110,7 +110,8 @@ def test_fight_and_replay_match_the_exporter(site):
                 c.contests[c.fights[f].contest_id].status == "DONE" and c.fights[f].rounds)
     status, headers, body = get(site, f"/api/v1/fights/{done}/replay")
     doc = json.loads(body)
-    want = export.fight_replay(c, done)
+    from qdojo.combat import titles
+    want = export.fight_replay(c, done, titles.Lookup(titles.current(c)))
     want.pop("generated_tick")
     doc.pop("generated_tick")
     assert doc == want

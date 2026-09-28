@@ -34,7 +34,7 @@ import time
 import zlib
 from pathlib import Path
 
-from . import codec, export
+from . import codec, export, store, titles
 from .contract import CombatContract, Manifest
 from .rating import PLACEMENT_FIGHTS, belt
 
@@ -83,8 +83,13 @@ CREATE TABLE IF NOT EXISTS sales(
   seq INTEGER PRIMARY KEY, tick INTEGER NOT NULL, fighter_id TEXT NOT NULL, seller TEXT NOT NULL,
   buyer TEXT NOT NULL, price INTEGER NOT NULL, fee INTEGER NOT NULL, doc TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS sales_by_fighter ON sales(fighter_id, seq);
+CREATE TABLE IF NOT EXISTS lineal_reigns(
+  seq INTEGER PRIMARY KEY, holder TEXT NOT NULL, from_fight INTEGER NOT NULL, to_fight INTEGER, doc TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS reigns_by_holder ON lineal_reigns(holder, seq);
 """
-TABLES = ("fighters", "fights", "fight_sides", "contests", "ratings", "cups", "seasons", "ownership", "sales")
+TABLES = ("fighters", "fights", "fight_sides", "contests", "ratings", "cups", "seasons", "ownership", "sales",
+          "lineal_reigns")
+TITLES_VERSION = 1       # fight summaries indexed before title flags existed get them once (Syncer)
 FINAL_CUP = ("COMPLETE", "CANCELLED", "ABORTED")
 
 
@@ -135,8 +140,9 @@ class Replica:
     """World.replay, one record at a time and without re-journalling. Only
     confirmed inputs are applied; nothing here can send a transaction."""
 
-    def __init__(self, manifest: Manifest):
+    def __init__(self, manifest: Manifest, rule=None):
         self.m = manifest
+        self.rule = rule                   # the season qualification rule, for season titles
         self.contract: CombatContract | None = None
         self.tick = 0
         self.balances: dict[bytes, int] = {}
@@ -157,6 +163,7 @@ class Replica:
                 raise ReadModelError("a second start record in one journal")
             self.tick = rec["t"]
             self.contract = CombatContract(self.m, self.owners.get, self._transfer, self.tick)
+            store.history(self.contract).title_rule = self.rule
         elif self.contract is None:
             raise ReadModelError("journal does not begin with a start record")
         elif k == "mint":
@@ -174,6 +181,8 @@ class Replica:
             self.contract.end_tick(self.tick)
             self.tick += 1
             self.contract.begin_tick(self.tick)
+            if self.tick % titles.CHECKPOINT_EVERY == 0:
+                titles.checkpoint(self.contract)     # the arena's compaction ticks (titles.py)
         elif k == "begin":
             self.tick = rec["t"]
             self.contract.begin_tick(self.tick)
@@ -280,6 +289,8 @@ class Syncer:
         self.max_fight = mx("SELECT MAX(fight_id) FROM fights")
         self.max_contest = mx("SELECT MAX(contest_id) FROM contests")
         self.max_cup = mx("SELECT MAX(cup_id) FROM cups")
+        self.reigns = conn.execute("SELECT COUNT(*) FROM lineal_reigns").fetchone()[0]
+        self.titles_json = None
 
     def sync(self, c: CombatContract, deployment: dict, state: dict, rule=None, sales: list | None = None,
              economics: dict | None = None):
@@ -289,10 +300,18 @@ class Syncer:
         export's economics.json body."""
         conn = self.conn
         meta = deployment.get("fighters") or {}
+        st = titles.current(c, rule)
+        look = titles.Lookup(st)
         with conn:
             fights = sorted(self.open_fights | {f for f in c.fights if f > self.max_fight})
             for fid in fights:
-                self._fight(c, fid)
+                self._fight(c, fid, look)
+            if get_meta(conn, "titles_version") != TITLES_VERSION:
+                self._backfill_title_flags(c, look, set(fights))
+                set_meta(conn, "titles_version", TITLES_VERSION)
+            self._titles(st)
+            set_meta(conn, "owner_credits", {f.owner.hex(): c.ledger.credits.get(f.owner, 0)
+                                             for f in c.fighters.values()})
             contests = sorted(self.open_contests | {x for x in c.contests if x > self.max_contest})
             for cid in contests:
                 self._contest(c, cid)
@@ -332,13 +351,42 @@ class Syncer:
         self.max_contest = max([self.max_contest] + list(c.contests))
         self.max_cup = max([self.max_cup] + list(c.cups))
 
-    def _fight(self, c, fid):
+    def _titles(self, st: dict):
+        """Title state: the public document (last reigns) in meta, every reign in lineal_reigns."""
+        doc = titles.public(st)
+        raw = json.dumps(doc, sort_keys=True)
+        if raw != self.titles_json:
+            self.conn.execute("INSERT INTO meta(key, value) VALUES('titles', ?) ON CONFLICT(key) DO UPDATE "
+                              "SET value=excluded.value", (raw,))
+            self.titles_json = raw
+        reigns = st["reigns"]
+        for seq in range(max(0, self.reigns - 1), len(reigns)):     # the open reign still changes
+            r = titles.reign_doc(reigns[seq])
+            self.conn.execute("INSERT OR REPLACE INTO lineal_reigns VALUES(?,?,?,?,?)",
+                              (seq + 1, r["holder"], reigns[seq]["from_fight"], reigns[seq]["to_fight"],
+                               json.dumps(r)))
+        self.reigns = len(reigns)
+
+    def _backfill_title_flags(self, c, look, done: set):
+        """Once, for a database indexed before titles: add the title flags to
+        every stored final fight summary (the replica holds every fight)."""
+        rows = self.conn.execute("SELECT fight_id, summary FROM fights WHERE final = 1").fetchall()
+        for fid, blob in rows:
+            if fid in done or fid not in c.fights:
+                continue
+            doc = unpack(blob)
+            if "title_fight" in doc:
+                continue
+            doc.update(look.flags(c.fights[fid]))
+            self.conn.execute("UPDATE fights SET summary = ? WHERE fight_id = ?", (pack(doc), fid))
+
+    def _fight(self, c, fid, look):
         x = c.fights[fid]
         contest = c.contests[x.contest_id]
         final = x.phase == "DONE" and contest.status == "DONE"
-        summary = _strip(export.fight_summary(c, fid))
+        summary = _strip(export.fight_summary(c, fid, look))
         summary["final"] = final
-        replay = _strip(export.fight_replay(c, fid)) if (x.rounds or x.result) else None
+        replay = _strip(export.fight_replay(c, fid, look)) if (x.rounds or x.result) else None
         a, b = x.context.participant_a.fighter_id.hex(), x.context.participant_b.fighter_id.hex()
         mode = codec.Mode(x.context.mode).name.lower()
         r = x.result or {}
@@ -454,7 +502,7 @@ class Follower:
 
     def _resume(self):
         """Load the snapshot when it belongs to this code and this journal; else start from byte 0."""
-        self.replica, self.offset, self.tail_sig = Replica(self.m), 0, ""
+        self.replica, self.offset, self.tail_sig = Replica(self.m, self.rule), 0, ""
         if not self.snapshot_path or not self.snapshot_path.exists():
             return
         try:
@@ -544,7 +592,7 @@ class Follower:
             if size < self.offset or (self.offset and self._sig(f, self.offset) != self.tail_sig):
                 self.log("readmodel: the journal was replaced or truncated; rebuilding from its start")
                 with self.lock:
-                    self.replica, self.offset, self.tail_sig = Replica(self.m), 0, ""
+                    self.replica, self.offset, self.tail_sig = Replica(self.m, self.rule), 0, ""
                     self.caught_up = False
                     self._wipe()
             f.seek(self.offset)

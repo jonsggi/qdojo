@@ -167,7 +167,10 @@ shows STALE.
 - book.json: open offers, capacity, active fights, next matching tick
 - fights/{id}.json and fights/{id}/replay.json: state, revealed plans and
   salts, traces, settlement, verification evidence
-- fighters/{id}.json: rating, belt, record, faults, recent fights
+- fighters/{id}.json: rating, belt (belt_rank, belt_stripes, dan), record,
+  faults, recent fights, titles, earnings (fake QU), streak
+- titles.json: the title belts (lineal SCRAP HEAP BELT history, season and
+  cup champions); fights carry title_fight and new_champion
 - results.json, cups.json, duels.json, seasons.json, events/latest.json,
   npcs.json
 
