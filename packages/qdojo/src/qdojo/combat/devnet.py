@@ -143,7 +143,7 @@ def recorded(meta: dict) -> tuple[str, dict, Manifest]:
 # ---- journal replay and snapshots -------------------------------------------
 
 STATE_MODULES = ("contract", "ledger", "matchmaking", "series", "rating", "engine", "codec", "types", "rules",
-                 "sim", "store")
+                 "sim", "store", "titles")
 
 
 def code_fingerprint() -> str:
@@ -265,12 +265,17 @@ class Devnet:
             self.m = manifest(self.profile, self.params)
             self.dir.mkdir(parents=True, exist_ok=True)
             self.world = World(self.m)
+            self._title_rule(self.world)
             self.world.mint(roles()["admin"], 10**12)
             marker.write_text(json.dumps({"schema": SCHEMA, "ruleset_digest": self.m.ruleset.digest.hex(),
                                           "profile": self.profile, "params": self.params,
                                           "note": "fake QU, synthetic identities; not a deployment"}))
         self._saved = len(self.world.journal) if (self.dir / JOURNAL).exists() else 0
         self.scout = scouting.Scout()
+
+    def _title_rule(self, w: World):
+        """Season titles (titles.py) use this devnet profile's qualification rule."""
+        store.history(w.contract).title_rule = QUALIFICATION.get(self.profile)
 
     # -- restore --------------------------------------------------------------
 
@@ -307,6 +312,7 @@ class Devnet:
         records = _parse(raw)
         start = next(r for r in records if r["k"] == "start")
         w = World(self.m, tick=start["t"])
+        self._title_rule(w)
         apply_records(w, records, self._compact_every, self._compact)
         w.journal.clear()                              # everything replayed is already in the file
         self.restart["mode"] = "full replay"
@@ -334,6 +340,7 @@ class Devnet:
         bad = invariants.check(w)
         if bad:
             raise StoreError(f"snapshot state breaks invariants: {bad[:2]}")
+        self._title_rule(w)
         apply_records(w, _parse(raw[n:]), self._compact_every, self._compact)
         w.journal.clear()
         self.snapshot_tick = head["tick"]

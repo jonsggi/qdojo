@@ -5,9 +5,9 @@
 > **Status:** guide. §1–7 are the planned production runbook and are not in effect (nothing is deployed). §8 describes the demo arena that runs today. \
 > **Last verified:** 2026-09-26 (§8 against the systemd units, `combat/live.py`, `combat/devnet.py`, `combat/store.py` and the `Dockerfile`)
 
-The riddle deployment is documented in
-[the historical runbook](archive/riddle-v0/docs/operations.md). Do not run
-legacy house settlement against a combat state directory.
+The riddle game was retired and its code removed on 2026-09-28; its
+deployment is documented in [the historical runbook](https://github.com/jonsggi/qdojo/blob/riddle-v0-final/docs/archive/riddle-v0/docs/operations.md)
+at git tag `riddle-v0-final`.
 
 ## 1. Runtime responsibilities
 
@@ -82,12 +82,11 @@ Archive accepted inputs and replays redundantly before old event-ring entries
 roll over. Preserve current root/sequence evidence so exports can be checked.
 Historical availability has its own uptime/retention report.
 
-## 6. Legacy closeout
+## 6. Riddle-era state
 
-Inventory every old open round, payout intent, bond, carry amount and owner
-before migration. Keep the original versioned records and balances until an
-explicit closeout plan reconciles them. Don't infer "unreleased externally"
-means the operator's historic funds/transactions do not exist.
+The owner closed the riddle era on 2026-09-28: its bonds, carry and pool
+belong to the owner, and no closeout obligation remains. The riddle code and
+its read-only inventory command were removed (tag `riddle-v0-final`).
 
 No riddle rank, solve point, bond progress or historical payout is automatically
 converted into a combat rating, season score, power upgrade or combat purse.
@@ -95,11 +94,10 @@ State migrations are reviewed, dry-run and reversible before any live action.
 
 ## 7. Documentation and publication
 
-The new agent briefing is unsigned until separately published. Preserve the old
-signed briefing in the archive; do not retain its provenance marker on changed
-text. Public deployment must update help, API examples and frontend data together.
-Check native/Windows onboarding against actual shipped combat commands, rather
-than rebranding the old ./dojo riddle flow.
+The new agent briefing is unsigned until separately published. The old signed
+briefing lives at tag `riddle-v0-final`; do not retain its provenance marker on
+changed text. Public deployment must update help, API examples and frontend data together.
+Check native/Windows onboarding against actual shipped combat commands.
 
 ## 8. The public devnet arena (simulated chain)
 

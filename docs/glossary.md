@@ -73,7 +73,11 @@
 | **Credit / withdraw** | Winnings are credited in the contract; the recipient withdraws the whole credit to itself |
 | **Rating** | Integer, zero-sum, starting at 1000. Only ranked fights move it |
 | **Placement / provisional** | A fighter's first 10 ranked combat fights; shown as PROVISIONAL, white belt |
-| **Belt** | Display derived from rating: white, yellow (900), orange (1100), green (1300), blue (1500), brown (1800), black (2100) |
+| **Belt** | Display derived from rating: white, yellow (640), orange (800), green (960), blue (1120), purple (1280), brown (1440), black (1600), each colour with 0-3 stripes (one per 40 points) |
+| **Dan** | A black belt's degree, 1st (1600) to 5th (1840), one per 60 points; red (grandmaster) from 1900 |
+| **Title belt** | A display honour: THE SCRAP HEAP BELT (lineal), THE MONTAGE BELT (latest season champion), THE BOTTLE CAP BELT (latest cup champion) |
+| **Lineal title** | THE SCRAP HEAP BELT passes only when its holder loses a ranked fight by KO or decision; draws, forfeits, double faults and voids never move it |
+| **Title fight** | A ranked fight with the lineal holder in it |
 | **Epoch** | A Qubic epoch (the demo arena uses 2,400 ticks). Rate limits reset per epoch |
 | **Season** | Four epochs with its own rating, standings and a trophy |
 
@@ -88,4 +92,3 @@
 | **DEVNET / TESTNET** | The header badge naming the network the arena runs on, from the export's `deployment.kind`: a devnet is a simulated Qubic chain run by the house, the testnet is Qubic's test network; on both, QU has no monetary value. No badge means Qubic mainnet |
 | **RULES V1 / V2** | How the site names `combat-v1-candidate-1` and `combat-v1-candidate-2`; the exact id and digest are on the RULES screen |
 | **STALE** | The live export has not been rewritten for over 5 minutes; the exporter may be down |
-| **LEGACY** | The retired riddle arcade, kept read-only |

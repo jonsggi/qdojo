@@ -15,13 +15,9 @@ RUN v=$(date +%s) && for f in /usr/share/nginx/html/*.html; do \
       sed -E -i "s#(src|href)=\"([a-z0-9_-]+(/[a-z0-9_-]+)*\.(js|css))\"#\1=\"\2?v=$v\"#g" "$f"; \
     done && grep -q "combat/app.js?v=$v" /usr/share/nginx/html/index.html
 
-# dash.html/dash.js are the LOCAL fighter page, served by `qdojo bot dash` on
-# 127.0.0.1 against an API that exists only on the player's own machine. On the
-# public site they would be a dead page, so they do not ship in this image.
 # anim.html is the sparring bench for the fighter clips and tests/ is the
 # site's own test suite: development tools, not pages.
-RUN rm -rf /usr/share/nginx/html/dash.html /usr/share/nginx/html/dash.js \
-      /usr/share/nginx/html/anim.html /usr/share/nginx/html/tests /usr/share/nginx/html/AVATARS.md
+RUN rm -rf /usr/share/nginx/html/anim.html /usr/share/nginx/html/tests /usr/share/nginx/html/AVATARS.md
 
 # llms.txt must arrive as
 # readable text, not a download, because the whole

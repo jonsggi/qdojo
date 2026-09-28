@@ -5,7 +5,7 @@
 > **Status:** reference (status tracker). Acceptance criteria per stage are in the historical [pivot-plan.md](pivot-plan.md). \
 > **Last verified:** 2026-09-25
 
-The [old riddle roadmap](archive/riddle-v0/docs/roadmap.md) is historical.
+The [old riddle roadmap](https://github.com/jonsggi/qdojo/blob/riddle-v0-final/docs/archive/riddle-v0/docs/roadmap.md) is historical (tag `riddle-v0-final`).
 
 ## Status, 2026-09-25
 
@@ -20,7 +20,7 @@ The [old riddle roadmap](archive/riddle-v0/docs/roadmap.md) is historical.
 | P6 | Done; live on the demo arena | `apps/web/index.html` (the combat site; `combat.html` now redirects): replays re-derived in the browser, per-check verification badges, practice, book, results, leaderboard, cups, duels, seasons and owner pages; browser suite `make web-e2e` |
 | Demo | Live | [qdojo.jonsggi.com](https://qdojo.jonsggi.com/) shows the reference contract on `SimChain` (latency, drops, execution fees), simulated fighter NFTs with a small market, and operator-run scripted and LLM bots; see [operations.md](operations.md) §8 |
 | P7 | Contract done in Core's dialect; **not deployed** | `contracts/qubic/QDOJO.h` passes Core's contract checker and replays all parity journals inside core-lite's harness. A live local testnet needs 12 GB RAM (this host: 7.9 GB), so that run is deferred. Mainnet inclusion needs a computor proposal and IPO. |
-| P8 | Inventory and plan only | [legacy-closeout.md](legacy-closeout.md); no sends executed |
+| P8 | Riddle closeout not needed | The owner retired the riddle era on 2026-09-28 (its bonds and pool are the owner's) and its code was removed; it lives at tag `riddle-v0-final` |
 
 "Done" means implemented and tested locally. It never means paid activation,
 which still needs a release manifest, a deployed contract and authorisation.
@@ -35,9 +35,9 @@ which still needs a release manifest, a deployed contract and authorisation.
 
 ## Completed foundation
 
-- Legacy riddle engine, solver/bot/house, history and native chain integration.
+- Native Qubic signing and transport (`qdojo.qubic`), kept from the riddle game, whose engine, bot and house were removed on 2026-09-28 (tag `riddle-v0-final`).
 - Arcade spectator styling, fighter sprites and basic animation clips.
-- Owner onboarding, local settings, training patterns and portability work.
+- Windows portability of the planner runner.
 - Combat direction and candidate specification, with NPC practice and validation plan.
 
 This list does not mark combat behavior, assets or a contract as delivered.

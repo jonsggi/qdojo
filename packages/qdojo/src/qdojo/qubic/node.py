@@ -15,8 +15,8 @@ an END_RESPOND packet, not with a count -- reading until the socket goes
 quiet instead would spend the whole timeout on every call.
 
 Nothing here interprets money. `balance` returns what the node said; whether
-that is trustworthy is the caller's problem, and `chain/native.py` treats a
-single node's answer as exactly one opinion.
+that is trustworthy is the caller's problem: a single node's answer is
+exactly one opinion.
 """
 import secrets
 import socket

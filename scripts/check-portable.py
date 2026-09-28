@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Fail when the fighter side of qdojo reaches for something Windows lacks.
 
-The bot, the rite, the trainer, the local page and the example solvers run
-on a stranger's machine, and many of those are Windows (issue #21). Nothing
+The combat CLI, a player's bot and planner, and the examples run on a
+stranger's machine, and many of those are Windows (issue #21). Nothing
 in this repo's tests runs there, so this keeps the property by reading the
 code: every POSIX-only import, call, signal and absolute path in a
 fighter-side file must sit under a guard that says which OS it is for -- an
@@ -13,9 +13,9 @@ OSError). A docstring may say /tmp; that is prose.
     python scripts/check-portable.py            # the repo (what the tests run)
     python scripts/check-portable.py FILE ...   # only these files
 
-House-side modules may be as POSIX as they like below the top level, but
-`qdojo.cli` imports them, so their module-level imports are checked too: an
-`import fcntl` at the top of house.py would break `qdojo train` on Windows.
+A module listed in HOUSE_ONLY (none today) would be checked at the top level
+only: `qdojo.cli` imports it, so an `import fcntl` there would still break
+the CLI on Windows.
 Exit 1 with one line per finding, `path:line: what`, and 0 when clean.
 """
 import ast
@@ -25,7 +25,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PACKAGE = os.path.join(ROOT, "packages", "qdojo", "src", "qdojo")
 EXAMPLES = os.path.join(ROOT, "examples")
-HOUSE_ONLY = {"house.py", "spar.py", "lab.py", "model.py", "fees.py", "riddles.py", "qubic_riddles.py"}
+HOUSE_ONLY: set[str] = set()   # modules checked at the top level only (none since the riddle house went)
 
 POSIX_MODULES = {"fcntl", "termios", "tty", "pty", "pwd", "grp", "resource", "posix", "syslog", "curses",
                  "readline", "crypt"}

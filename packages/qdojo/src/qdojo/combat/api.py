@@ -32,6 +32,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from . import readmodel as rm
+from . import titles as T
+from .rating import belt_info
 
 API = "/api/v1"
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -87,6 +89,12 @@ def _one(q: dict, key: str) -> str | None:
 
 # ---- queries --------------------------------------------------------------------
 
+def export_titles(doc: dict, fid: str) -> dict:
+    """A fighter's honours from the title document, as the export publishes them."""
+    from .export import fighter_titles
+    return fighter_titles(doc.get("fighters"), fid)
+
+
 class Reader:
     """All reads for one request, over one read-only connection."""
 
@@ -95,6 +103,19 @@ class Reader:
         self.tick = rm.get_meta(conn, "tick")
         if self.tick is None:
             raise ApiError(503, "not_ready", "the read model has not indexed anything yet")
+
+    _titles = None
+
+    def titles_doc(self) -> dict:
+        """The title state as the read model last synced it (titles.public), or empty."""
+        if self._titles is None:
+            self._titles = rm.get_meta(self.c, "titles") or {}
+        return self._titles
+
+    def _credits(self) -> dict:
+        if not hasattr(self, "_owner_credits"):
+            self._owner_credits = rm.get_meta(self.c, "owner_credits") or {}
+        return self._owner_credits
 
     def env(self, kind: str, body: dict, tick=None) -> dict:
         return {"schema": _schema(kind), "generated_tick": str(self.tick if tick is None else tick), **body}
@@ -130,10 +151,17 @@ class Reader:
         total = {k: sum(m.get(k, 0) for m in by_mode.values()) for k in ("W", "D", "L", "FW", "FL", "N")}
         live = self.c.execute("SELECT COUNT(*) FROM fight_sides WHERE fighter_id = ? AND outcome IS NULL",
                               (fid,)).fetchone()[0]
+        td = self.titles_doc()
+        career = (td.get("career") or {}).get(fid) or {}
         doc = {"fighter_id": fid, "name": r["name"], "origin": r["origin"], "driver": r["driver"],
                "house_npc": bool(r["house_npc"]), "owner": r["owner"], "operator": r["operator"],
                "auth_version": r["auth_version"], "lock": r["lock"], "lifetime_rating": r["lifetime_rating"],
-               "provisional": bool(r["provisional"]), "belt": r["belt"], "placement_fights": r["placement"],
+               "provisional": bool(r["provisional"]), **belt_info(r["lifetime_rating"], not r["provisional"]),
+               "titles": export_titles(td, fid),
+               "earnings": career.get("earnings") or T.earnings(T.new_state(), fid),
+               "streak": career.get("streak") or {"current": 0, "best": 0},
+               "owner_credit": str(self._credits().get(r["owner"], 0)),
+               "placement_fights": r["placement"],
                "record": json.loads(r["record"]), "records_by_mode": by_mode, "career": total,
                "fights_total": sum(total.values()) + live, "fights_live": live,
                "faults_by_epoch": json.loads(r["faults"]), "season_ratings": json.loads(r["season_ratings"]),
@@ -350,6 +378,24 @@ class Reader:
                 "SELECT owner FROM fighters WHERE owner LIKE ? UNION SELECT to_owner FROM ownership WHERE to_owner "
                 "LIKE ? LIMIT 10", (low + "%", low + "%"))]
         return self.env("search", {"q": text, "fighters": fighters, "fights": fights, "owners": owners})
+
+    def titles(self) -> dict:
+        doc = self.titles_doc()
+        if not doc:
+            raise ApiError(404, "not_found", "no titles indexed yet")
+        return self.env("titles", doc)
+
+    def lineal(self, q: dict) -> dict:
+        """Every lineal reign, newest first, paginated (titles.json has the last 100)."""
+        holder = _one(q, "holder")
+        if holder is not None and not HEX64.match(holder):
+            raise ApiError(400, "bad_query", "holder must be 64 lowercase hex digits")
+        where, args = (" WHERE holder = ?", (holder,)) if holder else ("", ())
+        try:
+            return self._docs("lineal", f"SELECT COUNT(*) FROM lineal_reigns{where}",
+                              f"SELECT doc FROM lineal_reigns{where} ORDER BY seq DESC LIMIT ? OFFSET ?", q, args)
+        except sqlite3.OperationalError:
+            raise ApiError(503, "not_ready", "the read model has not indexed titles yet") from None
 
     def status(self, extra: dict) -> dict:
         m = {k: rm.get_meta(self.c, k) for k in ("journal_offset", "journal_records", "synced_at", "event_seq",
@@ -582,6 +628,11 @@ class Handler(BaseHTTPRequestHandler):
             return r.market(q), LIVE_CACHE
         if head == "economics" and n == 1:
             return r.economics(), LIVE_CACHE
+        if head == "titles":
+            if n == 1:
+                return r.titles(), LIVE_CACHE
+            if n == 2 and p[1] == "lineal":
+                return r.lineal(q), LIVE_CACHE
         raise ApiError(404, "not_found", "no such endpoint; see docs/api.md §3.2")
 
     def _static(self, path: str):

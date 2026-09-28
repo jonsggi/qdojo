@@ -1,10 +1,12 @@
 # AUD-004 — Enforce single-writer ownership of house and bot state
 
-- **Status:** Open
+- **Status:** **Retired (riddle code removed 2026-09-28, see tag riddle-v0-final)**
 - **Priority:** P1 — resolve before unattended real-money operation
 - **Type:** Concurrency / operational safety
 - **Evidence:** Code-reviewed risk; concurrent-process reproduction not yet run
 - **Scope:** `packages/qdojo/src/qdojo/house.py:35–41`, `House.settle`, `House.collect`; `packages/qdojo/src/qdojo/bot.py:32–54`, `Bot.step`
+
+> **Retired 2026-09-28.** The owner retired the riddle game (its bonds and pool are the owner's; no closeout obligation remains) and its code was removed. The riddle house and bot state directories were removed. The combat arena keeps its own journal (`combat/store.py`). The code, and the probe that reproduced this finding (`audits/probes/`), live at git tag `riddle-v0-final`; line references below refer to that code.
 
 ## Finding
 

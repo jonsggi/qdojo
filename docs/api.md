@@ -2,8 +2,8 @@
 
 > **Purpose:** the planner process interface, bot duties, the public read API, verification levels and the combat CLI. \
 > **Audience:** bot builders and tool authors. New here? Start with [build-a-bot.md](build-a-bot.md). \
-> **Status:** normative for §1–2 and §4; §3 and §6 describe what runs today. The riddle CLI and exports are Legacy; the [archived API](archive/riddle-v0/docs/api.md) covers them. \
-> **Last verified:** 2026-09-26 (§3: market.json, economics.json, index.json ownership bound, market and economics endpoints)
+> **Status:** normative for §1–2 and §4; §3 and §6 describe what runs today. The riddle CLI and exports were removed on 2026-09-28; the [archived API](https://github.com/jonsggi/qdojo/blob/riddle-v0-final/docs/archive/riddle-v0/docs/api.md) at tag `riddle-v0-final` covers them. \
+> **Last verified:** 2026-09-28 (§3: titles.json, belt, title and earnings fields, titles endpoints)
 
 ## Contents
 
@@ -209,7 +209,7 @@ evidence. Contract query methods expose the same bounded logical records.
 > `rulesets/{digest}.json`, `book.json`, `index.json` (recent fights, fighters,
 > names, deployment label), `fights/{id}.json`, `fights/{id}/replay.json`,
 > `fighters/{id}.json`, `events/latest.json`, `npcs.json`, `results.json`,
-> `cups.json`, `duels.json` and `seasons.json`, and for the demo arena
+> `cups.json`, `duels.json`, `seasons.json` and `titles.json`, and for the demo arena
 > `market.json` and `economics.json` (below). Paged fighter histories,
 > per-season and per-cup files and paged events are not written yet.
 >
@@ -228,6 +228,28 @@ waits for the fighter to be idle). `sales`: the latest 50, newest first, with
 `tick`, `price`, `fee`, `bid`, `seller`, `buyer`, and the fighter's rating and
 record at sale. `stats`: sales, volume, fees, median, min and max price.
 `fee_bps` is the market fee. Amounts are decimal strings of fake QU.
+
+**titles.json** (`qdojo.combat.titles.v1`): the title belts
+([competition.md](competition.md) §7). `lineal`: `name`, `holder`,
+`since_tick`, `since_fight`, `defenses`, `reigns_total`, `history` (the last
+100 reigns, newest first: `holder`, `from_fight`, `from_tick`, `won_from`,
+`to_fight`, `to_tick`, `lost_to`, `how`, `defenses`, `wins`, `draws`,
+`title_fights`) and `recent_title_fights` (the last 64). `season`: `champion`,
+`season` and every finished season's champion. `cup`: the latest `champion`,
+`cup_id` and career `wins`. `fighters`: honours per fighter (as below).
+`career`: each fighter's `earnings` and `streak`.
+
+**Fighter fields** (`fighters/{id}.json` and the API): `belt` (colour, as
+before), `belt_rank` (0 white .. 6 brown, 7..11 black 1st..5th dan, 12 red),
+`belt_stripes` (0-3), `dan` (1-5 or null); `titles` (`lineal_reigns`,
+`lineal_defenses`, `best_reign_defenses`, `title_fights`, `season_titles`,
+`cup_titles`, `holds`: the belts held now); `earnings` (fake QU, decimal
+strings: per mode `ranked`, `duel`, `cup` the `won`, `lost`, `net`, `rake`
+and `paid_wins`; totals `won`, `lost`, `net`, `rake`; `prize_sponsorship`;
+`biggest_win`); `streak` (`current`, `best`: combat wins in a row, any mode);
+`owner_credit` (the owner's withdrawable contract credit). Fight documents,
+replays and `results.json` entries carry `title_fight` and, where the lineal
+belt changed hands, `new_champion`.
 
 **economics.json** (`qdojo.combat.economics.v1`, demo arena only): `tiers`
 (per tier: `stake`, `rake_bps`, `house_rake_per_fight`,
@@ -291,6 +313,8 @@ ended). Lists are newest first; `page` starts at 1, `per_page` defaults to
 | `GET /api/v1/search?q=` | Fighters by name or ID prefix, a fight by number, owners by ID prefix |
 | `GET /api/v1/market?fighter=&page=` | Every sale of the simulated market (the export keeps 50), newest first: `market.json` sale shape |
 | `GET /api/v1/economics` | The latest `economics.json` body |
+| `GET /api/v1/titles` | The `titles.json` body, from the read model's own replay |
+| `GET /api/v1/titles/lineal?holder=&page=&per_page=` | Every lineal reign (titles.json keeps 100), newest first |
 
 `origin` is `house` (run by the operator: demo bots and NPCs) or `outside`
 (registered and run by an outside builder, [build-a-bot.md](build-a-bot.md)
@@ -419,9 +443,8 @@ another devnet directory. `qdojo combat live` runs the public demo arena
 > `bot run --npc <name>` with an in-process policy works. The live arena is
 > unaffected because it advances ticks on a wall clock.
 
-Legacy riddle operation is documented in the archive. Do not point a new
-combat user at a riddle board, and do not imply that `./dojo` starts a
-combat fight.
+The riddle game, its `./dojo` launcher and its commands were removed on
+2026-09-28; they live at git tag `riddle-v0-final`.
 
 ## 7. Files and migration
 
@@ -431,8 +454,7 @@ private, permission-restricted and excluded from exports/git. History caches
 contain only confirmed public information.
 
 Combat planner prompts live under `prompts/combat/` (used by
-`combat/llm_planner.py`). prompts/solver-system.md and solver-user.md remain
-legacy runtime assets for the riddle solver. Keep a small dependency-free planner
+`combat/llm_planner.py`). Keep a small dependency-free planner
 example, all NPC policies and an independently verified local simulator.
 
 Provide formal JSON schemas and frozen input/output examples as the SDK's first

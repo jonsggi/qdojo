@@ -630,7 +630,7 @@ def test_rating_examples():
                 x, y = rt.update(ra, rb, s)
                 assert x + y == ra + rb and 0 <= x <= 3000 and 0 <= y <= 3000
                 assert rt.update(rb, ra, 2000 - s) == (y, x)
-    assert rt.belt(1100, True) == "orange" and rt.belt(2500, False) == "white"
+    assert rt.belt(1100, True) == "green" and rt.belt(2500, False) == "white"
 
 
 def test_bracket_positions_and_series():

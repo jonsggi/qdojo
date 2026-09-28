@@ -5,7 +5,7 @@
 > **Status:** reference (decision register, written 2026-09-21). It records decisions, not implemented functionality; for what runs, see the [roadmap](roadmap.md). \
 > **Last reviewed:** 2026-09-26 (demo arena economics)
 
-The [previous riddle product decisions](archive/riddle-v0/docs/product-decisions.md) are archived.
+The [previous riddle product decisions](https://github.com/jonsggi/qdojo/blob/riddle-v0-final/docs/archive/riddle-v0/docs/product-decisions.md) are archived at tag `riddle-v0-final`.
 
 ## Product direction
 

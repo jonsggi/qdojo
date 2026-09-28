@@ -1,10 +1,12 @@
 # AUD-007 — Align the live pot display with house-fighter seed exclusions
 
-- **Status:** Open
+- **Status:** **Retired (riddle code removed 2026-09-28, see tag riddle-v0-final)**
 - **Priority:** P1 — correct advertised money before reopening rounds
 - **Type:** Frontend/backend accounting mismatch
 - **Evidence:** Frontend calculation reproduced; compared with the pure evaluator's matching formula
 - **Scope:** `apps/web/app.js:300–319`, `renderFight`; `packages/qdojo/src/qdojo/round.py:294–297`; `packages/qdojo/src/qdojo/house.py:608–624`
+
+> **Retired 2026-09-28.** The owner retired the riddle game (its bonds and pool are the owner's; no closeout obligation remains) and its code was removed. The riddle arcade (`apps/web/app.js`) and its live pot were removed on 2026-09-27; the evaluator went with the riddle code. The code, and the probe that reproduced this finding (`audits/probes/`), live at git tag `riddle-v0-final`; line references below refer to that code.
 
 ## Finding
 

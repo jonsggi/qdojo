@@ -153,7 +153,6 @@ h1.screen-title:has(+ .screen-sub) { margin-bottom: 0; }
 .wrap { overflow-wrap: anywhere; }
 .right { text-align: right; }
 .center { text-align: center; }
-.nowrap { white-space: nowrap; }
 
 .id { font-family: var(--font-text); font-size: 12px; letter-spacing: .5px; }
 
@@ -180,18 +179,6 @@ a.btn { display: inline-block; color: var(--black); text-decoration: none; }
   display: inline-block; padding: 2px 6px; font-size: 9px; line-height: 1.5;
   color: var(--black); background: var(--grey); white-space: nowrap; vertical-align: middle;
 }
-.badge-winner { background: var(--green); }
-.badge-wrong { background: var(--red); color: var(--white); }
-.badge-pending { background: var(--cyan); }
-.badge-no_reveal, .badge-late { background: var(--orange); }
-.badge-commit { background: var(--green); }
-.badge-reveal { background: var(--yellow); }
-.badge-settled { background: var(--grey); }
-.badge-solved { background: var(--white); }                       /* correct, not first: no money */
-.badge-no_commit { background: var(--orange); }                   /* NO SHOW: bought a seat, never fought */
-.badge-void { background: var(--navy-2); color: var(--cyan); border: 1px solid var(--cyan); } /* REFUNDED */
-.badge-seated { background: var(--magenta); color: var(--white); }
-.badge-outranked { background: var(--navy-2); color: var(--magenta); border: 1px solid var(--magenta); }
 
 /* Any fighter name or avatar is a link to the fighter card; it keeps its colour. */
 a.flink { color: inherit; }
@@ -285,7 +272,6 @@ a.tname { display: inline-flex; align-items: center; gap: 8px; }
 .stat .v.small { font-size: 9px; }
 .stat.red { border-color: var(--red); }
 .stat.green { border-color: var(--green); }
-.stat.cyan { border-color: var(--cyan); }
 
 /* Beside the last round's winners the idle box is as tall as they are; keep
    its few lines and the poll meter in the middle rather than at the top. */
@@ -327,31 +313,12 @@ tr.me td { background: rgba(255, 210, 0, .08); }
 .tname { display: flex; align-items: center; gap: 8px; }
 
 /* ---- Hall of fame -------------------------------------------------- */
-.fame-table td, .fame-table th { padding: 9px 8px; }
 .rank { font-size: 10px; }
 
-.fame-table td.pos, .fame-table td.neg { white-space: nowrap; }
 .board h3 small { display: block; font-size: 9px; letter-spacing: 1px; margin-top: 4px; opacity: .75; }
 .board { margin-bottom: 0; }
 
-.clean-list { display: flex; flex-wrap: wrap; gap: 8px 14px; }
-
-   
-
 /* ---- Fighter card (profile) ---------------------------------------- */
-
-.fcb-top { display: flex; gap: 18px; align-items: flex-start; }
-.fcb-avatar { flex: none; padding: 8px; background: var(--black); border: 3px solid var(--blue); }
-.fcb-info { min-width: 0; flex: 1; }
-.fcb-name { font-size: clamp(14px, 3.4vw, 22px); color: var(--yellow); text-shadow: 3px 3px 0 var(--red), 6px 6px 0 var(--black); line-height: 1.3; overflow-wrap: anywhere; }
-.fcb-id { margin-top: 8px; font-size: 9px; overflow-wrap: anywhere; }
-.fcb-meta { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 9px; color: var(--cyan); }
- 
- 
-
- 
-
-.stats-profile { grid-template-columns: repeat(auto-fit, minmax(min(100%, 105px), 1fr)); }
 
 .tl { display: flex; flex-direction: column; gap: 0; position: relative; padding-left: 4px; }
 
@@ -381,15 +348,8 @@ pre.code {
   .panel h3 { margin: -12px -12px 12px; }
   .kv { grid-template-columns: 1fr; gap: 2px 0; }
   .kv dt { margin-top: 8px; }
-  .fcb-top { flex-direction: column; align-items: center; text-align: center; }
-  .fcb-meta { justify-content: center; }
-  .avatar-xl { width: 96px; height: 96px; }
-  
-  
-  
-  
-  
-  
+      .avatar-xl { width: 96px; height: 96px; }
+
 }
 
 /* ================================================================ HELP */
@@ -421,8 +381,7 @@ pre.code {
 
 @media (max-width: 700px) {
   .flow { grid-auto-flow: row; }
-  
-  
+
 }
 
 /* A panel heading's subtitle gets its own line, like the screen titles do.

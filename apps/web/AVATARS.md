@@ -6,7 +6,7 @@
 > (`anim.html`) is illustrative, not a replay of the combat rules.
 
 `avatars.js` contains original pixel artwork. It does not change fonts,
-navigation or gameplay. `combat/app.js` and `dash.js` use
+navigation or gameplay. `combat/app.js` uses
 its renderer everywhere an identity appears.
 
 ## Art direction (v5 preview)
