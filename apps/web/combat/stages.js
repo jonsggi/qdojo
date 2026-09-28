@@ -119,8 +119,13 @@ const QDojoStages = (() => {
     9: '010101011001110', '/': '001001010100100', '!': '010010010000010', '-': '000000111000000', '.': '000000000000010',
     ':': '000010000010000', '?': '110001010000010', '+': '000010111010000', '\'': '010010000000000', ' ': '000000000000000',
   };
+  // Narrow stages (phones) paint no lettering: the painted signs and boards
+  // fought the HUD and the announcer for the same few pixels (V-25). Set
+  // while a narrow stage paints; boards and neon then draw nothing.
+  let quiet = false;
   // Pixel text: `s` is the pixel size, `shear` leans each glyph row sideways.
   function text(c, str, x, y, col, s = 1, shear = 0) {
+    if (quiet) return;
     c.fillStyle = col;
     for (const ch of String(str).toUpperCase()) {
       const g = FONT[ch] || FONT[' '];
@@ -137,6 +142,7 @@ const QDojoStages = (() => {
   const boardSize = (lines, s = 1, pad = 2) => ({ w: Math.max(...lines.map(l => textW(l, s))) + 2 * pad + 2, h: lines.length * 6 * s - s + 2 * pad + 2 });
   function board(c, x, y, lines, o) {
     const s = o.s || 1, pad = o.pad == null ? 2 : o.pad, { w, h } = boardSize(lines, s, pad);
+    if (quiet) return { w, h };
     x = Math.round(x); y = Math.round(y);
     rect(c, x, y, w, h, o.edge || '#0d0f12');
     rect(c, x + 1, y + 1, w - 2, h - 2, o.bg);
@@ -399,6 +405,7 @@ const QDojoStages = (() => {
   const puffSet = (r, n) => particles(r, n, r => ({ ph: r(), dx: (r() - 0.5) * 2, v: 0.25 + r() * 0.2 }));
   // Neon text: glow and tube when on, dead glass when off.
   function neon(c, str, x, y, col, on, s = 1) {
+    if (quiet) return;
     if (on) alpha(c, 0.22, () => rect(c, x - 2, y - 2, textW(str, s) + 4, 5 * s + 4, col));
     text(c, str, x, y, on ? shade(col, 1.25) : shade(col, 0.32), s);
   }
@@ -1152,12 +1159,15 @@ const QDojoStages = (() => {
   function build(index, seed, W, H, makeCanvas) {
     const S = STAGES[index], LW = W + 2 * M, hz = Math.round(H * 0.68);
     const layers = {};
-    for (const name of ['sky', 'far', 'mid', 'floor']) {
-      const cv = makeCanvas(LW, H), c = cv.getContext('2d');
-      if (name === 'floor') S.floor(c, LW, H, hz, rngFor(seed, name));
-      else S[name](c, LW, H, hz, rngFor(seed, name));
-      layers[name] = cv;
-    }
+    quiet = narrow(LW);
+    try {
+      for (const name of ['sky', 'far', 'mid', 'floor']) {
+        const cv = makeCanvas(LW, H), c = cv.getContext('2d');
+        if (name === 'floor') S.floor(c, LW, H, hz, rngFor(seed, name));
+        else S[name](c, LW, H, hz, rngFor(seed, name));
+        layers[name] = cv;
+      }
+    } finally { quiet = false; }
     return { S, W, H, LW, hz, layers, st: S.setup(rngFor(seed, 'anim'), LW, H, hz) };
   }
   function drawFrame(ctx, B, t, still) {
@@ -1167,7 +1177,8 @@ const QDojoStages = (() => {
     ctx.drawImage(B.layers.far, X(0, DEPTH.far), 0);
     ctx.drawImage(B.layers.mid, X(0, DEPTH.mid), 0);
     ctx.drawImage(B.layers.floor, X(0, DEPTH.floor), 0);
-    B.S.anim(ctx, B.W, B.H, B.hz, t, B.st, X, still);
+    quiet = narrow(B.LW);
+    try { B.S.anim(ctx, B.W, B.H, B.hz, t, B.st, X, still); } finally { quiet = false; }
     // A soft vignette at the floor's front edge grounds the fighters.
     alpha(ctx, 0.35, () => rect(ctx, 0, B.H - 2, B.W, 2, '#000000'));
   }

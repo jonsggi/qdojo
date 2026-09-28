@@ -17,21 +17,21 @@ h4 { margin: 14px 0 6px; font-size: 9px; color: var(--cyan); letter-spacing: 1px
   display: inline-block; padding: 3px 7px; font-size: 9px; line-height: 1.4; color: var(--black);
   background: var(--grey); letter-spacing: 1px; white-space: nowrap;
 }
-.rbadge-ko { background: var(--red); color: var(--white); }
+.rbadge-ko { background: #c8141b; color: var(--white); }
 .rbadge-hp { background: var(--yellow); }
 .rbadge-draw { background: var(--white); }
 .rbadge-timeout { background: var(--orange); }
-.rbadge-open { background: var(--cyan); }
+.rbadge-open { background: var(--green); }
 .level { font-size: 10px; padding: 5px 9px; border: 2px solid var(--black); box-shadow: 3px 3px 0 var(--black); }
 .level-COMBAT_VERIFIED { background: var(--green); }
 .level-REPLAY_MATCH { background: var(--cyan); }
 .level-HASH_MATCH_ONLY { background: var(--yellow); }
 .level-UNVERIFIED { background: var(--grey); }
 .level-FAILED { background: var(--red); color: var(--white); }
-.level-PENDING { background: var(--navy-2); color: var(--cyan); }
+.level-PENDING { background: var(--navy-2); color: var(--white); }
 .vstat-pass { background: var(--green); }
 .vstat-fail { background: var(--red); color: var(--white); }
-.vstat-unavailable { background: var(--navy-2); color: var(--grey); border: 1px solid var(--grey); }
+.vstat-unavailable { background: var(--navy-2); color: #c9d1d9; border: 1px solid var(--grey); }
 .level-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
 .level-row p { margin: 0; font-size: 9px; }
 .checks { margin: 0; padding-left: 20px; }
@@ -85,19 +85,19 @@ h4 { margin: 14px 0 6px; font-size: 9px; color: var(--cyan); letter-spacing: 1px
 .cbar-hp .cbar-fill { background: repeating-linear-gradient(90deg, var(--green) 0 6px, #22c542 6px 8px); }
 .cbar-hp .cbar-fill.low { background: repeating-linear-gradient(90deg, var(--red) 0 6px, #b30000 6px 8px); }
 .cbar-st .cbar-track { height: 9px; border-color: var(--grey); }
-.cbar-st .cbar-fill { background: repeating-linear-gradient(90deg, var(--cyan) 0 6px, #0fb8cf 6px 8px); }
+.cbar-st .cbar-fill { background: repeating-linear-gradient(90deg, var(--stamina) 0 6px, #1fa8b8 6px 8px); }
 .cbar-st .cbar-fill.low { background: repeating-linear-gradient(90deg, var(--orange) 0 6px, #c96e00 6px 8px); }
 .cbar-lost { background: rgba(255, 42, 42, .55); }
 /* B's bars drain toward the centre, like the cabinet. */
 .corner-B .cbar-track { transform: scaleX(-1); }
 
-.flags { display: flex; flex-wrap: wrap; gap: 4px; font-size: 7px; }
+.flags { display: flex; flex-wrap: wrap; gap: 4px; font-size: 8px; }
 .corner-B .flags { justify-content: flex-end; }
 .flag { padding: 2px 4px; border: 1px solid var(--navy-2); color: var(--grey); }
 .flag.on { color: var(--black); background: var(--yellow); border-color: var(--yellow); }
 .flag-opening.on { background: var(--green); border-color: var(--green); }
 .flag-guard.on { background: var(--cyan); border-color: var(--cyan); }
-.flag-opening:not(.on) { opacity: .45; }
+
 .side-now { min-height: 36px; font-size: 9px; }
 .side-now .sum { margin-top: 4px; }
 
@@ -199,7 +199,7 @@ table.freq td { padding: 5px 8px; }
 .act-btn.act-recover { background: var(--white); }
 
 /* ---- rules ------------------------------------------------------------ */
-table.matrix td.zero { color: var(--navy-2); }
+table.matrix td.zero { color: #8792a0; }
 table.matrix td.dmg { color: var(--yellow); }
 table.matrix th { font-size: 8px; }
 .rules-list li { font-size: 9px; line-height: 1.9; }
@@ -232,10 +232,10 @@ body.still *, body.still *::before, body.still *::after { animation: none !impor
 .attract-stage { min-height: 250px; margin: 18px auto; max-width: 560px; }
 .attract-card {
   display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 16px;
-  background: var(--panel); border: 4px solid var(--cyan); box-shadow: 6px 6px 0 var(--black); color: var(--white);
+  background: var(--panel); border: 4px solid #5b6670; box-shadow: 6px 6px 0 var(--black); color: var(--white);
 }
 .attract-card:hover, .attract-card:focus-visible { text-decoration: none; border-color: var(--yellow); }
-.attract-kicker { font-size: 9px; color: var(--cyan); letter-spacing: 1px; }
+.attract-kicker { font-size: 9px; color: var(--hazard, #f2c230); letter-spacing: 1px; }
 .attract-vs { display: flex; align-items: center; gap: 18px; }
 .attract-vs .avatar-lg { width: 72px; height: 72px; }
 .attract-vs .avatar-lg:last-child svg { transform: scaleX(-1); }
@@ -249,12 +249,14 @@ body.still *, body.still *::before, body.still *::after { animation: none !impor
 /* ---- mini HP / stamina (cards) ---------------------------------------- */
 .mini { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; max-width: 440px; margin: 6px 0; }
 .mini-side { display: flex; flex-direction: column; gap: 3px; }
-.mbar { position: relative; height: 14px; background: var(--black); border: 2px solid var(--white); font-size: 7px; }
-.mbar span { position: absolute; left: 4px; top: 1px; z-index: 1; color: var(--white); text-shadow: 1px 1px 0 var(--black); }
+/* Both bars are 14 px tall so an 8 px label fits inside without clipping (V-13). */
+.mbar { position: relative; height: 14px; background: var(--black); border: 2px solid var(--white); font-size: 8px; line-height: 1; }
+.mbar span { position: absolute; left: 4px; top: 50%; transform: translateY(-50%); z-index: 1; color: var(--white); line-height: 1; white-space: nowrap;
+  text-shadow: 1px 0 0 var(--black), -1px 0 0 var(--black), 0 1px 0 var(--black), 0 -1px 0 var(--black); }
 .mbar i { position: absolute; left: 0; top: 0; bottom: 0; }
 .mbar-hp i { background: var(--green); }
-.mbar-st { height: 11px; border-color: var(--grey); }
-.mbar-st i { background: var(--cyan); }
+.mbar-st { border-color: var(--grey); }
+.mbar-st i { background: var(--stamina); }
 
 /* ---- live arena ------------------------------------------------------- */
 .arena-status { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; align-items: center; font-size: 9px; margin-bottom: 8px; }
@@ -328,12 +330,12 @@ table.board td.rank { color: var(--yellow); }
 .bk-pair { border: 3px solid var(--navy-2); background: var(--black); padding: 6px; }
 .bk-pair.bk-done { border-color: var(--grey); }
 .bk-pair.bk-running, .bk-pair.bk-live, .bk-pair.bk-checkin { border-color: var(--green); }
-.bk-head { font-size: 7px; color: var(--grey); margin-bottom: 4px; letter-spacing: 1px; }
+.bk-head { font-size: 8px; color: var(--grey); margin-bottom: 4px; letter-spacing: 1px; }
 .bk-side { display: flex; align-items: center; gap: 6px; padding: 4px 2px; font-size: 9px; }
 .bk-side + .bk-side { border-top: 1px dashed var(--navy-2); }
 .bk-side.won { background: rgba(57, 255, 90, .1); }
 .bk-side.lost { opacity: .55; }
-.bk-in { font-size: 7px; padding: 1px 3px; }
+.bk-in { font-size: 8px; padding: 1px 3px; }
 .bk-in.in { color: var(--green); border: 1px solid var(--green); }
 .bk-in.out:not(:empty) { color: var(--orange); border: 1px dashed var(--orange); }
 .bk-score { margin-left: auto; color: var(--yellow); font-weight: normal; font-size: 11px; }
@@ -351,7 +353,7 @@ table.board td.rank { color: var(--yellow); }
 /* ---- season ----------------------------------------------------------- */
 .sstat-champion { background: var(--yellow); }
 .sstat-playoff { background: var(--cyan); }
-.sstat-no_champion { background: var(--navy-2); color: var(--grey); border: 1px solid var(--grey); }
+.sstat-no_champion { background: var(--navy-2); color: #c9d1d9; border: 1px solid var(--grey); }
 .season-meter { height: 12px; margin-bottom: 12px; }
 .qbar { position: relative; display: inline-block; width: 64px; height: 14px; background: var(--black); border: 1px solid var(--grey); vertical-align: middle; }
 .qbar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--orange); }

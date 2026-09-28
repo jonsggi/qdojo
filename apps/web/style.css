@@ -1,19 +1,23 @@
 /* QDOJO spectator page. Early-90s arcade cabinet. Committed dark look. */
 
 :root {
-  --navy: #0a0f3d;
-  --navy-2: #121a5e;
-  --blue: #1b2cc1;
+  /* The old cabinet's navy and cyan tokens now point at the scrapyard's
+     steel and soot (V-14); cyan survives only as --stamina. */
+  --navy: #0d0f12;
+  --navy-2: #2a3036;
+  --blue: #4b5563;
   --yellow: #ffd200;
   --red: #ff2a2a;
-  --cyan: #24e6ff;
+  --cyan: #b8c4ce;
+  --stamina: #45d6e6;
+  --link: #ffb86b;
   --green: #39ff5a;
   --orange: #ff8c00;
   --magenta: #ff3cac;
   --white: #f4f4f4;
-  --grey: #9aa3c7;
+  --grey: #9aa6b2;
   --black: #000;
-  --panel: #05071f;
+  --panel: #0c0e10;
   --font-pixel: 'Press Start 2P', 'Courier New', ui-monospace, Menlo, Consolas, monospace;
   --font-text: ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'Courier New', monospace;
   --gutter: clamp(16px, 3vw, 40px);
@@ -30,9 +34,6 @@ body {
   display: flex; flex-direction: column;   /* main grows, so the footer pins to the bottom of a short screen */
   color: var(--white);
   background:
-    linear-gradient(rgba(10, 15, 61, .92), rgba(10, 15, 61, .92)),
-    repeating-linear-gradient(0deg, transparent 0 15px, rgba(36, 230, 255, .06) 15px 16px),
-    repeating-linear-gradient(90deg, transparent 0 15px, rgba(36, 230, 255, .06) 15px 16px),
     var(--navy);
   font-family: var(--font-pixel);
   font-size: 11px;
@@ -41,7 +42,7 @@ body {
   overflow-x: hidden;
 }
 
-a { color: var(--cyan); text-decoration: none; }
+a { color: var(--link); text-decoration: none; }
 a:hover, a:focus-visible { color: var(--yellow); text-decoration: underline; outline: none; }
 
 b, strong { font-weight: normal; color: var(--yellow); }
@@ -255,7 +256,7 @@ a.tname { display: inline-flex; align-items: center; gap: 8px; }
   transition: width .45s linear;
 }
 
-.meter-fill.seed { background: repeating-linear-gradient(90deg, var(--cyan) 0 8px, #0fb8cf 8px 10px); }
+.meter-fill.seed { background: repeating-linear-gradient(90deg, var(--stamina) 0 8px, #1fa8b8 8px 10px); }
 
 .meter-label { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 9px; margin-bottom: 6px; flex-wrap: wrap; }
 .meter-label b { font-size: 11px; }
@@ -296,7 +297,7 @@ a.tname { display: inline-flex; align-items: center; gap: 8px; }
 .tscroll.can-scroll::before {
   content: ""; grid-area: 1 / 1; justify-self: end; align-self: stretch; width: 56px;
   position: sticky; right: 0; pointer-events: none;
-  background: linear-gradient(to right, rgba(5, 7, 31, 0), var(--panel) 80%);
+  background: linear-gradient(to right, rgba(12, 14, 16, 0), var(--panel) 80%);
 }
 .tscroll.can-scroll::after {
   content: "SCROLL \25B6"; grid-area: 2 / 1; justify-self: end;

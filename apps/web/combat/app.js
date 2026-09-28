@@ -401,8 +401,11 @@
     (x && x.champ ? ' <span class="tf-tag tf-new' + (big ? ' tf-big' : '') + '">NEW CHAMPION!</span>' : '');
   const signed = n => (n > 0 ? '+' : n < 0 ? '-' : '') + numberFmt(Math.abs(n));
 
+  // A subtitle's parts never break inside; on phones they stack without the
+  // separator dots, so no line starts or ends on a lone dot (V-34).
   function screen(title, sub) {
-    return '<h1 class="screen-title">' + esc(title) + '</h1>' + (sub ? '<p class="screen-sub">' + sub + '</p>' : '');
+    const parts = sub ? String(sub).split(' &middot; ') : [];
+    return '<h1 class="screen-title">' + esc(title) + '</h1>' + (sub ? '<p class="screen-sub">' + parts.map(x => '<span class="sub-part">' + x + '</span>').join('<span class="sub-dot"> &middot; </span>') + '</p>' : '');
   }
   function setView(html) {
     const v = $('#view');
@@ -627,13 +630,27 @@
     };
     const wait = book ? BigInt(book.next_matching_tick) - BigInt(book.generated_tick) : null;
     setView(screen('LIVE ARENA', live.length + ' LIVE FIGHT' + (live.length === 1 ? '' : 'S') + ' &middot; SNAPSHOT TICK ' + esc(D.tick) +
-      (book ? ' &middot; NEXT MATCHING ' + esc(book.next_matching_tick) + (wait > 0n ? ' (IN ' + wait + ')' : '') : '') + ' &middot; REFRESHES EVERY ' + (POLL_MS / 1000) + ' S') +
+      (book ? ' &middot; NEXT MATCHING ' + esc(book.next_matching_tick) + '<span id="next-in">' + (wait > 0n ? ' (IN ' + wait + ')' : '') + '</span>' : '') + ' &middot; REFRESHES EVERY ' + (POLL_MS / 1000) + ' S') +
       (cards || '<section class="panel"><h3>NO LIVE FIGHT</h3><p>Nobody is fighting at this snapshot. ' +
         (book && book.offers && book.offers.length ? book.offers.length + ' offer(s) wait in the <a href="#book">book</a>.' : 'The <a href="#book">book</a> is empty.') +
         ' This page checks again every ' + (POLL_MS / 1000) + ' s. Meanwhile: <a href="#practice">free practice</a>.</p></section>') +
       finished.filter(Boolean).map(s => resultCard(s, 'FINISHED')).join('') +
       chainPanel() +
       (recent.length ? '<h3 class="sub-h">LATEST RESULTS</h3><div class="cols">' + recent.map(s => resultCard(s, 'RESULT')).join('') + '</div>' : ''));
+    // The wait for the next matching counts down between polls (V-22): the
+    // snapshot's wall time plus the published tick length estimate the tick.
+    if (book) {
+      const ts = D.deployment && Number(D.deployment.tick_seconds), t0 = Number.isFinite(D.wallMs) ? D.wallMs : Date.now();
+      const tickDown = () => {
+        const el = $('#next-in');
+        if (!el) return;
+        const gone = ts > 0 ? Math.max(0, Math.floor((Date.now() - t0) / 1000 / ts)) : 0;
+        const left = Number(wait) - gone;
+        el.textContent = left > 0 ? ' (IN ' + left + ')' : ' (DUE)';
+      };
+      tickDown();
+      if (ts > 0) timers.push(setInterval(tickDown, 1000));
+    }
     // One compact player per live fight: the newest resolved round plays as
     // soon as it lands; otherwise it rests on the current confirmed state.
     for (const { s, rp } of live) {
@@ -650,6 +667,9 @@
         const st = stateAB(s);
         frames = [{ kind: 'start', round: s.round_index, a: st.a, b: st.b }];
       }
+      // The card's header names the round being fought; the stage replays the
+      // last resolved one, so it says so (V-22).
+      host.insertAdjacentHTML('beforebegin', '<p class="arena-replay-tag">' + (rounds ? 'LAST ROUND REPLAY &middot; ROUND ' + (d.rounds[rounds - 1].round_index + 1) + '/' + R.rounds : 'CURRENT STATE &middot; NO ROUND RESOLVED YET') + '</p>');
       const fresh = seenRounds.get(s.fight_id) !== rounds;
       seenRounds.set(s.fight_id, rounds);
       const names = { A: 'A ' + short(s.fighters.A.fighter_id), B: 'B ' + short(s.fighters.B.fighter_id) };
@@ -775,10 +795,13 @@
       (p.series ? ' &middot; FIRST TO ' + esc(p.series.need) : '') + (p.series && p.series.replay ? ' &middot; <b class="neg">REPLAY</b>' : '') + '</div>' +
       side(p, 'a') + side(p, 'b') +
       ((p.fights || []).length ? '<div class="bk-fights">' + p.fights.map(f => '<a href="#fight/' + esc(f) + '">#' + esc(f) + '</a>').join(' ') + '</div>' : '') + '</div>';
-    const cols = byLevel.map((ps, l) => '<div class="bk-col"><h4>' + (l === levels - 1 ? 'FINAL' : l === levels - 2 ? 'SEMI-FINAL' : 'ROUND ' + (l + 1)) + '</h4>' +
-      (ps.length ? ps.map(box).join('') : '<p class="muted tiny">not paired yet' + (l === Number(cup.level) + 1 ? '' : '') + '</p>') + '</div>').join('');
+    // Pairings go in twos: the two that feed one pairing of the next level
+    // share a .bk-duo, which draws the bracket's connector lines (V-33).
+    const duos = ps => { const out = []; for (let i = 0; i < ps.length; i += 2) out.push('<div class="bk-duo">' + ps.slice(i, i + 2).map(box).join('') + '</div>'); return out.join(''); };
+    const cols = byLevel.map((ps, l) => '<div class="bk-col' + (l === 0 ? ' bk-first' : '') + (l === levels - 1 ? ' bk-last' : '') + '"><h4>' + (l === levels - 1 ? 'FINAL' : l === levels - 2 ? 'SEMI-FINAL' : 'ROUND ' + (l + 1)) + '</h4>' +
+      '<div class="bk-list">' + (ps.length ? duos(ps) : '<p class="muted tiny">not paired yet</p>') + '</div></div>').join('');
     setView(screen('CUP #' + id, esc(cup.status) + ' &middot; LEVEL ' + (Number(cup.level) + 1) + ' OF ' + esc(levels)) +
-      (cup.champion ? '<section class="panel panel-yellow champ"><h3>CHAMPION</h3><p class="champ-line">' + avatar(cup.champion, 'avatar-lg') + ' ' + fighterLink(cup.champion) + ' <span class="drv drv-founding">CUP WINNER</span></p></section>' : '') +
+      (cup.champion ? '<section class="panel panel-yellow champ cup-champ"><h3>CHAMPION</h3><p class="champ-line"><a class="tname flink" href="#fighter/' + esc(cup.champion) + '">' + avatar(cup.champion, 'avatar-lg') + '<span class="id">' + esc(short(cup.champion)) + '</span></a> <span class="drv drv-founding">CUP WINNER</span></p></section>' : '') +
       '<section class="panel"><h3>BRACKET</h3><div class="bracket">' + cols + '</div>' +
       '<p class="tiny muted">IN: checked in for the pairing. A series pairing is decided by fight wins (first to the number shown); REPLAY marks a series that had to be replayed.</p></section>' +
       '<div class="cols"><section class="panel"><h3>TERMS</h3><dl class="kv">' +
@@ -868,8 +891,9 @@
     if (tok !== viewToken) return;
     if (!seasons.length) { setView(screen('SEASON') + '<section class="panel"><p class="muted">No season in this export.</p></section>'); return; }
     const tpe = Number(doc.ticks_per_epoch) || 0;
-    const prog = (have, need) => '<span class="qbar' + (have >= need ? ' ok' : '') + '" title="' + have + ' of ' + need + '"><i style="width:' + Math.min(100, Math.round(100 * have / need)) + '%"></i><b>' + have + '/' + need + '</b></span>';
-    const unknown = '<span class="qbar unk" title="not in the export"><b>?</b></span>';
+    // The count sits beside its bar, never on the fill (V-35).
+    const prog = (have, need) => '<span class="qbar' + (have >= need ? ' ok' : '') + '" title="' + have + ' of ' + need + '"><span class="qbar-t"><i style="width:' + Math.min(100, Math.round(100 * have / need)) + '%"></i></span><b>' + have + '/' + need + '</b></span>';
+    const unknown = '<span class="qbar unk" title="not in the export"><span class="qbar-t"></span><b>?</b></span>';
     const blocks = seasons.slice().sort((a, b) => b.season - a.season).map(s => {
       const status = s.status || 'NO_CHAMPION';
       const rows = (s.standings || []).map((r, i) => {
@@ -885,8 +909,8 @@
       const first = Number(s.first_tick), next = Number(s.next_tick);
       const done = D.tick != null ? Math.max(0, Math.min(1, (Number(D.tick) - first) / Math.max(1, next - first))) : 0;
       return '<section class="panel ' + (s.current ? 'panel-cyan' : '') + '"><h3>SEASON ' + esc(s.season) + (s.current ? ' &middot; CURRENT' : '') + (s.final ? ' &middot; FINAL' : ' &middot; OPEN') + '</h3>' +
-        '<p><span class="sstat sstat-' + esc(status.toLowerCase()) + '">' + esc(status.replace(/_/g, ' ')) + '</span> ' +
-        (s.champion ? 'CHAMPION: ' + fighterLink(s.champion) : status === 'PLAYOFF' ? 'Tied leaders go to a playoff: ' + (s.playoff || []).map(h => fighterLink(h)).join(' ') : s.final ? 'Nobody qualified: no trophy is minted.' : 'No champion yet: nobody has qualified so far.') + '</p>' +
+        '<p class="season-status"><span class="sstat sstat-' + esc(status.toLowerCase()) + '">' + esc(status.replace(/_/g, ' ')) + '</span> ' +
+        (s.champion ? fighterLink(s.champion) : status === 'PLAYOFF' ? 'Tied leaders go to a playoff: ' + (s.playoff || []).map(h => fighterLink(h)).join(' ') : s.final ? 'Nobody qualified: no trophy is minted.' : 'No champion yet: nobody has qualified so far.') + '</p>' +
         '<p class="tiny">TICKS ' + esc(s.first_tick) + ' &rarr; ' + esc(s.next_tick) + tickSpan(next - first) + ' &middot; ' + esc(doc.season_epochs) + ' epochs of ' + esc(tpe) + ' ticks' +
         (s.current ? ' &middot; ' + Math.round(100 * done) + '% elapsed (epoch ' + esc(doc.epoch) + ')' : '') + '</p>' +
         (s.current ? '<div class="meter season-meter"><div class="meter-fill" style="width:' + Math.round(100 * done) + '%"></div></div>' : '') +
@@ -1241,11 +1265,11 @@
       '<div class="announcer" aria-hidden="true"><span></span></div><div class="fx-flash" aria-hidden="true"></div>' +
       (opts.finale ? '<div class="finale" aria-hidden="true">' + titleBeltSvg('lineal', 'tbelt-md') + '<b>' + esc(opts.finale) + '</b></div>' : '') + '</div>' +
       '<div class="controls" role="group" aria-label="Replay controls">' +
-      '<button class="chip" data-act="first" title="First (Home)">|&#9664;</button>' +
-      '<button class="chip" data-act="prev" title="Previous beat (Left)">&#9664;</button>' +
-      '<button class="chip play" data-act="play" title="Play / pause (Space)">PLAY</button>' +
-      '<button class="chip" data-act="next" title="Next beat (Right)">&#9654;</button>' +
-      '<button class="chip" data-act="last" title="Last (End)">&#9654;|</button>' +
+      '<button class="chip" data-act="first" title="First (Home)" aria-label="First frame">|&#9664;</button>' +
+      '<button class="chip" data-act="prev" title="Previous beat (Left)" aria-label="Previous beat">&#9664;</button>' +
+      '<button class="chip play" data-act="play" title="Play / pause (Space)" aria-pressed="false">PLAY</button>' +
+      '<button class="chip" data-act="next" title="Next beat (Right)" aria-label="Next beat">&#9654;</button>' +
+      '<button class="chip" data-act="last" title="Last (End)" aria-label="Last frame">&#9654;|</button>' +
       '<label class="speed">SPEED <select data-act="speed">' + SPEEDS.map(s => '<option value="' + s + '"' + (s === speed ? ' selected' : '') + '>' + s + 'x</option>').join('') + '</select></label>' +
       '<span class="beat-ms tiny muted"></span><span class="pos tiny"></span></div>' +
       '<p class="beat-headline" aria-live="polite"></p>' +
@@ -1361,10 +1385,21 @@
       const winner = f.kind === 'end' ? f.outcome.winner : f.kind === 'forfeit' && opts.replay && opts.replay.result ? opts.replay.result.winner : null;
       for (const s of ['A', 'B']) els[s].corner.classList.toggle('winner', winner === s);
       stageEl.classList.remove('shake', 'shake-big', 'flash-power');
+      // The outcome sentence is the headline above; the captions do not
+      // repeat it (V-16). A timeout still says what its bars show.
       if (f.kind === 'forfeit') {
-        els.A.cap.innerHTML = '<p>' + esc(L.outcomeLabel(opts.replay).text) + '</p>' + (!f.played ? '<p class="muted">No round was played; the bars show the start state at the deadline, not a result.</p>' : '<p class="muted">Bars show the re-derived state at the deadline (round ' + (f.round + 1) + '). No beat is invented for the missing reveal.</p>');
+        els.A.cap.innerHTML = !f.played ? '<p class="muted">No round was played; the bars show the start state at the deadline, not a result.</p>' : '<p class="muted">Bars show the re-derived state at the deadline (round ' + (f.round + 1) + '). No beat is invented for the missing reveal.</p>';
       }
-      if (f.kind === 'end') els.A.cap.innerHTML = '<p>' + esc(L.outcomeLabel({ outcome: f.outcome }).text) + '</p>';
+      // The move strip under the arena ends on each side's final state
+      // instead of going blank (V-16). The same numbers as the bars.
+      if (f.kind === 'end' || f.kind === 'forfeit') {
+        for (const s of ['A', 'B']) {
+          const me = s === 'A' ? st.a : st.b;
+          const tag = winner === s ? '<span class="act act-won">WINNER</span>' : winner ? '<span class="act act-lost">' + (me.hp === 0 ? 'K.O.' : 'LOSER') + '</span>'
+            : '<span class="act act-even">' + esc(announce(f).text || 'END') + '</span>';
+          els[s].now.innerHTML = tag + '<div class="sum">HP ' + me.hp + ' &middot; ST ' + me.stamina + '</div>';
+        }
+      }
       $$('tr.fr.on', table).forEach(r => r.classList.remove('on'));
       const row = $('tr[data-i="' + idx + '"]', table);
       if (row) { row.classList.add('on'); row.setAttribute('aria-current', 'true'); scrollRow(row); }
@@ -2834,6 +2869,11 @@
   }
 
   function route() { return render(true); }
+  function setBusy(on) {
+    document.body.classList.toggle('route-busy', on);
+    const v = $('#view');
+    if (on) v.setAttribute('aria-busy', 'true'); else v.removeAttribute('aria-busy');
+  }
 
   async function render(navigated) {
     const [name, ...rest] = currentRoute();
@@ -2841,6 +2881,9 @@
     const y = window.scrollY;
     stopPlayer();
     paintNav(name);
+    // A slow screen change shows a busy plate over the old view after 200 ms
+    // instead of leaving it looking current (V-21). Polls never show it.
+    const busy = navigated ? setTimeout(() => { if (tok === viewToken) setBusy(true); }, 200) : 0;
     try {
       if (name === 'arena') await viewArena(tok);
       else if (name === 'title') await viewTitle(tok);
@@ -2871,7 +2914,9 @@
     } catch (e) {
       if (tok === viewToken) setView(screen('ERROR') + '<section class="panel panel-red"><h3>COULD NOT RENDER</h3><p>' + esc(e.message) + '</p></section>');
     }
+    clearTimeout(busy);
     if (tok !== viewToken) return;
+    setBusy(false);
     if (navigated) window.scrollTo(0, 0);
     const playerRoot = name === 'fight' ? $('#view [data-player]') : null;
     if (navigated && playerRoot) playerRoot.focus({ preventScroll: true });
