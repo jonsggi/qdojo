@@ -249,14 +249,16 @@ What the Qubic backend still needs, in order:
    `QDOJOF` as an interim. No one holds a fighter_id's private key, so that
    asset can never be issued. It must become the token's real issuer and name.
 2. **Signing and sending.** Sign with `qdojo.qubic.tx.Transaction.sign` and
-   send with `qdojo.chain.native.NativeChain.send` (or POST
-   `/v1/broadcast-transaction`), targeting the current tick + ~10.
-3. **Confirmation.** `NativeChain.confirm(tx, tick)` shows inclusion. Then
+   broadcast with `qdojo.qubic.node.Node.broadcast` (or POST
+   `/v1/broadcast-transaction`), targeting the current tick + ~10. The riddle
+   game's `chain/native.py` wrapper that did this was removed with the riddle
+   code (tag `riddle-v0-final`) and is the model to restore.
+3. **Confirmation.** `Node.tick_transactions(tick)`, hashed with K12, shows inclusion. Then
    re-read the effect (owner, orders) to learn success, and resend when the
    transaction was dropped.
 4. **Reads.**
-   - Ownership: `NativeChain.asset_holders(issuer, name)`.
-   - Possession: `asset_possessors`.
+   - Ownership: `Node.asset_records(qubic.contracts.ownerships_request(issuer, name))`.
+   - Possession: the same with `possessions_request`.
    - Books: QX functions 2–5 via `querySmartContract`.
    - History and sales: an indexer of QX trade logs.
 5. **Live fees.** Read QX `Fees` (function 1) before any write.

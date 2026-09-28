@@ -98,13 +98,13 @@ that beats the NPCs.
 | `contracts/combat_core/` | Independent C++ engine, parity-tested against Python and the browser |
 | `contracts/combat_contract/` | C++ port of the reference contract |
 | `contracts/qubic/QDOJO.h` | The contract in Qubic Core's dialect (checked, not deployed) |
-| `apps/web/` | The static spectator site: `index.html` (combat), `legacy.html` (retired riddle arcade), `llms.txt` (agent briefing), `combat/` (browser engine and replay verifier) |
+| `apps/web/` | The static spectator site: `index.html` (combat), `llms.txt` (agent briefing), `combat/` (browser engine and replay verifier) |
 | `examples/combat/` | `planner_minimal.py`, a dependency-free planner |
 | `prompts/combat/` | System prompt for the LLM planner |
+| `packages/qdojo/src/qdojo/qubic/` | Qubic primitives in pure Python: K12, FourQ, SchnorrQ, identities, transactions, a node client |
 | `scripts/` | Validation, economics, fixtures, soak and sample-data generators |
 | `docs/` | Rules, protocol, guides and reports ([index](docs/README.md)) |
-| `audits/` | Open audit findings from the riddle era |
-| `dojo`, `dojo.cmd`, `dojo.ps1`, `examples/solvers/` | Legacy riddle onboarding and solvers; not a combat path |
+| `audits/` | Audit findings and reports |
 
 ## Documentation
 
@@ -131,8 +131,8 @@ The full index with reading orders is [docs/README.md](docs/README.md).
 | Qubic contract | Source passes Core's contract checker and replays the parity journals in core-lite's harness. **Not deployed** |
 | Paid play | Not available. It needs a deployed contract, a release manifest and explicit authorisation |
 
-Stage-by-stage detail: [roadmap](docs/roadmap.md). The retired riddle game is
-kept read-only as Legacy ([archive](docs/archive/riddle-v0/INDEX.md)).
+Stage-by-stage detail: [roadmap](docs/roadmap.md). The retired riddle game
+(its code, docs and onboarding) lives at git tag `riddle-v0-final`.
 
 ## Contributing and tests
 
@@ -146,7 +146,8 @@ python3 docs/reference/check_docs.py   # active doc links and the rules matrix
 `make hooks` installs a pre-commit hook that blocks seeds and runs `make test`.
 Read [docs/contributing.md](docs/contributing.md) before changing rules,
 money paths or published commands: every `qdojo` command in this README,
-`docs/api.md` and `apps/web/llms.txt` is parsed by the test suite.
+`docs/api.md`, `docs/build-a-bot.md` and `apps/web/llms.txt` is parsed by the
+test suite.
 
 ## Licence
 

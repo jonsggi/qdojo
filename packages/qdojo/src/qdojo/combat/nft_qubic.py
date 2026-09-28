@@ -140,7 +140,7 @@ class QubicFighterNFTs(FighterNFTs):
 
     def _send(self, plan: TxPlan) -> Receipt:
         # TODO(testnet): sign with the signer's seed (qdojo.qubic.tx.Transaction.sign) for tick
-        # current+~10, broadcast (qdojo.chain.native.NativeChain.send, or POST RPC_PATHS["broadcast"]
+        # current+~10, broadcast (qdojo.qubic.node.Node.broadcast, or POST RPC_PATHS["broadcast"]
         # with {"encodedTransaction": base64}), return Receipt(tx hash, target tick). Never before the
         # owner signs off the testnet run; never on mainnet without a release manifest.
         raise NetworkDisabled(plan)
@@ -197,7 +197,7 @@ class QubicFighterNFTs(FighterNFTs):
                                  f"QX move management of {name} to contract {new_index}"))
 
     def poll(self, receipt: Receipt):
-        # TODO(testnet): after receipt.target_tick, NativeChain.confirm(tx_hash, tick) says whether it
+        # TODO(testnet): after receipt.target_tick, Node.tick_transactions(tick) (K12 of each body) says whether it
         # was INCLUDED; whether the procedure SUCCEEDED is only visible in its effect (re-read the
         # owner/orders). A tx not included in its target tick is dropped: resend with a new tick.
         raise NotConnected(f"poll: GET {self.rpc}{RPC_PATHS['tick']}, then the node's tick transactions")
@@ -205,8 +205,8 @@ class QubicFighterNFTs(FighterNFTs):
     # -- reads -----------------------------------------------------------------------
 
     def token(self, fighter_id):
-        # TODO(testnet): NativeChain.asset_holders(issuer_identity, name) (RequestAssets ownerships) and
-        # asset_possessors(...) (possessions); exactly one owner with 1 share, else "unavailable".
+        # TODO(testnet): Node.asset_records(contracts.ownerships_request(issuer_identity, name)) and
+        # possessions_request(...); exactly one owner with 1 share, else "unavailable".
         raise NotConnected(f"token: RequestAssets ownerships/possessions for {self.token_names.get(fighter_id)!r}, "
                            f"or GET {self.rpc}{RPC_PATHS['owned']}")
 

@@ -1,0 +1,437 @@
+{
+ "schema": "qdojo.combat.titles.v1",
+ "network_id": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
+ "contract_id": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
+ "generated_tick": "4201",
+ "source": "reference-contract-state",
+ "lineal": {
+  "id": "lineal",
+  "name": "THE SCRAP HEAP BELT",
+  "holder": "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630",
+  "since_tick": "59",
+  "since_fight": "1",
+  "defenses": 0,
+  "reigns_total": 1,
+  "history": [
+   {
+    "holder": "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630",
+    "from_tick": "59",
+    "from_fight": "1",
+    "won_from": null,
+    "to_tick": null,
+    "to_fight": null,
+    "lost_to": null,
+    "how": null,
+    "defenses": 0,
+    "wins": 0,
+    "draws": 0,
+    "title_fights": 0
+   }
+  ],
+  "recent_title_fights": [],
+  "rules": "Ranked fights only. Passes when the holder loses by KO or decision; a draw is a defence; a forfeit, double fault or void moves nothing."
+ },
+ "season": {
+  "id": "season",
+  "name": "THE MONTAGE BELT",
+  "season": null,
+  "champion": null,
+  "latest_final_season": null,
+  "history": []
+ },
+ "cup": {
+  "id": "cup",
+  "name": "THE BOTTLE CAP BELT",
+  "cup_id": "1",
+  "champion": "417f3b23cc4b00870441904617b5ff4520e7bcd0d53664ea4d18b993fc5e9ac0",
+  "wins": {
+   "417f3b23cc4b00870441904617b5ff4520e7bcd0d53664ea4d18b993fc5e9ac0": 1
+  }
+ },
+ "fighters": {
+  "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630": {
+   "lineal_reigns": 1,
+   "lineal_defenses": 0,
+   "best_reign_defenses": 0,
+   "title_fights": 0,
+   "season_titles": [],
+   "cup_titles": 0,
+   "holds": [
+    "lineal"
+   ]
+  },
+  "417f3b23cc4b00870441904617b5ff4520e7bcd0d53664ea4d18b993fc5e9ac0": {
+   "lineal_reigns": 0,
+   "lineal_defenses": 0,
+   "best_reign_defenses": 0,
+   "title_fights": 0,
+   "season_titles": [],
+   "cup_titles": 1,
+   "holds": [
+    "cup"
+   ]
+  }
+ },
+ "career": {
+  "0000c93f8a9556d9c7336ec8831f51a5e9c35374be248525d6e1655229096cd1": {
+   "earnings": {
+    "ranked": {
+     "won": "45000",
+     "lost": "0",
+     "net": "45000",
+     "rake": "5000",
+     "paid_wins": 10
+    },
+    "duel": {
+     "won": "0",
+     "lost": "0",
+     "net": "0",
+     "rake": "0",
+     "paid_wins": 0
+    },
+    "cup": {
+     "won": "0",
+     "lost": "10000",
+     "net": "-10000",
+     "rake": "0",
+     "paid_wins": 0
+    },
+    "won": "45000",
+    "lost": "10000",
+    "net": "35000",
+    "rake": "5000",
+    "prize_sponsorship": "0",
+    "biggest_win": {
+     "amount": "4500",
+     "mode": "ranked",
+     "ref": "contest:35"
+    },
+    "currency": "fake QU"
+   },
+   "streak": {
+    "current": 12,
+    "best": 12
+   }
+  },
+  "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630": {
+   "earnings": {
+    "ranked": {
+     "won": "4500",
+     "lost": "0",
+     "net": "4500",
+     "rake": "500",
+     "paid_wins": 1
+    },
+    "duel": {
+     "won": "0",
+     "lost": "0",
+     "net": "0",
+     "rake": "0",
+     "paid_wins": 0
+    },
+    "cup": {
+     "won": "0",
+     "lost": "10000",
+     "net": "-10000",
+     "rake": "0",
+     "paid_wins": 0
+    },
+    "won": "4500",
+    "lost": "10000",
+    "net": "-5500",
+    "rake": "500",
+    "prize_sponsorship": "0",
+    "biggest_win": {
+     "amount": "4500",
+     "mode": "ranked",
+     "ref": "contest:1"
+    },
+    "currency": "fake QU"
+   },
+   "streak": {
+    "current": 2,
+    "best": 5
+   }
+  },
+  "417f3b23cc4b00870441904617b5ff4520e7bcd0d53664ea4d18b993fc5e9ac0": {
+   "earnings": {
+    "ranked": {
+     "won": "18000",
+     "lost": "15000",
+     "net": "3000",
+     "rake": "2000",
+     "paid_wins": 4
+    },
+    "duel": {
+     "won": "0",
+     "lost": "0",
+     "net": "0",
+     "rake": "0",
+     "paid_wins": 0
+    },
+    "cup": {
+     "won": "44500",
+     "lost": "0",
+     "net": "44500",
+     "rake": "6000",
+     "paid_wins": 1
+    },
+    "won": "62500",
+    "lost": "15000",
+    "net": "47500",
+    "rake": "8000",
+    "prize_sponsorship": "500",
+    "biggest_win": {
+     "amount": "44500",
+     "mode": "cup",
+     "ref": "cup:1"
+    },
+    "currency": "fake QU"
+   },
+   "streak": {
+    "current": 1,
+    "best": 3
+   }
+  },
+  "642d1dc34815dad8cb5f7429cfce9d3776e996b1e2f97df2131cb05dfabf5610": {
+   "earnings": {
+    "ranked": {
+     "won": "27000",
+     "lost": "40000",
+     "net": "-13000",
+     "rake": "3000",
+     "paid_wins": 6
+    },
+    "duel": {
+     "won": "0",
+     "lost": "0",
+     "net": "0",
+     "rake": "0",
+     "paid_wins": 0
+    },
+    "cup": {
+     "won": "0",
+     "lost": "10000",
+     "net": "-10000",
+     "rake": "0",
+     "paid_wins": 0
+    },
+    "won": "27000",
+    "lost": "50000",
+    "net": "-23000",
+    "rake": "3000",
+    "prize_sponsorship": "0",
+    "biggest_win": {
+     "amount": "4500",
+     "mode": "ranked",
+     "ref": "contest:46"
+    },
+    "currency": "fake QU"
+   },
+   "streak": {
+    "current": 3,
+    "best": 3
+   }
+  },
+  "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0": {
+   "earnings": {
+    "ranked": {
+     "won": "0",
+     "lost": "0",
+     "net": "0",
+     "rake": "0",
+     "paid_wins": 0
+    },
+    "duel": {
+     "won": "22500",
+     "lost": "40000",
+     "net": "-17500",
+     "rake": "2500",
+     "paid_wins": 3
+    },
+    "cup": {
+     "won": "0",
+     "lost": "0",
+     "net": "0",
+     "rake": "0",
+     "paid_wins": 0
+    },
+    "won": "22500",
+    "lost": "40000",
+    "net": "-17500",
+    "rake": "2500",
+    "prize_sponsorship": "0",
+    "biggest_win": {
+     "amount": "9000",
+     "mode": "duel",
+     "ref": "contest:47"
+    },
+    "currency": "fake QU"
+   },
+   "streak": {
+    "current": 0,
+    "best": 2
+   }
+  },
+  "861dd00b56ac96f696c85e815c931a01e883a91c66350fefc4d153b95652d071": {
+   "earnings": {
+    "ranked": {
+     "won": "0",
+     "lost": "0",
+     "net": "0",
+     "rake": "0",
+     "paid_wins": 0
+    },
+    "duel": {
+     "won": "58500",
+     "lost": "10000",
+     "net": "48500",
+     "rake": "6500",
+     "paid_wins": 7
+    },
+    "cup": {
+     "won": "0",
+     "lost": "0",
+     "net": "0",
+     "rake": "0",
+     "paid_wins": 0
+    },
+    "won": "58500",
+    "lost": "10000",
+    "net": "48500",
+    "rake": "6500",
+    "prize_sponsorship": "0",
+    "biggest_win": {
+     "amount": "13500",
+     "mode": "duel",
+     "ref": "contest:5"
+    },
+    "currency": "fake QU"
+   },
+   "streak": {
+    "current": 3,
+    "best": 6
+   }
+  },
+  "c64fb2f8f74ada61c83a5b34c60e025953d25fe0b7c0df602195eedced1d6481": {
+   "earnings": {
+    "ranked": {
+     "won": "0",
+     "lost": "0",
+     "net": "0",
+     "rake": "0",
+     "paid_wins": 0
+    },
+    "duel": {
+     "won": "18000",
+     "lost": "60000",
+     "net": "-42000",
+     "rake": "2000",
+     "paid_wins": 2
+    },
+    "cup": {
+     "won": "0",
+     "lost": "0",
+     "net": "0",
+     "rake": "0",
+     "paid_wins": 0
+    },
+    "won": "18000",
+    "lost": "60000",
+    "net": "-42000",
+    "rake": "2000",
+    "prize_sponsorship": "0",
+    "biggest_win": {
+     "amount": "9000",
+     "mode": "duel",
+     "ref": "contest:34"
+    },
+    "currency": "fake QU"
+   },
+   "streak": {
+    "current": 0,
+    "best": 2
+   }
+  },
+  "ed566a3dbb6757f19e53f397af3aee53200cda11b107968ae8dec0a86ac73834": {
+   "earnings": {
+    "ranked": {
+     "won": "31500",
+     "lost": "60000",
+     "net": "-28500",
+     "rake": "3500",
+     "paid_wins": 7
+    },
+    "duel": {
+     "won": "0",
+     "lost": "0",
+     "net": "0",
+     "rake": "0",
+     "paid_wins": 0
+    },
+    "cup": {
+     "won": "0",
+     "lost": "10000",
+     "net": "-10000",
+     "rake": "0",
+     "paid_wins": 0
+    },
+    "won": "31500",
+    "lost": "70000",
+    "net": "-38500",
+    "rake": "3500",
+    "prize_sponsorship": "0",
+    "biggest_win": {
+     "amount": "4500",
+     "mode": "ranked",
+     "ref": "contest:40"
+    },
+    "currency": "fake QU"
+   },
+   "streak": {
+    "current": 0,
+    "best": 1
+   }
+  },
+  "ff93d07ac1501d737aa9a7884ea7ac6b1417024b85ae3847c1681b6d239146d9": {
+   "earnings": {
+    "ranked": {
+     "won": "0",
+     "lost": "25000",
+     "net": "-25000",
+     "rake": "0",
+     "paid_wins": 0
+    },
+    "duel": {
+     "won": "0",
+     "lost": "0",
+     "net": "0",
+     "rake": "0",
+     "paid_wins": 0
+    },
+    "cup": {
+     "won": "0",
+     "lost": "10000",
+     "net": "-10000",
+     "rake": "0",
+     "paid_wins": 0
+    },
+    "won": "0",
+    "lost": "35000",
+    "net": "-35000",
+    "rake": "0",
+    "prize_sponsorship": "0",
+    "biggest_win": null,
+    "currency": "fake QU"
+   },
+   "streak": {
+    "current": 0,
+    "best": 0
+   }
+  }
+ },
+ "folded_through": {
+  "tick": "3964",
+  "fight": "70"
+ }
+}

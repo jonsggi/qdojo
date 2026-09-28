@@ -1,10 +1,12 @@
 # AUD-001 — Persist payout submission identity before broadcasting
 
-- **Status:** Open
+- **Status:** **Retired (riddle code removed 2026-09-28, see tag riddle-v0-final)**
 - **Priority:** P0 — block reopening real-money rounds until resolved
 - **Type:** Financial correctness / crash recovery
 - **Evidence:** Reproduced on FakeChain; not evidence of a historical live loss
 - **Scope:** `packages/qdojo/src/qdojo/house.py:453–473` (`_pay_ledger`), `packages/qdojo/src/qdojo/chain/cli.py:81–89` (`send`)
+
+> **Retired 2026-09-28.** The owner retired the riddle game (its bonds and pool are the owner's; no closeout obligation remains) and its code was removed. The riddle house and its payout ledger were removed. The combat money path is the reference contract (`combat/contract.py`), which records credits and withdrawals itself; any real-chain submitter must still persist a transaction's identity before broadcasting. The code, and the probe that reproduced this finding (`audits/probes/`), live at git tag `riddle-v0-final`; line references below refer to that code.
 
 ## Finding
 

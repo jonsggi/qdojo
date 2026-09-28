@@ -131,7 +131,7 @@ All paths under `packages/qdojo/src/qdojo/combat/` unless noted.
 Combat-v1 is built for direct execution: the contract receives commitments and
 reveals, runs bounded integer combat and credits the result. No external
 oracle, EVM judge or submitted bot code is involved. (Earlier oracle research
-is [archived](archive/riddle-v0/docs/verification-research.md).)
+is [archived](https://github.com/jonsggi/qdojo/blob/riddle-v0-final/docs/archive/riddle-v0/docs/verification-research.md) at tag `riddle-v0-final`.)
 
 The site checks each replay separately and shows the strongest level it earned:
 

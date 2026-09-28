@@ -371,15 +371,6 @@ a.tname { display: inline-flex; align-items: center; gap: 8px; }
 @keyframes pulse { 50% { opacity: .45; } }
 .sealed p { margin: 8px auto 0; max-width: 60ch; }
 
-.riddle-box { font-family: var(--font-text); font-size: 15px; line-height: 1.55; }
-.riddle-box .riddle-statement { color: var(--white); margin: 0 0 12px; font-weight: 700; }
-.riddle-box .riddle-input {
-  background: var(--black); border: 2px dashed var(--cyan); padding: 10px 12px;
-  color: var(--cyan); white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 10px;
-  font-size: 15px;
-}
-.riddle-box .riddle-meta { font-family: var(--font-pixel); font-size: 9px; color: var(--grey); display: flex; flex-wrap: wrap; gap: 6px 16px; }
-
 .grid-fighters { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 .fcard {
   background: var(--black); border: 3px solid var(--grey); padding: 10px;

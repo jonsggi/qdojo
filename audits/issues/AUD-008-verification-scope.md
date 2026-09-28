@@ -1,10 +1,12 @@
 # AUD-008 — Separate local hash consistency from independent round verification
 
-- **Status:** Open
+- **Status:** **Retired (riddle code removed 2026-09-28, see tag riddle-v0-final)**
 - **Priority:** P1 — correct trust claims before public use
 - **Type:** Verification / misleading assurance
 - **Evidence:** Local counterexamples reproduced; no live chain audit performed
 - **Scope:** `apps/web/app.js:435–483` (`verifyRound`, `runVerify`)
+
+> **Retired 2026-09-28.** The owner retired the riddle game (its bonds and pool are the owner's; no closeout obligation remains) and its code was removed. The riddle arcade's verifier was removed on 2026-09-27. The combat site reports verification per check (`HASH_MATCH_ONLY`, `UNVERIFIED`, `COMBAT_VERIFIED`, ...) instead of one pass/fail claim. The code, and the probe that reproduced this finding (`audits/probes/`), live at git tag `riddle-v0-final`; line references below refer to that code.
 
 ## Finding
 

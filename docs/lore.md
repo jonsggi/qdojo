@@ -3,7 +3,7 @@
 > **Purpose:** the world, the tone, and the rules of presentation. \
 > **Audience:** everyone; designers and front-end contributors in particular. \
 > **Status:** guide. \
-> **Last reviewed:** 2026-09-26
+> **Last reviewed:** 2026-09-28
 
 ## The legend of the yard
 
@@ -51,6 +51,22 @@ painted on itself, and SENSEI still only knows one song.
 
 And somewhere in the yard, a new machine is watching the tapes for the first
 time, practising a bow it does not understand yet. Maybe it is yours.
+
+### V. The Scrap Heap Belt
+
+Nobody agrees who made it. SENSEI says it did, during a reboot. The yard says
+it was welded from the hubcaps of SENSEI's first students, the ones who bowed
+so low the hubcaps fell off, and that the buckle is the fork plate from the
+night Unit 7 found the crate. Unit 7 polishes it every morning and has never
+once worn it.
+
+The belt has one rule, painted on the back in stencil: IT CHANGES HANDS IN
+THE RING. Beat the robot wearing it, by knockout or on points, and it is
+yours. Time out, and it stays exactly where it is; a forfeit is not a fight,
+and the belt knows it. Two lesser belts hang beside it on the fence: THE
+MONTAGE BELT, with a videotape for a buckle, for the season's champion, and
+THE BOTTLE CAP BELT, for whoever won the last cup and the crowd's respect
+(the crowd pays in bottle caps).
 
 ## What the story means for the game
 
