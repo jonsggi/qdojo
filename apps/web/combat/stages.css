@@ -227,6 +227,80 @@
   100% { opacity: 0; transform: translate(-50%, -18px); }
 }
 
+/* ---- candidate-3 moves: LAST STAND and FEINT ----------------------------------- */
+/* The move's callout sits where the pose tags do, above the head, and is set
+ * from the frame (motion off shows it too); motion adds the entrance. */
+.stage.arcade .fx-call {
+  position: absolute; z-index: 4; top: -34px; left: 50%; transform: translateX(-50%); white-space: nowrap;
+  font-size: 8px; padding: 2px 4px; background: var(--black); border: 1px solid currentColor; display: none;
+}
+.stage.arcade .fx-call.c-stand { display: block; color: #ffb35a; border-color: #ff3a1e; box-shadow: 0 0 0 1px #4a0806, 0 0 8px 1px rgba(255, 58, 30, .55); }
+.stage.arcade .fx-call.c-feint { display: block; color: #9fe0e6; border-color: #5f98a2; }
+.stage.arcade .fx-call.go { animation: fx-call .5s steps(4) both; }
+@keyframes fx-call { 0% { transform: translateX(-50%) scale(1.8); opacity: 0; } 50% { transform: translateX(-50%) scale(.9); opacity: 1; } 100% { transform: translateX(-50%) scale(1); } }
+
+/* LAST STAND's reactor: a red glow behind the chest whose size and heat
+ * follow the bonus dealt (data-stand 0-3: embers, warm, hot, white-hot). It
+ * stays lit on the beat with motion off; motion adds the burst. */
+.stage.arcade .fx-reactor {
+  position: absolute; z-index: 0; left: 50%; bottom: 22%; width: 72px; height: 72px; margin-left: -36px; border-radius: 50%;
+  pointer-events: none; opacity: 0; --heat: 0;
+  background: radial-gradient(closest-side, #fff0a8 0 12%, #ff9a3a 13% 30%, #ff3a1e 31% 58%, rgba(163, 20, 12, .55) 59% 80%, transparent 81%);
+}
+.stage.arcade .corner[data-stand] .fx-reactor { opacity: calc(.35 + .2 * var(--heat)); transform: scale(calc(.8 + .35 * var(--heat))); }
+.stage.arcade .corner[data-stand="0"] .fx-reactor { --heat: 0; filter: saturate(.6) brightness(.7); }
+.stage.arcade .corner[data-stand="1"] .fx-reactor { --heat: 1; }
+.stage.arcade .corner[data-stand="2"] .fx-reactor { --heat: 2; }
+.stage.arcade .corner[data-stand="3"] .fx-reactor { --heat: 3; filter: drop-shadow(0 0 6px #ff3a1e); }
+.stage.arcade .corner[data-stand] .avatar-stage { filter: drop-shadow(0 0 calc(1px + 1px * var(--heat, 0)) #ff3a1e); }
+.stage.arcade .corner[data-stand="0"] .avatar-stage { --heat: 0; }
+.stage.arcade .corner[data-stand="1"] .avatar-stage { --heat: 1; }
+.stage.arcade .corner[data-stand="2"] .avatar-stage { --heat: 2; }
+.stage.arcade .corner[data-stand="3"] .avatar-stage { --heat: 3; }
+.stage.arcade .fx-reactor.go { animation: fx-reactor .7s steps(7) both; }
+@keyframes fx-reactor {
+  0% { transform: scale(.3); opacity: 0; }
+  30% { transform: scale(calc(1.1 + .45 * var(--heat))); opacity: 1; }
+  60% { transform: scale(calc(.9 + .35 * var(--heat))); opacity: .9; }
+  100% { transform: scale(calc(.8 + .35 * var(--heat))); opacity: calc(.35 + .2 * var(--heat)); }
+}
+/* Coolant: two pixel clouds rising off the shoulders. */
+.stage.arcade .fx-steam { position: absolute; z-index: 3; left: 50%; top: 18%; width: 0; height: 0; pointer-events: none; }
+.stage.arcade .fx-steam i {
+  position: absolute; width: 10px; height: 8px; opacity: 0;
+  background: #e8f4fa; box-shadow: 4px -4px 0 #d4e2ea, -3px -7px 0 #eef7fb, 2px -11px 0 #d4e2ea, 0 0 0 1px #9aacb6;
+}
+.stage.arcade .fx-steam i:first-child { left: -30px; }
+.stage.arcade .fx-steam i:last-child { left: 18px; }
+.stage.arcade .fx-steam.go i { animation: fx-steam .8s steps(8) forwards; }
+.stage.arcade .fx-steam.go i:last-child { animation-delay: .06s; }
+@keyframes fx-steam {
+  0% { opacity: 0; transform: translate(0, 10px) scale(.4); }
+  20% { opacity: 1; transform: translate(0, 0) scale(1); }
+  100% { opacity: 0; transform: translate(0, -30px) scale(1.8); }
+}
+/* FEINT: a pale teal afterimage streak that the fighter leaves behind as it
+ * snaps back (the clip itself also draws a ghost of the half-thrown jab). */
+.stage.arcade .fx-ghost {
+  position: absolute; z-index: 1; bottom: 30%; width: 34px; height: 28px; opacity: 0; pointer-events: none;
+  background:
+    linear-gradient(to bottom, transparent 0 18%, #8cc4cc 18% 26%, transparent 26% 44%, #5f98a2 44% 52%, transparent 52% 70%, #3c6a72 70% 78%, transparent 78%);
+}
+.stage.arcade .corner-A .fx-ghost { right: -12px; }
+.stage.arcade .corner-B .fx-ghost { left: -12px; transform: scaleX(-1); }
+.stage.arcade .fx-ghost.go { animation: fx-ghost .45s steps(5) forwards; }
+.stage.arcade .corner-B .fx-ghost.go { animation-name: fx-ghost-b; }
+@keyframes fx-ghost { 0% { opacity: .9; transform: translateX(8px); } 100% { opacity: 0; transform: translateX(-16px); } }
+@keyframes fx-ghost-b { 0% { opacity: .9; transform: scaleX(-1) translateX(8px); } 100% { opacity: 0; transform: scaleX(-1) translateX(-16px); } }
+.stage.arcade .fx-word.w-bait { color: #9fe0e6; font-size: 13px; }
+.stage.arcade .fx-word.w-whiff { color: var(--steel); }
+@media (max-width: 700px) {
+  .stage.arcade .fx-call { font-size: 7px; top: -26px; }
+  .stage.arcade .fx-reactor { width: 54px; height: 54px; margin-left: -27px; }
+  .stage.arcade .fx-steam i:first-child { left: -24px; }
+  .stage.arcade .fx-steam i:last-child { left: 12px; }
+}
+
 /* WINNER plate over the winner at the end (also shown with motion off). */
 /* A stencilled steel plate, riveted, with a hazard-striped edge. */
 .stage.arcade .win-plate {

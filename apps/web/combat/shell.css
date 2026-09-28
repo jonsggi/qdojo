@@ -197,6 +197,19 @@ body.still .title-logo { animation: none; }
 .move-block { border-color: rgba(184, 196, 206, .5); }
 .move-duck { border-color: rgba(57, 255, 90, .5); }
 .move-throw { border-color: rgba(255, 60, 172, .5); }
+.move-last_stand { border-color: rgba(255, 58, 30, .6); background: linear-gradient(to top, rgba(74, 8, 6, .5), rgba(0, 0, 0, .35) 60%); }
+.move-feint { border-color: rgba(95, 152, 162, .6); border-style: dashed; }
+/* Explainer boxes for the candidate-3 moves (rules and guide). */
+.move-explainer .ex-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.move-explainer .ex-head h3 { margin: 0; }
+.move-explainer .ex-head .move-cost { margin-left: auto; }
+.move-explainer .pix-ico { flex: none; image-rendering: pixelated; }
+.move-explainer .ex-formula { font-family: var(--font-pixel); font-size: 10px; line-height: 1.7; margin: 6px 0 10px; }
+.move-explainer .ex-flavour { font-style: italic; color: var(--grey); }
+.panel.ex-stand { border-color: #ff3a1e; box-shadow: inset 0 0 0 1px #4a0806, 0 0 14px rgba(255, 58, 30, .18); }
+.ex-stand .ex-formula b { color: #ff9a3a; }
+.panel.ex-feint { border-color: #5f98a2; border-style: dashed; }
+.ex-feint .ex-formula b { color: #9fe0e6; }
 .win-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); margin-bottom: 8px; }
 .win { border: 3px solid; padding: 14px; text-align: center; background: rgba(0, 0, 0, .35); }
 .win b { font-size: 20px; display: block; margin-bottom: 8px; text-shadow: 3px 3px 0 #000; }
@@ -394,10 +407,23 @@ body.still .select-grid .npc-card.on { animation: none; }
 .act-btn.mv-duck { border-color: #3fae4a; } .act-btn.mv-duck b { color: #52dd5f; }
 .act-btn.mv-throw { border-color: #ff5a8a; } .act-btn.mv-throw b { color: #ff5a8a; }
 .act-btn.mv-recover { border-color: #d9dcef; }
+.act-btn.mv-last_stand { border-color: #ff3a1e; background: linear-gradient(to top, #2a0806, #14181b 70%); } .act-btn.mv-last_stand b { color: #ff9a3a; }
+.act-btn.mv-feint { border-color: #5f98a2; border-style: dashed; } .act-btn.mv-feint b { color: #9fe0e6; }
+.act-btn { position: relative; }
+/* LAST STAND's live bonus on its tile: what it would add if it landed now. */
+.act-btn .stand-now { position: absolute; top: 3px; right: 4px; font-size: 8px; color: #fff0a8; background: #a3140c; padding: 1px 3px; }
+.act-btn .stand-now.off { color: var(--grey); background: #2b313b; }
+/* Eight moves: a 4 x 2 deck. */
+.planner .palette.palette-7, .planner .palette.palette-8 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.planner .slot-pw.no-pw { text-decoration: line-through; }
 .planner-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 16px 0 6px; }
 .planner-actions .btn-start { margin: 0; }
 @media (max-width: 700px) {
   .planner .slots, .planner .palette { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .planner .palette.palette-7, .planner .palette.palette-8 { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .planner .palette-7 .act-btn, .planner .palette-8 .act-btn { padding: 12px 2px 8px; }
+  .planner .palette-7 .act-btn b, .planner .palette-8 .act-btn b { font-size: 8px; }
+  .planner .palette-7 .act-btn .stand-now, .planner .palette-8 .act-btn .stand-now { top: 2px; right: 2px; }
   .planner-status .sealed { margin-left: 0; }
 }
 

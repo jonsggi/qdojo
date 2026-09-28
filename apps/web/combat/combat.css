@@ -118,6 +118,13 @@ h4 { margin: 14px 0 6px; font-size: 9px; color: var(--cyan); letter-spacing: 1px
 .act-throw { color: var(--magenta); }
 .act-recover { color: var(--white); }
 .act-exhausted { color: var(--orange); border-style: dashed; }
+/* Candidate 3: LAST STAND burns reactor-red on orange; FEINT is pale steel-teal, dotted like a bluff. */
+.act-last_stand { color: #ff9a3a; border-color: #ff3a1e; background: rgba(163, 20, 12, .28); }
+.act-feint { color: #9fe0e6; border-color: #5f98a2; border-style: dotted; }
+.stand-bonus { color: #ff9a3a; }
+.feint-ok { color: #9fe0e6; }
+.feint-whiff { color: var(--grey); }
+.feint-read { color: var(--yellow); }
 .act-unexec { color: var(--grey); border-style: dotted; }
 .pw { color: var(--yellow); font-style: normal; }
 .blocked { color: var(--cyan); }
