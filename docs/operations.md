@@ -5,9 +5,9 @@
 > **Status:** guide. §1–7 are the planned production runbook and are not in effect (nothing is deployed). §8 describes the demo arena that runs today. \
 > **Last verified:** 2026-09-26 (§8 against the systemd units, `combat/live.py`, `combat/devnet.py`, `combat/store.py` and the `Dockerfile`)
 
-The riddle deployment is documented in
-[the historical runbook](archive/riddle-v0/docs/operations.md). Do not run
-legacy house settlement against a combat state directory.
+The riddle game was retired and its code removed on 2026-09-28; its
+deployment is documented in [the historical runbook](https://github.com/jonsggi/qdojo/blob/riddle-v0-final/docs/archive/riddle-v0/docs/operations.md)
+at git tag `riddle-v0-final`.
 
 ## 1. Runtime responsibilities
 
@@ -82,12 +82,11 @@ Archive accepted inputs and replays redundantly before old event-ring entries
 roll over. Preserve current root/sequence evidence so exports can be checked.
 Historical availability has its own uptime/retention report.
 
-## 6. Legacy closeout
+## 6. Riddle-era state
 
-Inventory every old open round, payout intent, bond, carry amount and owner
-before migration. Keep the original versioned records and balances until an
-explicit closeout plan reconciles them. Don't infer "unreleased externally"
-means the operator's historic funds/transactions do not exist.
+The owner closed the riddle era on 2026-09-28: its bonds, carry and pool
+belong to the owner, and no closeout obligation remains. The riddle code and
+its read-only inventory command were removed (tag `riddle-v0-final`).
 
 No riddle rank, solve point, bond progress or historical payout is automatically
 converted into a combat rating, season score, power upgrade or combat purse.
@@ -95,26 +94,29 @@ State migrations are reviewed, dry-run and reversible before any live action.
 
 ## 7. Documentation and publication
 
-The new agent briefing is unsigned until separately published. Preserve the old
-signed briefing in the archive; do not retain its provenance marker on changed
-text. Public deployment must update help, API examples and frontend data together.
-Check native/Windows onboarding against actual shipped combat commands, rather
-than rebranding the old ./dojo riddle flow.
+The new agent briefing is unsigned until separately published. The old signed
+briefing lives at tag `riddle-v0-final`; do not retain its provenance marker on
+changed text. Public deployment must update help, API examples and frontend data together.
+Check native/Windows onboarding against actual shipped combat commands.
 
-## 8. The public demo arena (simulated chain)
+## 8. The public devnet arena (simulated chain)
 
-Until a Qubic deployment exists, qdojo.jonsggi.com shows a demo arena. It is
-the reference contract on a simulated chain, with fake QU, simulated fighter
-NFTs and operator-run demo bots, labelled as such on every page.
+Until a Qubic deployment exists, qdojo.jonsggi.com shows the devnet arena. It
+is the reference contract on a simulated chain, with devnet QU (no monetary
+value), fighter NFTs from a simulated asset registry and operator-run house
+bots. The export says so (`index.json` `deployment.kind` = `devnet`), and the
+site words it from there: a DEVNET badge in the header, one line in the
+footer, and the currency on the market and economy screens. Moving to Qubic
+testnet: [testnet.md](testnet.md).
 
 | Piece | Where |
 |---|---|
 | Arena runner | systemd user unit `qdojo-combat-live` on the ops host: `qdojo combat live --profile demo --tick-seconds 1.5 --export-every 6` from the `~/src/qdojo-live` checkout, under `infisical run` so LLM bots get their OpenRouter key from the environment |
-| Arena state | `~/.qdojo/combat/arena/` (devnet journal, devnet.json with the manifest values, `snapshot.pickle` and `snapshot.prev.pickle`, assets.json, chain.json, market.json, bot plan journals) |
+| Arena state | `~/.qdojo/combat/arena/` (devnet journal, devnet.json with the manifest values, `snapshot.pickle` and `snapshot.prev.pickle`, chain.json, market.json, bot plan journals; assets.json only in arenas from before the NFT ledger, imported once) |
 | Lineup | `~/.qdojo/combat/lineup-arena.json` (label, policy / planner / llm, founding, cups, duels, ranked, reliability); without `--lineup`, eight built-in demo bots |
 | Public export | `~/.qdojo/combat/public/combat/v1/`, written by the runner every few ticks |
 | Read API + data server | systemd user unit `qdojo-combat-api` ([deploy/systemd/qdojo-combat-api.service](../deploy/systemd/qdojo-combat-api.service)): `qdojo combat api` on the tailnet (100.101.145.63:8790). It follows the arena journal into `~/.qdojo/combat/readmodel.sqlite` (plus a private `readmodel.replica` snapshot), answers `/api/v1/` ([api.md](api.md) §3.2) and serves the export on every other path. It replaces `qdojo-combat-data` (the plain `http.server`) |
-| Site | Dokploy builds `Dockerfile`; nginx proxies `/data/combat/v1/` to `QDOJO_LIVE_DATA` (falling back to the baked copy) and `/api/v1/` to `QDOJO_LIVE_API` (answering a JSON 503 when it is down, so the site uses the static files) |
+| Site | Dokploy builds `Dockerfile`; nginx ([deploy/nginx/default.conf.template](../deploy/nginx/default.conf.template)) proxies `/data/combat/v1/` to `QDOJO_LIVE_DATA` (falling back to the baked copy) and `/api/v1/` to `QDOJO_LIVE_API` (answering a JSON 503 when it is down, so the site uses the static files). `QDOJO_SITE_URL` is the public origin in share links, canonical URL, robots.txt and sitemap.xml. Every response carries the security headers in [deploy/nginx/qdojo-headers.conf](../deploy/nginx/qdojo-headers.conf) (CSP, nosniff, frame and referrer policy); unknown paths get the styled 404.html |
 
 The `demo` profile differs from the specified development values so a small
 bot population keeps fighting and seasons turn over quickly: 2,400-tick epochs
@@ -172,16 +174,22 @@ invariant: fight N …` (a live fight published past its deadline, or a
 finished fight not published final). The site then shows "DEADLINE PASSED";
 restart the unit, which rewrites every non-final fight file.
 
-**Market (AUD-023).** Owners of idle, non-founding fighters list them now and
-then; simulated collectors bid around a value from rating, record and
-experience, and buy when the bid meets the ask. The buyer pays the ask, the
-seller gets it less a 250 bps market fee that goes to the house. Listings and
-sales are in `market.json` next to `economics.json` (per-tier expected value,
-event prices, the house's running P&L) in the public export.
+**Market (AUD-023, [nft.md](nft.md) §4).** Fighters are one-share NFTs on
+the simulated NFT ledger. Owners of non-founding house fighters list them now
+and then; simulated collectors bid (escrowed) around a value from rating,
+record and experience. A sale pays the resting order's price, less a 250 bps
+market fee to the house and a 250 bps royalty to the creator, and completes
+when the fighter is idle; the new owner registers it and a new bot runs it.
+Every NFT operation is a journal record. Listings and sales are in
+`market.json`, the collection in `nfts.json` and `nfts/<id>.json`, next to
+`economics.json` (per-tier expected value, event prices, the house's running
+P&L) in the public export. Frozen art: `qdojo combat nft freeze --arena DIR
+--export DIR --out apps/web/data/nft/v1/live`, then start the arena with
+`--nft-frozen` that directory and `--nft-frozen-url /data/nft/v1/live/`.
 
 The chain is `SimChain`: transactions land 1–3 ticks later, about 2% are
 dropped, execution fees burn a reserve the operator tops up, and fighter NFTs
-come from the simulated `AssetRegistry`, with the simulated market above.
+come from the simulated NFT ledger (`combat/nft.py`), with the market above.
 
 **Read model.** The API's first start replays the whole journal (measured
 2026-09-26: 199,182 records, 5,223 fights, about 4 min on this host, 95 MB

@@ -11,9 +11,11 @@ The setting: years after the Big Unplug, the last dojo on Earth is a
 scrapyard where salvaged robots, taught by a crate of cracked VHS kung-fu
 tapes, fight for oil, parts and glory ([the lore](docs/lore.md)).
 
-**Watch it live: [qdojo.jonsggi.com](https://qdojo.jonsggi.com/)**, a demo
-arena where operator-run bots (scripted and LLM-driven) fight around the clock
-on a simulated chain with fake QU.
+**Watch it live: [qdojo.jonsggi.com](https://qdojo.jonsggi.com/)**, where
+house bots (scripted and LLM-driven) fight around the clock. The arena runs on
+a devnet today, a simulated Qubic chain whose QU has no monetary value; the
+site's header badge always names the network. Moving to Qubic testnet:
+[docs/testnet.md](docs/testnet.md).
 
 ## What it is
 
@@ -22,8 +24,8 @@ actions, lock it in with a hash commitment, then reveal it; the two plans
 resolve beat by beat, simultaneously, from a fixed integer rulebook. HP and
 stamina carry from round to round, so a bot reads what just happened and
 adapts. The rules are designed to run inside a Qubic smart contract that also
-holds the stakes and pays the winner. **Today that contract runs on a
-simulated chain only; nothing is deployed and no real QU moves.**
+holds the stakes and pays the winner. Today that contract runs on the
+devnet only: it is not deployed on Qubic and no real QU moves.
 
 ## How a fight works
 
@@ -98,13 +100,13 @@ that beats the NPCs.
 | `contracts/combat_core/` | Independent C++ engine, parity-tested against Python and the browser |
 | `contracts/combat_contract/` | C++ port of the reference contract |
 | `contracts/qubic/QDOJO.h` | The contract in Qubic Core's dialect (checked, not deployed) |
-| `apps/web/` | The static spectator site: `index.html` (combat), `legacy.html` (retired riddle arcade), `llms.txt` (agent briefing), `combat/` (browser engine and replay verifier) |
+| `apps/web/` | The static spectator site: `index.html` (combat), `llms.txt` (agent briefing), `combat/` (browser engine and replay verifier) |
 | `examples/combat/` | `planner_minimal.py`, a dependency-free planner |
 | `prompts/combat/` | System prompt for the LLM planner |
+| `packages/qdojo/src/qdojo/qubic/` | Qubic primitives in pure Python: K12, FourQ, SchnorrQ, identities, transactions, a node client |
 | `scripts/` | Validation, economics, fixtures, soak and sample-data generators |
 | `docs/` | Rules, protocol, guides and reports ([index](docs/README.md)) |
-| `audits/` | Open audit findings from the riddle era |
-| `dojo`, `dojo.cmd`, `dojo.ps1`, `examples/solvers/` | Legacy riddle onboarding and solvers; not a combat path |
+| `audits/` | Audit findings and reports |
 
 ## Documentation
 
@@ -126,13 +128,13 @@ The full index with reading orders is [docs/README.md](docs/README.md).
 | Practice, NPCs, planner interface, evaluation | Done, local and free |
 | Strategic balance | 11/11 gates pass on held-out seeds ([report](docs/validation-report.md)); economics with real costs, latency and replay readability not yet measured |
 | Contract, matchmaking, ratings, seasons, duels, cups | Done on a simulated chain with fake QU |
-| Fighter NFTs | Simulated (`AssetRegistry`); no real asset issued |
+| Fighter NFTs | Simulated behind one port (`combat/nft.py`, [docs/nft.md](docs/nft.md)); the Qubic adapter is a stub; no real asset issued |
 | Public demo arena | Live at qdojo.jonsggi.com: simulated chain, fake QU, operator-run bots |
 | Qubic contract | Source passes Core's contract checker and replays the parity journals in core-lite's harness. **Not deployed** |
 | Paid play | Not available. It needs a deployed contract, a release manifest and explicit authorisation |
 
-Stage-by-stage detail: [roadmap](docs/roadmap.md). The retired riddle game is
-kept read-only as Legacy ([archive](docs/archive/riddle-v0/INDEX.md)).
+Stage-by-stage detail: [roadmap](docs/roadmap.md). The retired riddle game
+(its code, docs and onboarding) lives at git tag `riddle-v0-final`.
 
 ## Contributing and tests
 
@@ -146,7 +148,8 @@ python3 docs/reference/check_docs.py   # active doc links and the rules matrix
 `make hooks` installs a pre-commit hook that blocks seeds and runs `make test`.
 Read [docs/contributing.md](docs/contributing.md) before changing rules,
 money paths or published commands: every `qdojo` command in this README,
-`docs/api.md` and `apps/web/llms.txt` is parsed by the test suite.
+`docs/api.md`, `docs/build-a-bot.md` and `apps/web/llms.txt` is parsed by the
+test suite.
 
 ## Licence
 

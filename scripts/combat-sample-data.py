@@ -4,6 +4,7 @@
 Runs NPC-driven bots on a fresh devnet (fake QU, synthetic identities):
 ranked fights, a forfeit, a duel series and a cup; then writes
   apps/web/data/combat/v1/sample/...          (public export shape, labelled sample)
+  apps/web/data/nft/v1/sample/...             (the sample fighter NFTs' frozen art and metadata)
   packages/qdojo/tests/combat/fixtures/contract/*.journal   (inputs + final event digest)
 Deterministic: identical output on every run.
 """
@@ -29,6 +30,7 @@ from qdojo.combat.rules import candidate_1  # noqa: E402
 RULES = candidate_1()
 NOON = dt.datetime(2026, 9, 23, 12, tzinfo=dt.timezone.utc)
 SAMPLE = ROOT / "apps/web/data/combat/v1/sample"
+FROZEN = ROOT / "apps/web/data/nft/v1/sample"          # the sample tokens' frozen art (qdojo combat nft freeze)
 TRACES = ROOT / "packages/qdojo/tests/combat/fixtures/contract"
 
 
@@ -97,11 +99,26 @@ def main():
         if SAMPLE.exists():
             shutil.rmtree(SAMPLE)
         root = SAMPLE / "combat" / "v1"
-        from qdojo.combat import live
+        from qdojo.combat import live, nft, nft_freeze
+        from qdojo.combat.sim import identity
         lineup = [{**e, "founding": e["label"] in ("tanuki", "tengu")} for e in live.DEFAULT_LINEUP]
         lineup.append({"label": "ronin", "policy": "mixed-v1", "reliability": 0.06})   # forfeits now and then
+        # Frozen NFT art for the sample's tokens (docs/nft.md §7). Fighter IDs and
+        # asset names are known before the run: labels in lineup order are minted
+        # as serials 1, 2, ... by the arena.
+        issuer = identity(live.ISSUER_LABEL)
+        if FROZEN.exists():
+            shutil.rmtree(FROZEN)
+        tokens = {"collection": {"name": "QDOJO fighters", "issuer": issuer.hex(), "asset_prefix": "QF"},
+                  "site": nft_freeze.SITE,
+                  "tokens": [{"fighter_id": nft.label_fighter_id(issuer, e["label"]).hex(), "serial": i,
+                              "name": nft.asset_name(i), "fighter_name": e["label"], "issuer": issuer.hex(),
+                              "founding": bool(e.get("founding"))} for i, e in enumerate(lineup, 1)]}
+        if nft_freeze.freeze(tokens, FROZEN) != 0:
+            raise SystemExit("nft freeze failed")
         live.run(tmp / "arena", lineup, root, tick_seconds=0, export_every=10**9, keep=200, ticks=4200,
-                 log=lambda m: None, seed=20260924, deterministic=True, cup_every=1200, market_every=1500)
+                 log=lambda m: None, seed=20260924, deterministic=True, cup_every=1200, market_every=300,
+                 nft_frozen=FROZEN, nft_frozen_url="data/nft/v1/sample/")
         for p in sorted(root.rglob("*")):
             if p.is_file():
                 dest = SAMPLE / p.relative_to(root)

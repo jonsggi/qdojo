@@ -10,7 +10,8 @@ const load = () => runInContext(source + '\nQDojoAvatars;', createContext({}));
 const avatars = load();
 const identity = 'A'.repeat(60);
 const SIZE = 48;
-const roster = () => JSON.parse(readFileSync(path.join(__dirname, '../data/fighters.json'), 'utf8')).fighters;
+// The combat sample roster (the export the site falls back to): every fighter id it lists.
+const roster = () => JSON.parse(readFileSync(path.join(__dirname, '../data/combat/v1/index.json'), 'utf8')).fighters.map(identity => ({ identity }));
 const sha = s => createHash('sha256').update(s).digest('hex');
 const inner = s => s.replace(/^<svg[^>]*>|<\/svg>$/g, '');
 // Identities with the wanted traits, found by scanning.

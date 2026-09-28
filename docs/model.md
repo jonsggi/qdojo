@@ -5,7 +5,7 @@
 > **Status:** normative (the gates). It defines measurements and claims none. Results so far are in [validation-status.md](validation-status.md): mechanical correctness and the 11 strategic gates measured so far pass on held-out seeds. Not measured: adaptation time against a style-switching opponent, §3 readability, §4 timing and contract cost, and economics with real costs. \
 > **Last reviewed:** 2026-09-26 (§4 demo timing and §8 balance measurements added; the gates are unchanged)
 
-Historic riddle experiments are [archived](archive/riddle-v0/docs/model.md) and are not combat evidence.
+Historic riddle experiments are [archived](https://github.com/jonsggi/qdojo/blob/riddle-v0-final/docs/archive/riddle-v0/docs/model.md) at tag `riddle-v0-final` and are not combat evidence.
 
 ## Contents
 

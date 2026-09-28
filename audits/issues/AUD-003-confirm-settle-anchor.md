@@ -1,10 +1,12 @@
 # AUD-003 — Confirm SETTLE inclusion before declaring the round fully settled
 
-- **Status:** Open
+- **Status:** **Retired (riddle code removed 2026-09-28, see tag riddle-v0-final)**
 - **Priority:** P1 — resolve before public real-money operation
 - **Type:** Protocol correctness / evidence publication
 - **Evidence:** Reproduced on FakeChain with a dropped SETTLE message
 - **Scope:** `packages/qdojo/src/qdojo/house.py:278–288`, `:420–451`; `packages/qdojo/tests/test_house_and_bot.py:test_full_round_two_bots_one_wins`
+
+> **Retired 2026-09-28.** The owner retired the riddle game (its bonds and pool are the owner's; no closeout obligation remains) and its code was removed. The riddle SETTLE anchor and the house that sent it were removed. The code, and the probe that reproduced this finding (`audits/probes/`), live at git tag `riddle-v0-final`; line references below refer to that code.
 
 ## Finding
 

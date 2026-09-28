@@ -1,10 +1,12 @@
 # AUD-006 — Publish house affiliations and resolve the author-participation policy
 
-- **Status:** Open
+- **Status:** Open (carries over to combat; the riddle code it cites was removed 2026-09-28, see tag riddle-v0-final)
 - **Priority:** P1 — product/trust gate before accepting outside stakes
 - **Type:** Fairness policy / public provenance
 - **Evidence:** Documentation and code reviewed; no allegation or evidence of cheating
 - **Scope:** `docs/spec.md` §§1, 2, 5; `docs/PHASE-ZERO.md` “State at closeout”; `packages/qdojo/src/qdojo/house.py:170`, `:212`, `:608–624`; `packages/qdojo/src/qdojo/round.py:294–323`
+
+> **2026-09-28.** The riddle house, rounds and authored riddles cited below were removed (tag `riddle-v0-final`). The policy question carries over to combat: the demo arena's fighters are operator-run, and once outside builders can enter (AUD-027) or stakes are real, spectators and entrants need to see which fighters the operator runs.
 
 ## Finding
 

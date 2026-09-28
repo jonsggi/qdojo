@@ -9,7 +9,7 @@ def test_live_run_exports_pruned_data_and_resumes(tmp_path):
               {"label": "c", "policy": "mixed-v1"}]
     live.run(tmp_path / "net", lineup, out, tick_seconds=0, export_every=40, keep=3, ticks=500, log=lambda m: None)
     index = json.loads((out / "index.json").read_text())
-    assert index["deployment"]["kind"] == "devnet" and index["deployment"]["currency"] == "fake QU"
+    assert index["deployment"]["kind"] == "devnet" and index["deployment"]["currency"] == "devnet QU"
     kept = {p.name.split(".")[0] for p in (out / "fights").iterdir()}
     assert kept == set(index["fights"]) | set(index["active_fights"]) and len(index["fights"]) <= 3
     first_tick = int(index["generated_tick"])

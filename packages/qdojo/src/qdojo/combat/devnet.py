@@ -33,6 +33,7 @@ from . import codec, export, invariants, scouting, store
 from .codec import Code, Op
 from .contract import Manifest, Qualification, development_manifest
 from .ledger import FeeProfile
+from .nft import AssetLedger
 from .rules import CANDIDATE_1, CANDIDATE_2, by_version
 from .sim import World, _Failing, _Owners, identity
 from .store import StoreError, refuse_legacy
@@ -143,7 +144,7 @@ def recorded(meta: dict) -> tuple[str, dict, Manifest]:
 # ---- journal replay and snapshots -------------------------------------------
 
 STATE_MODULES = ("contract", "ledger", "matchmaking", "series", "rating", "engine", "codec", "types", "rules",
-                 "sim", "store")
+                 "sim", "store", "titles", "nft")
 
 
 def code_fingerprint() -> str:
@@ -187,6 +188,11 @@ def apply_records(w: World, records, compact_every: int = 0, compact=None):
                 raise StoreError(f"replay diverged at the checkpoint of tick {rec['t']}: event digest differs")
         elif k == "xfer":
             _move(w, bytes.fromhex(rec["from"]), bytes.fromhex(rec["to"]), rec["amount"])
+        elif k == "nft":
+            try:
+                w.apply_nft_record(rec)
+            except ValueError as exc:
+                raise StoreError(str(exc)) from None
         elif k == "start":
             pass
         else:
@@ -211,7 +217,8 @@ def _world_state(w: World) -> bytes:
     c.owner_of = c.transfer = None
     try:
         return pickle.dumps({"tick": w.tick, "balances": w.balances, "nonces": w.nonces, "minted": w.minted,
-                             "owners": dict(w.owners), "fails": set(w.transfer_fails), "contract": c},
+                             "owners": dict(w.owners), "fails": set(w.transfer_fails), "contract": c,
+                             "nft": w.nft},
                             protocol=pickle.HIGHEST_PROTOCOL)
     finally:
         c.owner_of, c.transfer = hooks
@@ -231,6 +238,7 @@ def _world_from_state(m: Manifest, state: dict) -> World:
         raise StoreError("snapshot manifest differs")
     c.owner_of, c.transfer = w.owners.get, w._transfer
     w.contract = c
+    w.nft = state.get("nft") or AssetLedger()
     return w
 
 
@@ -265,12 +273,17 @@ class Devnet:
             self.m = manifest(self.profile, self.params)
             self.dir.mkdir(parents=True, exist_ok=True)
             self.world = World(self.m)
+            self._title_rule(self.world)
             self.world.mint(roles()["admin"], 10**12)
             marker.write_text(json.dumps({"schema": SCHEMA, "ruleset_digest": self.m.ruleset.digest.hex(),
                                           "profile": self.profile, "params": self.params,
                                           "note": "fake QU, synthetic identities; not a deployment"}))
         self._saved = len(self.world.journal) if (self.dir / JOURNAL).exists() else 0
         self.scout = scouting.Scout()
+
+    def _title_rule(self, w: World):
+        """Season titles (titles.py) use this devnet profile's qualification rule."""
+        store.history(w.contract).title_rule = QUALIFICATION.get(self.profile)
 
     # -- restore --------------------------------------------------------------
 
@@ -307,6 +320,7 @@ class Devnet:
         records = _parse(raw)
         start = next(r for r in records if r["k"] == "start")
         w = World(self.m, tick=start["t"])
+        self._title_rule(w)
         apply_records(w, records, self._compact_every, self._compact)
         w.journal.clear()                              # everything replayed is already in the file
         self.restart["mode"] = "full replay"
@@ -334,6 +348,7 @@ class Devnet:
         bad = invariants.check(w)
         if bad:
             raise StoreError(f"snapshot state breaks invariants: {bad[:2]}")
+        self._title_rule(w)
         apply_records(w, _parse(raw[n:]), self._compact_every, self._compact)
         w.journal.clear()
         self.snapshot_tick = head["tick"]

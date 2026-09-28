@@ -30,7 +30,7 @@ sys.path.insert(0, os.environ.get("QDOJO_SRC", str(ROOT / "packages/qdojo/src"))
 
 from qdojo.combat import devnet  # noqa: E402
 
-FILES = ("devnet.journal", "devnet.json", "chain.json", "assets.json")
+FILES = ("devnet.journal", "devnet.json", "chain.json", "market.json", "assets.json")   # assets.json: older arenas
 
 
 def timed(fn):

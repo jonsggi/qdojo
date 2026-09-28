@@ -1,10 +1,12 @@
 # AUD-005 — Fail closed when an entry strategy crashes or returns invalid output
 
-- **Status:** Open
+- **Status:** **Retired (riddle code removed 2026-09-28, see tag riddle-v0-final)**
 - **Priority:** P1 — resolve before unattended third-party bot use
 - **Type:** Spending safety / API behavior change
 - **Evidence:** Failure decision reproduced locally; behavior is currently documented, not an accidental undocumented deviation
 - **Scope:** `packages/qdojo/src/qdojo/bot.py:56–77`, `:111–172`; `docs/api.md:105–121`
+
+> **Retired 2026-09-28.** The owner retired the riddle game (its bonds and pool are the owner's; no closeout obligation remains) and its code was removed. The riddle bot and its entry strategies were removed. The principle carries over: the combat bot spends only within a budget and stops after faults (see AUD-013). The code, and the probe that reproduced this finding (`audits/probes/`), live at git tag `riddle-v0-final`; line references below refer to that code.
 
 ## Finding
 

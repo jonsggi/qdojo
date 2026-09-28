@@ -14,10 +14,10 @@ import json
 import os
 from pathlib import Path
 
-from . import codec, npcs, store
+from . import codec, npcs, store, titles
 from .contract import CombatContract
 from .engine import resolve_round
-from .rating import PLACEMENT_FIGHTS, belt
+from .rating import PLACEMENT_FIGHTS, belt_info
 from .types import FightState
 
 SCHEMA = "qdojo.combat.{}.v1"
@@ -39,7 +39,7 @@ def _envelope(c: CombatContract, kind: str, body: dict) -> dict:
             "generated_tick": str(c.tick), "source": "reference-contract-state", **body}
 
 
-def fight_replay(c: CombatContract, fight_id: int) -> dict:
+def fight_replay(c: CombatContract, fight_id: int, look: titles.Lookup | None = None) -> dict:
     """Confirmed plans and salts, re-derived traces, and what could be checked."""
     fight = c.fights[fight_id]
     ctx = fight.context
@@ -87,18 +87,26 @@ def fight_replay(c: CombatContract, fight_id: int) -> dict:
         # This export comes from contract state, not raw confirmed transactions,
         # so inclusion is not independently established here (api.md §4).
         "evidence": {"inputs_confirmed": "UNAVAILABLE", "source": "same-source export"},
+        **_title_flags(c, fight, look),
     }
     return _envelope(c, "replay", body)
 
 
-def fight_summary(c: CombatContract, fight_id: int) -> dict:
+def _title_flags(c: CombatContract, fight, look: titles.Lookup | None) -> dict:
+    """title_fight (a ranked fight involving the lineal holder) and
+    new_champion (who took the belt in it); display only (titles.py). Public
+    documents pass `look`; a bot's observation (devnet) carries no titles."""
+    return look.flags(fight) if look is not None else {}
+
+
+def fight_summary(c: CombatContract, fight_id: int, look: titles.Lookup | None = None) -> dict:
     f = c.fights[fight_id]
     view = c.fight_view(fight_id)
     view["result"] = ({k: (str(v) if k == "tick" else v) for k, v in f.result.items()} if f.result else None)
     view.update({"fight_id": str(f.fight_id), "contest_id": str(f.contest_id),
                  "commit_last": str(f.commit_last), "reveal_last": str(f.reveal_last),
                  "fighters": {"A": _participant(f.context.participant_a), "B": _participant(f.context.participant_b)},
-                 "mode": codec.Mode(f.context.mode).name.lower()})
+                 "mode": codec.Mode(f.context.mode).name.lower(), **_title_flags(c, f, look)})
     return _envelope(c, "fight", view)
 
 
@@ -126,13 +134,27 @@ def fighter_fights(c: CombatContract) -> dict[bytes, list[int]]:
     return {fid: sorted(set(ids))[-PAGE:] for fid, ids in out.items()}
 
 
-def fighter(c: CombatContract, fid: bytes, by_mode: dict | None = None, fights: dict | None = None) -> dict:
+def fighter_titles(honours: dict | None, hexid: str) -> dict:
+    """A fighter's title honours (titles.fighter_titles), zeros when it has none."""
+    return (honours or {}).get(hexid) or {"lineal_reigns": 0, "lineal_defenses": 0, "best_reign_defenses": 0,
+                                          "title_fights": 0, "season_titles": [], "cup_titles": 0, "holds": []}
+
+
+def fighter(c: CombatContract, fid: bytes, by_mode: dict | None = None, fights: dict | None = None,
+            title_state: dict | None = None, honours: dict | None = None) -> dict:
     f = c.fighters[fid]
     placed = f.placement >= PLACEMENT_FIGHTS
+    if title_state is None:
+        title_state = titles.current(c)
+    if honours is None:
+        honours = titles.fighter_titles(title_state)
     return _envelope(c, "fighter", {
         "fighter_id": fid.hex(), "owner": f.owner.hex(), "operator": f.operator.hex(),
         "auth_version": f.auth_version, "house_npc": f.house_npc, "lock": f.lock,
-        "lifetime_rating": f.lifetime, "provisional": not placed, "belt": belt(f.lifetime, placed),
+        "lifetime_rating": f.lifetime, "provisional": not placed, **belt_info(f.lifetime, placed),
+        "titles": fighter_titles(honours, fid.hex()),
+        "earnings": titles.earnings(title_state, fid.hex()), "streak": titles.streak(title_state, fid.hex()),
+        "owner_credit": str(c.ledger.credits.get(f.owner, 0)),
         "placement_fights": f.placement, "record": f.record,
         "records_by_mode": (by_mode if by_mode is not None else records_by_mode(c)).get(fid, {}),
         "faults_by_epoch": {str(k): v for k, v in f.faults.items()}, "cooldown_until": str(f.cooldown_until),
@@ -255,7 +277,7 @@ def manifest(c: CombatContract) -> dict:
                                   "share_bps": v.share_bps} for k, v in c.m.fees.items()},
         "supported_schemas": [SCHEMA.format(k) for k in ("replay", "fight", "fighter", "book", "events", "npcs",
                                                            "index", "results", "cups", "duels", "seasons", "ruleset",
-                                                           "market", "economics")],
+                                                           "market", "economics", "titles")],
     })
 
 
@@ -303,10 +325,13 @@ def _write(path: Path, doc: dict):
 
 
 def _written_final(path: Path) -> bool:
+    """A fight file written in its final state (by an exporter that already
+    published title flags: older final files are rewritten once)."""
     try:
-        return json.loads(path.read_text(encoding="utf-8")).get("final") is True
+        doc = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return False
+    return doc.get("final") is True and "title_fight" in doc
 
 
 def export_all(c: CombatContract, root: Path, keep: int | None = None, deployment: dict | None = None,
@@ -354,6 +379,9 @@ def export_all(c: CombatContract, root: Path, keep: int | None = None, deploymen
                                                      "rules": artifact})
     put("book.json", book(c))
     put("npcs.json", npc_list())
+    title_state = titles.current(c, qualification)
+    look = titles.Lookup(title_state)
+    honours = titles.fighter_titles(title_state)
     for fid in fight_ids:
         fight = c.fights[fid]
         # A finished fight never changes again: write it once in its final
@@ -364,15 +392,15 @@ def export_all(c: CombatContract, root: Path, keep: int | None = None, deploymen
         final = fight.phase == "DONE" and c.contests[fight.contest_id].status == "DONE"
         if final and _written_final(root / f"fights/{fid}.json"):
             continue
-        doc = fight_summary(c, fid)
+        doc = fight_summary(c, fid, look)
         doc["final"] = final
         put(f"fights/{fid}.json", doc)
         if fight.rounds or fight.result:
-            put(f"fights/{fid}/replay.json", fight_replay(c, fid))
+            put(f"fights/{fid}/replay.json", fight_replay(c, fid, look))
     meta = (deployment or {}).get("fighters", {})
     by_mode, recent = records_by_mode(c), fighter_fights(c)
     for fid in c.fighters:
-        doc = fighter(c, fid, by_mode, recent)
+        doc = fighter(c, fid, by_mode, recent, title_state, honours)
         doc.update(meta.get(fid.hex(), {}))     # name, driver, simulated asset and its full ownership history
         put(f"fighters/{fid.hex()}.json", doc)
     put("events/latest.json", events(c, max(0, c.event_seq - PAGE)))
@@ -385,8 +413,9 @@ def export_all(c: CombatContract, root: Path, keep: int | None = None, deploymen
                         "mode": codec.Mode(f.context.mode).name.lower(),
                         "A": f.context.participant_a.fighter_id.hex(), "B": f.context.participant_b.fighter_id.hex(),
                         "kind": f.result["kind"], "winner": f.result.get("winner"),
-                        "result": f.result.get("result"), "tick": str(f.result["tick"])})
+                        "result": f.result.get("result"), "tick": str(f.result["tick"]), **look.flags(f)})
     put("results.json", _envelope(c, "results", {"results": results}))
+    put("titles.json", _envelope(c, "titles", titles.public(title_state)))
     put("cups.json", cups(c))
     put("duels.json", duels(c))
     put("seasons.json", seasons(c, qualification))

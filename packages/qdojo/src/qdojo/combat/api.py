@@ -32,6 +32,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from . import readmodel as rm
+from . import titles as T
+from .rating import belt_info
 
 API = "/api/v1"
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -87,6 +89,12 @@ def _one(q: dict, key: str) -> str | None:
 
 # ---- queries --------------------------------------------------------------------
 
+def export_titles(doc: dict, fid: str) -> dict:
+    """A fighter's honours from the title document, as the export publishes them."""
+    from .export import fighter_titles
+    return fighter_titles(doc.get("fighters"), fid)
+
+
 class Reader:
     """All reads for one request, over one read-only connection."""
 
@@ -95,6 +103,19 @@ class Reader:
         self.tick = rm.get_meta(conn, "tick")
         if self.tick is None:
             raise ApiError(503, "not_ready", "the read model has not indexed anything yet")
+
+    _titles = None
+
+    def titles_doc(self) -> dict:
+        """The title state as the read model last synced it (titles.public), or empty."""
+        if self._titles is None:
+            self._titles = rm.get_meta(self.c, "titles") or {}
+        return self._titles
+
+    def _credits(self) -> dict:
+        if not hasattr(self, "_owner_credits"):
+            self._owner_credits = rm.get_meta(self.c, "owner_credits") or {}
+        return self._owner_credits
 
     def env(self, kind: str, body: dict, tick=None) -> dict:
         return {"schema": _schema(kind), "generated_tick": str(self.tick if tick is None else tick), **body}
@@ -130,10 +151,17 @@ class Reader:
         total = {k: sum(m.get(k, 0) for m in by_mode.values()) for k in ("W", "D", "L", "FW", "FL", "N")}
         live = self.c.execute("SELECT COUNT(*) FROM fight_sides WHERE fighter_id = ? AND outcome IS NULL",
                               (fid,)).fetchone()[0]
+        td = self.titles_doc()
+        career = (td.get("career") or {}).get(fid) or {}
         doc = {"fighter_id": fid, "name": r["name"], "origin": r["origin"], "driver": r["driver"],
                "house_npc": bool(r["house_npc"]), "owner": r["owner"], "operator": r["operator"],
                "auth_version": r["auth_version"], "lock": r["lock"], "lifetime_rating": r["lifetime_rating"],
-               "provisional": bool(r["provisional"]), "belt": r["belt"], "placement_fights": r["placement"],
+               "provisional": bool(r["provisional"]), **belt_info(r["lifetime_rating"], not r["provisional"]),
+               "titles": export_titles(td, fid),
+               "earnings": career.get("earnings") or T.earnings(T.new_state(), fid),
+               "streak": career.get("streak") or {"current": 0, "best": 0},
+               "owner_credit": str(self._credits().get(r["owner"], 0)),
+               "placement_fights": r["placement"],
                "record": json.loads(r["record"]), "records_by_mode": by_mode, "career": total,
                "fights_total": sum(total.values()) + live, "fights_live": live,
                "faults_by_epoch": json.loads(r["faults"]), "season_ratings": json.loads(r["season_ratings"]),
@@ -296,6 +324,53 @@ class Reader:
                     x[k] = str(x[k])
         return self.env("market", {"page": page, "per_page": per, "pages": pages, "total": total, "items": items})
 
+    # -- fighter NFTs (docs/nft.md §6) ---------------------------------------------------
+
+    def nfts(self, q: dict) -> dict:
+        """The collection: every fighter NFT, by serial (or by ask), filtered by owner or for sale."""
+        where, args = [], []
+        owner = _one(q, "owner")
+        if owner is not None:
+            if not HEX64.match(owner):
+                raise ApiError(400, "bad_id", "an owner ID is 64 lowercase hex digits")
+            where.append("owner = ?")
+            args.append(owner)
+        if _one(q, "for_sale") in ("1", "true"):
+            where.append("ask IS NOT NULL")
+        sort = _one(q, "sort") or "serial"
+        if sort not in ("serial", "price", "last_sale"):
+            raise ApiError(400, "bad_query", "sort is serial, price or last_sale")
+        order = {"serial": "serial", "price": "ask IS NULL, ask, serial",
+                 "last_sale": "last_price IS NULL, last_price DESC, serial"}[sort]
+        w = ("WHERE " + " AND ".join(where)) if where else ""
+        total = self.c.execute(f"SELECT COUNT(*) FROM nft_tokens {w}", args).fetchone()[0]
+        page, per, pages = self._page(q, total)
+        items = [json.loads(r[0]) for r in self.c.execute(
+            f"SELECT doc FROM nft_tokens {w} ORDER BY {order} LIMIT ? OFFSET ?", (*args, per, (page - 1) * per))]
+        listed = self.c.execute("SELECT COUNT(*) FROM nft_tokens WHERE ask IS NOT NULL").fetchone()[0]
+        n, volume = self.c.execute("SELECT COUNT(*), COALESCE(SUM(price), 0) FROM sales").fetchone()
+        return self.env("nfts", {"page": page, "per_page": per, "pages": pages, "total": total, "items": items,
+                                 "stats": {"tokens": str(self.c.execute("SELECT COUNT(*) FROM nft_tokens").fetchone()[0]),
+                                           "listed": str(listed), "sales": str(n), "volume": str(volume)}})
+
+    def nft(self, hexid: str) -> dict:
+        r = self.c.execute("SELECT doc FROM nft_tokens WHERE fighter_id = ?", (hexid,)).fetchone()
+        if r is None:
+            raise ApiError(404, "not_found", "no NFT for this fighter")
+        doc = json.loads(r[0])
+        orders = self.c.execute("SELECT side, who, price, tick FROM nft_orders WHERE fighter_id = ? "
+                                "ORDER BY side, price DESC, tick", (hexid,)).fetchall()
+        doc["book"] = {"asks": [{"who": o[1], "price": str(o[2]), "tick": str(o[3])} for o in orders if o[0] == "ask"],
+                       "bids": [{"who": o[1], "price": str(o[2]), "tick": str(o[3])} for o in orders if o[0] == "bid"]}
+        doc["history"] = [{k: (str(v) if isinstance(v, int) and not isinstance(v, bool) else v)
+                           for k, v in json.loads(x[0]).items()}
+                          for x in self.c.execute("SELECT doc FROM nft_events WHERE fighter_id = ? ORDER BY seq",
+                                                  (hexid,))]
+        doc["sales"] = [{k: (str(v) if isinstance(v, int) else v) for k, v in json.loads(x[0]).items()}
+                        for x in self.c.execute("SELECT doc FROM sales WHERE fighter_id = ? ORDER BY seq DESC",
+                                                (hexid,))]
+        return self.env("nft", doc)
+
     def economics(self) -> dict:
         doc = rm.get_meta(self.c, "economics")
         if doc is None:
@@ -350,6 +425,24 @@ class Reader:
                 "SELECT owner FROM fighters WHERE owner LIKE ? UNION SELECT to_owner FROM ownership WHERE to_owner "
                 "LIKE ? LIMIT 10", (low + "%", low + "%"))]
         return self.env("search", {"q": text, "fighters": fighters, "fights": fights, "owners": owners})
+
+    def titles(self) -> dict:
+        doc = self.titles_doc()
+        if not doc:
+            raise ApiError(404, "not_found", "no titles indexed yet")
+        return self.env("titles", doc)
+
+    def lineal(self, q: dict) -> dict:
+        """Every lineal reign, newest first, paginated (titles.json has the last 100)."""
+        holder = _one(q, "holder")
+        if holder is not None and not HEX64.match(holder):
+            raise ApiError(400, "bad_query", "holder must be 64 lowercase hex digits")
+        where, args = (" WHERE holder = ?", (holder,)) if holder else ("", ())
+        try:
+            return self._docs("lineal", f"SELECT COUNT(*) FROM lineal_reigns{where}",
+                              f"SELECT doc FROM lineal_reigns{where} ORDER BY seq DESC LIMIT ? OFFSET ?", q, args)
+        except sqlite3.OperationalError:
+            raise ApiError(503, "not_ready", "the read model has not indexed titles yet") from None
 
     def status(self, extra: dict) -> dict:
         m = {k: rm.get_meta(self.c, k) for k in ("journal_offset", "journal_records", "synced_at", "event_seq",
@@ -580,8 +673,20 @@ class Handler(BaseHTTPRequestHandler):
             return r.search(q), LIVE_CACHE
         if head == "market" and n == 1:
             return r.market(q), LIVE_CACHE
+        if head == "nfts":
+            if n == 1:
+                return r.nfts(q), LIVE_CACHE
+            if n == 2:
+                if not HEX64.match(p[1]):
+                    raise ApiError(400, "bad_id", "a fighter ID is 64 lowercase hex digits")
+                return r.nft(p[1]), LIVE_CACHE
         if head == "economics" and n == 1:
             return r.economics(), LIVE_CACHE
+        if head == "titles":
+            if n == 1:
+                return r.titles(), LIVE_CACHE
+            if n == 2 and p[1] == "lineal":
+                return r.lineal(q), LIVE_CACHE
         raise ApiError(404, "not_found", "no such endpoint; see docs/api.md §3.2")
 
     def _static(self, path: str):

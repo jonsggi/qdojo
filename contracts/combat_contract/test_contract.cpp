@@ -420,8 +420,9 @@ static bool replay(const std::string& path, const char* trace_dir, MaxWork& mw, 
             fold(mw.begin, s.work);
             tr.events(s);
             check("begin_tick", (long long)t);
-        } else if (k == "mint") {
-            // external balances are not contract state
+        } else if (k == "mint" || k == "xfer" || k == "nft") {
+            // external balances and the NFT ledger are not contract state;
+            // ownership reaches the contract through "owner" records
         } else if (k == "digest") {
             digest_seen = true;
             expected_digest = r.at("event_digest").str;

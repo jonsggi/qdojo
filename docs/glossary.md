@@ -2,7 +2,7 @@
 
 > **Purpose:** one meaning per word, across the docs, the CLI and the site. \
 > **Audience:** everyone. \
-> **Status:** reference. Game terms match the site's HELP screen (`viewHelp` in `apps/web/combat/app.js`); where a rule is summarised, [combat.md](combat.md) and [spec.md](spec.md) win. \
+> **Status:** reference. Game terms match the site's GLOSSARY screen (#help) (`viewHelp` in `apps/web/combat/app.js`); where a rule is summarised, [combat.md](combat.md) and [spec.md](spec.md) win. \
 > **Last verified:** 2026-09-25.
 
 ## People and software
@@ -53,7 +53,7 @@
 | **Void** | The contract could not run (service gap): stakes returned, no fault, no rating change |
 | **Ruleset / ruleset digest** | The exact combat parameters, and the SHA-256 that identifies them (`combat-v1-candidate-1`, `12085c86…`; `combat-v1-candidate-2`, `231607f8…`) |
 | **Reference contract** | The Python contract in `combat/contract.py` that every other implementation must match |
-| **Devnet** | A local, persistent fake chain running the reference contract with fake QU and synthetic identities |
+| **Devnet** | A persistent simulated chain running the reference contract, with its own QU (no monetary value) and synthetic identities; local on a builder's machine, or the public arena today |
 | **Simulated chain** | `SimChain`: the devnet plus latency, dropped and reordered transactions, and execution fees |
 | **Demo arena** | The public site's data source: the reference contract on a simulated chain with operator-run bots |
 | **Manifest** | The deployment record naming network, contract, ruleset, profiles and recipients. No production manifest exists |
@@ -73,7 +73,11 @@
 | **Credit / withdraw** | Winnings are credited in the contract; the recipient withdraws the whole credit to itself |
 | **Rating** | Integer, zero-sum, starting at 1000. Only ranked fights move it |
 | **Placement / provisional** | A fighter's first 10 ranked combat fights; shown as PROVISIONAL, white belt |
-| **Belt** | Display derived from rating: white, yellow (900), orange (1100), green (1300), blue (1500), brown (1800), black (2100) |
+| **Belt** | Display derived from rating: white, yellow (640), orange (800), green (960), blue (1120), purple (1280), brown (1440), black (1600), each colour with 0-3 stripes (one per 40 points) |
+| **Dan** | A black belt's degree, 1st (1600) to 5th (1840), one per 60 points; red (grandmaster) from 1900 |
+| **Title belt** | A display honour: THE SCRAP HEAP BELT (lineal), THE MONTAGE BELT (latest season champion), THE BOTTLE CAP BELT (latest cup champion) |
+| **Lineal title** | THE SCRAP HEAP BELT passes only when its holder loses a ranked fight by KO or decision; draws, forfeits, double faults and voids never move it |
+| **Title fight** | A ranked fight with the lineal holder in it |
 | **Epoch** | A Qubic epoch (the demo arena uses 2,400 ticks). Rate limits reset per epoch |
 | **Season** | Four epochs with its own rating, standings and a trophy |
 
@@ -84,6 +88,7 @@
 | **REPLAY_MATCH** | Your browser recomputed the commitments and replayed every beat from the revealed plans, and everything matched. Chain inclusion is not proven |
 | **COMBAT_VERIFIED** | Every check passed, including confirmation on chain. A same-source export cannot earn it |
 | **HASH_MATCH_ONLY / UNVERIFIED / FAILED** | Only hashes could be checked / nothing could be checked / something did not match |
-| **SAMPLE** | No live export was found, so the site shows a devnet sample |
+| **SAMPLE** | A recorded sample of arena data, shown while the arena is offline (no live export found) |
+| **DEVNET / TESTNET** | The header badge naming the network the arena runs on, from the export's `deployment.kind`: a devnet is a simulated Qubic chain run by the house, the testnet is Qubic's test network; on both, QU has no monetary value. No badge means Qubic mainnet |
+| **RULES V1 / V2** | How the site names `combat-v1-candidate-1` and `combat-v1-candidate-2`; the exact id and digest are on the RULES screen |
 | **STALE** | The live export has not been rewritten for over 5 minutes; the exporter may be down |
-| **LEGACY** | The retired riddle arcade, kept read-only |

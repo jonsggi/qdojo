@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#070a2b">
+<meta name="robots" content="noindex">
+<!-- nginx answers every unknown path with this page, at any depth: the base
+     keeps its relative links pointing at the site root. -->
+<base href="/">
+<title>QDOJO: 404, no such page</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Pixelify+Sans:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="combat/combat.css">
+<link rel="stylesheet" href="combat/shell.css">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+</head>
+<body class="crt-on">
+<div class="crt" aria-hidden="true"></div>
+<div class="backdrop" aria-hidden="true"><div class="bd-stars"></div><div class="bd-sun"></div><div class="bd-hills"></div><div class="bd-grid"></div></div>
+<header class="hud">
+  <div class="hud-bar">
+    <a class="hud-logo" href="./#title" aria-label="QDOJO title screen">Q<span>DOJO</span></a>
+  </div>
+</header>
+<main id="main">
+  <h1 class="screen-title">404</h1>
+  <p class="screen-sub">NO SUCH PAGE</p>
+  <section class="panel panel-red lost">
+    <h3>GAME OVER?</h3>
+    <p>This page does not exist. The link may be old or mistyped. The arena is one page: every screen lives at the home page.</p>
+    <p class="lost-links"><a class="btn" href="./#arena">LIVE ARENA</a> <a class="btn btn-cyan" href="./#title">TITLE SCREEN</a> <a class="btn" href="./#guide">HOW IT WORKS</a></p>
+  </section>
+</main>
+</body>
+</html>

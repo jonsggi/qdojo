@@ -74,18 +74,9 @@
   "67",
   "68",
   "69",
-  "70",
-  "71",
-  "72",
-  "73",
-  "74",
-  "75",
-  "76"
+  "70"
  ],
- "active_fights": [
-  "75",
-  "76"
- ],
+ "active_fights": [],
  "fighters": [
   "417f3b23cc4b00870441904617b5ff4520e7bcd0d53664ea4d18b993fc5e9ac0",
   "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630",
@@ -107,8 +98,8 @@
     3
    ],
    "drop_rate": 0.02,
-   "execution_reserve": 181610,
-   "fees_burned": 18390,
+   "execution_reserve": 183700,
+   "fees_burned": 16300,
    "operator_funding": 200000,
    "halted_ticks": 0
   },
@@ -116,6 +107,7 @@
   "note": "not a Qubic deployment; nothing here is real money",
   "profile": "demo",
   "tick_seconds": 0,
+  "nft_backend": "sim",
   "names": {
    "417f3b23cc4b00870441904617b5ff4520e7bcd0d53664ea4d18b993fc5e9ac0": "tanuki",
    "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630": "kappa",
@@ -131,96 +123,204 @@
    "417f3b23cc4b00870441904617b5ff4520e7bcd0d53664ea4d18b993fc5e9ac0": {
     "name": "tanuki",
     "driver": "reader-v1",
+    "origin": "house",
     "asset": {
      "issuer": "4a2d9a3b95b24eedf8ead2e3fd071731f066416599c08812cd9ef344651f22dd",
-     "name": "QDOJOF",
+     "name": "QF00001",
      "founding": true,
      "owner": "542450e26268095ba06a9e2a8baaf162f4ffe983e0451e5ce22ce2dd8b52947c",
+     "possessor": "542450e26268095ba06a9e2a8baaf162f4ffe983e0451e5ce22ce2dd8b52947c",
+     "serial": 1,
+     "creator": "1afcb2deee8f9c4e35489c9e5112ba436269622468e3c6b045a6fcaaa64a1efa",
+     "manager": "QDOJO",
+     "ask": null,
+     "best_bid": null,
+     "last_sale": null,
      "history": [
       {
        "tick": "1",
        "from": null,
        "to": "542450e26268095ba06a9e2a8baaf162f4ffe983e0451e5ce22ce2dd8b52947c"
       }
-     ]
+     ],
+     "transfers": 0,
+     "history_truncated": false
     }
    },
    "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630": {
     "name": "kappa",
     "driver": "search-v1",
+    "origin": "house",
     "asset": {
      "issuer": "4a2d9a3b95b24eedf8ead2e3fd071731f066416599c08812cd9ef344651f22dd",
-     "name": "QDOJOF",
+     "name": "QF00002",
      "founding": false,
-     "owner": "829afd937b29761de44f255821b952d45faaf6146a9c86acc087fe359ad8eb46",
+     "owner": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396",
+     "possessor": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396",
+     "serial": 2,
+     "creator": "1afcb2deee8f9c4e35489c9e5112ba436269622468e3c6b045a6fcaaa64a1efa",
+     "manager": "QDOJO",
+     "ask": {
+      "price": "126249",
+      "seller": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396",
+      "tick": "3901"
+     },
+     "best_bid": null,
+     "last_sale": {
+      "price": "101298",
+      "tick": "3116"
+     },
      "history": [
       {
        "tick": "1",
        "from": null,
        "to": "829afd937b29761de44f255821b952d45faaf6146a9c86acc087fe359ad8eb46"
+      },
+      {
+       "tick": "3116",
+       "from": "829afd937b29761de44f255821b952d45faaf6146a9c86acc087fe359ad8eb46",
+       "to": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396"
       }
-     ]
+     ],
+     "transfers": 1,
+     "history_truncated": false
     }
    },
    "861dd00b56ac96f696c85e815c931a01e883a91c66350fefc4d153b95652d071": {
     "name": "tengu",
     "driver": "scout-v1",
+    "origin": "house",
     "asset": {
      "issuer": "4a2d9a3b95b24eedf8ead2e3fd071731f066416599c08812cd9ef344651f22dd",
-     "name": "QDOJOF",
+     "name": "QF00003",
      "founding": true,
      "owner": "772af50d32b58161d301a8e270aeb23889ea11797ede57b19fa8dc3bb4b1b70c",
+     "possessor": "772af50d32b58161d301a8e270aeb23889ea11797ede57b19fa8dc3bb4b1b70c",
+     "serial": 3,
+     "creator": "1afcb2deee8f9c4e35489c9e5112ba436269622468e3c6b045a6fcaaa64a1efa",
+     "manager": "QDOJO",
+     "ask": null,
+     "best_bid": null,
+     "last_sale": null,
      "history": [
       {
        "tick": "1",
        "from": null,
        "to": "772af50d32b58161d301a8e270aeb23889ea11797ede57b19fa8dc3bb4b1b70c"
       }
-     ]
+     ],
+     "transfers": 0,
+     "history_truncated": false
     }
    },
    "0000c93f8a9556d9c7336ec8831f51a5e9c35374be248525d6e1655229096cd1": {
     "name": "oni",
     "driver": "script-vs-scout-v1",
+    "origin": "house",
     "asset": {
      "issuer": "4a2d9a3b95b24eedf8ead2e3fd071731f066416599c08812cd9ef344651f22dd",
-     "name": "QDOJOF",
+     "name": "QF00004",
      "founding": false,
-     "owner": "f129848521aa60150f84c1a640eb70343a69ce5e87c82ecac787991f62e22349",
+     "owner": "4e1be02f1009e47091ad4ea7d17eac097265077844762893e534dc7e983ca69a",
+     "possessor": "4e1be02f1009e47091ad4ea7d17eac097265077844762893e534dc7e983ca69a",
+     "serial": 4,
+     "creator": "1afcb2deee8f9c4e35489c9e5112ba436269622468e3c6b045a6fcaaa64a1efa",
+     "manager": "QDOJO",
+     "ask": {
+      "price": "230638",
+      "seller": "4e1be02f1009e47091ad4ea7d17eac097265077844762893e534dc7e983ca69a",
+      "tick": "3902"
+     },
+     "best_bid": null,
+     "last_sale": {
+      "price": "142986",
+      "tick": "2834"
+     },
      "history": [
       {
        "tick": "1",
        "from": null,
        "to": "f129848521aa60150f84c1a640eb70343a69ce5e87c82ecac787991f62e22349"
+      },
+      {
+       "tick": "2230",
+       "from": "f129848521aa60150f84c1a640eb70343a69ce5e87c82ecac787991f62e22349",
+       "to": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7"
+      },
+      {
+       "tick": "2834",
+       "from": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+       "to": "4e1be02f1009e47091ad4ea7d17eac097265077844762893e534dc7e983ca69a"
       }
-     ]
+     ],
+     "transfers": 2,
+     "history_truncated": false
     }
    },
    "642d1dc34815dad8cb5f7429cfce9d3776e996b1e2f97df2131cb05dfabf5610": {
     "name": "kitsune",
     "driver": "mixed-v1",
+    "origin": "house",
     "asset": {
      "issuer": "4a2d9a3b95b24eedf8ead2e3fd071731f066416599c08812cd9ef344651f22dd",
-     "name": "QDOJOF",
+     "name": "QF00005",
      "founding": false,
-     "owner": "4874f5fe7938d4ef080746db211a6e6335971e472065d3864209cb814f7e646e",
+     "owner": "4397a7a0207c2e29d10899b3f3c2051f1b7209651115d1d6732e00185feb65b9",
+     "possessor": "4397a7a0207c2e29d10899b3f3c2051f1b7209651115d1d6732e00185feb65b9",
+     "serial": 5,
+     "creator": "1afcb2deee8f9c4e35489c9e5112ba436269622468e3c6b045a6fcaaa64a1efa",
+     "manager": "QDOJO",
+     "ask": null,
+     "best_bid": null,
+     "last_sale": {
+      "price": "81279",
+      "tick": "3759"
+     },
      "history": [
       {
        "tick": "1",
        "from": null,
        "to": "4874f5fe7938d4ef080746db211a6e6335971e472065d3864209cb814f7e646e"
+      },
+      {
+       "tick": "1712",
+       "from": "4874f5fe7938d4ef080746db211a6e6335971e472065d3864209cb814f7e646e",
+       "to": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7"
+      },
+      {
+       "tick": "2734",
+       "from": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+       "to": "aad0189aefc82b0e3e746befb8f51a8cf1654171898cd8e4794d54ac9ff526bd"
+      },
+      {
+       "tick": "3759",
+       "from": "aad0189aefc82b0e3e746befb8f51a8cf1654171898cd8e4794d54ac9ff526bd",
+       "to": "4397a7a0207c2e29d10899b3f3c2051f1b7209651115d1d6732e00185feb65b9"
       }
-     ]
+     ],
+     "transfers": 3,
+     "history_truncated": false
     }
    },
    "c64fb2f8f74ada61c83a5b34c60e025953d25fe0b7c0df602195eedced1d6481": {
     "name": "baku",
     "driver": "repeat-last-winner",
+    "origin": "house",
     "asset": {
      "issuer": "4a2d9a3b95b24eedf8ead2e3fd071731f066416599c08812cd9ef344651f22dd",
-     "name": "QDOJOF",
+     "name": "QF00006",
      "founding": false,
      "owner": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+     "possessor": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+     "serial": 6,
+     "creator": "1afcb2deee8f9c4e35489c9e5112ba436269622468e3c6b045a6fcaaa64a1efa",
+     "manager": "QDOJO",
+     "ask": null,
+     "best_bid": null,
+     "last_sale": {
+      "price": "85690",
+      "tick": "2787"
+     },
      "history": [
       {
        "tick": "1",
@@ -228,67 +328,134 @@
        "to": "03a0b4f6f51aeee0ed3b42832ac587d6b7cfec97c88275a75930803feb82470a"
       },
       {
-       "tick": "1500",
+       "tick": "2787",
        "from": "03a0b4f6f51aeee0ed3b42832ac587d6b7cfec97c88275a75930803feb82470a",
        "to": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7"
       }
-     ]
+     ],
+     "transfers": 1,
+     "history_truncated": false
     }
    },
    "ed566a3dbb6757f19e53f397af3aee53200cda11b107968ae8dec0a86ac73834": {
     "name": "raiju",
     "driver": "kicker-v1",
+    "origin": "house",
     "asset": {
      "issuer": "4a2d9a3b95b24eedf8ead2e3fd071731f066416599c08812cd9ef344651f22dd",
-     "name": "QDOJOF",
+     "name": "QF00007",
      "founding": false,
-     "owner": "68f4c70794369db88ed4bf954d3a423059ae2cc714704e337c7bc0bc266b3e25",
+     "owner": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396",
+     "possessor": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396",
+     "serial": 7,
+     "creator": "1afcb2deee8f9c4e35489c9e5112ba436269622468e3c6b045a6fcaaa64a1efa",
+     "manager": "QDOJO",
+     "ask": {
+      "price": "98389",
+      "seller": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396",
+      "tick": "3601"
+     },
+     "best_bid": {
+      "price": "87286",
+      "bidder": "859325bbd94c13bc471b0b2ed2f7c84f24eee716d27b7435caa0ff64c464a15b",
+      "tick": "3601"
+     },
+     "last_sale": {
+      "price": "88977",
+      "tick": "1692"
+     },
      "history": [
       {
        "tick": "1",
        "from": null,
        "to": "68f4c70794369db88ed4bf954d3a423059ae2cc714704e337c7bc0bc266b3e25"
+      },
+      {
+       "tick": "1692",
+       "from": "68f4c70794369db88ed4bf954d3a423059ae2cc714704e337c7bc0bc266b3e25",
+       "to": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396"
       }
-     ]
+     ],
+     "transfers": 1,
+     "history_truncated": false
     }
    },
    "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0": {
     "name": "kirin",
     "driver": "jabber-v1",
+    "origin": "house",
     "asset": {
      "issuer": "4a2d9a3b95b24eedf8ead2e3fd071731f066416599c08812cd9ef344651f22dd",
-     "name": "QDOJOF",
+     "name": "QF00008",
      "founding": false,
-     "owner": "e473ebff086c3a6c2ecd18d4664e229f49df4b600f03c8075696d9406031a6db",
+     "owner": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+     "possessor": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+     "serial": 8,
+     "creator": "1afcb2deee8f9c4e35489c9e5112ba436269622468e3c6b045a6fcaaa64a1efa",
+     "manager": "QDOJO",
+     "ask": {
+      "price": "98590",
+      "seller": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+      "tick": "3903"
+     },
+     "best_bid": {
+      "price": "79486",
+      "bidder": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396",
+      "tick": "3901"
+     },
+     "last_sale": {
+      "price": "88631",
+      "tick": "2186"
+     },
      "history": [
       {
        "tick": "1",
        "from": null,
        "to": "e473ebff086c3a6c2ecd18d4664e229f49df4b600f03c8075696d9406031a6db"
+      },
+      {
+       "tick": "2186",
+       "from": "e473ebff086c3a6c2ecd18d4664e229f49df4b600f03c8075696d9406031a6db",
+       "to": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7"
       }
-     ]
+     ],
+     "transfers": 1,
+     "history_truncated": false
     }
    },
    "ff93d07ac1501d737aa9a7884ea7ac6b1417024b85ae3847c1681b6d239146d9": {
     "name": "ronin",
     "driver": "mixed-v1",
+    "origin": "house",
     "asset": {
      "issuer": "4a2d9a3b95b24eedf8ead2e3fd071731f066416599c08812cd9ef344651f22dd",
-     "name": "QDOJOF",
+     "name": "QF00009",
      "founding": false,
-     "owner": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396",
+     "owner": "d99ecc996ceca363d43eacbfdca425be1dd38c2358a278850b8fa6c264c51035",
+     "possessor": "d99ecc996ceca363d43eacbfdca425be1dd38c2358a278850b8fa6c264c51035",
+     "serial": 9,
+     "creator": "1afcb2deee8f9c4e35489c9e5112ba436269622468e3c6b045a6fcaaa64a1efa",
+     "manager": "QDOJO",
+     "ask": {
+      "price": "79652",
+      "seller": "d99ecc996ceca363d43eacbfdca425be1dd38c2358a278850b8fa6c264c51035",
+      "tick": "3901"
+     },
+     "best_bid": {
+      "price": "70947",
+      "bidder": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+      "tick": "3002"
+     },
+     "last_sale": null,
      "history": [
       {
        "tick": "1",
        "from": null,
        "to": "d99ecc996ceca363d43eacbfdca425be1dd38c2358a278850b8fa6c264c51035"
-      },
-      {
-       "tick": "3000",
-       "from": "d99ecc996ceca363d43eacbfdca425be1dd38c2358a278850b8fa6c264c51035",
-       "to": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396"
       }
-     ]
+     ],
+     "transfers": 0,
+     "history_truncated": false
     }
    }
   }

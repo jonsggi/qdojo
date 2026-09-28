@@ -19,9 +19,9 @@
 ## 1. Authority and reading order
 
 The product pivots from riddle solving to autonomous simultaneous combat.
-These documents replace the previous planned riddle release. The riddle game's
-commands, exports and historic settlements remain available as Legacy, in a
-namespace separate from combat.
+These documents replace the previous planned riddle release. The riddle game
+was retired and its code removed on 2026-09-28; it lives at git tag
+`riddle-v0-final`.
 
 | Document | Owns |
 |---|---|
@@ -45,7 +45,7 @@ before implementing the affected behavior. MUST/MUST NOT are requirements.
 Candidate parameters are implemented as written in the prototype, then versioned
 if validation changes them. Do not fill an unspecified behavior with old rules.
 
-The [riddle archive](archive/riddle-v0/INDEX.md) explains legacy code and
+The [riddle archive](https://github.com/jonsggi/qdojo/blob/riddle-v0-final/docs/archive/riddle-v0/INDEX.md) at tag `riddle-v0-final` explains the old code and
 evidence only. Never load a riddle message, balance or record as combat state.
 
 ## 2. Product and terms
@@ -83,8 +83,8 @@ and before external paid launch. This is not a request to launch a money pilot.
 Retire riddles/canonical answers, author fees, quorum tables, first-correct
 and podium payouts, solve points, sensei seats/pots, stake matching, jackpots,
 occupancy-priced entry, held-win bonds and difficulty-based belt gates.
-Old bond/carry obligations remain legacy liabilities; they do not become
-combat prize funds. Old simulation numbers do not establish combat economics.
+Old bond/carry balances belong to the owner (closed 2026-09-28); they do not
+become combat prize funds. Old simulation numbers do not establish combat economics.
 
 Community work becomes training opponents, analysis tools, balance proposals
 and cosmetics. Arbitrary submitted code never runs in the settlement contract.
@@ -188,7 +188,7 @@ on reported failure if rollback is absent. Prove semantics on the pinned Core;
 do not assume EVM transaction rollback. Failed/repeated sends cannot pay twice.
 
 The reference implementation runs on fake funds. A paid off-chain rollout is
-not implied. Legacy money operations retain [existing audit gates](../audits/README.md).
+not implied. Money operations keep the [audit gates](../audits/README.md).
 
 ## 6. Authority, capacity and availability
 

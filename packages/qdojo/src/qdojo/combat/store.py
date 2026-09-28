@@ -110,8 +110,8 @@ def replay(manifest: Manifest, head: dict, records: list) -> CombatContract:
             contract.begin_tick(rec["t"] + 1)
         elif k == "begin":
             contract.begin_tick(rec["t"])
-        elif k == "mint":
-            pass                # external balances are not contract state
+        elif k in ("mint", "xfer", "nft"):
+            pass                # external balances and NFT ledger state; the contract sees "owner" records
         elif k == "digest":
             if contract.event_digest.hex() != rec["event_digest"]:
                 raise StoreError("replayed event digest differs from the recorded one")
@@ -143,6 +143,10 @@ class History:
         self.offers: dict[int, tuple] = {}       # offer_id -> (status, contest_id, amount)
         self.cups: dict[int, tuple] = {}         # cup_id -> (status, champion, sponsorship, entries_gross, entry_fee, fee_profile_id)
         self.pruned = {"fights": 0, "contests": 0, "offers": 0, "cups": 0}
+        # Title belts (titles.py): folded from every finished fight before
+        # compaction drops it; the season rule is the arena profile's.
+        self.titles: dict | None = None
+        self.title_rule = None
 
     def _remember(self, table: dict, key, value):
         table[key] = value
@@ -191,9 +195,13 @@ def compact(contract, keep_ticks: int = 2400, keep_recent: int = 400, per_fighte
     Pair-start counters of past epochs, fault counts older than `keep_epochs`
     epochs and season stats older than `keep_seasons` seasons are dropped: the
     contract reads only the current epoch's and a live contest's season.
-    Nothing here changes what the contract does next or the event digest."""
+    Nothing here changes what the contract does next or the event digest.
+    First, every fight finished before this tick is folded into the title
+    state (titles.checkpoint), so no title is lost with the fights."""
+    from . import titles
     c = contract
     h = history(c)
+    titles.checkpoint(c)
     t = c.tick
     cutoff = t - keep_ticks
     live_cups = {k.cup_id for k in c.cups.values() if k.status in ("REGISTRATION", "RUNNING")}

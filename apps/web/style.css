@@ -1,19 +1,23 @@
 /* QDOJO spectator page. Early-90s arcade cabinet. Committed dark look. */
 
 :root {
-  --navy: #0a0f3d;
-  --navy-2: #121a5e;
-  --blue: #1b2cc1;
+  /* The old cabinet's navy and cyan tokens now point at the scrapyard's
+     steel and soot (V-14); cyan survives only as --stamina. */
+  --navy: #0d0f12;
+  --navy-2: #2a3036;
+  --blue: #4b5563;
   --yellow: #ffd200;
   --red: #ff2a2a;
-  --cyan: #24e6ff;
+  --cyan: #b8c4ce;
+  --stamina: #45d6e6;
+  --link: #ffb86b;
   --green: #39ff5a;
   --orange: #ff8c00;
   --magenta: #ff3cac;
   --white: #f4f4f4;
-  --grey: #9aa3c7;
+  --grey: #9aa6b2;
   --black: #000;
-  --panel: #05071f;
+  --panel: #0c0e10;
   --font-pixel: 'Press Start 2P', 'Courier New', ui-monospace, Menlo, Consolas, monospace;
   --font-text: ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'Courier New', monospace;
   --gutter: clamp(16px, 3vw, 40px);
@@ -30,9 +34,6 @@ body {
   display: flex; flex-direction: column;   /* main grows, so the footer pins to the bottom of a short screen */
   color: var(--white);
   background:
-    linear-gradient(rgba(10, 15, 61, .92), rgba(10, 15, 61, .92)),
-    repeating-linear-gradient(0deg, transparent 0 15px, rgba(36, 230, 255, .06) 15px 16px),
-    repeating-linear-gradient(90deg, transparent 0 15px, rgba(36, 230, 255, .06) 15px 16px),
     var(--navy);
   font-family: var(--font-pixel);
   font-size: 11px;
@@ -41,7 +42,7 @@ body {
   overflow-x: hidden;
 }
 
-a { color: var(--cyan); text-decoration: none; }
+a { color: var(--link); text-decoration: none; }
 a:hover, a:focus-visible { color: var(--yellow); text-decoration: underline; outline: none; }
 
 b, strong { font-weight: normal; color: var(--yellow); }
@@ -76,7 +77,7 @@ body.shake { animation: shake .45s steps(2) 1; }
 @keyframes blink { 50% { opacity: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .blink, .pulse, body.shake, .flash.go, .roster-walk { animation: none !important; }
+  .blink, body.shake, .flash.go { animation: none !important; }
 }
 
 /* ---- HUD (header) -------------------------------------------------- */
@@ -105,29 +106,19 @@ body.shake { animation: shake .45s steps(2) 1; }
 .pill-live { color: var(--green); }
 .pill-demo { color: var(--orange); }
 .pill-lost { color: var(--red); animation: blink 1.1s steps(1) infinite; }
-.pill-legacy { color: var(--magenta); }
 .pill-sample { color: var(--orange); }
-.hud-nav a.nav-combat { color: var(--black); background: var(--yellow); padding: 4px 6px; }
-.hud-nav a.nav-combat:hover, .hud-nav a.nav-combat:focus-visible { background: var(--cyan); color: var(--black); }
-.legacy-banner {
-  margin: 0 0 16px; padding: 6px 10px; font-size: 9px; line-height: 1.8; color: var(--magenta);
-  border: 2px dashed var(--magenta); background: rgba(255, 60, 172, .06);
-}
 
 /* ---- Layout -------------------------------------------------------- */
 #main { padding: 20px var(--gutter) 40px; max-width: 1200px; margin: 0 auto; width: 100%; flex: 1 0 auto; }
-.screen { display: none; }
-/* A short CRT "channel change" flicker on screen switch. Never fully hides the
-   content: a frame caught mid-animation must still be readable. */
-.screen.active { display: block; animation: wipe .3s steps(3) 1; }
-@keyframes wipe { 0% { opacity: .35; filter: brightness(1.8); } 50% { opacity: .7; filter: brightness(1.3); } 100% { opacity: 1; filter: none; } }
-
-h2.screen-title {
+h1.screen-title {
   margin: 0 0 18px; font-size: clamp(14px, 3vw, 22px); color: var(--yellow);
   text-shadow: 3px 3px 0 var(--red), 6px 6px 0 var(--black);
   letter-spacing: 1px;
 }
-h2.screen-title small { display: block; font-size: 9px; color: var(--cyan); text-shadow: none; margin-top: 8px; letter-spacing: 0; }
+/* The page title is the h1; its subtitle is a separate line under it, so a
+   screen reader reads the title alone. */
+h1.screen-title:has(+ .screen-sub) { margin-bottom: 0; }
+.screen-sub { display: block; margin: 8px 0 18px; font-family: var(--font-pixel); font-size: 9px; color: var(--cyan); text-shadow: none; letter-spacing: 0; text-align: center; }
 
 .panel {
   background: var(--panel);
@@ -163,10 +154,8 @@ h2.screen-title small { display: block; font-size: 9px; color: var(--cyan); text
 .wrap { overflow-wrap: anywhere; }
 .right { text-align: right; }
 .center { text-align: center; }
-.nowrap { white-space: nowrap; }
 
 .id { font-family: var(--font-text); font-size: 12px; letter-spacing: .5px; }
-.tx { font-family: var(--font-text); font-size: 12px; }
 
 .btn {
   font-family: var(--font-pixel); font-size: 10px; cursor: pointer;
@@ -191,26 +180,6 @@ a.btn { display: inline-block; color: var(--black); text-decoration: none; }
   display: inline-block; padding: 2px 6px; font-size: 9px; line-height: 1.5;
   color: var(--black); background: var(--grey); white-space: nowrap; vertical-align: middle;
 }
-.badge-winner { background: var(--green); }
-.badge-wrong { background: var(--red); color: var(--white); }
-.badge-pending { background: var(--cyan); }
-.badge-no_reveal, .badge-late { background: var(--orange); }
-.badge-underpaid, .badge-duplicate, .badge-bad_reveal { background: var(--magenta); color: var(--white); }
-.badge-commit { background: var(--green); }
-.badge-reveal { background: var(--yellow); }
-.badge-settling { background: var(--orange); }
-.badge-settled { background: var(--grey); }
-.badge-refund { background: var(--cyan); }
-.badge-win { background: var(--green); }
-.badge-solved { background: var(--white); }                       /* correct, not first: no money */
-.badge-no_commit { background: var(--orange); }                   /* NO SHOW: bought a seat, never fought */
-.badge-void { background: var(--navy-2); color: var(--cyan); border: 1px solid var(--cyan); } /* REFUNDED */
-.badge-lobby { background: var(--magenta); color: var(--white); }
-.badge-seated { background: var(--magenta); color: var(--white); }
-.badge-lobby_over { background: var(--orange); }
-.badge-bond_held { background: var(--navy-2); color: var(--yellow); border: 1px solid var(--yellow); }   /* winnings the house still holds */
-.badge-bond_release { background: var(--yellow); }                                                     /* the bond came back */
-.badge-outranked { background: var(--navy-2); color: var(--magenta); border: 1px solid var(--magenta); }
 
 /* Any fighter name or avatar is a link to the fighter card; it keeps its colour. */
 a.flink { color: inherit; }
@@ -219,10 +188,6 @@ a.flink:hover .muted { color: var(--yellow); }
 a.tname { display: inline-flex; align-items: center; gap: 8px; }
 .pos { color: var(--green); }
 .neg { color: var(--red); }
-.podium-place { font-size: 10px; color: var(--yellow); min-width: 34px; text-align: center; letter-spacing: 1px; }
-.podium-place.place-1 { color: var(--yellow); }
-.podium-place.place-2 { color: var(--white); }
-.podium-place.place-3 { color: var(--orange); }
 
 /* ---- Belts --------------------------------------------------------- */
 .belt {
@@ -260,7 +225,7 @@ a.tname { display: inline-flex; align-items: center; gap: 8px; }
 
 /* ---- Title screen -------------------------------------------------- */
 .screen-title { text-align: center; padding-top: 10px; position: relative; }
-.title-gate { width: min(60vw, 420px); margin: 0 auto -10px; opacity: .8; }
+
 .title-logo {
   margin: 0; font-size: clamp(38px, 11vw, 88px); line-height: 1.1; letter-spacing: 4px;
   color: var(--yellow);
@@ -268,17 +233,9 @@ a.tname { display: inline-flex; align-items: center; gap: 8px; }
 }
 .title-q { color: var(--cyan); }
 .title-sub { margin: 14px 0 22px; font-size: clamp(9px, 1.8vw, 12px); color: var(--cyan); letter-spacing: 2px; }
-.title-ticker { font-size: 9px; color: var(--white); line-height: 2.2; min-height: 40px; }
-.title-ticker .hi { color: var(--yellow); }
-.title-ticker .ko { color: var(--red); }
-.title-roster { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; margin: 22px 0; min-height: 56px; }
-.title-roster .avatar { width: 48px; height: 48px; }
-.roster-walk { animation: bob 1s steps(2) infinite; }
-.roster-walk:nth-child(2n) { animation-delay: .5s; }
-@keyframes bob { 50% { transform: translateY(-4px); } }
+
 .btn-start { font-size: 14px; padding: 14px 26px; margin: 10px 0 20px; }
 .insert-coin { font-size: clamp(12px, 3vw, 18px); color: var(--white); letter-spacing: 3px; margin: 0; }
-.title-foot { margin-top: 30px; font-size: 9px; color: var(--grey); }
 
 /* ---- Fighter avatars ----------------------------------------------- */
 .avatar { width: 48px; height: 48px; image-rendering: pixelated; display: inline-block; vertical-align: middle; flex: none; }
@@ -298,111 +255,16 @@ a.tname { display: inline-flex; align-items: center; gap: 8px; }
   background: repeating-linear-gradient(90deg, var(--green) 0 8px, #22c542 8px 10px);
   transition: width .45s linear;
 }
-.meter-fill.warn { background: repeating-linear-gradient(90deg, var(--yellow) 0 8px, #d9b000 8px 10px); }
-.meter-fill.crit { background: repeating-linear-gradient(90deg, var(--red) 0 8px, #b30000 8px 10px); animation: blink .5s steps(1) infinite; }
-.meter-fill.seed { background: repeating-linear-gradient(90deg, var(--cyan) 0 8px, #0fb8cf 8px 10px); }
-.meter-fill.stakes { background: repeating-linear-gradient(90deg, var(--yellow) 0 8px, #d9b000 8px 10px); }
-.meter-fill.pot { background: repeating-linear-gradient(90deg, var(--yellow) 0 8px, #d9b000 8px 10px); }
-.meter-fill.lobby { background: repeating-linear-gradient(90deg, var(--magenta) 0 8px, #c41f7f 8px 10px); }
-.meter-fill.right-anchor { left: auto; right: 0; }
+
+.meter-fill.seed { background: repeating-linear-gradient(90deg, var(--stamina) 0 8px, #1fa8b8 8px 10px); }
+
 .meter-label { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 9px; margin-bottom: 6px; flex-wrap: wrap; }
 .meter-label b { font-size: 11px; }
-.meter-legend { font-size: 9px; color: var(--grey); margin-top: 6px; display: flex; gap: 14px; flex-wrap: wrap; }
-.meter-legend i { display: inline-block; width: 10px; height: 10px; vertical-align: middle; margin-right: 4px; }
 
-/* ---- NOW FIGHTING -------------------------------------------------- */
-.fight-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; margin-bottom: 16px; }
-.fight-round { font-size: clamp(16px, 4vw, 28px); color: var(--yellow); text-shadow: 3px 3px 0 var(--red); }
-.fight-phase { font-size: 10px; }
-.continue {
-  text-align: center; padding: 8px 0 4px;
-}
-.continue .continue-label { font-size: clamp(12px, 3vw, 20px); color: var(--red); letter-spacing: 3px; text-shadow: 2px 2px 0 var(--black); }
-.continue .continue-num {
-  font-size: clamp(40px, 12vw, 96px); line-height: 1; color: var(--yellow);
-  text-shadow: 4px 4px 0 var(--red), 8px 8px 0 var(--black);
-}
-.continue .continue-sub { font-size: 9px; color: var(--grey); }
-.continue.commit .continue-label { color: var(--green); }
-.continue.lobby .continue-label { color: var(--magenta); animation: blink 1.1s steps(1) infinite; }
-.continue.lobby .continue-num { color: var(--cyan); text-shadow: 4px 4px 0 var(--magenta), 8px 8px 0 var(--black); }
-.continue.lobby_over .continue-label { color: var(--orange); }
-
-/* ---- THE TABLE (lobby) --------------------------------------------- */
-.table-banner {
-  text-align: center; padding: 14px 10px 18px; margin-bottom: 20px;
-  background: var(--panel); border: var(--border) solid var(--magenta); box-shadow: 6px 6px 0 var(--black);
-}
-.table-title {
-  font-size: clamp(14px, 4vw, 26px); color: var(--cyan); letter-spacing: 3px;
-  text-shadow: 3px 3px 0 var(--magenta), 6px 6px 0 var(--black);
-}
-.table-seats {
-  font-size: clamp(28px, 9vw, 64px); line-height: 1.1; margin: 10px 0 6px; color: var(--yellow);
-  text-shadow: 4px 4px 0 var(--red), 8px 8px 0 var(--black);
-}
-.table-sub { font-size: 9px; color: var(--grey); letter-spacing: 1px; }
-
-.grid-seats { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
-.seat {
-  position: relative; background: var(--black); border: 3px solid var(--grey); padding: 12px 10px 10px;
-  display: flex; flex-direction: column; gap: 6px; align-items: center; text-align: center; min-width: 0;
-}
-.seat .seat-no { position: absolute; top: 4px; left: 6px; font-size: 9px; color: var(--grey); }
-.seat-taken { border-color: var(--magenta); box-shadow: 0 0 0 2px var(--black), 0 0 12px rgba(255, 60, 172, .45); }
-.seat-empty { border-style: dashed; color: var(--grey); }
-.seat-chair { position: relative; width: 72px; height: 90px; margin-top: 28px; image-rendering: pixelated; }
-.seat-chair > svg { width: 72px; height: 90px; display: block; }
-.seat-empty .seat-chair > svg { opacity: .55; }
-.seat-sit { position: absolute; left: 0; top: -28px; }
-.seat-sit .avatar { width: 72px; height: 72px; filter: drop-shadow(2px 2px 0 var(--black)); }
-.seat-coin { font-size: 10px; color: var(--yellow); letter-spacing: 2px; margin-top: 4px; }
-.seat-fee { font-size: 9px; }
-.seat .fname { font-size: 9px; color: var(--white); overflow-wrap: anywhere; }
-.seat .fid { font-size: 10px; }
-.seat .fstake { font-size: 9px; }
-.seat .fstatus { font-size: 9px; }
-.seat .flinks { font-family: var(--font-text); font-size: 10px; display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
-.fcard.seated { border-color: var(--magenta); }
-.fcard.solved { border-color: var(--white); opacity: .9; }
-.fcard.no_commit { border-color: var(--orange); opacity: .7; }
-.fcard.void { border-color: var(--cyan); opacity: .7; }
-
+/* ---- Sealed plans ------------------------------------------------- */
 .sealed { text-align: center; padding: 14px 6px 6px; }
-.sealed-lock { display: inline-block; width: 56px; height: 56px; image-rendering: pixelated; }
-.sealed-lock svg { width: 100%; height: 100%; display: block; }
-.sealed-text { font-size: clamp(10px, 2.6vw, 14px); color: var(--cyan); letter-spacing: 2px; margin: 12px 0 6px; text-shadow: 2px 2px 0 var(--black); }
-.sealed-text.pulse { animation: pulse 1.6s steps(2) infinite; }
-@keyframes pulse { 50% { opacity: .45; } }
+
 .sealed p { margin: 8px auto 0; max-width: 60ch; }
-
-.riddle-box { font-family: var(--font-text); font-size: 15px; line-height: 1.55; }
-.riddle-box .riddle-statement { color: var(--white); margin: 0 0 12px; font-weight: 700; }
-.riddle-box .riddle-input {
-  background: var(--black); border: 2px dashed var(--cyan); padding: 10px 12px;
-  color: var(--cyan); white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 10px;
-  font-size: 15px;
-}
-.riddle-box .riddle-meta { font-family: var(--font-pixel); font-size: 9px; color: var(--grey); display: flex; flex-wrap: wrap; gap: 6px 16px; }
-
-.grid-fighters { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
-.fcard {
-  background: var(--black); border: 3px solid var(--grey); padding: 10px;
-  display: flex; flex-direction: column; gap: 6px; align-items: center; text-align: center; min-width: 0;
-  position: relative;
-}
-.fcard.sealed { border-color: var(--cyan); }
-.fcard.revealed { border-color: var(--yellow); box-shadow: 0 0 0 2px var(--black), 0 0 12px rgba(255, 210, 0, .5); }
-.fcard.winner { border-color: var(--green); box-shadow: 0 0 14px rgba(57, 255, 90, .6); }
-.fcard.wrong, .fcard.no_reveal, .fcard.bad_reveal { border-color: var(--red); opacity: .8; }
-.fcard.duplicate, .fcard.underpaid, .fcard.late { border-color: var(--magenta); opacity: .7; }
-.fcard .fname { font-size: 9px; color: var(--white); overflow-wrap: anywhere; }
-.fcard .fid { font-size: 10px; }
-.fcard .fstake { font-size: 9px; }
-.fcard .fstatus { font-size: 9px; }
-.fcard .flinks { font-family: var(--font-text); font-size: 10px; display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
-.fcard .fslot { position: absolute; top: 4px; left: 6px; font-size: 9px; color: var(--grey); }
-.fcard-empty { border-style: dashed; color: var(--grey); justify-content: center; min-height: 140px; font-size: 9px; }
 
 .stats { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); margin-bottom: 20px; }
 .stat { background: var(--black); border: 3px solid var(--blue); padding: 10px; }
@@ -411,51 +273,18 @@ a.tname { display: inline-flex; align-items: center; gap: 8px; }
 .stat .v.small { font-size: 9px; }
 .stat.red { border-color: var(--red); }
 .stat.green { border-color: var(--green); }
-.stat.cyan { border-color: var(--cyan); }
 
-.waiting { text-align: center; padding: 30px 0; }
 /* Beside the last round's winners the idle box is as tall as they are; keep
    its few lines and the poll meter in the middle rather than at the top. */
 .panel.idle { display: flex; flex-direction: column; justify-content: center; }
-.waiting .big { font-size: clamp(14px, 4vw, 26px); color: var(--cyan); text-shadow: 3px 3px 0 var(--black); margin-bottom: 14px; }
 
-/* ---- Results ------------------------------------------------------- */
-.res-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 14px; }
-.res-head .spacer { flex: 1; }
-.res-nav { display: flex; gap: 8px; flex-wrap: wrap; }
-.res-ko {
-  text-align: center; padding: 10px 0 20px;
-}
-.res-ko .ko-text {
-  font-size: clamp(34px, 10vw, 84px); line-height: 1; letter-spacing: 4px;
-  color: var(--red); text-shadow: 4px 4px 0 var(--yellow), 8px 8px 0 var(--black);
-}
-.res-ko .ko-text.timeover { color: var(--cyan); text-shadow: 4px 4px 0 var(--blue), 8px 8px 0 var(--black); }
-.res-ko .ko-text.progress { color: var(--yellow); text-shadow: 4px 4px 0 var(--red), 8px 8px 0 var(--black); }
-/* NO CONTEST: a TIME OVER that never got to fight. Muted on purpose. */
-.res-ko .ko-text.void { color: var(--grey); text-shadow: 4px 4px 0 var(--navy-2), 8px 8px 0 var(--black); letter-spacing: 2px; }
-.res-ko .ko-text.void + .ko-sub, .res-ko .ko-text.void ~ .ko-sub { color: var(--grey); }
-.res-ko .ko-sub { font-size: 10px; color: var(--yellow); margin-top: 12px; letter-spacing: 2px; }
-.res-ko .ko-perfect { display: inline-block; margin-top: 10px; font-size: 12px; color: var(--black); background: var(--yellow); padding: 4px 10px; letter-spacing: 2px; }
-
-.winners { display: flex; flex-direction: column; gap: 10px; }
-.winner-row { display: flex; align-items: center; gap: 12px; background: var(--black); border: 3px solid var(--green); padding: 8px 10px; min-width: 0; }
-.winner-row .wname { font-size: 10px; color: var(--white); min-width: 0; overflow-wrap: anywhere; }
-.winner-row .wamt { margin-left: auto; font-size: 11px; color: var(--yellow); text-align: right; white-space: nowrap; }
-.winner-row .wtx { font-size: 9px; display: block; }
 /* A settlement with two pots lists the winners of each under its own head,
    placings restarting per pot. */
-.pot-head { font-size: 10px; color: var(--cyan); letter-spacing: 1px; margin: 16px 0 8px; }
-.pot-head:first-child { margin-top: 0; }
-.pot-head small { font-size: 9px; color: var(--grey); letter-spacing: 0; }
 
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; font-size: 9px; align-items: baseline; }
 .kv dt { color: var(--grey); margin: 0; }
 .kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .kv .answer { font-family: var(--font-text); font-size: 18px; color: var(--green); font-weight: 700; }
-.verify-out { margin-top: 10px; font-size: 9px; line-height: 2; }
-.verify-out .ok { color: var(--green); }
-.verify-out .bad { color: var(--red); }
 
 /* ---- Tables -------------------------------------------------------- */
 /* A table wider than its panel scrolls sideways. app.js marks a .tscroll that
@@ -468,7 +297,7 @@ a.tname { display: inline-flex; align-items: center; gap: 8px; }
 .tscroll.can-scroll::before {
   content: ""; grid-area: 1 / 1; justify-self: end; align-self: stretch; width: 56px;
   position: sticky; right: 0; pointer-events: none;
-  background: linear-gradient(to right, rgba(5, 7, 31, 0), var(--panel) 80%);
+  background: linear-gradient(to right, rgba(12, 14, 16, 0), var(--panel) 80%);
 }
 .tscroll.can-scroll::after {
   content: "SCROLL \25B6"; grid-area: 2 / 1; justify-self: end;
@@ -485,109 +314,14 @@ tr.me td { background: rgba(255, 210, 0, .08); }
 .tname { display: flex; align-items: center; gap: 8px; }
 
 /* ---- Hall of fame -------------------------------------------------- */
-.fame-table td, .fame-table th { padding: 9px 8px; }
 .rank { font-size: 10px; }
-.rank-1 { color: var(--yellow); }
-.rank-2 { color: var(--white); }
-.rank-3 { color: var(--orange); }
-.strikes { color: var(--red); letter-spacing: 2px; }
 
-.fame-table td.pos, .fame-table td.neg { white-space: nowrap; }
-.board-main h3 small, .board h3 small, .clean-record h3 small { display: block; font-size: 9px; letter-spacing: 1px; margin-top: 4px; opacity: .75; }
-.boards { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
+.board h3 small { display: block; font-size: 9px; letter-spacing: 1px; margin-top: 4px; opacity: .75; }
 .board { margin-bottom: 0; }
-.boards + .clean-record { margin-top: 20px; }
-.score-table { font-size: 9px; }
-.score-table td { padding: 8px 6px; }
-.score-table td.score { color: var(--yellow); white-space: nowrap; }
-.score-table td:first-child { width: 36px; }
-.clean-list { display: flex; flex-wrap: wrap; gap: 8px 14px; }
-.clean-list .chip-name { border: 2px solid var(--green); padding: 4px 8px; font-size: 9px; }
-
-/* ---- Fighter select ------------------------------------------------ */
-.grid-select { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 170px), 1fr)); }
-.scard {
-  position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; min-width: 0;
-  background: var(--black); border: 3px solid var(--grey); padding: 22px 10px 12px; color: var(--white);
-  box-shadow: 4px 4px 0 var(--black);
-}
-.scard:hover, .scard:focus-visible { border-color: var(--yellow); text-decoration: none; color: var(--white); box-shadow: 0 0 0 2px var(--black), 0 0 14px rgba(255, 210, 0, .55); transform: translate(-2px, -2px); }
-.scard .scard-no { position: absolute; top: 4px; left: 6px; font-size: 9px; color: var(--grey); }
-.scard .avatar-xl { width: 96px; height: 96px; }
-.scard-name { font-size: 10px; margin-top: 6px; overflow-wrap: anywhere; }
-.scard-net { font-size: 11px; margin-top: 2px; white-space: nowrap; }
-.scard-sub { font-family: var(--font-text); font-size: 10px; color: var(--white); }   /* two stat lines that must stay whole in a 145px card */
-.scard.belt-b-yellow { border-color: var(--yellow); }
-.scard.belt-b-orange { border-color: var(--orange); }
-.scard.belt-b-green { border-color: var(--green); }
-.scard.belt-b-blue { border-color: var(--cyan); }
 
 /* ---- Fighter card (profile) ---------------------------------------- */
-.profile-cols { grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); }
-.fcb { position: relative; }
-.fcb-top { display: flex; gap: 18px; align-items: flex-start; }
-.fcb-avatar { flex: none; padding: 8px; background: var(--black); border: 3px solid var(--blue); }
-.fcb-info { min-width: 0; flex: 1; }
-.fcb-name { font-size: clamp(14px, 3.4vw, 22px); color: var(--yellow); text-shadow: 3px 3px 0 var(--red), 6px 6px 0 var(--black); line-height: 1.3; overflow-wrap: anywhere; }
-.fcb-id { margin-top: 8px; font-size: 9px; overflow-wrap: anywhere; }
-.fcb-meta { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 9px; color: var(--cyan); }
-.fcb.belt-b-yellow { border-color: var(--yellow); } .fcb.belt-b-orange { border-color: var(--orange); }
-.fcb.belt-b-green { border-color: var(--green); } .fcb.belt-b-blue { border-color: var(--cyan); }
-.fcb.belt-b-white { border-color: var(--white); }
-.fcb.belt-b-yellow h3 { background: var(--yellow); } .fcb.belt-b-orange h3 { background: var(--orange); }
-
-.pts { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
-.pts-end { font-family: var(--font-text); font-size: 10px; line-height: 1.5; letter-spacing: 1px; text-align: center; flex: none; width: 58px; }
-.pts-demote { color: var(--red); }
-.pts-promote { color: var(--green); }
-.pts-track { flex: 1; display: flex; gap: 3px; background: var(--black); border: 3px solid var(--white); box-shadow: 3px 3px 0 var(--black); padding: 3px; }
-.pts-cell { flex: 1; min-width: 0; height: 22px; line-height: 22px; text-align: center; font-size: 9px; color: var(--grey); background: var(--navy-2); }
-.pts-cell.zero { background: var(--navy); color: var(--white); }
-.pts-cell.lit.pos { background: repeating-linear-gradient(90deg, var(--green) 0 6px, #22c542 6px 8px); color: var(--black); }
-.pts-cell.lit.neg { background: repeating-linear-gradient(90deg, var(--red) 0 6px, #b30000 6px 8px); color: var(--white); }
-.pts-cell.cur { outline: 2px solid var(--yellow); outline-offset: -2px; color: var(--black); }
-.pts-cell.cur.zero { color: var(--yellow); }
-.pts-label { font-size: 9px; color: var(--grey); margin-top: 10px; line-height: 1.8; }
-.pts-label b { font-size: 10px; }
-
-.stats-profile { grid-template-columns: repeat(auto-fit, minmax(min(100%, 105px), 1fr)); }
 
 .tl { display: flex; flex-direction: column; gap: 0; position: relative; padding-left: 4px; }
-.tl-row { display: grid; grid-template-columns: 14px auto 1fr; gap: 4px 12px; align-items: center; padding: 8px 0; color: var(--white); border-left: 3px solid var(--navy-2); margin-left: 6px; padding-left: 10px; }
-a.tl-row:hover { border-left-color: var(--yellow); text-decoration: none; color: var(--white); }
-.tl-dot { width: 12px; height: 12px; background: var(--grey); border: 2px solid var(--black); box-shadow: 0 0 0 2px var(--grey); }
-.tl-dot.up { background: var(--green); box-shadow: 0 0 0 2px var(--green); }
-.tl-dot.down { background: var(--red); box-shadow: 0 0 0 2px var(--red); }
-.tl-when { font-size: 9px; color: var(--cyan); white-space: nowrap; }
-.tl-what { font-size: 9px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
-.tl-arrow { color: var(--yellow); }
-@media (max-width: 520px) {
-  .tl-row { grid-template-columns: 14px 1fr; }
-  .tl-row .tl-what { grid-column: 2; }
-}
-
-/* ---- History ------------------------------------------------------- */
-.hist-list { display: flex; flex-direction: column; gap: 10px; }
-.hist-row {
-  display: grid; grid-template-columns: auto 1fr auto; gap: 8px 14px; align-items: center;
-  background: var(--black); border: 3px solid var(--blue); padding: 10px 12px; color: var(--white);
-}
-.hist-row:hover { border-color: var(--yellow); text-decoration: none; color: var(--white); }
-.hist-row .hr-num { font-size: 13px; color: var(--yellow); }
-.hist-row .hr-title { font-size: 9px; overflow-wrap: anywhere; }
-.hist-row .hr-sub { font-size: 9px; color: var(--grey); margin-top: 4px; }
-.hist-row .hr-call { font-size: 10px; color: var(--red); text-align: right; white-space: nowrap; }
-.hist-row .hr-call.timeover { color: var(--cyan); }
-.hist-row .hr-call.progress { color: var(--green); }
-.hist-row .hr-call.void { color: var(--grey); }
-.hist-row.void { border-color: var(--navy-2); opacity: .8; }
-.hist-row.void:hover { border-color: var(--yellow); opacity: 1; }
-.hist-row .hr-call small { display: block; font-size: 9px; color: var(--grey); }
-.hist-row.open { border-color: var(--green); }
-@media (max-width: 520px) {
-  .hist-row { grid-template-columns: auto 1fr; }
-  .hist-row .hr-call { grid-column: 1 / -1; text-align: left; }
-}
 
 /* ---- Join ---------------------------------------------------------- */
 pre.code {
@@ -597,23 +331,6 @@ pre.code {
 }
 .rules li { margin-bottom: 8px; font-size: 9px; line-height: 1.8; }
 .rules { padding-left: 18px; margin: 0; }
-
-/* ---- Callout overlay ----------------------------------------------- */
-.callout {
-  position: fixed; inset: 0; z-index: 80; display: none; pointer-events: none;
-  align-items: center; justify-content: center; flex-direction: column; text-align: center;
-  padding: 0 16px;
-}
-.callout.show { display: flex; }
-.callout-text {
-  font-size: clamp(40px, 14vw, 140px); line-height: 1; letter-spacing: 6px;
-  color: var(--yellow); text-shadow: 6px 6px 0 var(--red), 12px 12px 0 var(--black), 0 0 40px rgba(255, 210, 0, .6);
-  animation: punch .6s steps(4) 1;
-}
-.callout.ko .callout-text { color: var(--red); text-shadow: 6px 6px 0 var(--yellow), 12px 12px 0 var(--black), 0 0 40px rgba(255, 42, 42, .7); }
-.callout.cyan .callout-text { color: var(--cyan); text-shadow: 6px 6px 0 var(--blue), 12px 12px 0 var(--black); }
-.callout-sub { margin-top: 24px; font-size: clamp(10px, 3vw, 20px); color: var(--white); letter-spacing: 3px; text-shadow: 3px 3px 0 var(--black); }
-@keyframes punch { 0% { transform: scale(3); opacity: 0; } 60% { transform: scale(.9); opacity: 1; } 100% { transform: scale(1); } }
 
 /* ---- Footer -------------------------------------------------------- */
 .foot {
@@ -632,21 +349,8 @@ pre.code {
   .panel h3 { margin: -12px -12px 12px; }
   .kv { grid-template-columns: 1fr; gap: 2px 0; }
   .kv dt { margin-top: 8px; }
-  .fcb-top { flex-direction: column; align-items: center; text-align: center; }
-  .fcb-meta { justify-content: center; }
-  .avatar-xl { width: 96px; height: 96px; }
-  .pts-end { width: 52px; }
-  /* A phone cannot hold place, avatar, name, share, identity, amount and bond
-     badge on one line: the nowrap amount took the row and the name column
-     shrank to a few pixels, wrapping one character per line. Stack instead:
-     name and identity on the first line, amount and badges on the next. */
-  .winner-row { flex-wrap: wrap; }
-  .winner-row .wname { flex: 1 1 0; }
-  .winner-row .wamt {
-    flex: 1 0 100%; margin-left: 0; text-align: left;
-    display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px;
-  }
-  .winner-row .wamt .wtx { display: inline; }
+      .avatar-xl { width: 96px; height: 96px; }
+
 }
 
 /* ================================================================ HELP */
@@ -654,89 +358,36 @@ pre.code {
    .tscroll's overflow-x and by the panel boxes, and could not be clamped to a
    phone viewport. z-index 70 sits above the sticky HUD (50) and below the K.O.
    callout (80), so a tooltip can never cover a knockout. */
-body.help-on [data-help] { cursor: help; border-bottom: 1px dotted var(--cyan); }
-body.help-on [data-help]:hover,
-body.help-on [data-help]:focus-visible { color: var(--cyan); outline: none; border-bottom-style: solid; }
-body.help-on .stat [data-help] { border-bottom: none; }
-body.help-on .stat:hover .k[data-help] { color: var(--cyan); }
+
 .tip {
   position: fixed; z-index: 70; display: none; max-width: min(38ch, calc(100vw - 16px));
   background: var(--black); border: 3px solid var(--cyan); box-shadow: 6px 6px 0 var(--navy-2);
   padding: 10px 12px; pointer-events: none;
 }
 .tip.show { display: block; }
-.tip-title { display: block; font-size: 9px; color: var(--cyan); letter-spacing: 1px; margin-bottom: 6px; }
-.tip-body { font-family: var(--font-text); font-size: 12px; line-height: 1.55; color: var(--white); }
+
 .tip::after { content: ""; position: absolute; left: 50%; bottom: -10px; width: 8px; height: 8px; background: var(--cyan); }
 .tip.below::after { bottom: auto; top: -10px; }
 
-/* ================================================================ TICKS */
-.tlink { color: var(--green); }
-.tlink:hover, .tlink:focus-visible { color: var(--yellow); }
-.tx-ext { font-size: 9px; color: var(--grey); margin-left: 4px; text-decoration: none; }
-.tx-ext:hover { color: var(--cyan); text-decoration: none; }
-.tick-row .hr-num { font-size: 9px; color: var(--cyan); letter-spacing: 1px; align-self: start; }
-/* A revealed answer can be a 64-character hash, and it must break inside the
-   row rather than push the row past the phone. */
-.tick-row .hr-sub { font-family: var(--font-text); font-size: 12px; line-height: 1.55; color: var(--white); overflow-wrap: anywhere; }
-.tick-row.win .hr-num, .tick-row.winner .hr-num { color: var(--green); }
-.tick-row.lobby .hr-num { color: var(--yellow); }
-.tick-raw { margin-top: 8px; }
-.tick-raw summary { font-size: 9px; color: var(--grey); cursor: pointer; letter-spacing: 1px; }
-.tick-raw summary:hover { color: var(--cyan); }
 /* Grid items default to min-width:auto, so a 300-character payload hex sets the
    column's minimum and the whole page scrolls sideways on a phone. */
-.tick-row > * { min-width: 0; }
-.tick-row .hr-call { white-space: normal; }
-.tick-raw pre {
-  max-height: 200px; overflow: auto; font-size: 10px; margin: 6px 0 0;
-  white-space: pre-wrap; word-break: break-all;
-}
-.tick-round { margin-bottom: 14px; }
-.tick-round:last-child { margin-bottom: 0; }
+
 .btn.off { opacity: .35; pointer-events: none; }
 
-
 /* ================================================================ RULES */
-.epi {
-  border-left: 4px solid var(--yellow); padding-left: 12px; margin: 14px 0 0;
-  color: var(--yellow); font-size: 9px; line-height: 2;
-}
-.rule-term { font-family: var(--font-text); font-size: 12px; line-height: 1.6; margin: 0 0 10px; }
-.rule-term b { font-family: var(--font-pixel); font-size: 9px; letter-spacing: 1px; }
-.belt-ladder { margin: 0 0 14px; }
+
 .flow { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 10px; }
-.flow-step {
-  display: block; border: 3px solid var(--navy-2); background: var(--panel); padding: 10px;
-  color: var(--white); text-decoration: none;
-}
-.flow-step:hover { border-color: var(--cyan); text-decoration: none; }
-.flow-step .flow-n { display: block; font-size: 9px; color: var(--cyan); }
-.flow-step b { display: block; margin: 4px 0 6px; }
-.flow-step span:last-child { font-family: var(--font-text); font-size: 11px; line-height: 1.5; color: var(--grey); }
 
 /* ================================================================ JOIN */
 
 @media (max-width: 700px) {
   .flow { grid-auto-flow: row; }
-  .epi { font-size: 10px; }
-  .tip-body { font-size: 13px; }
-}
-.agent-panel { border-color: var(--cyan); }
-.agent-panel pre.code { border-color: var(--cyan); }
 
-.doc-sig {
-  margin: 14px 0 0; padding: 8px 10px; font-size: 9px; line-height: 2;
-  border-left: 4px solid var(--green); background: var(--panel); color: var(--green);
 }
-.doc-sig .tiny { line-height: 1.6; }
 
 /* A panel heading's subtitle gets its own line, like the screen titles do.
    Without this "TRAINING" and its subtitle run together into one word. */
 .panel h3 small { display: block; font-size: 9px; letter-spacing: 0; margin-top: 6px; opacity: .8; }
 
 /* The one command is the loudest thing on the JOIN screen. */
-pre.code.hero { font-size: 15px; line-height: 1.9; border-width: 3px; padding: 18px; }
-.solver-card h3 small { display: block; font-size: 9px; margin-top: 6px; letter-spacing: 0; }
-.solver-card pre.code { font-size: 11px; }
-@media (max-width: 700px) { pre.code.hero { font-size: 12px; padding: 12px; } }
+
