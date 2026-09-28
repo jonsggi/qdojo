@@ -2139,15 +2139,134 @@
       '<li>Market fee ' + esc((ev.market_fee_bps || 0) / 100) + '% of each sale.</li></ul></section>');
   }
 
+  // ---- FIGHTERS: search and filter the whole roster ----------------------------------
+
+  const BELT_ORDER = ['white', 'yellow', 'orange', 'green', 'blue', 'purple', 'brown', 'black', 'red'];
+  const driverKind = d => (/^llm:/.test(d || '') ? 'llm' : d === 'planner' || d === 'builder' ? 'builder' : 'script');
+  const DRIVER_LABEL = { llm: 'LLM', script: 'SCRIPTED', builder: 'BUILDER BOT' };
+
+  // Every fighter as one flat record the filters can read. The API has the
+  // whole roster in one call; without it the export's fighter files serve.
+  async function loadRoster() {
+    const norm = f => {
+      const car = f.career || {}, rec = f.record || {};
+      const W = car.W != null ? car.W : (rec.W || 0), D_ = car.D != null ? car.D : (rec.D || 0), Lo = car.L != null ? car.L : (rec.L || 0);
+      const t = A ? A.traits(f.fighter_id) : {};
+      return {
+        id: f.fighter_id, name: f.name || FIGHTER_NAMES[f.fighter_id] || short(f.fighter_id), rating: Number(f.lifetime_rating || 0),
+        belt: f.provisional ? 'white' : (f.belt || 'white'), provisional: !!f.provisional, placement: f.placement_fights,
+        W, D: D_, L: Lo, fights: W + D_ + Lo, origin: f.origin || 'house', driver: f.driver || '', kind: driverKind(f.driver),
+        lock: f.lock || 'IDLE', form: (f.form || []).map(x => x.mark), kit: t.archetype || '', finish: t.finish || '',
+        forSale: !!(f.asset && f.asset.for_sale),
+      };
+    };
+    if (D.api) {
+      try {
+        const doc = await apiJson('fighters?per_page=200');
+        const list = doc.fighters || doc.items || [];
+        if (list.length) return list.map(norm);
+      } catch (e) { /* fall back to the export */ }
+    }
+    const index = await fetchJson('index.json');
+    if (index && index.names) FIGHTER_NAMES = index.names;
+    const hexes = (index.fighters || []).filter(h => HEX64.test(h));
+    const docs = (await Promise.all(hexes.map(h => fetchJson('fighters/' + h + '.json').catch(() => null)))).filter(Boolean);
+    return docs.map(f => norm({ ...f, name: (index.names || {})[f.fighter_id] }));
+  }
+
+  const FSORTS = {
+    rating: [(a, b) => b.rating - a.rating, 'RATING'],
+    wins: [(a, b) => b.W - a.W, 'WINS'],
+    winrate: [(a, b) => (b.fights ? b.W / b.fights : -1) - (a.fights ? a.W / a.fights : -1), 'WIN RATE'],
+    fights: [(a, b) => b.fights - a.fights, 'FIGHTS'],
+    name: [(a, b) => a.name.localeCompare(b.name), 'NAME'],
+  };
+
+  function fighterFilterState(param) {
+    const q = new URLSearchParams(param || '');
+    return { q: q.get('q') || '', belt: q.get('belt') || '', kind: q.get('kind') || '', origin: q.get('origin') || '', kit: q.get('kit') || '', finish: q.get('finish') || '', sort: FSORTS[q.get('sort')] ? q.get('sort') : 'rating', active: q.get('active') === '1' };
+  }
+  function fighterFilterParam(st) {
+    const q = new URLSearchParams();
+    for (const k of ['q', 'belt', 'kind', 'origin', 'kit', 'finish']) if (st[k]) q.set(k, st[k]);
+    if (st.sort !== 'rating') q.set('sort', st.sort);
+    if (st.active) q.set('active', '1');
+    return q.toString();
+  }
+  function matchFighter(f, st) {
+    if (st.q) {
+      const q = st.q.toLowerCase();
+      if (!f.name.toLowerCase().includes(q) && !f.id.startsWith(q) && !f.kit.toLowerCase().includes(q)) return false;
+    }
+    return (!st.belt || f.belt === st.belt) && (!st.kind || f.kind === st.kind) && (!st.origin || f.origin === st.origin) &&
+      (!st.kit || f.kit === st.kit) && (!st.finish || f.finish === st.finish) && (!st.active || f.lock !== 'IDLE');
+  }
+
+  async function viewFighters(tok, param) {
+    if (needData()) return;
+    const roster = await loadRoster();
+    if (tok !== viewToken) return;
+    const st = fighterFilterState(param);
+    const uniq = key => Array.from(new Set(roster.map(f => f[key]).filter(Boolean))).sort();
+    const belts = BELT_ORDER.filter(b => roster.some(f => f.belt === b)).concat(uniq('belt').filter(b => !BELT_ORDER.includes(b)));
+    const chipRow = (key, label, values, fmt) => '<div class="ff-row" role="group" aria-label="' + esc(label) + '"><span class="ff-k">' + esc(label) + '</span>' +
+      '<button class="chip ff-chip" data-k="' + key + '" data-v="">ALL</button>' +
+      values.map(v => '<button class="chip ff-chip" data-k="' + key + '" data-v="' + esc(v) + '">' + (fmt ? fmt(v) : esc(String(v).toUpperCase())) + '</button>').join('') + '</div>';
+    setView(screen('FIGHTERS', esc(roster.length) + ' FIGHTERS ON THE ROSTER &middot; SEARCH, FILTER, SORT') +
+      '<section class="panel ff-panel"><div class="ff-search"><label for="ff-q" class="ff-k">SEARCH</label>' +
+      '<input id="ff-q" type="search" autocomplete="off" spellcheck="false" placeholder="name, id or kit&hellip;" value="' + esc(st.q) + '"><span class="ff-hint tiny muted">press / to search</span></div>' +
+      '<details class="ff-filters" id="ff-filters"' + (matchMedia('(min-width: 700px)').matches || fighterFilterParam({ ...st, q: '' }) ? ' open' : '') + '><summary class="ff-k">FILTERS <span id="ff-nact"></span></summary>' +
+      chipRow('belt', 'BELT', belts, b => '<span class="belt belt-sm belt-' + esc(b) + '">' + esc(b.toUpperCase()) + '</span>') +
+      chipRow('kind', 'DRIVER', uniq('kind'), v => esc(DRIVER_LABEL[v] || v.toUpperCase())) +
+      (uniq('origin').length > 1 ? chipRow('origin', 'ORIGIN', uniq('origin')) : '') +
+      chipRow('kit', 'KIT', uniq('kit')) + chipRow('finish', 'FINISH', uniq('finish')) +
+      '<div class="ff-row"><span class="ff-k">SORT</span>' + Object.entries(FSORTS).map(([k, [, l]]) => '<button class="chip ff-sort" data-sort="' + k + '">' + l + '</button>').join('') +
+      '<label class="ff-active"><input type="checkbox" id="ff-active"' + (st.active ? ' checked' : '') + '> IN A FIGHT OR QUEUED</label></div></details></section>' +
+      '<p class="ff-count" aria-live="polite"></p><div class="ff-grid" id="ff-grid"></div>');
+    const grid = $('#ff-grid'), count = $('.ff-count');
+    const card = f => '<a class="ff-card" href="#fighter/' + esc(f.id) + '">' +
+      '<span class="avatar avatar-ff" data-anim="idle" data-identity="' + esc(f.id) + '">' + (A ? A.svg(f.id, 'sprite') : '') + '</span>' +
+      '<span class="ff-body"><b class="ff-name">' + esc(f.name) + '</b>' +
+      '<span class="ff-line"><span class="belt belt-sm belt-' + esc(f.belt) + '">' + (f.provisional ? 'PROVISIONAL' : esc(f.belt.toUpperCase())) + '</span> <b class="ff-rating">' + esc(f.rating) + '</b></span>' +
+      '<span class="ff-line ff-rec">' + f.W + 'W ' + f.D + 'D ' + f.L + 'L' + (f.fights ? ' &middot; ' + Math.round(100 * f.W / f.fights) + '%' : '') + '</span>' +
+      '<span class="ff-line ff-meta">' + esc(DRIVER_LABEL[f.kind] || '') + ' &middot; ' + esc(f.kit) + '</span>' +
+      (f.form.length ? '<span class="ff-form">' + f.form.slice(0, 5).map(m => '<i class="form form-' + esc(m) + '">' + esc(m) + '</i>').join('') + '</span>' : '') +
+      (f.lock !== 'IDLE' ? '<span class="ff-live">' + esc(f.lock) + '</span>' : '') + '</span></a>';
+    function paint() {
+      const list = roster.filter(f => matchFighter(f, st)).sort(FSORTS[st.sort][0]);
+      grid.innerHTML = list.length ? list.map(card).join('') : '<p class="muted">No fighter matches. <button class="chip" id="ff-clear">CLEAR FILTERS</button></p>';
+      count.textContent = list.length + ' OF ' + roster.length + ' FIGHTERS';
+      const nact = ['belt', 'kind', 'origin', 'kit', 'finish'].filter(k => st[k]).length + (st.active ? 1 : 0);
+      $('#ff-nact').textContent = nact ? '(' + nact + ' ON)' : '';
+      $$('.ff-chip').forEach(b => { const on = st[b.dataset.k] === b.dataset.v; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+      $$('.ff-sort').forEach(b => { const on = st.sort === b.dataset.sort; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+      const p = fighterFilterParam(st);
+      history.replaceState(null, '', '#fighters' + (p ? '/' + p : ''));
+      if (ANIM) ANIM.mount(grid);
+      const clear = $('#ff-clear');
+      if (clear) clear.addEventListener('click', () => { Object.assign(st, fighterFilterState('')); $('#ff-q').value = ''; $('#ff-active').checked = false; paint(); });
+    }
+    $('.ff-panel').addEventListener('click', e => {
+      const c = e.target.closest('.ff-chip');
+      if (c) { st[c.dataset.k] = st[c.dataset.k] === c.dataset.v ? '' : c.dataset.v; paint(); return; }
+      const s = e.target.closest('.ff-sort');
+      if (s) { st.sort = s.dataset.sort; paint(); }
+    });
+    $('#ff-q').addEventListener('input', e => { st.q = e.target.value.trim(); paint(); });
+    $('#ff-active').addEventListener('change', e => { st.active = e.target.checked; paint(); });
+    paint();
+    if (!st.q && matchMedia('(min-width: 700px)').matches) $('#ff-q').focus({ preventScroll: true });
+  }
+
   // ---- router and chrome -------------------------------------------------------------
 
   // Sub-pages light up the nav entry they belong to.
-  const NAV_PARENT = { book: 'arena', fight: 'results', fights: 'results', duel: 'results', duels: 'results', fighter: 'leaderboard', owner: 'leaderboard', season: 'leaderboard', market: 'leaderboard', economy: 'leaderboard', cup: 'cups', rules: 'guide', help: 'guide', story: 'guide' };
+  const NAV_PARENT = { book: 'arena', fight: 'results', fights: 'results', duel: 'results', duels: 'results', fighter: 'leaderboard', owner: 'leaderboard', season: 'leaderboard', fighters: 'leaderboard', market: 'leaderboard', economy: 'leaderboard', cup: 'cups', rules: 'guide', help: 'guide', story: 'guide' };
   // Each nav section can hold several screens: they show as tabs under the header.
   const SECTION_TABS = {
     arena: [['arena', 'LIVE'], ['book', 'MATCHMAKING']],
     results: [['results', 'FIGHTS'], ['duels', 'DUELS']],
-    leaderboard: [['leaderboard', 'LEADERBOARD'], ['season', 'SEASON'], ['market', 'MARKET'], ['economy', 'ECONOMY']],
+    leaderboard: [['leaderboard', 'LEADERBOARD'], ['fighters', 'FIGHTERS'], ['season', 'SEASON'], ['market', 'MARKET'], ['economy', 'ECONOMY']],
     guide: [['guide', 'HOW IT WORKS'], ['story', 'STORY'], ['rules', 'RULES'], ['help', 'GLOSSARY'], ['llms.txt', 'FOR AGENTS']],
   };
   function paintNav(name) {
@@ -2208,6 +2327,7 @@
       else if (name === 'duels') await viewDuels(tok);
       else if (name === 'duel') await viewDuel(tok, rest[0]);
       else if (name === 'season') await viewSeason(tok);
+      else if (name === 'fighters') await viewFighters(tok, rest.join('/'));
       else if (name === 'market') await viewMarket(tok);
       else if (name === 'economy') await viewEconomy(tok);
       else if (name === 'owner') await viewOwner(tok, rest[0]);
@@ -2224,7 +2344,7 @@
       if (tok === viewToken) setView(screen('ERROR') + '<section class="panel panel-red"><h3>COULD NOT RENDER</h3><p>' + esc(e.message) + '</p></section>');
     }
     if (tok !== viewToken) return;
-    if (navigated && name !== 'practice') $('#view').focus({ preventScroll: true });
+    if (navigated && name !== 'practice' && !(name === 'fighters' && document.activeElement && document.activeElement.id === 'ff-q')) $('#view').focus({ preventScroll: true });
     if (!navigated) window.scrollTo(0, y);
   }
 
@@ -2252,6 +2372,13 @@
     if (store.get('qdojo.crt') === '0') $('#btn-crt').click();
     $('#hud-menu').addEventListener('click', () => setMenu(!document.body.classList.contains('menu-open')));
     document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.body.classList.contains('menu-open')) { setMenu(false); $('#hud-menu').focus(); } });
+    // "/" finds a fighter from anywhere, as on most sites with a search box.
+    document.addEventListener('keydown', e => {
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey || e.target.closest('input, textarea, select, [contenteditable]')) return;
+      e.preventDefault();
+      const box = $('#ff-q');
+      if (box) box.focus(); else location.hash = '#fighters';
+    });
     paintMotion();
     await loadSource();
     paintSource();
