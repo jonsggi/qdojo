@@ -5,9 +5,9 @@
  "generated_tick": "4201",
  "source": "reference-contract-state",
  "fighter_id": "08722b3978daba0714ea26c9733c5c4221107f9bf0157eaab9bebdb9f0d07630",
- "owner": "829afd937b29761de44f255821b952d45faaf6146a9c86acc087fe359ad8eb46",
- "operator": "829afd937b29761de44f255821b952d45faaf6146a9c86acc087fe359ad8eb46",
- "auth_version": 1,
+ "owner": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396",
+ "operator": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396",
+ "auth_version": 2,
  "house_npc": false,
  "lock": "TOURNAMENT",
  "lifetime_rating": 1016,
@@ -21,6 +21,24 @@
   "FW": 0,
   "FL": 0
  },
+ "records_by_mode": {
+  "ranked": {
+   "W": 1,
+   "D": 0,
+   "L": 0,
+   "FW": 0,
+   "FL": 0,
+   "N": 0
+  },
+  "cup": {
+   "W": 6,
+   "D": 0,
+   "L": 3,
+   "FW": 0,
+   "FL": 0,
+   "N": 0
+  }
+ },
  "faults_by_epoch": {},
  "cooldown_until": "0",
  "season_ratings": {
@@ -28,26 +46,48 @@
  },
  "fights": [
   "1",
-  "18",
-  "21",
+  "17",
+  "19",
   "44",
+  "46",
   "47",
-  "48",
-  "55",
-  "56"
+  "49",
+  "51",
+  "58",
+  "60"
  ],
  "name": "kappa",
  "driver": "search-v1",
+ "origin": "house",
  "asset": {
   "issuer": "4a2d9a3b95b24eedf8ead2e3fd071731f066416599c08812cd9ef344651f22dd",
-  "name": "QDOJOF",
+  "name": "QF00002",
   "founding": false,
-  "owner": "829afd937b29761de44f255821b952d45faaf6146a9c86acc087fe359ad8eb46",
+  "owner": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396",
+  "possessor": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396",
+  "serial": 2,
+  "creator": "1afcb2deee8f9c4e35489c9e5112ba436269622468e3c6b045a6fcaaa64a1efa",
+  "manager": "QDOJO",
+  "ask": {
+   "price": "126249",
+   "seller": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396",
+   "tick": "3901"
+  },
+  "best_bid": null,
+  "last_sale": {
+   "price": "101298",
+   "tick": "3116"
+  },
   "history": [
    {
     "tick": "1",
     "from": null,
     "to": "829afd937b29761de44f255821b952d45faaf6146a9c86acc087fe359ad8eb46"
+   },
+   {
+    "tick": "3116",
+    "from": "829afd937b29761de44f255821b952d45faaf6146a9c86acc087fe359ad8eb46",
+    "to": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396"
    }
   ]
  }

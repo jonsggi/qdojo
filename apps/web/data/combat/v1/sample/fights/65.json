@@ -5,41 +5,41 @@
  "generated_tick": "4201",
  "source": "reference-contract-state",
  "fight_id": "65",
- "contest_id": "45",
+ "contest_id": "43",
  "phase": "DONE",
  "round_index": 2,
  "state": {
   "round_index": 2,
   "A": {
-   "hp": 74,
-   "stamina": 12,
+   "hp": 40,
+   "stamina": 14,
    "opening": 0,
    "guard_streak": 0,
    "power_available": 0
   },
   "B": {
-   "hp": 0,
-   "stamina": 60,
+   "hp": 18,
+   "stamina": 26,
    "opening": 0,
    "guard_streak": 0,
-   "power_available": 0
+   "power_available": 1
   },
   "outcome": {
    "winner": "A",
-   "result": "KO"
+   "result": "HP"
   }
  },
- "context_digest": "c09a65c176afd02d8a84d53e052c0d61642013204a15106b03df1ba79145c6f8",
- "round_state_digest": "0b563c3726c1958955cc960c3f23b0e3a06097b4ec329e79d7ae6e59bdb8e08e",
- "commit_last": "3683",
- "reveal_last": "3695",
+ "context_digest": "9b83f3c3def93a9d4d6af5990d6d38ebab42dcf8823fd379eafb5415407c6572",
+ "round_state_digest": "8f520d30ad888b0fc20683535f4143515013644f296c2fa5fb22b90d23273f2a",
+ "commit_last": "3684",
+ "reveal_last": "3696",
  "committed": [],
  "revealed": [],
  "result": {
   "kind": "COMBAT",
   "winner": "A",
-  "result": "KO",
-  "tick": "3687"
+  "result": "HP",
+  "tick": "3688"
  },
  "fighters": {
   "A": {
@@ -61,5 +61,6 @@
    "season_rating": 1000
   }
  },
- "mode": "duel"
+ "mode": "duel",
+ "final": true
 }

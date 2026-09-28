@@ -254,7 +254,8 @@ Before minting:
    authored one-of-one characters will exist. Do not infer rarity from this hash.
 3. Freeze a renderer version **and the actual exported artwork, traits and bio**
    per token. Store content-addressed assets and metadata. A future code deployment
-   must not silently alter previously sold artwork.
+   must not silently alter previously sold artwork. The pipeline exists:
+   `qdojo combat nft freeze` / `verify` ([docs/nft.md](../../docs/nft.md) §7).
 4. Specify how Qubic fighter identity, NFT ownership, and display rights relate.
    A transferred collectible is not automatically control of a fighting wallet.
 5. Keep static art traits separate from dynamic belt/performance metadata. Define

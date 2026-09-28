@@ -5,66 +5,105 @@
  "generated_tick": "4201",
  "source": "reference-contract-state",
  "fighter_id": "642d1dc34815dad8cb5f7429cfce9d3776e996b1e2f97df2131cb05dfabf5610",
- "owner": "4874f5fe7938d4ef080746db211a6e6335971e472065d3864209cb814f7e646e",
- "operator": "4874f5fe7938d4ef080746db211a6e6335971e472065d3864209cb814f7e646e",
- "auth_version": 1,
+ "owner": "4397a7a0207c2e29d10899b3f3c2051f1b7209651115d1d6732e00185feb65b9",
+ "operator": "4397a7a0207c2e29d10899b3f3c2051f1b7209651115d1d6732e00185feb65b9",
+ "auth_version": 4,
  "house_npc": false,
- "lock": "CONTEST",
- "lifetime_rating": 1014,
+ "lock": "QUEUED",
+ "lifetime_rating": 992,
  "provisional": false,
  "belt": "yellow",
- "placement_fights": 17,
+ "placement_fights": 14,
  "record": {
-  "W": 7,
-  "D": 2,
+  "W": 5,
+  "D": 1,
   "L": 8,
-  "FW": 2,
+  "FW": 1,
   "FL": 0
+ },
+ "records_by_mode": {
+  "ranked": {
+   "W": 5,
+   "D": 1,
+   "L": 8,
+   "FW": 1,
+   "FL": 0,
+   "N": 0
+  },
+  "cup": {
+   "W": 0,
+   "D": 0,
+   "L": 4,
+   "FW": 1,
+   "FL": 0,
+   "N": 0
+  }
  },
  "faults_by_epoch": {},
  "cooldown_until": "0",
  "season_ratings": {
-  "1": 1014
+  "1": 992
  },
  "fights": [
   "1",
   "3",
-  "4",
-  "6",
-  "18",
-  "21",
-  "22",
-  "25",
-  "27",
-  "29",
+  "17",
+  "19",
+  "23",
+  "24",
+  "28",
+  "30",
   "33",
-  "34",
-  "37",
+  "36",
   "38",
   "41",
-  "46",
-  "52",
-  "59",
+  "45",
+  "48",
+  "53",
+  "57",
+  "61",
   "63",
-  "64",
   "66",
-  "67",
-  "70",
-  "74",
-  "76"
+  "68"
  ],
  "name": "kitsune",
  "driver": "mixed-v1",
+ "origin": "house",
  "asset": {
   "issuer": "4a2d9a3b95b24eedf8ead2e3fd071731f066416599c08812cd9ef344651f22dd",
-  "name": "QDOJOF",
+  "name": "QF00005",
   "founding": false,
-  "owner": "4874f5fe7938d4ef080746db211a6e6335971e472065d3864209cb814f7e646e",
+  "owner": "4397a7a0207c2e29d10899b3f3c2051f1b7209651115d1d6732e00185feb65b9",
+  "possessor": "4397a7a0207c2e29d10899b3f3c2051f1b7209651115d1d6732e00185feb65b9",
+  "serial": 5,
+  "creator": "1afcb2deee8f9c4e35489c9e5112ba436269622468e3c6b045a6fcaaa64a1efa",
+  "manager": "QDOJO",
+  "ask": null,
+  "best_bid": null,
+  "last_sale": {
+   "price": "81279",
+   "tick": "3759"
+  },
   "history": [
    {
     "tick": "1",
     "from": null,
     "to": "4874f5fe7938d4ef080746db211a6e6335971e472065d3864209cb814f7e646e"
+   },
+   {
+    "tick": "1712",
+    "from": "4874f5fe7938d4ef080746db211a6e6335971e472065d3864209cb814f7e646e",
+    "to": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7"
+   },
+   {
+    "tick": "2734",
+    "from": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+    "to": "aad0189aefc82b0e3e746befb8f51a8cf1654171898cd8e4794d54ac9ff526bd"
+   },
+   {
+    "tick": "3759",
+    "from": "aad0189aefc82b0e3e746befb8f51a8cf1654171898cd8e4794d54ac9ff526bd",
+    "to": "4397a7a0207c2e29d10899b3f3c2051f1b7209651115d1d6732e00185feb65b9"
    }
   ]
  }

@@ -257,11 +257,15 @@ async function main() {
     await must((await page.locator('.bk-pair').count()) === facts.cup.pairings.length, facts.cup.pairings.length + ' pairings');
     if (facts.cup.champion) await must(await page.isVisible('.champ'), 'the champion banner');
     await must((await page.locator('.bk-in.in').count()) > 0, 'check-in marks');
-    // each finished series shows its winner with the winning score
+    // each finished series shows its winner with the winning score; a forfeit
+    // ends a series without a series win (competition.md §4), so those are skipped
+    const fightFile = id => path.join(SAMPLE, 'fights', String(id) + '.json');
+    const forfeited = new Set((facts.cup.pairings || []).filter(p => (p.fights || []).some(id =>
+      fs.existsSync(fightFile(id)) && ((readJson(fightFile(id)).result || {}).kind === 'FORFEIT'))).map(p => String(p.pairing_id)));
     for (const box of await page.locator('.bk-pair.bk-done').all()) {
       const head = (await box.locator('.bk-head').textContent()) || '';
       const need = (head.match(/FIRST TO (\d+)/) || [])[1];
-      if (!need) continue;
+      if (!need || forfeited.has((head.match(/PAIRING (\d+)/) || [])[1])) continue;
       const won = (await box.locator('.bk-side.won .bk-score').textContent() || '').trim();
       await must(won === need, 'the series winner shows ' + need + ' wins, got ' + won + ' (' + head + ')');
     }
@@ -290,6 +294,40 @@ async function main() {
     await go(page, base, '#owner/' + facts.owner, 'text=FIGHTERS OWNED');
     await must((await page.locator('#view table tbody tr').count()) >= 1, 'an owned fighter');
     await shot(page, 'owner', false);
+  });
+
+  // ---- fighter NFTs (docs/nft.md) ----
+  const nfts = fs.existsSync(path.join(SAMPLE, 'nfts.json')) ? readJson(path.join(SAMPLE, 'nfts.json')) : null;
+  if (nfts) await step('collection', async (page, base) => {
+    await go(page, base, '#collection', '.nft-card');
+    await must((await page.locator('.nft-card').count()) === nfts.tokens.length, 'one card per token');
+    const listed = nfts.tokens.filter(t => t.ask).length;
+    await page.check('#nft-sale');
+    await must((await page.locator('.nft-card').count()) === listed, listed + ' cards for sale');
+    await must(/HOW TO BUY ON TESTNET/.test(await text(page, '#view')), 'the honest how-to-buy box');
+    await must((await page.locator('#view button, #view [data-wallet]').count()) === 0, 'no wallet action');
+    await shot(page, 'collection');
+  });
+  if (nfts) await step('collection-phone', async (page, base) => {
+    await go(page, base, '#collection', '.nft-card');
+    const wide = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    await must(wide <= 0, 'no horizontal scroll at 390 px (got ' + wide + ')');
+    await shot(page, 'collection-390');
+  }, { context: { viewport: { width: 390, height: 844 } } });
+  if (nfts) await step('nft', async (page, base) => {
+    const t = nfts.tokens.find(x => x.last_sale) || nfts.tokens[0];
+    await go(page, base, '#nft/' + t.fighter_id, '.nft-events li');
+    const v = await text(page, '#view');
+    await must(/PROVENANCE/.test(v) && /MINTED/.test(v) && /WHO HOLDS IT/.test(v), 'provenance and holders');
+    if (t.frozen) {
+      await page.waitForSelector('#nft-frozen .nft-tag-frozen', { timeout: 15000 });
+      await must(/ART MATCHES/.test(await text(page, '#nft-frozen')), 'the card to match its frozen master');
+    }
+    await shot(page, 'nft');
+  });
+  if (nfts) await step('fighter-nft-hook', async (page, base) => {
+    await go(page, base, '#fighter/' + nfts.tokens[0].fighter_id, '.nft-hook');
+    await must((await page.getAttribute('.nft-hook', 'href')) === '#nft/' + nfts.tokens[0].fighter_id, 'a link to the token page');
   });
 
   // ---- replay and verification ----

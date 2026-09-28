@@ -36,6 +36,7 @@ from pathlib import Path
 
 from . import codec, export
 from .contract import CombatContract, Manifest
+from .nft import AssetLedger, Env
 from .rating import PLACEMENT_FIGHTS, belt
 
 SCHEMA_VERSION = "qdojo.combat.readmodel.v1"
@@ -83,8 +84,20 @@ CREATE TABLE IF NOT EXISTS sales(
   seq INTEGER PRIMARY KEY, tick INTEGER NOT NULL, fighter_id TEXT NOT NULL, seller TEXT NOT NULL,
   buyer TEXT NOT NULL, price INTEGER NOT NULL, fee INTEGER NOT NULL, doc TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS sales_by_fighter ON sales(fighter_id, seq);
+CREATE TABLE IF NOT EXISTS nft_tokens(
+  fighter_id TEXT PRIMARY KEY, serial INTEGER NOT NULL, name TEXT NOT NULL, owner TEXT NOT NULL,
+  possessor TEXT NOT NULL, creator TEXT NOT NULL, manager TEXT NOT NULL, founding INTEGER NOT NULL,
+  ask INTEGER, best_bid INTEGER, last_price INTEGER, doc TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS nft_tokens_by_owner ON nft_tokens(owner);
+CREATE TABLE IF NOT EXISTS nft_orders(
+  fighter_id TEXT NOT NULL, side TEXT NOT NULL, who TEXT NOT NULL, price INTEGER NOT NULL, tick INTEGER NOT NULL,
+  PRIMARY KEY(fighter_id, side, who)) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS nft_events(
+  seq INTEGER PRIMARY KEY, tick INTEGER NOT NULL, kind TEXT NOT NULL, fighter_id TEXT, doc TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS nft_events_by_fighter ON nft_events(fighter_id, seq);
 """
-TABLES = ("fighters", "fights", "fight_sides", "contests", "ratings", "cups", "seasons", "ownership", "sales")
+TABLES = ("fighters", "fights", "fight_sides", "contests", "ratings", "cups", "seasons", "ownership", "sales",
+          "nft_tokens", "nft_orders", "nft_events")
 FINAL_CUP = ("COMPLETE", "CANCELLED", "ABORTED")
 
 
@@ -143,6 +156,13 @@ class Replica:
         self.owners: dict[bytes, bytes | None] = {}
         self.failing: set[bytes] = set()
         self.records = 0
+        self.nft = AssetLedger()              # the fighter NFT ledger, from the journal's "nft" records
+
+    def _nft_env(self) -> Env:
+        def lock_of(fid):
+            f = self.contract.fighters.get(fid)
+            return f.lock if f is not None else None
+        return Env(self.balances, lock_of, self.owners.__setitem__)
 
     def _transfer(self, to: bytes, amount: int) -> bool:
         if to in self.failing:
@@ -172,8 +192,15 @@ class Replica:
             self.contract.call(who, bytes.fromhex(rec["frame"]), rec["amount"], self.tick)
         elif k == "end":
             self.contract.end_tick(self.tick)
+            if self.nft.crossed:                     # as World.end: agreed NFT sales settle at END_TICK
+                self.nft.end_tick(self._nft_env(), self.tick)
             self.tick += 1
             self.contract.begin_tick(self.tick)
+        elif k == "nft":
+            r = self.nft.apply(self._nft_env(), bytes.fromhex(rec["who"]), rec["op"], rec["args"], rec["amount"],
+                               self.tick)
+            if "code" in rec and r["code"] != rec["code"]:
+                raise ReadModelError(f"replica's NFT ledger diverged at tick {rec['t']} ({rec['op']})")
         elif k == "begin":
             self.tick = rec["t"]
             self.contract.begin_tick(self.tick)
@@ -282,7 +309,7 @@ class Syncer:
         self.max_cup = mx("SELECT MAX(cup_id) FROM cups")
 
     def sync(self, c: CombatContract, deployment: dict, state: dict, rule=None, sales: list | None = None,
-             economics: dict | None = None):
+             economics: dict | None = None, nft: AssetLedger | None = None):
         """One transaction: the database afterwards describes contract `c` at its tick.
         `rule` is the season qualification (the arena profile's), `sales` the
         simulated market's sales (the arena's market.json), `economics` the
@@ -307,8 +334,12 @@ class Syncer:
                 d = export.season_doc(c, s, rule)
                 conn.execute("INSERT OR REPLACE INTO seasons VALUES(?,?,?,?,?)",
                              (s, d["status"], int(d["final"]), d["champion"], json.dumps(d)))
-            conn.execute("DELETE FROM ownership")
-            for hexid, m in meta.items():
+            if nft is not None and nft.configured:
+                self._nfts(nft, meta)                 # ownership and sales from the journal's NFT ledger
+                sales = None
+            else:
+                conn.execute("DELETE FROM ownership")
+            for hexid, m in (meta.items() if nft is None or not nft.configured else ()):
                 for i, h in enumerate(((m.get("asset") or {}).get("history")) or []):
                     conn.execute("INSERT INTO ownership VALUES(?,?,?,?,?)",
                                  (hexid, i, int(h["tick"]), h.get("from"), h["to"]))
@@ -387,6 +418,42 @@ class Syncer:
             self.open_cups.discard(kid)
         else:
             self.open_cups.add(kid)
+
+    def _nfts(self, led: AssetLedger, meta: dict):
+        """Tokens, open orders, provenance events, ownership and sales, all a
+        pure function of the ledger (so incremental equals rebuild). Events
+        and sales only grow: only new ones are inserted."""
+        conn = self.conn
+        conn.execute("DELETE FROM nft_orders")
+        for fid, tok in led.tokens.items():
+            d = led.token_doc(fid)
+            d["fighter_name"] = (meta.get(fid.hex()) or {}).get("name")
+            ask, bid = led.asks.get(fid), led.best_bid(fid)
+            conn.execute("INSERT OR REPLACE INTO nft_tokens VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                         (fid.hex(), tok.serial, tok.name, tok.owner.hex(), tok.possessor.hex(), tok.creator.hex(),
+                          tok.manager, int(tok.founding), ask.price if ask else None, bid.price if bid else None,
+                          int(d["last_sale"]["price"]) if d["last_sale"] else None, json.dumps(d, sort_keys=True)))
+            if ask:
+                conn.execute("INSERT INTO nft_orders VALUES(?,?,?,?,?)", (fid.hex(), "ask", ask.who.hex(), ask.price, ask.tick))
+            for o in led.bids.get(fid, []):
+                conn.execute("INSERT INTO nft_orders VALUES(?,?,?,?,?)", (fid.hex(), "bid", o.who.hex(), o.price, o.tick))
+        top = conn.execute("SELECT MAX(seq) FROM nft_events").fetchone()[0] or 0
+        for e in led.events[top:]:
+            conn.execute("INSERT INTO nft_events VALUES(?,?,?,?,?)",
+                         (e["seq"], e["tick"], e["kind"], e["fighter_id"], json.dumps(e, sort_keys=True)))
+        conn.execute("DELETE FROM ownership")
+        for fid in led.tokens:
+            for i, (t, frm, to) in enumerate(led.ownership(fid)):
+                conn.execute("INSERT INTO ownership VALUES(?,?,?,?,?)", (fid.hex(), i, t, frm.hex() if frm else None,
+                                                                         to.hex()))
+        if get_meta(conn, "sales_source") != "nft-ledger":     # rows from the older market.json path go
+            conn.execute("DELETE FROM sales")
+            set_meta(conn, "sales_source", "nft-ledger")
+        top = conn.execute("SELECT MAX(seq) FROM sales").fetchone()[0] or 0
+        for x in led.sales[top:]:
+            conn.execute("INSERT INTO sales VALUES(?,?,?,?,?,?,?,?)",
+                         (x["seq"], x["tick"], x["fighter_id"], x["seller"], x["buyer"], x["price"], x["fee"],
+                          json.dumps(x, sort_keys=True)))
 
     def _fighter(self, c, fid, f, m):
         placed = f.placement >= PLACEMENT_FIGHTS
@@ -575,7 +642,7 @@ class Follower:
                              {"journal_offset": self.offset, "journal_sig": self.tail_sig,
                               "journal_records": self.replica.records,
                               "synced_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
-                             rule=self.rule, sales=self.sales(), economics=self.economics())
+                             rule=self.rule, sales=self.sales(), economics=self.economics(), nft=self.replica.nft)
         self.db_offset = self.offset
         return True
 

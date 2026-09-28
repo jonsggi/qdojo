@@ -722,6 +722,11 @@ static ReplaySummary replay(const char* name)
         {
             sum.expectedDigest = r.at("event_digest").str;
         }
+        else if (k == "xfer" || k == "nft")
+        {
+            // Market payments and the simulated NFT ledger (nft.py) are not
+            // modelled here; the contract learns ownership from "owner" records.
+        }
         else
         {
             ADD_FAILURE() << name << ": unknown record " << k;

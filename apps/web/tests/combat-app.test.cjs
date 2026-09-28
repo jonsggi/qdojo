@@ -455,7 +455,8 @@ test('cup and duel series scores are credited to the fighter who won those fight
     const w = {};
     for (const f of fights) {
       const s = summaryOf(f);
-      if (s && s.result && s.result.winner) { const h = s.fighters[s.result.winner].fighter_id; w[h] = (w[h] || 0) + 1; }
+      // A forfeit ends the whole series without a series win (competition.md §4).
+      if (s && s.result && s.result.winner && s.result.kind !== 'FORFEIT') { const h = s.fighters[s.result.winner].fighter_id; w[h] = (w[h] || 0) + 1; }
     }
     return w;
   };
@@ -464,7 +465,8 @@ test('cup and duel series scores are credited to the fighter who won those fight
     const got = L.seriesWins(p.a, p.b, p.series.wins_a, p.series.wins_b), real = tally(p.fights);
     assert.equal(got[p.a], real[p.a] || 0, 'cup ' + c.cup_id + ' pairing ' + p.pairing_id + ' a');
     assert.equal(got[p.b], real[p.b] || 0, 'cup ' + c.cup_id + ' pairing ' + p.pairing_id + ' b');
-    if (p.winner) assert.ok(got[p.winner] >= p.series.need, 'the winner reached the target');
+    const forfeited = (p.fights || []).some(f => { const s = summaryOf(f); return s && s.result && s.result.kind === 'FORFEIT'; });
+    if (p.winner && !forfeited) assert.ok(got[p.winner] >= p.series.need, 'the winner reached the target');
     checked++;
   }
   for (const d of duels) {

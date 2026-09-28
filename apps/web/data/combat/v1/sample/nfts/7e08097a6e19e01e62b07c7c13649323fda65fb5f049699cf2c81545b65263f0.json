@@ -1,0 +1,271 @@
+{
+ "schema": "qdojo.combat.nft.v1",
+ "network_id": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
+ "generated_tick": "4201",
+ "fighter_id": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+ "serial": 8,
+ "name": "QF00008",
+ "issuer": "4a2d9a3b95b24eedf8ead2e3fd071731f066416599c08812cd9ef344651f22dd",
+ "shares": 1,
+ "creator": "1afcb2deee8f9c4e35489c9e5112ba436269622468e3c6b045a6fcaaa64a1efa",
+ "founding": false,
+ "owner": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+ "possessor": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+ "manager": "QDOJO",
+ "minted_tick": "1",
+ "metadata": {},
+ "ask": {
+  "price": "98590",
+  "seller": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+  "tick": "3903"
+ },
+ "best_bid": {
+  "price": "79486",
+  "bidder": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396",
+  "tick": "3901"
+ },
+ "bids": 1,
+ "sale_pending": false,
+ "last_sale": {
+  "price": "88631",
+  "tick": "2186"
+ },
+ "transfers": 1,
+ "fighter_name": "kirin",
+ "origin": "house",
+ "rating": 1000,
+ "lock": "IDLE",
+ "record": {
+  "W": 0,
+  "D": 0,
+  "L": 0,
+  "FW": 0,
+  "FL": 0
+ },
+ "frozen": {
+  "metadata": "data/nft/v1/sample/objects/7ac7bc5071ef14ccaa3fa8eb5a96e0bd89bff4b9fa621a1bc632b9f6bed8e775.json",
+  "metadata_sha256": "7ac7bc5071ef14ccaa3fa8eb5a96e0bd89bff4b9fa621a1bc632b9f6bed8e775",
+  "card_png": "data/nft/v1/sample/objects/6a79a991cf1531e2d266d0f333d96a5e6bb4fbe1ab3484800dac3e961b469b1e.png",
+  "card_png_sha256": "6a79a991cf1531e2d266d0f333d96a5e6bb4fbe1ab3484800dac3e961b469b1e",
+  "card_svg_sha256": "d7c018f11ac68e5b4486587b6ed1fcdad6fb72093602fb8dd158f439713116c5",
+  "sprite_svg_sha256": "b3e2b6c98794437880d332dbdc38121b659a5d4a6553943378b6cac935247589",
+  "renderer": "qdojo-fighters-v5-preview"
+ },
+ "book": {
+  "asks": [
+   {
+    "price": "98590",
+    "who": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+    "tick": "3903"
+   }
+  ],
+  "bids": [
+   {
+    "price": "79486",
+    "who": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396",
+    "tick": "3901"
+   }
+  ]
+ },
+ "history": [
+  {
+   "seq": "9",
+   "tick": "1",
+   "kind": "MINT",
+   "fighter_id": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "to": "e473ebff086c3a6c2ecd18d4664e229f49df4b600f03c8075696d9406031a6db",
+   "name": "QF00008",
+   "creator": "1afcb2deee8f9c4e35489c9e5112ba436269622468e3c6b045a6fcaaa64a1efa",
+   "founding": false
+  },
+  {
+   "seq": "11",
+   "tick": "301",
+   "kind": "ASK",
+   "fighter_id": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "from": "e473ebff086c3a6c2ecd18d4664e229f49df4b600f03c8075696d9406031a6db",
+   "price": "119911"
+  },
+  {
+   "seq": "13",
+   "tick": "601",
+   "kind": "ASK",
+   "fighter_id": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "from": "e473ebff086c3a6c2ecd18d4664e229f49df4b600f03c8075696d9406031a6db",
+   "price": "113915",
+   "replaces": "119911"
+  },
+  {
+   "seq": "14",
+   "tick": "601",
+   "kind": "BID",
+   "fighter_id": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "from": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+   "price": "66461"
+  },
+  {
+   "seq": "20",
+   "tick": "901",
+   "kind": "ASK",
+   "fighter_id": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "from": "e473ebff086c3a6c2ecd18d4664e229f49df4b600f03c8075696d9406031a6db",
+   "price": "108219",
+   "replaces": "113915"
+  },
+  {
+   "seq": "29",
+   "tick": "1203",
+   "kind": "ASK",
+   "fighter_id": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "from": "e473ebff086c3a6c2ecd18d4664e229f49df4b600f03c8075696d9406031a6db",
+   "price": "102808",
+   "replaces": "108219"
+  },
+  {
+   "seq": "30",
+   "tick": "1502",
+   "kind": "BID",
+   "fighter_id": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "from": "27333495e36188a4391a749f541d056c9de6ac7b7a474ab6500aa148882b2428",
+   "price": "66456"
+  },
+  {
+   "seq": "33",
+   "tick": "1502",
+   "kind": "ASK",
+   "fighter_id": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "from": "e473ebff086c3a6c2ecd18d4664e229f49df4b600f03c8075696d9406031a6db",
+   "price": "97667",
+   "replaces": "102808"
+  },
+  {
+   "seq": "37",
+   "tick": "1801",
+   "kind": "ASK",
+   "fighter_id": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "from": "e473ebff086c3a6c2ecd18d4664e229f49df4b600f03c8075696d9406031a6db",
+   "price": "92783",
+   "replaces": "97667"
+  },
+  {
+   "seq": "38",
+   "tick": "1802",
+   "kind": "BID",
+   "fighter_id": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "from": "4e1be02f1009e47091ad4ea7d17eac097265077844762893e534dc7e983ca69a",
+   "price": "67886"
+  },
+  {
+   "seq": "41",
+   "tick": "1803",
+   "kind": "CANCEL_BID",
+   "fighter_id": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "from": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+   "price": "66461"
+  },
+  {
+   "seq": "43",
+   "tick": "2101",
+   "kind": "BID",
+   "fighter_id": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "from": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+   "price": "88631"
+  },
+  {
+   "seq": "44",
+   "tick": "2101",
+   "kind": "ASK",
+   "fighter_id": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "from": "e473ebff086c3a6c2ecd18d4664e229f49df4b600f03c8075696d9406031a6db",
+   "price": "88143",
+   "replaces": "92783"
+  },
+  {
+   "seq": "48",
+   "tick": "2186",
+   "kind": "SALE",
+   "fighter_id": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "from": "e473ebff086c3a6c2ecd18d4664e229f49df4b600f03c8075696d9406031a6db",
+   "to": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+   "price": "88631",
+   "fee": "2215",
+   "royalty": "2215",
+   "ask": "88143",
+   "bid": "88631"
+  },
+  {
+   "seq": "59",
+   "tick": "2701",
+   "kind": "BID",
+   "fighter_id": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "from": "6eea87818e0e53129f05ab90820e61ddafbe63a237a5635909ef34d25b1c3411",
+   "price": "61383"
+  },
+  {
+   "seq": "61",
+   "tick": "2701",
+   "kind": "CANCEL_BID",
+   "fighter_id": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "from": "27333495e36188a4391a749f541d056c9de6ac7b7a474ab6500aa148882b2428",
+   "price": "66456"
+  },
+  {
+   "seq": "70",
+   "tick": "3001",
+   "kind": "CANCEL_BID",
+   "fighter_id": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "from": "4e1be02f1009e47091ad4ea7d17eac097265077844762893e534dc7e983ca69a",
+   "price": "67886"
+  },
+  {
+   "seq": "86",
+   "tick": "3603",
+   "kind": "ASK",
+   "fighter_id": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "from": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+   "price": "103779"
+  },
+  {
+   "seq": "89",
+   "tick": "3901",
+   "kind": "BID",
+   "fighter_id": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "from": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396",
+   "price": "79486"
+  },
+  {
+   "seq": "93",
+   "tick": "3903",
+   "kind": "ASK",
+   "fighter_id": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "from": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+   "price": "98590",
+   "replaces": "103779"
+  },
+  {
+   "seq": "94",
+   "tick": "3903",
+   "kind": "CANCEL_BID",
+   "fighter_id": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "from": "6eea87818e0e53129f05ab90820e61ddafbe63a237a5635909ef34d25b1c3411",
+   "price": "61383"
+  }
+ ],
+ "sales": [
+  {
+   "seq": "3",
+   "event": "48",
+   "tick": "2186",
+   "fighter_id": "7e08097a6e19e01e62b07c7c13649323fda65fb5f049699cf2c81545b65263f0",
+   "name": "QF00008",
+   "seller": "e473ebff086c3a6c2ecd18d4664e229f49df4b600f03c8075696d9406031a6db",
+   "buyer": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+   "price": "88631",
+   "fee": "2215",
+   "royalty": "2215",
+   "creator": "1afcb2deee8f9c4e35489c9e5112ba436269622468e3c6b045a6fcaaa64a1efa",
+   "ask": "88143",
+   "bid": "88631"
+  }
+ ]
+}

@@ -181,9 +181,10 @@ def add_parser(sub):
     d.add_argument("--json", action="store_true")
     d.set_defaults(fn=cmd_evaluate)
 
-    from . import api, chain_cli, join, live
+    from . import api, chain_cli, join, live, nft_freeze
     chain_cli.add_parsers(s)
     live.add_parser(s)
     api.add_parser(s)
     join.add_parser(s)
+    nft_freeze.add_parser(s)
     return s

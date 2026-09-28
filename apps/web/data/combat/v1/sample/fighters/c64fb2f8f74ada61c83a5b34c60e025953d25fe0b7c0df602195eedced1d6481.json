@@ -9,7 +9,7 @@
  "operator": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
  "auth_version": 2,
  "house_npc": false,
- "lock": "CONTEST",
+ "lock": "IDLE",
  "lifetime_rating": 1000,
  "provisional": true,
  "belt": "white",
@@ -21,38 +21,59 @@
   "FW": 0,
   "FL": 0
  },
- "faults_by_epoch": {},
- "cooldown_until": "0",
+ "records_by_mode": {
+  "duel": {
+   "W": 5,
+   "D": 1,
+   "L": 11,
+   "FW": 0,
+   "FL": 1,
+   "N": 0
+  }
+ },
+ "faults_by_epoch": {
+  "2": 1
+ },
+ "cooldown_until": "4171",
  "season_ratings": {},
  "fights": [
-  "5",
-  "7",
-  "9",
+  "10",
+  "12",
+  "13",
+  "14",
   "15",
   "16",
-  "17",
-  "24",
-  "30",
-  "32",
-  "40",
+  "21",
+  "25",
+  "26",
+  "35",
+  "37",
+  "39",
   "42",
-  "45",
-  "58",
-  "60",
-  "62",
+  "50",
+  "52",
+  "55",
   "65",
-  "69",
-  "71",
-  "73",
-  "75"
+  "69"
  ],
  "name": "baku",
  "driver": "repeat-last-winner",
+ "origin": "house",
  "asset": {
   "issuer": "4a2d9a3b95b24eedf8ead2e3fd071731f066416599c08812cd9ef344651f22dd",
-  "name": "QDOJOF",
+  "name": "QF00006",
   "founding": false,
   "owner": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+  "possessor": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+  "serial": 6,
+  "creator": "1afcb2deee8f9c4e35489c9e5112ba436269622468e3c6b045a6fcaaa64a1efa",
+  "manager": "QDOJO",
+  "ask": null,
+  "best_bid": null,
+  "last_sale": {
+   "price": "85690",
+   "tick": "2787"
+  },
   "history": [
    {
     "tick": "1",
@@ -60,7 +81,7 @@
     "to": "03a0b4f6f51aeee0ed3b42832ac587d6b7cfec97c88275a75930803feb82470a"
    },
    {
-    "tick": "1500",
+    "tick": "2787",
     "from": "03a0b4f6f51aeee0ed3b42832ac587d6b7cfec97c88275a75930803feb82470a",
     "to": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7"
    }

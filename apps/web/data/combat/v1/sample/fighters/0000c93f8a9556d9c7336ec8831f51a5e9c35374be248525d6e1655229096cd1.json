@@ -5,46 +5,101 @@
  "generated_tick": "4201",
  "source": "reference-contract-state",
  "fighter_id": "0000c93f8a9556d9c7336ec8831f51a5e9c35374be248525d6e1655229096cd1",
- "owner": "f129848521aa60150f84c1a640eb70343a69ce5e87c82ecac787991f62e22349",
- "operator": "f129848521aa60150f84c1a640eb70343a69ce5e87c82ecac787991f62e22349",
- "auth_version": 1,
+ "owner": "4e1be02f1009e47091ad4ea7d17eac097265077844762893e534dc7e983ca69a",
+ "operator": "4e1be02f1009e47091ad4ea7d17eac097265077844762893e534dc7e983ca69a",
+ "auth_version": 3,
  "house_npc": false,
  "lock": "TOURNAMENT",
- "lifetime_rating": 1000,
- "provisional": true,
- "belt": "white",
- "placement_fights": 0,
+ "lifetime_rating": 1130,
+ "provisional": false,
+ "belt": "orange",
+ "placement_fights": 10,
  "record": {
-  "W": 0,
+  "W": 10,
   "D": 0,
   "L": 0,
   "FW": 0,
   "FL": 0
  },
+ "records_by_mode": {
+  "cup": {
+   "W": 4,
+   "D": 1,
+   "L": 2,
+   "FW": 0,
+   "FL": 0,
+   "N": 0
+  },
+  "ranked": {
+   "W": 10,
+   "D": 0,
+   "L": 0,
+   "FW": 0,
+   "FL": 0,
+   "N": 0
+  }
+ },
  "faults_by_epoch": {},
  "cooldown_until": "0",
- "season_ratings": {},
+ "season_ratings": {
+  "1": 1130
+ },
  "fights": [
-  "19",
+  "4",
+  "5",
+  "18",
   "20",
-  "44",
-  "47",
+  "22",
+  "24",
+  "27",
+  "28",
+  "29",
+  "32",
+  "34",
+  "40",
+  "43",
   "48",
-  "54",
-  "57"
+  "53",
+  "57",
+  "61"
  ],
  "name": "oni",
  "driver": "script-vs-scout-v1",
+ "origin": "house",
  "asset": {
   "issuer": "4a2d9a3b95b24eedf8ead2e3fd071731f066416599c08812cd9ef344651f22dd",
-  "name": "QDOJOF",
+  "name": "QF00004",
   "founding": false,
-  "owner": "f129848521aa60150f84c1a640eb70343a69ce5e87c82ecac787991f62e22349",
+  "owner": "4e1be02f1009e47091ad4ea7d17eac097265077844762893e534dc7e983ca69a",
+  "possessor": "4e1be02f1009e47091ad4ea7d17eac097265077844762893e534dc7e983ca69a",
+  "serial": 4,
+  "creator": "1afcb2deee8f9c4e35489c9e5112ba436269622468e3c6b045a6fcaaa64a1efa",
+  "manager": "QDOJO",
+  "ask": {
+   "price": "230638",
+   "seller": "4e1be02f1009e47091ad4ea7d17eac097265077844762893e534dc7e983ca69a",
+   "tick": "3902"
+  },
+  "best_bid": null,
+  "last_sale": {
+   "price": "142986",
+   "tick": "2834"
+  },
   "history": [
    {
     "tick": "1",
     "from": null,
     "to": "f129848521aa60150f84c1a640eb70343a69ce5e87c82ecac787991f62e22349"
+   },
+   {
+    "tick": "2230",
+    "from": "f129848521aa60150f84c1a640eb70343a69ce5e87c82ecac787991f62e22349",
+    "to": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7"
+   },
+   {
+    "tick": "2834",
+    "from": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+    "to": "4e1be02f1009e47091ad4ea7d17eac097265077844762893e534dc7e983ca69a"
    }
   ]
  }

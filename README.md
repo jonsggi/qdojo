@@ -126,7 +126,7 @@ The full index with reading orders is [docs/README.md](docs/README.md).
 | Practice, NPCs, planner interface, evaluation | Done, local and free |
 | Strategic balance | 11/11 gates pass on held-out seeds ([report](docs/validation-report.md)); economics with real costs, latency and replay readability not yet measured |
 | Contract, matchmaking, ratings, seasons, duels, cups | Done on a simulated chain with fake QU |
-| Fighter NFTs | Simulated (`AssetRegistry`); no real asset issued |
+| Fighter NFTs | Simulated behind one port (`combat/nft.py`, [docs/nft.md](docs/nft.md)); the Qubic adapter is a stub; no real asset issued |
 | Public demo arena | Live at qdojo.jonsggi.com: simulated chain, fake QU, operator-run bots |
 | Qubic contract | Source passes Core's contract checker and replays the parity journals in core-lite's harness. **Not deployed** |
 | Paid play | Not available. It needs a deployed contract, a release manifest and explicit authorisation |

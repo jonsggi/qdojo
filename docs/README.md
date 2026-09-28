@@ -56,6 +56,7 @@ for the record and does not describe the current system.
 | [protocol.md](protocol.md) | normative | Bytes, commitments, procedures, deadlines, service failure |
 | [matchmaking.md](matchmaking.md) | normative | The book, compatibility, pairing order, budgets |
 | [competition.md](competition.md) | normative | Rating, belts, faults, seasons, duels, cups |
+| [nft.md](nft.md) | normative | Fighter NFTs: what owning one does, the market, the sim and Qubic backends, frozen art |
 | [model.md](model.md) | normative | The acceptance gates for balance, cost and economics |
 | [fixtures/commitment-v1.json](fixtures/commitment-v1.json) | reference | Frozen commitment test vector |
 | [reference/](reference/) | reference | `combat_v1.py` (independent arithmetic aid) and `check_docs.py` (this index's link and matrix check) |

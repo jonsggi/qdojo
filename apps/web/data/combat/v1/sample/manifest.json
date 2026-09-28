@@ -13,15 +13,22 @@
   }
  },
  "tiers": {
-  "1": "1000"
+  "1": "5000",
+  "2": "20000"
  },
  "match_interval_ticks": 4,
- "pair_starts_per_epoch": 6,
+ "pair_starts_per_epoch": 3,
  "pair_rematch_ticks": 60,
  "ticks_per_epoch": 2400,
  "fee_profiles": {
   "1": {
    "rake_bps": 500,
+   "house_bps": 6000,
+   "dev_bps": 1000,
+   "share_bps": 3000
+  },
+  "2": {
+   "rake_bps": 1000,
    "house_bps": 6000,
    "dev_bps": 1000,
    "share_bps": 3000
@@ -39,6 +46,8 @@
   "qdojo.combat.cups.v1",
   "qdojo.combat.duels.v1",
   "qdojo.combat.seasons.v1",
-  "qdojo.combat.ruleset.v1"
+  "qdojo.combat.ruleset.v1",
+  "qdojo.combat.market.v1",
+  "qdojo.combat.economics.v1"
  ]
 }

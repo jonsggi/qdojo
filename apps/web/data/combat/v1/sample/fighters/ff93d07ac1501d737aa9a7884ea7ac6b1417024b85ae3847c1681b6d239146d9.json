@@ -5,12 +5,12 @@
  "generated_tick": "4201",
  "source": "reference-contract-state",
  "fighter_id": "ff93d07ac1501d737aa9a7884ea7ac6b1417024b85ae3847c1681b6d239146d9",
- "owner": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396",
- "operator": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396",
- "auth_version": 2,
+ "owner": "d99ecc996ceca363d43eacbfdca425be1dd38c2358a278850b8fa6c264c51035",
+ "operator": "d99ecc996ceca363d43eacbfdca425be1dd38c2358a278850b8fa6c264c51035",
+ "auth_version": 1,
  "house_npc": false,
  "lock": "IDLE",
- "lifetime_rating": 915,
+ "lifetime_rating": 922,
  "provisional": true,
  "belt": "white",
  "placement_fights": 0,
@@ -19,41 +19,70 @@
   "D": 0,
   "L": 0,
   "FW": 0,
-  "FL": 6
+  "FL": 5
+ },
+ "records_by_mode": {
+  "cup": {
+   "W": 0,
+   "D": 0,
+   "L": 0,
+   "FW": 0,
+   "FL": 1,
+   "N": 0
+  },
+  "ranked": {
+   "W": 0,
+   "D": 0,
+   "L": 0,
+   "FW": 0,
+   "FL": 5,
+   "N": 0
+  }
  },
  "faults_by_epoch": {
   "1": 3,
   "2": 3
  },
- "cooldown_until": "3360",
+ "cooldown_until": "3764",
  "season_ratings": {
-  "1": 915
+  "1": 922
  },
  "fights": [
-  "8",
-  "10",
-  "14",
+  "3",
+  "9",
+  "11",
   "36",
-  "41",
-  "52"
+  "54",
+  "62"
  ],
  "name": "ronin",
  "driver": "mixed-v1",
+ "origin": "house",
  "asset": {
   "issuer": "4a2d9a3b95b24eedf8ead2e3fd071731f066416599c08812cd9ef344651f22dd",
-  "name": "QDOJOF",
+  "name": "QF00009",
   "founding": false,
-  "owner": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396",
+  "owner": "d99ecc996ceca363d43eacbfdca425be1dd38c2358a278850b8fa6c264c51035",
+  "possessor": "d99ecc996ceca363d43eacbfdca425be1dd38c2358a278850b8fa6c264c51035",
+  "serial": 9,
+  "creator": "1afcb2deee8f9c4e35489c9e5112ba436269622468e3c6b045a6fcaaa64a1efa",
+  "manager": "QDOJO",
+  "ask": {
+   "price": "79652",
+   "seller": "d99ecc996ceca363d43eacbfdca425be1dd38c2358a278850b8fa6c264c51035",
+   "tick": "3901"
+  },
+  "best_bid": {
+   "price": "70947",
+   "bidder": "292c4244ae2741115558ed682231ecfc8988bc707f71198d135a02651a37f4d7",
+   "tick": "3002"
+  },
+  "last_sale": null,
   "history": [
    {
     "tick": "1",
     "from": null,
     "to": "d99ecc996ceca363d43eacbfdca425be1dd38c2358a278850b8fa6c264c51035"
-   },
-   {
-    "tick": "3000",
-    "from": "d99ecc996ceca363d43eacbfdca425be1dd38c2358a278850b8fa6c264c51035",
-    "to": "4d81ca83c302e900b52aade62ab6b8e86d970f92ff45371432be99254f886396"
    }
   ]
  }

@@ -24,11 +24,13 @@ def test_nft_sold_mid_contest_pays_the_snapshotted_owner(tmp_path):
     w, chain, registry, bots, owners = _setup(tmp_path, n=2, latency=(1, 2), seed=21)
     a, b = bots
     c = w.contract
+    # Only a QX-managed share can change hands mid-contest (docs/nft.md R4): move it there while idle.
+    assert registry.poll(registry.manage(owners[0], a.fighter_id, "QX", immediate=True))["code"] == "OK"
     assert _run(w, chain, bots, 200, until=lambda: c.fighters[a.fighter_id].lock == "CONTEST")
     contest = c.contests[c.fighters[a.fighter_id].lock_ref]
     buyer = identity("sc-buyer")
     w.mint(buyer, 10**6)
-    registry.transfer(a.fighter_id, owners[0], buyer)        # sold while fighting
+    assert registry.poll(registry.qx_transfer(owners[0], a.fighter_id, buyer, immediate=True))["code"] == "OK"  # sold while fighting
     before = dict(c.ledger.credits)
     assert _run(w, chain, bots, 800, until=lambda: contest.status == "DONE")
     side = "A" if contest.a.fighter_id == a.fighter_id else "B"
@@ -48,6 +50,8 @@ def test_cup_finalist_sold_between_pairings_is_played_by_the_new_owner(tmp_path)
         b.play_cups, b.ranked = True, False
         b.budget.max_stake = b.budget.max_total_escrow = 5000
     c = w.contract
+    for b, o in zip(bots, owners):      # QX-managed shares: QX knows no cup locks (docs/nft.md R4)
+        assert registry.poll(registry.manage(o, b.fighter_id, "QX", immediate=True))["code"] == "OK"
     r = w.send(ADMIN, Op.ADMIN_CREATE_CUP, 0, ruleset_digest=RULES.digest, timing_profile_id=1, fee_profile_id=1,
                entry_fee=2000, registration_close=w.tick + 15, min_entrants=4, max_entrants=4, level_ticks=1300,
                first_level_delay=30, checkin_ticks=60, replay_delay=40)
@@ -57,7 +61,7 @@ def test_cup_finalist_sold_between_pairings_is_played_by_the_new_owner(tmp_path)
     i = next(k for k, b in enumerate(bots) if b.fighter_id == finalist)
     buyer = identity("sc-finalist-buyer")
     w.mint(buyer, 10**9)
-    registry.transfer(finalist, owners[i], buyer)
+    assert registry.poll(registry.qx_transfer(owners[i], finalist, buyer, immediate=True))["code"] == "OK"
     receipt = chain.send(buyer, Op.REGISTER_FIGHTER, fighter_id=finalist, registry_version=1)
     _run(w, chain, bots, 3, until=lambda: chain.poll(receipt) is not None)
     assert chain.poll(receipt).ok, "the TOURNAMENT lock allows the buyer to bind at a pairing boundary"

@@ -134,7 +134,7 @@ def main():
             f"runtime {time.time() - started:.0f} s.", "",
             f"- Contests: {dict(kinds)}",
             f"- Cups: {dict(cups)}; duels: {sum(1 for x in c.contests.values() if x.mode == 1)}",
-            f"- NFT sales: {arena.state['collectors']}; contract service generation: {c.generation} "
+            f"- NFT sales: {len(arena.market.sales)} to {arena.state['collectors']} collectors; contract service generation: {c.generation} "
             f"(halted ticks {arena.chain.halted_ticks})",
             f"- Transactions: {len(arena.chain.txs)}, dropped "
             f"{sum(1 for t in arena.chain.txs.values() if t.status == 'dropped')}",
