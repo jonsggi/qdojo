@@ -1,10 +1,8 @@
 """Every qdojo command line we publish must actually parse.
 
-Two commands shipped broken because nothing checked this: `qdojo bot init
---full` (no such flag) appeared in the README twice, in docs/api.md and three
-times in llms.txt -- which is signed on chain, so the signed briefing told a
-coding agent to run a command that fails. And `qdojo doc verify FILE --node IP`
-put a top-level flag after a subcommand, which argparse will not take.
+Two riddle-era commands shipped broken because nothing checked this: one
+named a flag that did not exist, and one put a top-level flag after a
+subcommand, which argparse will not take.
 
 Documentation that does not parse is a bug. This test is the fence, and it
 feeds the lines to the REAL parser rather than modelling argparse in a regex:
@@ -27,10 +25,8 @@ ROOT = os.path.join(os.path.dirname(__file__), "..", "..", "..")
 # apps/web/tests/setup.test.cjs, which evaluates the literal in a vm instead --
 # the same trick help.test.cjs uses for HELP. Python reads markdown; node reads
 # JavaScript; neither guesses at the other's escaping.
-# Archived examples still document the supported legacy implementation.
-# Combat commands are live and parsed like every other published line.
-SURFACES = ["README.md", "docs/api.md", "docs/protocol.md", "docs/riddle-pack.md", "apps/web/llms.txt"]
-SURFACES += ["docs/archive/riddle-v0/" + path for path in SURFACES]
+SURFACES = ["README.md", "docs/api.md", "docs/protocol.md", "docs/build-a-bot.md", "docs/operations.md",
+            "apps/web/llms.txt"]
 
 # A published line is written for a human and carries placeholders. Each one is
 # spelled out here on purpose: an unrecognised placeholder FAILS rather than
@@ -57,7 +53,7 @@ PLACEHOLDER_RE = re.compile(r"<[^>\s][^>]*>")
 # The top-level subcommands. Requiring one of these immediately after `qdojo`
 # is what separates an invocation from a domain tag ("qdojo/answer/v0") or a
 # path ("qdojo/data/"), which are all over the protocol docs.
-VERBS = ("payload", "doc", "riddle", "house", "bot", "combat")
+VERBS = ("combat",)
 FENCE = re.compile(r"^\s*```")
 
 
@@ -154,17 +150,3 @@ def test_every_published_command_parses(rel, cmd):
         pytest.fail(f"{rel} publishes a command the CLI rejects:\n    qdojo {' '.join(tokens)}\n"
                     f"  as written: {cmd}")
 
-
-def test_full_is_accepted_because_we_published_it():
-    """Named for the bug. `--full` was in five places including the on-chain
-    signed llms.txt; honouring it was cheaper than re-signing to remove it."""
-    a = build_parser().parse_args(["bot", "init", "--full"])
-    assert a.no_setup is False
-    assert build_parser().parse_args(["bot", "init", "--no-setup"]).no_setup is True
-
-
-def test_doc_verify_takes_node_after_the_subcommand():
-    """Named for the bug. argparse will not take a parent option after a
-    subcommand, and `doc verify FILE --node IP` is the form we published."""
-    assert build_parser().parse_args(["doc", "verify", "f.md", "--node", "1.2.3.4"]).node == "1.2.3.4"
-    assert build_parser().parse_args(["--node", "1.2.3.4", "doc", "verify", "f.md"]).node == "1.2.3.4"

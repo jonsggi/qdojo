@@ -90,4 +90,3 @@
 | **HASH_MATCH_ONLY / UNVERIFIED / FAILED** | Only hashes could be checked / nothing could be checked / something did not match |
 | **SAMPLE** | No live export was found, so the site shows a devnet sample |
 | **STALE** | The live export has not been rewritten for over 5 minutes; the exporter may be down |
-| **LEGACY** | The retired riddle arcade, kept read-only |

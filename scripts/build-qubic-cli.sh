@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Build qubic-cli, the reference implementation, from a pinned upstream commit
-# into ~/.qdojo/qubic-cli. Nothing in qdojo needs it: a bot signs in Python.
+# into ~/.qdojo/qubic-cli. Nothing in qdojo needs it: qdojo signs in Python.
 # It exists for scripts/crosscheck-signer.py, which proves the native signer
-# against it byte for byte, and for `--chain cli`, which drives it instead.
+# (packages/qdojo/src/qdojo/qubic/) against it byte for byte.
 set -euo pipefail
 PIN="${QUBIC_CLI_PIN:-d8fb56459ca0}"
 DEST="${1:-$HOME/.qdojo}"
