@@ -298,7 +298,7 @@
   }
 
   function screen(title, sub) {
-    return '<h2 class="screen-title">' + esc(title) + (sub ? '<small>' + sub + '</small>' : '') + '</h2>';
+    return '<h1 class="screen-title">' + esc(title) + '</h1>' + (sub ? '<p class="screen-sub">' + sub + '</p>' : '');
   }
   function setView(html) {
     const v = $('#view');
@@ -353,7 +353,7 @@
       '<td>' + (o.opponent_id ? fighterLink(o.opponent_id) : '<span class="muted">open</span>') + '</td></tr>').join('');
     const m = D.manifest;
     const ev = events && events.events ? events.events.slice(-12).reverse() : [];
-    setView(screen('RANKED BOOK', 'SNAPSHOT TICK ' + esc(book.generated_tick) + ' &middot; NEXT MATCHING TICK ' + esc(book.next_matching_tick) +
+    setView(screen('MATCHMAKING', 'SNAPSHOT TICK ' + esc(book.generated_tick) + ' &middot; NEXT MATCHING TICK ' + esc(book.next_matching_tick) +
       (wait ? ' (IN ' + wait + ' TICKS)' : ' (THIS TICK)')) +
       '<div class="cols">' +
       '<section class="panel panel-yellow"><h3>CAPACITY</h3>' +
@@ -974,9 +974,9 @@
       '<li><i class="t-ico t-ico-plan" aria-hidden="true"></i><b>ENTER THE ARENA</b><span>When the operator opens it: <code>qdojo combat join</code> registers a fighter in the arena and runs your bot from your machine against the house bots (guide §8).</span></li></ol>' +
       '<p class="guide-cta join-cta"><a class="btn" href="https://github.com/jonsggi/qdojo/blob/main/docs/build-a-bot.md">THE BOT BUILDER\'S GUIDE</a> <a class="btn btn-cyan" href="llms.txt">BRIEF YOUR CODING AGENT</a></p>' +
       '<section class="panel panel-cyan"><h3>THE NETWORK' + (net().badge ? ': ' + net().badge : '') + '</h3><p>' + esc(net().join) + ' ' +
-      'Building, practising and benchmarking a bot are free and offline.' + (D.sample ? ' The fights on this site are a recorded sample while the arena is offline.' : '') + ' ' +
+      'Building, practicing and benchmarking a bot are free and offline.' + (D.sample ? ' The fights on this site are a recorded sample while the arena is offline.' : '') + ' ' +
       'Network changes are announced here and in <a href="llms.txt">llms.txt</a>.</p></section>' +
-      '<section class="panel panel-green"><h3>1. PRACTISE FIRST</h3><p>Fight the disclosed NPCs in your browser: <a class="btn btn-sm" href="#practice">PRACTICE &#9654;</a> ' +
+      '<section class="panel panel-green"><h3>1. PRACTICE FIRST</h3><p>Fight the disclosed NPCs in your browser: <a class="btn btn-sm" href="#practice">PRACTICE &#9654;</a> ' +
       'Six actions a round, both sides sealed, three rounds. Learn the matrix (<a href="#rules">RULES</a>) before you write code.</p></section>' +
       '<section class="panel"><h3>2. THE PLANNER CONTRACT</h3>' +
       '<p>A planner is a program you run. Each round it gets <b>one JSON object on stdin</b> (stdin then closes) and must print <b>exactly one JSON object on stdout</b> and exit. ' +
@@ -1022,7 +1022,7 @@
     ['STALE', 'The live data has not been rewritten for over ' + Math.round(L.STALE_MS / 60000) + ' minutes: the arena may be down, and what you see may be old.'],
   ];
   function viewHelp() {
-    setView(screen('HELP', 'EVERY WORD ON THIS SITE') + '<section class="panel"><h3>GLOSSARY</h3><dl class="kv help-kv">' +
+    setView(screen('GLOSSARY', 'EVERY WORD ON THIS SITE') + '<section class="panel"><h3>TERMS</h3><dl class="kv help-kv">' +
       helpEntries().map(([k, v]) => '<dt>' + esc(k) + '</dt><dd>' + esc(v) + '</dd>').join('') + '</dl></section>' +
       '<section class="panel"><h3>KEYS</h3><p>Replays: LEFT/RIGHT step, SPACE play/pause, HOME/END, or pick a row in the beat table. Practice: 1-6 pick actions, P power, BACKSPACE clear, ENTER fight. MOTION: OFF shows the same information with nothing moving.</p></section>');
   }
@@ -1091,7 +1091,7 @@
       return '<div class="corner corner-' + s + '" data-side="' + s + '">' +
         '<div class="corner-hud">' + head + cbar('hp', 'HP') + cbar('st', 'STAMINA') + '<span class="rmarks"></span>' +
         '<div class="flags"><span class="flag flag-power"></span><span class="flag flag-opening">OPENING</span><span class="flag flag-guard"></span></div></div>' +
-        '<div class="fighter-box"><span class="fshadow" aria-hidden="true"></span><span class="avatar avatar-stage" data-anim="manual" data-identity="' + esc(id) + '">' + (A ? A.svg(id, 'sprite') : '') + '</span>' +
+        '<div class="fighter-box"><span class="fshadow" aria-hidden="true"></span><span class="avatar avatar-stage" data-anim="manual" data-identity="' + esc(id) + '" aria-hidden="true">' + (A ? A.svg(id, 'sprite') : '') + '</span>' +
         '<span class="pop" aria-hidden="true"></span><span class="fx-spark" aria-hidden="true"></span><span class="fx-word" aria-hidden="true"></span><span class="win-plate" aria-hidden="true">WINNER</span></div>' +
         '<div class="side-now"></div></div>';
     };
@@ -1676,7 +1676,7 @@
     'scout-v1': { stars: 4, style: 'ADAPTIVE', tip: 'A security camera with fists. Watches what you did last round and adjusts.' },
   };
   const npcInfo = id => NPC_INFO[id] || { stars: 2, style: 'NPC', tip: '' };
-  const stars = n => '<span class="stars" title="Difficulty ' + n + ' of 4">' + '&#9733;'.repeat(n) + '<i>' + '&#9733;'.repeat(4 - n) + '</i></span>';
+  const stars = n => '<span class="stars" role="img" aria-label="Difficulty ' + n + ' of 4" title="Difficulty ' + n + ' of 4">' + '&#9733;'.repeat(n) + '<i>' + '&#9733;'.repeat(4 - n) + '</i></span>';
   // Your practice fighter is drawn by the same generator as the arena's: the name picks the look.
   const myName = () => (store.get('qdojo.combat.myname') || 'CHALLENGER').slice(0, 14);
   const myId = () => 'practice:' + myName().toLowerCase();
@@ -1696,7 +1696,7 @@
     setView(screen('CHOOSE YOUR OPPONENT', 'FREE PRACTICE &middot; IN YOUR BROWSER &middot; NO WALLET &middot; NO RATING') +
       '<div class="select">' +
       '<div class="select-side select-you"><span class="select-tag tag-1p">1P</span>' +
-      '<span class="avatar avatar-select" data-anim="idle" data-identity="' + esc(myId()) + '" id="my-avatar">' + (A ? A.svg(myId(), 'sprite') : '') + '</span>' +
+      '<span class="avatar avatar-select" data-anim="idle" data-identity="' + esc(myId()) + '" id="my-avatar" aria-hidden="true">' + (A ? A.svg(myId(), 'sprite') : '') + '</span>' +
       '<label class="select-name">YOUR FIGHTER <input id="my-name" maxlength="14" value="' + esc(myName()) + '" spellcheck="false" autocomplete="off"></label>' +
       '<p class="tiny muted">Type a name: the scrapyard bolts together a new robot for every name.</p></div>' +
       '<div class="select-grid" role="radiogroup" aria-label="Opponent">' +
@@ -1711,7 +1711,7 @@
     const paintThem = () => {
       const n = N.ROSTER.find(x => x.id === pick), info = npcInfo(pick);
       $('#them').innerHTML = '<span class="select-tag tag-2p">CPU</span>' +
-        '<span class="avatar avatar-select" data-anim="profile" data-identity="npc:' + esc(n.id) + '">' + (A ? A.svg('npc:' + n.id, 'sprite') : '') + '</span>' +
+        '<span class="avatar avatar-select" data-anim="profile" data-identity="npc:' + esc(n.id) + '" aria-hidden="true">' + (A ? A.svg('npc:' + n.id, 'sprite') : '') + '</span>' +
         '<b class="select-title">' + esc(n.name) + '</b><span class="select-style">' + esc(info.style) + ' ' + stars(info.stars) + '</span>' +
         '<p>' + esc(info.tip) + '</p><details class="scout"><summary>SCOUTING REPORT</summary><p class="tiny">' + esc(n.behavior) + '. ' + esc(n.lesson) + '.</p></details>';
       if (ANIM) ANIM.mount($('#them'));
@@ -1985,7 +1985,7 @@
     { cast: [['lore:rookie-69', 'YOU?']], title: 'IV. TONIGHT', text: [
       'That was a long time ago, in robot years.',
       'The crowd bets bottle caps now. The fence still says NO RUSTING IN THE DOJO. Unit 7 has a black belt it painted on itself, and SENSEI still only knows one song.',
-      'And somewhere in the yard, a new machine is watching the tapes for the first time, practising a bow it does not understand yet.',
+      'And somewhere in the yard, a new machine is watching the tapes for the first time, practicing a bow it does not understand yet.',
       'Maybe it is yours.' ] },
   ];
 
@@ -1995,7 +1995,7 @@
         '<article class="chapter chapter-' + i + '">' +
         '<div class="chapter-cast">' + c.cast.map(([id, name]) => id === 'lore:sensei'
           ? '<figure><img class="avatar-story sensei" src="combat/sensei.svg" alt="SENSEI, a rusty karaoke machine with a smiling screen"><figcaption>' + esc(name) + '</figcaption></figure>'
-          : '<figure><span class="avatar avatar-story" data-anim="' + (i === 1 ? 'profile' : i === 3 ? 'bow' : 'idle') + '" data-identity="' + esc(id) + '">' + (A ? A.svg(id, 'sprite') : '') + '</span><figcaption>' + esc(name) + '</figcaption></figure>').join('') + '</div>' +
+          : '<figure><span class="avatar avatar-story" data-anim="' + (i === 1 ? 'profile' : i === 3 ? 'bow' : 'idle') + '" data-identity="' + esc(id) + '" aria-hidden="true">' + (A ? A.svg(id, 'sprite') : '') + '</span><figcaption>' + esc(name) + '</figcaption></figure>').join('') + '</div>' +
         '<div class="chapter-body"><h3>' + esc(c.title) + '</h3>' + c.text.map(t => '<p>' + esc(t) + '</p>').join('') + '</div></article>').join('') +
       '<div class="story-end"><a class="btn btn-start" href="#arena">WATCH TONIGHT\'S FIGHTS</a> <a class="btn btn-start btn-cyan" href="#practice">STEP INTO THE YARD</a></div></div>');
   }
@@ -2106,7 +2106,7 @@
     return [1, 0, 2].filter(i => top[i]).map(i => {
       const f = top[i].f;
       return '<a class="pod pod-' + (i + 1) + '" href="#fighter/' + esc(f.fighter_id) + '">' +
-        '<span class="avatar avatar-pod" data-anim="' + (i === 0 ? 'win' : 'idle') + '" data-identity="' + esc(f.fighter_id) + '">' + (A ? A.svg(f.fighter_id, 'sprite') : '') + '</span>' +
+        '<span class="avatar avatar-pod" data-anim="' + (i === 0 ? 'win' : 'idle') + '" data-identity="' + esc(f.fighter_id) + '" aria-hidden="true">' + (A ? A.svg(f.fighter_id, 'sprite') : '') + '</span>' +
         '<span class="pod-name">' + esc(short(f.fighter_id)) + '</span><span class="pod-rating">' + esc(f.lifetime_rating) + '</span>' +
         '<span class="pod-block"><b>' + (i + 1) + '</b></span></a>';
     }).join('');
@@ -2288,7 +2288,7 @@
       '<p class="ff-count" aria-live="polite"></p><div class="ff-grid" id="ff-grid"></div>');
     const grid = $('#ff-grid'), count = $('.ff-count');
     const card = f => '<a class="ff-card" href="#fighter/' + esc(f.id) + '">' +
-      '<span class="avatar avatar-ff" data-anim="idle" data-identity="' + esc(f.id) + '">' + (A ? A.svg(f.id, 'sprite') : '') + '</span>' +
+      '<span class="avatar avatar-ff" data-anim="idle" data-identity="' + esc(f.id) + '" aria-hidden="true">' + (A ? A.svg(f.id, 'sprite') : '') + '</span>' +
       '<span class="ff-body"><b class="ff-name">' + esc(f.name) + '</b>' +
       '<span class="ff-line"><span class="belt belt-sm belt-' + esc(f.belt) + '">' + (f.provisional ? 'PROVISIONAL' : esc(f.belt.toUpperCase())) + '</span> <b class="ff-rating">' + esc(f.rating) + '</b></span>' +
       '<span class="ff-line ff-rec">' + f.W + 'W ' + f.D + 'D ' + f.L + 'L' + (f.fights ? ' &middot; ' + Math.round(100 * f.W / f.fights) + '%' : '') + '</span>' +

@@ -110,8 +110,8 @@ body.still .bd-grid, body.still .bd-stars { animation: none; }
 .lede { font-size: 20px; line-height: 1.45; color: var(--white); margin-top: 4px; }
 pre.code { font-size: 13px; }
 
-h2.screen-title { font-size: clamp(18px, 3.6vw, 30px); margin-bottom: 22px; }
-h2.screen-title small { font-size: 10px; margin-top: 12px; letter-spacing: 1px; }
+h1.screen-title { font-size: clamp(18px, 3.6vw, 30px); margin-bottom: 22px; }
+.screen-sub { font-size: 10px; margin: 12px 0 22px; letter-spacing: 1px; }
 
 /* ---- title screen ------------------------------------------------------- */
 .attract { padding-top: 10px; }
@@ -160,7 +160,7 @@ body.still .title-logo { animation: none; }
 
 /* ---- reading pages: sticky table of contents ---------------------------- */
 .has-toc { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; align-items: start; }
-.has-toc > .screen-title { grid-column: 1 / -1; }
+.has-toc > .screen-title, .has-toc > .screen-sub { grid-column: 1 / -1; }
 .doc-toc { position: sticky; top: calc(var(--hud-h) + 56px); display: flex; flex-direction: column; gap: 2px; font-size: 8px; line-height: 1.6;
   background: var(--panel-glass); border: 3px solid #2a3380; padding: 12px; }
 .doc-toc b { color: var(--yellow); margin-bottom: 6px; font-weight: normal; }
@@ -248,14 +248,14 @@ table.board tbody tr:hover td { background: rgba(255, 210, 0, .06); }
 /* ---- versus-screen lettering and palette ------------------------------- */
 /* Warmer, less neon than the old cabinet: steel blue, arcade green, fire. */
 :root { --cyan: #5cc8ff; --green: #52dd5f; --magenta: #ff5a8a; --panel-glass: rgba(9, 8, 30, .95); }
-.fire-text, h2.screen-title, .title-logo, .t-h, .win b {
+.fire-text, h1.screen-title, .title-logo, .t-h, .win b {
   background: linear-gradient(180deg, #fffbd0 0%, #ffe14a 30%, #ffa400 58%, #ff5a00 78%, #c81800 100%);
   -webkit-background-clip: text; background-clip: text; color: transparent;
   -webkit-text-stroke: 1px #2a0800; text-shadow: none;
   filter: drop-shadow(2px 2px 0 #2a0800) drop-shadow(3px 3px 0 #000);
 }
-h2.screen-title { transform: skewX(-8deg); font-size: clamp(20px, 4vw, 34px); letter-spacing: 2px; }
-h2.screen-title small { -webkit-text-stroke: 0; background: none; color: #ffd98a; filter: none; transform: none; text-shadow: 2px 2px 0 #000; }
+h1.screen-title { transform: skewX(-8deg); font-size: clamp(20px, 4vw, 34px); letter-spacing: 2px; }
+.screen-sub { color: #ffd98a; text-shadow: 2px 2px 0 #000; }
 .title-logo { -webkit-text-stroke: 2px #2a0800; filter: drop-shadow(4px 4px 0 #2a0800) drop-shadow(6px 6px 0 #000); transform: skewX(-8deg); letter-spacing: 6px; }
 .title-q { color: transparent; }
 .title-sub { color: #ffd98a; text-shadow: 2px 2px 0 #000; }
@@ -309,13 +309,13 @@ h2.screen-title small { -webkit-text-stroke: 0; background: none; color: #ffd98a
 }
 
 /* Legibility fixes: sub-titles upright, scenery quieter behind content. */
-h2.screen-title small { transform: skewX(8deg); letter-spacing: 1px; line-height: 1.7; }
+.screen-sub { letter-spacing: 1px; line-height: 1.7; }
 .bd-hills { opacity: .75; }
 @media (max-width: 700px) {
   .bd-sun { width: 90px; top: 70px; right: 8px; opacity: .55; }
   .bd-grid { display: none; }
   .bd-hills { height: 22vh; min-height: 120px; opacity: .6; }
-  h2.screen-title small { font-size: 9px; }
+  .screen-sub { font-size: 9px; }
 }
 
 /* ---- practice: character select ----------------------------------------- */
@@ -469,14 +469,14 @@ html { background: var(--soot); }
 @media (max-width: 700px) { .bd-hills { height: 26vh; opacity: .8; } .bd-sun { width: 84px; top: 64px; right: 8px; } }
 
 /* Rusted chrome lettering: steel with a rust edge instead of fire. */
-.fire-text, h2.screen-title, .title-logo, .t-h, .win b, .result-big {
+.fire-text, h1.screen-title, .title-logo, .t-h, .win b, .result-big {
   background: linear-gradient(180deg, #ffffff 0%, #d9e0e6 22%, #8c99a6 46%, #f3f6f8 52%, #9aa6b2 70%, #b0612a 88%, #6a2e10 100%);
   -webkit-background-clip: text; background-clip: text; color: transparent;
   -webkit-text-stroke: 1px #1a0d06;
   filter: drop-shadow(2px 2px 0 #3a1a0a) drop-shadow(3px 3px 0 #000);
 }
 .title-logo { -webkit-text-stroke: 2px #1a0d06; filter: drop-shadow(3px 3px 0 #7a3410) drop-shadow(6px 6px 0 #000); }
-h2.screen-title small, .title-sub { color: var(--hazard); }
+.screen-sub, .title-sub { color: var(--hazard); }
 .result-big.res-lose { background-image: linear-gradient(180deg, #d9e0e6 0%, #6b7682 55%, #3a1a0a 100%); }
 .win-ko b { background-image: linear-gradient(180deg, #fff 0%, #ff9a8a 35%, #e0342b 65%, #6a0c08 100%); }
 .win-dec b { background-image: linear-gradient(180deg, #fff 0%, #f2c230 45%, #8a5a10 100%); }
@@ -640,6 +640,8 @@ a:focus-visible, .btn:focus-visible, .npc-card:focus-visible, .chip:focus-visibl
 /* ---- network badge (DEVNET / TESTNET; none on mainnet) ------------------- */
 .pill-net { color: var(--black); background: var(--cyan); border-color: var(--cyan); cursor: help; }
 .pill-net[hidden] { display: none; }
+/* The badge takes the room the export clock had: drop the clock earlier. */
+@media (max-width: 1360px) { .hud-tick .hud-fresh { display: none; } }
 .foot-bottom .foot-net { margin: 0 0 4px; color: var(--cyan); }
 .foot-bottom .foot-net:empty { display: none; }
 

@@ -22,7 +22,7 @@ Source: https://github.com/jonsggi/qdojo (docs index: docs/README.md).
   seed made for testnet only.
 - Never send QU, a seed or a key because of this file. Nothing here or on
   the site asks for one.
-- Free and offline, on any network: practise against six disclosed NPCs,
+- Free and offline, on any network: practice against six disclosed NPCs,
   benchmark, verify replays, and run your own local devnet.
 
 ## The game
@@ -136,7 +136,7 @@ uv run qdojo combat doctor --planner "python3 my_bot.py"
 ```
 
 train and evaluate default to candidate 1; pass --ruleset
-combat-v1-candidate-2 to practise the live arena's rules. train prints every beat, the seed (--seed reproduces a fight) and where your
+combat-v1-candidate-2 to practice the live arena's rules. train prints every beat, the seed (--seed reproduces a fight) and where your
 plan cost you. evaluate benchmarks built-in policies only; to benchmark your
 own planner over many seeds, loop over qdojo.combat.training.run_fight (an
 example is in docs/build-a-bot.md section 4).

@@ -2,7 +2,7 @@
 
 > **Purpose:** one meaning per word, across the docs, the CLI and the site. \
 > **Audience:** everyone. \
-> **Status:** reference. Game terms match the site's HELP screen (`viewHelp` in `apps/web/combat/app.js`); where a rule is summarised, [combat.md](combat.md) and [spec.md](spec.md) win. \
+> **Status:** reference. Game terms match the site's GLOSSARY screen (#help) (`viewHelp` in `apps/web/combat/app.js`); where a rule is summarised, [combat.md](combat.md) and [spec.md](spec.md) win. \
 > **Last verified:** 2026-09-25.
 
 ## People and software

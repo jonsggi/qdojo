@@ -34,7 +34,7 @@ for the record and does not describe the current system.
 
 | Document | Status | One line |
 |---|---|---|
-| [glossary.md](glossary.md) | reference | Every term, matching the site's HELP screen |
+| [glossary.md](glossary.md) | reference | Every term, matching the site's GLOSSARY screen |
 | [lore.md](lore.md) | guide | The spirit of the dojo and how the cabinet presents a fight |
 | [npcs.md](npcs.md) | normative | The six practice opponents and their exact policies |
 
