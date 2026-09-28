@@ -1,10 +1,12 @@
 # AUD-002 — Make settlement closeout atomic and recoverable
 
-- **Status:** Open
+- **Status:** **Retired (riddle code removed 2026-09-28, see tag riddle-v0-final)**
 - **Priority:** P0 — block reopening real-money rounds until resolved
 - **Type:** Accounting / crash consistency
 - **Evidence:** Reproduced carry inconsistency on FakeChain
 - **Scope:** `packages/qdojo/src/qdojo/house.py:387–451` (`settle`), `:254–288` (`void`), `:35–41` (`_write`)
+
+> **Retired 2026-09-28.** The owner retired the riddle game (its bonds and pool are the owner's; no closeout obligation remains) and its code was removed. The riddle house's multi-file settlement was removed. Combat settlement happens inside the reference contract as one state transition. The code, and the probe that reproduced this finding (`audits/probes/`), live at git tag `riddle-v0-final`; line references below refer to that code.
 
 ## Finding
 

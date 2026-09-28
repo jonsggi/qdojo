@@ -28,8 +28,8 @@ the real argument parser (`packages/qdojo/tests/test_docs_commands.py`).
 
 ## Rules for changes
 
-The normative documents ([docs index](README.md)) govern new work. Riddle code
-is supported Legacy until explicitly retired.
+The normative documents ([docs index](README.md)) govern new work. The riddle
+game was retired on 2026-09-28 and lives at git tag `riddle-v0-final`.
 
 - Keep core combat, protocol, matcher, rating and accounting pure with explicit
   state/tick inputs. No I/O, random damage, wall-clock ordering or float arithmetic.
@@ -42,8 +42,8 @@ is supported Legacy until explicitly retired.
   the existing reference signer crosscheck and authorization for any live query.
 - Native transport is the default. A new contract call needs frozen byte vectors
   and a native implementation, not an implicit shell-out to qubic-cli.
-- Parser/documentation tests must track both current instructions and labelled
-  legacy examples. Never publish a planned command as runnable.
+- Parser/documentation tests must track the published instructions. Never
+  publish a planned command as runnable.
 - Keep secrets in protected local configuration/journals, never argv, stdout,
   logs, exports or git. Planner subprocesses receive no signer secrets.
 - Money-moving tools require readable plans and explicit live-action intent.
@@ -52,5 +52,5 @@ is supported Legacy until explicitly retired.
   and fixtures when applicable. Candidate balance changes get new versions.
 - Keep the arcade visual direction. New animations are trace presentations and
   cannot decide a hit, delay combat or fabricate a forfeit knockout.
-- Label legacy and combat state/data explicitly; do not migrate financial
+- Never load riddle-era state or data as combat; do not migrate financial
   obligations or ratings by reinterpretation.

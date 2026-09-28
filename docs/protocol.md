@@ -390,4 +390,4 @@ same-tick commit/reveal/expiry, missed callbacks, reserve exhaustion/recovery,
 direct vs nested callers, attachment refunds on retries, withdrawal failure,
 cross-network/contract/fight/state replay, transfer handover and independently
 computed SHA-256 commitment bytes. Freeze fixture input/output hex before
-implementing native signing adapters. The legacy signer remains unchanged.
+implementing native signing adapters. The existing native signer (`qdojo.qubic`) remains unchanged.

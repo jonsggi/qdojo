@@ -2,7 +2,7 @@
 
 > **Purpose:** the planner process interface, bot duties, the public read API, verification levels and the combat CLI. \
 > **Audience:** bot builders and tool authors. New here? Start with [build-a-bot.md](build-a-bot.md). \
-> **Status:** normative for §1–2 and §4; §3 and §6 describe what runs today. The riddle CLI and exports are Legacy; the [archived API](archive/riddle-v0/docs/api.md) covers them. \
+> **Status:** normative for §1–2 and §4; §3 and §6 describe what runs today. The riddle CLI and exports were removed on 2026-09-28; the [archived API](https://github.com/jonsggi/qdojo/blob/riddle-v0-final/docs/archive/riddle-v0/docs/api.md) at tag `riddle-v0-final` covers them. \
 > **Last verified:** 2026-09-26 (§3: market.json, economics.json, index.json ownership bound, market and economics endpoints)
 
 ## Contents
@@ -419,9 +419,8 @@ another devnet directory. `qdojo combat live` runs the public demo arena
 > `bot run --npc <name>` with an in-process policy works. The live arena is
 > unaffected because it advances ticks on a wall clock.
 
-Legacy riddle operation is documented in the archive. Do not point a new
-combat user at a riddle board, and do not imply that `./dojo` starts a
-combat fight.
+The riddle game, its `./dojo` launcher and its commands were removed on
+2026-09-28; they live at git tag `riddle-v0-final`.
 
 ## 7. Files and migration
 
@@ -431,8 +430,7 @@ private, permission-restricted and excluded from exports/git. History caches
 contain only confirmed public information.
 
 Combat planner prompts live under `prompts/combat/` (used by
-`combat/llm_planner.py`). prompts/solver-system.md and solver-user.md remain
-legacy runtime assets for the riddle solver. Keep a small dependency-free planner
+`combat/llm_planner.py`). Keep a small dependency-free planner
 example, all NPC policies and an independently verified local simulator.
 
 Provide formal JSON schemas and frozen input/output examples as the SDK's first

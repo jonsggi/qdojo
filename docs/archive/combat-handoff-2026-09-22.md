@@ -5,7 +5,7 @@
 > **Status:** historical. Moved from the repository root (`GPT6_HANDOFF.md`) on 2026-09-25. Its statement that gameplay and live data are still riddle code is no longer true; for the current state read the [docs index](../README.md) and the [roadmap](../roadmap.md).
 
 Updated 2026-09-22; combat direction specified 2026-09-21. This replaces the prior riddle-pack handoff, preserved
-[in the archive](riddle-v0/GPT6_HANDOFF.md).
+[at tag riddle-v0-final](https://github.com/jonsggi/qdojo/blob/riddle-v0-final/docs/archive/riddle-v0/GPT6_HANDOFF.md).
 
 The user requested a detailed, explicit combat specification and alignment
 of all documentation. They also requested actual NPC opponents, including a
