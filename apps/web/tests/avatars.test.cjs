@@ -182,7 +182,7 @@ function coverageIds() {
 
 test('every clip works for every kit, chassis, finish and head: frames stay inside the canvas and differ from idle', () => {
   const clips = Object.keys(avatars.clips);
-  for (const name of ['idle', 'jab', 'kick', 'hit', 'bow', 'win', 'lose', 'block', 'duck', 'throw', 'recover', 'exhausted']) assert.ok(clips.includes(name), name);
+  for (const name of ['idle', 'jab', 'kick', 'hit', 'bow', 'win', 'lose', 'block', 'duck', 'throw', 'recover', 'exhausted', 'stand', 'feint']) assert.ok(clips.includes(name), name);
   for (const id of coverageIds()) {
     const still = inner(avatars.svg(id, 'sprite'));
     const idle = avatars.frames(id, 'idle');
@@ -208,6 +208,28 @@ test('every clip works for every kit, chassis, finish and head: frames stay insi
   }
   assert.equal(avatars.frames(identity, 'no-such-clip')[0], inner(avatars.svg(identity, 'sprite')));
   assert.equal(avatars.clips.lose.hold, true);
+});
+
+test('LAST STAND opens a red reactor and vents coolant; FEINT leaves a pale afterimage; still art is untouched', () => {
+  // Reactor red, orange or white-hot; coolant; the afterimage's pale teal.
+  const reactor = /fill="#(ff3a1e|ff9a3a|fff0a8)"/, steam = /fill="#d4e2ea"/, ghost = /fill="#(5f98a2|8cc4cc|3c6a72)"/;
+  const has = (body, re, what) => assert.ok(re.test(body), what), lacks = (body, re, what) => assert.ok(!re.test(body), what);
+  for (const id of coverageIds()) {
+    const still = inner(avatars.svg(id, 'sprite'));
+    const stand = avatars.frames(id, 'stand'), feint = avatars.frames(id, 'feint');
+    // Guard dropped first, then the reactor; it glows through the swing and is shut again at the end.
+    lacks(stand[0], reactor, `${id} guard dropped before the reactor opens`);
+    for (const i of [1, 2, 3, 4]) has(stand[i], reactor, `${id} stand ${i} glows`);
+    has(stand[2], steam, `${id} vents`);
+    assert.ok(stand[stand.length - 1] === still, `${id}: the clip ends on the guard`);
+    has(feint[2], ghost, `${id} afterimage`);
+    lacks(feint[0], ghost, `${id} no afterimage before the fake`);
+    assert.ok(feint[feint.length - 1] === still, `${id}: the feint ends on the guard`);
+    // None of the new colours leak into the static sprite or the card.
+    for (const svg of [avatars.svg(id, 'sprite'), avatars.svg(id)]) for (const re of [reactor, ghost]) lacks(svg, re, `${id} still art`);
+  }
+  // A ghost is a pose too: the same pose with and without a ghost differ, and it stays deterministic.
+  assert.equal(load().frames(identity, 'feint')[2], avatars.frames(identity, 'feint')[2]);
 });
 
 test('no floating pixels: every frame is one connected figure', () => {

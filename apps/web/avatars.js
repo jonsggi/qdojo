@@ -388,7 +388,7 @@ const QDojoAvatars = (() => {
   const or = (m, n) => { each(n, (x, y) => put(m, x, y)); return m; };
 
   function canvas() {
-    const col = new Array(N).fill(null), rp = new Array(N).fill(null), lv = new Int8Array(N), own = new Int16Array(N);
+    const col = new Array(N).fill(null), rp = new Array(N).fill(null), lv = new Int8Array(N), own = new Int16Array(N), gh = new Uint8Array(N);
     let part = 0;
     const ok = (x, y) => x >= 0 && y >= 0 && x < SIZE && y < SIZE;
     // Light from the upper right: a shadow band on the left and bottom, a lit
@@ -463,11 +463,28 @@ const QDojoAvatars = (() => {
     const rampAt = (x, y) => ok(x, y) ? rp[y * SIZE + x] : null;
     const filled = (x, y) => ok(x, y) && col[y * SIZE + x] !== null;
     const levelAt = (x, y) => ok(x, y) ? lv[y * SIZE + x] : -1;
+    // A solid pixel next to (x, y), ghosts not counted: where the outline goes.
+    const rim = (x, y, i) => (x > 0 && col[i - 1] && !gh[i - 1]) || (x < SIZE - 1 && col[i + 1] && !gh[i + 1]) ||
+      (y > 0 && col[i - SIZE] && !gh[i - SIZE]) || (y < SIZE - 1 && col[i + SIZE] && !gh[i + SIZE]);
+    // An afterimage: another canvas's figure in one pale ramp, its outline in
+    // the ramp's darkest step, wherever this figure and its outline leave the
+    // cell empty.
+    function ghost(g, r) {
+      const gc = g.col;
+      for (let y = 0, i = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++, i++) {
+        if (col[i] || rim(x, y, i)) continue;
+        let l;
+        if (gc[i]) l = g.lv[i] < 1 ? 1 : g.lv[i] > 3 ? 3 : g.lv[i];
+        else if ((x > 0 && gc[i - 1]) || (x < SIZE - 1 && gc[i + 1]) || (y > 0 && gc[i - SIZE]) || (y < SIZE - 1 && gc[i + SIZE])) l = 0;
+        else continue;
+        col[i] = r[l]; rp[i] = r; lv[i] = l; gh[i] = 1;
+      }
+    }
     function out() {
       const o = col.slice();
       for (let y = 0, i = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++, i++) {
         if (col[i]) continue;
-        if ((x > 0 && col[i - 1]) || (x < SIZE - 1 && col[i + 1]) || (y > 0 && col[i - SIZE]) || (y < SIZE - 1 && col[i + SIZE])) o[i] = INK;
+        if (rim(x, y, i)) o[i] = INK;
       }
       // One path per colour, with horizontal pixel runs.
       const paths = new Map();
@@ -482,7 +499,7 @@ const QDojoAvatars = (() => {
       }
       return [...paths].map(([color, d]) => `<path fill="${color}" d="${d}"/>`).join('');
     }
-    return { fill, set, tone, shift, recolor, rampAt, filled, levelAt, out };
+    return { fill, set, tone, shift, recolor, rampAt, filled, levelAt, ghost, out, col, lv };
   }
 
   // ---- Skeleton -------------------------------------------------------------
@@ -498,13 +515,13 @@ const QDojoAvatars = (() => {
     guard: [[3, 7, 8, 4], [3, 7, 6, -1], [4, 6, 9, 0]],
     jab: [7, 0, 12, -1], cross: [7, 0, 12, -1], wind: [1, 7, 2, -1], up: [3, -7, 5, -13], down: [1, 7, 1, 13],
     block: [5, 3, 6, -6], grab: [6, 2, 12, 1, 'open'], pull: [-1, 6, -5, 1], knee: [2, 8, 1, 15, 'open'],
-    fling: [3, 6, 7, 11, 'open'],
+    fling: [3, 6, 7, 11, 'open'], hay: [6, -4, 11, -3], sweep: [7, 2, 11, 6], flick: [6, 1, 10, -1, 'open'],
   };
   const REAR = {
     guard: [[-2, 8, 5, 6], [-1, 8, 6, 1], [-4, 6, -2, 11]],
     jab: [7, 1, 13, 0], cross: [7, 1, 13, 0], wind: [-2, 8, 5, 3], up: [-1, -7, -1, -14], down: [-1, 7, -1, 13],
     block: [5, 6, 11, 0], grab: [6, 3, 13, 2, 'open'], pull: [-3, 6, -7, 3], knee: [2, 8, 3, 15, 'open'],
-    fling: [-3, 5, -7, 9, 'open'],
+    fling: [-3, 5, -7, 9, 'open'], hay: [6, -3, 12, -2], sweep: [7, 3, 12, 7],
   };
   // Leg states: [knee dx, knee y, ankle dx, ankle y, foot] for rear and lead,
   // on the ground (x relative to the body's centre line).
@@ -515,6 +532,7 @@ const QDojoAvatars = (() => {
     kneel: [[-4, 44, -11, 44, 'back'], [8, 35, 9, 43, 'flat']],
     crouch: [[-10, 39, -9, 43, 'flat'], [11, 38, 11, 43, 'flat']],
     step: [[-9, 39, -14, 43, 'flat'], [12, 35, 13, 43, 'flat']],
+    brace: [[-10, 38, -13, 43, 'flat'], [11, 37, 13, 43, 'flat']],
   };
 
   // ---- Clips ----------------------------------------------------------------
@@ -528,6 +546,8 @@ const QDojoAvatars = (() => {
   const PULL = { lead: 'pull', rear: 'pull' };
   const KNEE = { lead: 'knee', rear: 'knee', dx: 1, dy: 3, hx: 2, hy: 2 };
   const CROUCH = { legs: 'crouch', dy: 7, hy: 1 };
+  const PLANT = { lead: 'down', rear: 'down', legs: 'brace', dy: 1 };
+  const HAY = { lead: 'hay', rear: 'hay', legs: 'step' };
   const CLIPS = Object.freeze({
     idle: { fps: 5, frames: [{}, {}, { dy: 1 }, { dy: 1, blink: true }, { dy: 1 }, {}, { dy: 1 }, {}] },
     jab: { fps: 12, frames: [{ lead: 'wind' }, { lead: 'jab', dx: 1 }, { lead: 'jab', dx: 1 }, { lead: 'jab' }, { lead: 'wind' }, {}] },
@@ -541,6 +561,16 @@ const QDojoAvatars = (() => {
     throw: { fps: 10, frames: [{ ...GRAB, dx: 2, hx: 1 }, { ...GRAB, dx: 3, hx: 1 }, { ...GRAB, dx: 3, hx: 1 }, { ...PULL, dx: -1, hx: -2 }, { ...PULL, dx: -2, hx: -2, hy: -1 }, { ...PULL, dx: -1, hx: -1 }, {}] },
     recover: { fps: 6, frames: [{ ...KNEE, blink: true }, KNEE, { ...KNEE, blink: true }, { ...DOWN, dx: 1, dy: 2, hx: 1, hy: 1 }, { dy: 1 }, {}] },
     exhausted: { fps: 5, frames: [KNEE, { ...KNEE, dy: 4, hy: 3, blink: true }, KNEE, { ...KNEE, dy: 4, hy: 3 }, KNEE, {}] },
+    // LAST STAND: feet planted and guard dropped, the chest panel pops open on
+    // a red reactor, coolant vents from both shoulders, a wide two-handed
+    // haymaker, then the recoil with a sparking elbow servo.
+    stand: { fps: 10, frames: [{ ...PLANT }, { ...PLANT, reactor: 1, vent: 1 }, { lead: 'pull', rear: 'pull', legs: 'brace', dx: -1, hx: -1, hy: -1, reactor: 2, vent: 2 },
+      { ...HAY, dx: 2, hx: 1, reactor: 2, vent: 1 }, { lead: 'sweep', rear: 'sweep', legs: 'step', dx: 3, hx: 2, hy: 1, reactor: 2 },
+      { lead: 'fling', legs: 'step', dx: -1, hx: -2, hy: -1, reactor: 1, spark: true, blink: true }, { dx: -1, hx: -1, spark: true }, {}] },
+    // FEINT: a sharp shoulder fake with a flick of the lead hand, then a quick
+    // pull-back that leaves the half-thrown jab behind as a pale afterimage.
+    feint: { fps: 12, frames: [{ lead: 'wind', dx: 1, hx: 1 }, { lead: 'flick', dx: 2, hx: 2 }, { dx: -1, hx: -1, ghost: { lead: 'jab', dx: 2, hx: 2 } },
+      { dx: -2, hx: -2, blink: true, ghost: { lead: 'flick', dx: 1, hx: 1 } }, { dx: -1, hx: -1 }, {}] },
   });
 
   // ---- The sprite -------------------------------------------------------------
@@ -553,6 +583,9 @@ const QDojoAvatars = (() => {
   const WHITE = ['#6d6a7c', '#bdb8c2', '#f2eee6', '#ffffff', '#ffffff'];
   const HAZARD = ramp('#f2c230'), WRAP = ramp('#e6e0d2'), LEATHER = ramp('#5a3a2a'), DARK = ramp('#2c2a34');
   const GOLD = ramp('#d8a837'), STRAW = ramp('#d6b25a'), BOX = ramp('#b0824a'), CABLE = ramp('#c8342c'), SKY = ramp('#2c3a4a');
+  const REACTOR = ['#4a0806', '#a3140c', '#ff3a1e', '#ff9a3a', '#fff0a8'];
+  const STEAM = ['#5a6a74', '#9aacb6', '#d4e2ea', '#eef7fb', '#ffffff'];
+  const GHOST = ['#1e3a40', '#3c6a72', '#5f98a2', '#8cc4cc', '#c2e8ec'];
   const TOAST = ramp('#d9a45a'), PETAL = ramp('#ff6fb0'), LEAF = ramp('#4aa04a'), BLUSH = '#e8849a', PAINT_INK = '#2a1c1c';
   // Head silhouettes in head coordinates (x 0..13 facing right, y 0..11).
   const DOME = [[3, 9], [1, 11], [0, 12], [0, 12], [0, 13], [0, 13], [0, 13], [0, 13], [0, 12], [1, 12], [2, 11], [4, 10]];
@@ -576,10 +609,20 @@ const QDojoAvatars = (() => {
     Y: '101101010010010', '/': '001001010100100', '-': '000000111000000', '!': '010010010000010', ' ': '000000000000000',
   };
 
+  // One pose as SVG path markup. A pose with a ghost draws that second pose
+  // first and lays it behind the figure as a pale afterimage.
   function sprite(identity, pose = {}) {
+    const g = pose.ghost ? draw(identity, pose.ghost) : null;
+    const c = draw(identity, pose);
+    if (g) c.ghost(g, GHOST);
+    return c.out();
+  }
+
+  function draw(identity, pose) {
     const L = look(identity), kit = L.kit, B = BODY[L.build];
     pooled = 0;
     const { dx = 0, dy = 0, hx = 0, hy = 0, jump = 0, lead = 'guard', rear = null, legs = 'plant', blink = false } = pose;
+    const elbows = [null, null];
     const c = canvas();
     const bx = dx, by = dy - jump, gy = -jump;
     const HX = CX - 6 + dx + hx, HY = 4 + dy + hy - jump;
@@ -615,7 +658,8 @@ const QDojoAvatars = (() => {
     head();
     arm(1);
     front();
-    return c.out();
+    if (pose.reactor || pose.vent || pose.spark) surge(pose.reactor | 0, pose.vent | 0, !!pose.spark);
+    return c;
 
     // ------------------------------------------------------------ materials
     function shell(m, part, R, o, spots, mat = L.partMat[part]) {
@@ -940,6 +984,7 @@ const QDojoAvatars = (() => {
       if (state === 'guard' || spec === table.guard) spec = table.guard[L.stance];
       const sh = shoulders[side], R = side ? same : back, part = side ? 'lead-arm' : 'rear-arm';
       const el = [sh[0] + spec[0], sh[1] + spec[1]], fh = [sh[0] + spec[2], sh[1] + spec[3]];
+      elbows[side] = el;
       shell(cap(M(), sh[0], sh[1], el[0], el[1], B.upper - thin), part, R, { sep: true, ox: sh[0], oy: sh[1] }, spotsAlong(part + 'u', sh, el, 1.1));
       shell(cap(M(), el[0], el[1], fh[0], fh[1], B.fore + 0.2 - thin), part, R, { band: 1, sep: true, ox: el[0], oy: el[1] }, spotsAlong(part + 'f', el, fh, 1.1));
       // Exposed elbow: a bolted steel joint and a piston along the underside.
@@ -1195,6 +1240,40 @@ const QDojoAvatars = (() => {
       c.fill(ell(M(), sx - 2, sy - 4, 2.4, 1.6), DUCK, { band: 1, sep: true });
       c.fill(ell(M(), sx - 1, sy - 7, 1.5, 1.5), DUCK, { band: 1, sep: true });
       c.set(sx + 1, sy - 7, CONE, 3); c.set(sx + 1, sy - 6, CONE, 2); c.set(sx - 1, sy - 8, INK);
+    }
+    // LAST STAND effects on the body: the chest panel swung open on a red
+    // reactor (1 glowing, 2 white-hot with the glow spilling onto the plate),
+    // coolant jets from both shoulders (1 short, 2 long with a cloud), and
+    // sparks from the lead elbow servo. Everything touches the body.
+    function surge(reactor, vent, spark) {
+      const x0 = CX + bx, y0 = by;
+      if (reactor) {
+        if (reactor > 1) for (let y = 15; y <= 24; y++) for (let x = -2; x <= 8; x++) {
+          const ex = x - 2.5, ey = y - 19.5, d = ex * ex + ey * ey;
+          if (d >= 11 && d < 22 && c.filled(x0 + x, y0 + y)) c.recolor(x0 + x, y0 + y, REACTOR, 1 + (d < 15));
+        }
+        c.fill(rect(M(), x0, y0 + 17, 6, 6), DARK, { flat: 0 });
+        c.fill(ell(M(), x0 + 2.5, y0 + 19.5, reactor > 1 ? 2.3 : 1.6, reactor > 1 ? 2.3 : 1.6), REACTOR, { band: 1, min: 1 });
+        c.set(x0 + 2, y0 + 19, REACTOR, 4); c.set(x0 + 3, y0 + 20, REACTOR, reactor > 1 ? 4 : 3);
+        if (reactor > 1) { c.set(x0 + 3, y0 + 19, REACTOR, 4); c.set(x0 + 2, y0 + 20, REACTOR, 3); }
+        // The hatch, hinged on the lead edge and swung out toward the opponent.
+        c.fill(rect(M(), x0 + 6, y0 + 16, 2, 8), L.partMat.torso.R, { band: 1, sep: true });
+        rivet(x0 + 7, y0 + 17);
+      }
+      if (vent) {
+        for (const side of [0, 1]) {
+          const [sx, sy] = shoulders[side], dir = side ? 1 : -1, len = vent > 1 ? 7 : 5;
+          const top = [sx + dir * (vent > 1 ? 3 : 2), sy - 3 - len];
+          c.fill(cap(M(), sx + dir, sy - 3, top[0], top[1], vent > 1 ? 1.3 : 1), STEAM, { band: 1 });
+          if (vent > 1) c.fill(ell(M(), top[0] + dir, top[1] - 1, 2.2, 1.6), STEAM, { band: 1, min: 2 });
+        }
+      }
+      if (spark && elbows[1]) {
+        const [ex, ey] = elbows[1];
+        c.set(ex + 2, ey - 2, WHITE, 3); c.set(ex + 3, ey - 3, HAZARD, 4); c.set(ex + 3, ey - 1, HAZARD, 3);
+        c.set(ex + 1, ey - 3, HAZARD, 3); c.set(ex + 4, ey - 4, CONE, 3); c.set(ex + 4, ey - 1, CONE, 2);
+        c.set(ex + 2, ey - 4, HAZARD, 4); c.set(ex + 5, ey - 2, HAZARD, 3); c.set(ex + 1, ey - 5, CONE, 3);
+      }
     }
     function front() {
       const x0 = CX + bx, y0 = by, s = (x, y, r, l) => c.set(x0 + x, y0 + y, r, l);
