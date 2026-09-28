@@ -277,7 +277,7 @@
   function beltBadge(f, big) {
     if (!f) return '';
     if (f.provisional) {
-      return '<span class="belt belt-sm belt-white belt-prov" title="Provisional: ' + esc(f.placement_fights) + ' of 10 placement fights">PROVISIONAL ' + esc(f.placement_fights) + '/10</span>';
+      return '<span class="belt belt-sm belt-white belt-prov" title="Provisional: ' + esc(f.placement_fights) + ' of 10 placement fights">PROV ' + esc(f.placement_fights) + '/10</span>';
     }
     const b = BELT_LABEL[f.belt] ? f.belt : 'other';
     const n = Math.max(0, Math.min(3, Number(f.belt_stripes || 0)));
@@ -456,11 +456,15 @@
   // Only fights index.json lists are requested: a live export keeps the most
   // recent ~200, and asking for a pruned file is a 404, not information.
   const listed = id => DEC.test(String(id)) && (!D.known || D.known.has(String(id)));
-  const summaryOf = id => (listed(id) ? fetchJson('fights/' + id + '.json').catch(() => null) : Promise.resolve(null));
+  // A fight the export no longer lists is still in the read API, when it is up.
+  const markDone = (id, j) => { if (j && j.phase === 'DONE') D.done.add(String(id)); return j; };
+  const summaryOf = id => (listed(id) ? fetchJson('fights/' + id + '.json').catch(() => null)
+    : D.api && DEC.test(String(id)) ? apiJson('fights/' + id).then(j => markDone(id, j)).catch(() => null) : Promise.resolve(null));
   // A replay exists once a round resolved or the fight ended; a live fight
   // still in its first round has none yet, so it is not requested.
   const hasReplay = s => !!s && (s.phase === 'DONE' || Number(s.round_index) > 0 || !!(s.state && s.state.round_index > 0));
-  const replayOf = id => (listed(id) ? fetchJson('fights/' + id + '/replay.json').catch(() => null) : Promise.resolve(null));
+  const replayOf = id => (listed(id) ? fetchJson('fights/' + id + '/replay.json').catch(() => null)
+    : D.api && DEC.test(String(id)) ? apiJson('fights/' + id + '/replay').catch(() => null) : Promise.resolve(null));
   const replayFor = s => (hasReplay(s) ? replayOf(s.fight_id) : Promise.resolve(null));
   async function activeIds() {
     const book = await fetchJson('book.json').catch(() => null);
@@ -557,6 +561,9 @@
       Promise.all(liveIds.map(async id => { const s = await summaryOf(id); return { s, rp: await replayFor(s) }; })),
       Promise.all(finishedIds.map(summaryOf)),
     ]);
+    // The book can still list a fight whose summary already says DONE: that one is a result.
+    live.filter(x => x.s && x.s.phase === 'DONE').forEach(x => finished.push(x.s));
+    for (let i = live.length - 1; i >= 0; i--) if (!live[i].s || live[i].s.phase === 'DONE') live.splice(i, 1);
     const recent = !live.length && !finished.filter(Boolean).length ? await latestDone(3) : [];
     const T = await loadTitles();
     if (tok !== viewToken) return;
@@ -912,8 +919,10 @@
     const index = await fetchJson('index.json');
     if (index && index.names) FIGHTER_NAMES = index.names;
     const page = DEC.test(pageArg || '') ? Math.max(1, Number(pageArg)) : 1;
-    const [r, T] = await Promise.all([loadResults(index, page), loadTitles()]);
+    let [r, T] = await Promise.all([loadResults(index, page), loadTitles()]);
     if (tok !== viewToken) return;
+    // A page past the end (an old link, a typed URL) shows the last page instead of an empty one.
+    if (r.pages >= 1 && page > r.pages) { history.replaceState(null, '', '#results/' + r.pages); r = await loadResults(index, r.pages); if (tok !== viewToken) return; }
     const { done, active, missing } = r;
     const feed = done.map(s => {
       const tf = titleOf(s, T);
@@ -992,18 +1001,18 @@
     const body = order.map(({ f, faults, form }) => {
       const r = f.record || {};
       const net = netOf(f);
-      return '<tr><td class="num rank">' + rank.get(f.fighter_id) + '</td><td>' + fighterLink(f.fighter_id) + heldBelts(f.titles) + (f.house_npc ? ' <span class="pill tiny">HOUSE NPC</span>' : '') + ' ' + originBadge(metaOf(f.fighter_id, f).origin) + '</td>' +
-        '<td class="num"><b>' + esc(f.lifetime_rating) + '</b></td><td>' + beltCell(f) + '</td>' +
-        '<td class="num">' + esc(r.W || 0) + '</td><td class="num">' + esc(r.D || 0) + '</td><td class="num">' + esc(r.L || 0) + '</td>' + winRateCell(careerOf(f).tot) +
+      return '<tr><td class="num rank">' + rank.get(f.fighter_id) + '</td><td class="c-name">' + fighterLink(f.fighter_id) + '<span class="lb-badges"><span class="lb-mbelt">' + beltCell(f) + '</span>' + heldBelts(f.titles) + (f.house_npc ? ' <span class="pill tiny">HOUSE NPC</span>' : '') + ' ' + originBadge(metaOf(f.fighter_id, f).origin) + '</span></td>' +
+        '<td class="num"><b>' + esc(f.lifetime_rating) + '</b></td><td class="c-belt">' + beltCell(f) + '</td>' +
+        '<td class="num c-w">' + esc(r.W || 0) + '</td><td class="num c-d">' + esc(r.D || 0) + '</td><td class="num c-l">' + esc(r.L || 0) + '</td>' + winRateCell(careerOf(f).tot).replace('<td class="wr"', '<td class="wr c-wr"') +
         (hasMoney ? '<td class="num net ' + (net > 0 ? 'pos' : net < 0 ? 'neg' : '') + '" title="Won ' + esc(numberFmt((f.earnings || {}).won || 0)) + ', lost ' + esc(numberFmt((f.earnings || {}).lost || 0)) + ' fake QU in every mode">' + signed(net) + '</td>' : '') +
-        '<td class="num">' + esc(r.FW || 0) + '/' + esc(r.FL || 0) + '</td><td class="num' + (faults ? ' neg' : '') + '">' + faults + '</td>' +
-        '<td class="form-cell">' + formCell(form) + '</td></tr>';
+        '<td class="num c-ff">' + esc(r.FW || 0) + '/' + esc(r.FL || 0) + '</td><td class="num c-flt' + (faults ? ' neg' : '') + '">' + faults + '</td>' +
+        '<td class="form-cell c-form">' + formCell(form) + '</td></tr>';
     }).join('');
     const sortBtn = (key, label) => '<button class="chip lb-sort' + (lbSort === key ? ' on' : '') + '" data-sort="' + key + '" aria-pressed="' + (lbSort === key) + '">' + label + '</button>';
     setView(screen('LEADERBOARD', 'LIFETIME COMBAT RATING &middot; ' + esc(rows.length) + ' FIGHTERS &middot; SNAPSHOT TICK ' + esc(index.generated_tick)) +
       (rows.length >= 3 ? '<section class="lb-hero" aria-label="Top three"><div class="t-podium">' + podiumHtml(rows) + '</div></section>' : '') +
       '<section class="panel panel-yellow"><h3>RANKED</h3>' + (hasMoney ? '<p class="lb-sorts">SORT BY ' + sortBtn('rating', 'RATING') + ' ' + sortBtn('net', 'NET QU') + ' <a class="lb-titles" href="#titles">TITLE BELTS &#9654;</a></p>' : '') +
-      (rows.length ? '<div class="tscroll"><table class="board"><thead><tr><th class="num">#</th><th>FIGHTER</th><th class="num">RATING</th><th>BELT</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th title="Wins over fought results in every mode: ranked, duels and cups">WIN RATE (ALL)</th>' + (hasMoney ? '<th class="num" title="Fake QU won less lost, every mode, after rake">NET QU</th>' : '') + '<th class="num">FORFEITS W/L</th><th class="num">FAULTS</th><th>FORM (NEWEST FIRST)</th></tr></thead><tbody>' + body + '</tbody></table></div>' : '<p class="muted">No fighters yet.</p>') +
+      (rows.length ? '<div class="tscroll"><table class="board"><thead><tr><th class="num">#</th><th class="c-name">FIGHTER</th><th class="num">RATING</th><th class="c-belt">BELT</th><th class="num c-w">W</th><th class="num c-d">D</th><th class="num c-l">L</th><th class="c-wr" title="Wins over fought results in every mode: ranked, duels and cups">WIN RATE (ALL)</th>' + (hasMoney ? '<th class="num" title="Fake QU won less lost, every mode, after rake">NET QU</th>' : '') + '<th class="num c-ff">FORFEITS W/L</th><th class="num c-flt">FAULTS</th><th class="c-form">FORM (NEWEST FIRST)</th></tr></thead><tbody>' + body + '</tbody></table></div>' : '<p class="muted">No fighters yet.</p>') +
       '<p class="tiny muted">Ratings start at 1000 and move by the integer formula in RULES; W/D/L are ranked contract records, forfeits separate. WIN RATE (ALL) also counts duels and cups. The first 10 ranked fights are placement: shown white and PROVISIONAL. ' +
       'FORM: W win, L loss, D draw, N no result (double fault or void); lower case is a forfeit. Belts are display only: they change no stats. Bars on a belt are stripes (progress through its band); a numeral on a black belt is its dan. ' +
       (hasMoney ? 'NET QU: fake QU won less stakes and entry fees lost, in every mode, after rake. ' : '') +
@@ -1082,7 +1091,6 @@
     ['QU WON / NET', 'Fake QU a fighter won (stake or prize gained after rake) and its net after stakes and entry fees lost, over ranked, duels and cups.'],
     ['SAMPLE', 'No live export was found, so the site shows a devnet sample: fake QU, synthetic fighters.'],
     ['STALE', 'The live export has not been rewritten for over ' + Math.round(L.STALE_MS / 60000) + ' minutes: the house exporter may be down, and what you see may be old.'],
-    ['LEGACY', 'The retired riddle arcade, kept read-only so its history stays reachable.'],
   ];
   function viewHelp() {
     setView(screen('HELP', 'EVERY WORD ON THIS SITE') + '<section class="panel"><h3>GLOSSARY</h3><dl class="kv help-kv">' +
@@ -1197,6 +1205,9 @@
       '<div class="tscroll"><table class="beats"><thead><tr><th>RND</th><th>BEAT</th><th>' + esc(names.A) + '</th><th class="num">HP</th><th class="num">ST</th><th>' + esc(names.B) + '</th><th class="num">HP</th><th class="num">ST</th><th>WHAT HAPPENED</th></tr></thead><tbody>' + rows + '</tbody></table></div></details>';
 
     root.classList.toggle('compact', !!opts.compact);
+    // The replay keys (arrows, space, home/end) listen here, so the player can take focus.
+    root.dataset.player = '1';
+    if (!root.hasAttribute('tabindex')) root.tabIndex = -1;
     const els = {};
     for (const s of ['A', 'B']) {
       const c = $('.corner-' + s, root);
@@ -1502,6 +1513,7 @@
     const T = await loadTitles();
     if (tok !== viewToken) return;
     if (!summary && !replay) return notFound('Fight #' + id + ' is not in this export.');
+    if ((summary && summary.phase === 'DONE') || (!summary && replay)) D.done.add(String(id));
     const fighters = (replay || summary).fighters;
     const tf = titleOf(summary && summary.title_fight != null ? summary : replay && replay.title_fight != null ? replay : (summary || replay), T);
     const titleHero = tf.title ? '<section class="tf-hero">' + titleBeltSvg('lineal', 'tbelt-lg') + '<div><b class="tf-hero-h">TITLE FIGHT</b><span>' + esc(TITLE_KINDS.lineal.name) + ' IS ON THE LINE</span>' +
@@ -2441,15 +2453,135 @@
       '<li>Market fee ' + esc((ev.market_fee_bps || 0) / 100) + '% of each sale.</li></ul></section>');
   }
 
+  // ---- FIGHTERS: search and filter the whole roster ----------------------------------
+
+  const BELT_ORDER = ['white', 'yellow', 'orange', 'green', 'blue', 'purple', 'brown', 'black', 'red'];
+  const driverKind = d => (/^llm:/.test(d || '') ? 'llm' : d === 'planner' || d === 'builder' ? 'builder' : 'script');
+  const DRIVER_LABEL = { llm: 'LLM', script: 'SCRIPTED', builder: 'BUILDER BOT' };
+
+  // Every fighter as one flat record the filters can read. The API has the
+  // whole roster in one call; without it the export's fighter files serve.
+  async function loadRoster() {
+    const norm = f => {
+      const car = f.career || {}, rec = f.record || {};
+      const W = car.W != null ? car.W : (rec.W || 0), D_ = car.D != null ? car.D : (rec.D || 0), Lo = car.L != null ? car.L : (rec.L || 0);
+      const t = A ? A.traits(f.fighter_id) : {};
+      return {
+        id: f.fighter_id, name: f.name || FIGHTER_NAMES[f.fighter_id] || short(f.fighter_id), rating: Number(f.lifetime_rating || 0),
+        belt: f.provisional ? 'white' : (f.belt || 'white'), provisional: !!f.provisional, placement: f.placement_fights,
+        W, D: D_, L: Lo, fights: W + D_ + Lo, origin: f.origin || 'house', driver: f.driver || '', kind: driverKind(f.driver),
+        lock: f.lock || 'IDLE', form: (f.form || []).map(x => x.mark), kit: t.archetype || '', finish: t.finish || '',
+        forSale: !!(f.asset && f.asset.for_sale),
+        badge: { belt: f.belt, belt_rank: f.belt_rank, belt_stripes: f.belt_stripes, dan: f.dan, provisional: !!f.provisional, placement_fights: f.placement_fights },
+      };
+    };
+    if (D.api) {
+      try {
+        const doc = await apiJson('fighters?per_page=200');
+        const list = doc.fighters || doc.items || [];
+        if (list.length) return list.map(norm);
+      } catch (e) { /* fall back to the export */ }
+    }
+    const index = await fetchJson('index.json');
+    if (index && index.names) FIGHTER_NAMES = index.names;
+    const hexes = (index.fighters || []).filter(h => HEX64.test(h));
+    const docs = (await Promise.all(hexes.map(h => fetchJson('fighters/' + h + '.json').catch(() => null)))).filter(Boolean);
+    return docs.map(f => norm({ ...f, name: (index.names || {})[f.fighter_id] }));
+  }
+
+  const FSORTS = {
+    rating: [(a, b) => b.rating - a.rating, 'RATING'],
+    wins: [(a, b) => b.W - a.W, 'WINS'],
+    winrate: [(a, b) => (b.fights ? b.W / b.fights : -1) - (a.fights ? a.W / a.fights : -1), 'WIN RATE'],
+    fights: [(a, b) => b.fights - a.fights, 'FIGHTS'],
+    name: [(a, b) => a.name.localeCompare(b.name), 'NAME'],
+  };
+
+  function fighterFilterState(param) {
+    const q = new URLSearchParams(param || '');
+    return { q: q.get('q') || '', belt: q.get('belt') || '', kind: q.get('kind') || '', origin: q.get('origin') || '', kit: q.get('kit') || '', finish: q.get('finish') || '', sort: FSORTS[q.get('sort')] ? q.get('sort') : 'rating', active: q.get('active') === '1' };
+  }
+  function fighterFilterParam(st) {
+    const q = new URLSearchParams();
+    for (const k of ['q', 'belt', 'kind', 'origin', 'kit', 'finish']) if (st[k]) q.set(k, st[k]);
+    if (st.sort !== 'rating') q.set('sort', st.sort);
+    if (st.active) q.set('active', '1');
+    return q.toString();
+  }
+  function matchFighter(f, st) {
+    if (st.q) {
+      const q = st.q.toLowerCase();
+      if (!f.name.toLowerCase().includes(q) && !f.id.startsWith(q) && !f.kit.toLowerCase().includes(q)) return false;
+    }
+    return (!st.belt || f.belt === st.belt) && (!st.kind || f.kind === st.kind) && (!st.origin || f.origin === st.origin) &&
+      (!st.kit || f.kit === st.kit) && (!st.finish || f.finish === st.finish) && (!st.active || f.lock !== 'IDLE');
+  }
+
+  async function viewFighters(tok, param) {
+    if (needData()) return;
+    const roster = await loadRoster();
+    if (tok !== viewToken) return;
+    const st = fighterFilterState(param);
+    const uniq = key => Array.from(new Set(roster.map(f => f[key]).filter(Boolean))).sort();
+    const belts = BELT_ORDER.filter(b => roster.some(f => f.belt === b)).concat(uniq('belt').filter(b => !BELT_ORDER.includes(b)));
+    const chipRow = (key, label, values, fmt) => '<div class="ff-row" role="group" aria-label="' + esc(label) + '"><span class="ff-k">' + esc(label) + '</span>' +
+      '<button class="chip ff-chip" data-k="' + key + '" data-v="">ALL</button>' +
+      values.map(v => '<button class="chip ff-chip" data-k="' + key + '" data-v="' + esc(v) + '">' + (fmt ? fmt(v) : esc(String(v).toUpperCase())) + '</button>').join('') + '</div>';
+    setView(screen('FIGHTERS', esc(roster.length) + ' FIGHTERS ON THE ROSTER &middot; SEARCH, FILTER, SORT') +
+      '<section class="panel ff-panel"><div class="ff-search"><label for="ff-q" class="ff-k">SEARCH</label>' +
+      '<input id="ff-q" type="search" autocomplete="off" spellcheck="false" placeholder="name, id or kit&hellip;" value="' + esc(st.q) + '"><span class="ff-hint tiny muted">press / to search</span></div>' +
+      '<details class="ff-filters" id="ff-filters"' + (matchMedia('(min-width: 700px)').matches || fighterFilterParam({ ...st, q: '' }) ? ' open' : '') + '><summary class="ff-k">FILTERS <span id="ff-nact"></span></summary>' +
+      chipRow('belt', 'BELT', belts, b => '<span class="belt belt-sm belt-' + esc(b) + '">' + esc(b.toUpperCase()) + '</span>') +
+      chipRow('kind', 'DRIVER', uniq('kind'), v => esc(DRIVER_LABEL[v] || v.toUpperCase())) +
+      (uniq('origin').length > 1 ? chipRow('origin', 'ORIGIN', uniq('origin')) : '') +
+      chipRow('kit', 'KIT', uniq('kit')) + chipRow('finish', 'FINISH', uniq('finish')) +
+      '<div class="ff-row"><span class="ff-k">SORT</span>' + Object.entries(FSORTS).map(([k, [, l]]) => '<button class="chip ff-sort" data-sort="' + k + '">' + l + '</button>').join('') +
+      '<label class="ff-active"><input type="checkbox" id="ff-active"' + (st.active ? ' checked' : '') + '> IN A FIGHT OR QUEUED</label></div></details></section>' +
+      '<p class="ff-count" aria-live="polite"></p><div class="ff-grid" id="ff-grid"></div>');
+    const grid = $('#ff-grid'), count = $('.ff-count');
+    const card = f => '<a class="ff-card" href="#fighter/' + esc(f.id) + '">' +
+      '<span class="avatar avatar-ff" data-anim="idle" data-identity="' + esc(f.id) + '">' + (A ? A.svg(f.id, 'sprite') : '') + '</span>' +
+      '<span class="ff-body"><b class="ff-name">' + esc(f.name) + '</b>' +
+      '<span class="ff-line">' + beltBadge(f.badge) + ' <b class="ff-rating">' + esc(f.rating) + '</b></span>' +
+      '<span class="ff-line ff-rec">' + f.W + 'W ' + f.D + 'D ' + f.L + 'L' + (f.fights ? ' &middot; ' + Math.round(100 * f.W / f.fights) + '%' : '') + '</span>' +
+      '<span class="ff-line ff-meta">' + esc(DRIVER_LABEL[f.kind] || '') + ' &middot; ' + esc(f.kit) + '</span>' +
+      (f.form.length ? '<span class="ff-form">' + f.form.slice(0, 5).map(m => '<i class="form form-' + esc(m) + '">' + esc(m) + '</i>').join('') + '</span>' : '') +
+      (f.lock !== 'IDLE' ? '<span class="ff-live">' + esc(f.lock) + '</span>' : '') + '</span></a>';
+    function paint() {
+      const list = roster.filter(f => matchFighter(f, st)).sort(FSORTS[st.sort][0]);
+      grid.innerHTML = list.length ? list.map(card).join('') : '<p class="muted">No fighter matches. <button class="chip" id="ff-clear">CLEAR FILTERS</button></p>';
+      count.textContent = list.length + ' OF ' + roster.length + ' FIGHTERS';
+      const nact = ['belt', 'kind', 'origin', 'kit', 'finish'].filter(k => st[k]).length + (st.active ? 1 : 0);
+      $('#ff-nact').textContent = nact ? '(' + nact + ' ON)' : '';
+      $$('.ff-chip').forEach(b => { const on = st[b.dataset.k] === b.dataset.v; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+      $$('.ff-sort').forEach(b => { const on = st.sort === b.dataset.sort; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+      const p = fighterFilterParam(st);
+      history.replaceState(null, '', '#fighters' + (p ? '/' + p : ''));
+      if (ANIM) ANIM.mount(grid);
+      const clear = $('#ff-clear');
+      if (clear) clear.addEventListener('click', () => { Object.assign(st, fighterFilterState('')); $('#ff-q').value = ''; $('#ff-active').checked = false; paint(); });
+    }
+    $('.ff-panel').addEventListener('click', e => {
+      const c = e.target.closest('.ff-chip');
+      if (c) { st[c.dataset.k] = st[c.dataset.k] === c.dataset.v ? '' : c.dataset.v; paint(); return; }
+      const s = e.target.closest('.ff-sort');
+      if (s) { st.sort = s.dataset.sort; paint(); }
+    });
+    $('#ff-q').addEventListener('input', e => { st.q = e.target.value.trim(); paint(); });
+    $('#ff-active').addEventListener('change', e => { st.active = e.target.checked; paint(); });
+    paint();
+    if (!st.q && matchMedia('(min-width: 700px)').matches) $('#ff-q').focus({ preventScroll: true });
+  }
+
   // ---- router and chrome -------------------------------------------------------------
 
   // Sub-pages light up the nav entry they belong to.
-  const NAV_PARENT = { book: 'arena', fight: 'results', fights: 'results', duel: 'results', duels: 'results', fighter: 'leaderboard', owner: 'leaderboard', season: 'leaderboard', titles: 'leaderboard', market: 'leaderboard', economy: 'leaderboard', cup: 'cups', rules: 'guide', help: 'guide', story: 'guide' };
+  const NAV_PARENT = { book: 'arena', fight: 'results', fights: 'results', duel: 'results', duels: 'results', fighter: 'leaderboard', owner: 'leaderboard', season: 'leaderboard', fighters: 'leaderboard', titles: 'leaderboard', market: 'leaderboard', economy: 'leaderboard', cup: 'cups', rules: 'guide', help: 'guide', story: 'guide' };
   // Each nav section can hold several screens: they show as tabs under the header.
   const SECTION_TABS = {
     arena: [['arena', 'LIVE'], ['book', 'MATCHMAKING']],
     results: [['results', 'FIGHTS'], ['duels', 'DUELS']],
-    leaderboard: [['leaderboard', 'LEADERBOARD'], ['titles', 'TITLES'], ['season', 'SEASON'], ['market', 'MARKET'], ['economy', 'ECONOMY']],
+    leaderboard: [['leaderboard', 'LEADERBOARD'], ['fighters', 'FIGHTERS'], ['titles', 'TITLES'], ['season', 'SEASON'], ['market', 'MARKET'], ['economy', 'ECONOMY']],
     guide: [['guide', 'HOW IT WORKS'], ['story', 'STORY'], ['rules', 'RULES'], ['help', 'GLOSSARY'], ['llms.txt', 'FOR AGENTS']],
   };
   function paintNav(name) {
@@ -2511,6 +2643,7 @@
       else if (name === 'duel') await viewDuel(tok, rest[0]);
       else if (name === 'season') await viewSeason(tok);
       else if (name === 'titles') await viewTitles(tok);
+      else if (name === 'fighters') await viewFighters(tok, rest.join('/'));
       else if (name === 'market') await viewMarket(tok);
       else if (name === 'economy') await viewEconomy(tok);
       else if (name === 'owner') await viewOwner(tok, rest[0]);
@@ -2527,7 +2660,10 @@
       if (tok === viewToken) setView(screen('ERROR') + '<section class="panel panel-red"><h3>COULD NOT RENDER</h3><p>' + esc(e.message) + '</p></section>');
     }
     if (tok !== viewToken) return;
-    if (navigated && name !== 'practice') $('#view').focus({ preventScroll: true });
+    if (navigated) window.scrollTo(0, 0);
+    const playerRoot = name === 'fight' ? $('#view [data-player]') : null;
+    if (navigated && playerRoot) playerRoot.focus({ preventScroll: true });
+    else if (navigated && name !== 'practice' && !(name === 'fighters' && document.activeElement && document.activeElement.id === 'ff-q')) $('#view').focus({ preventScroll: true });
     if (!navigated) window.scrollTo(0, y);
   }
 
@@ -2555,6 +2691,13 @@
     if (store.get('qdojo.crt') === '0') $('#btn-crt').click();
     $('#hud-menu').addEventListener('click', () => setMenu(!document.body.classList.contains('menu-open')));
     document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.body.classList.contains('menu-open')) { setMenu(false); $('#hud-menu').focus(); } });
+    // "/" finds a fighter from anywhere, as on most sites with a search box.
+    document.addEventListener('keydown', e => {
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey || e.target.closest('input, textarea, select, [contenteditable]')) return;
+      e.preventDefault();
+      const box = $('#ff-q');
+      if (box) box.focus(); else location.hash = '#fighters';
+    });
     paintMotion();
     await loadSource();
     paintSource();

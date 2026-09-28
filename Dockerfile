@@ -1,6 +1,6 @@
-# The spectator site is static files: the combat site (index.html), the
-# retired riddle arcade kept read-only (legacy.html), and the JSON the house
-# exports. Nothing here runs Python, holds a seed, or can sign anything --
+# The spectator site is static files: the combat site (index.html) and the
+# JSON the arena exports. The riddle arcade was removed on 2026-09-27: its old
+# URLs redirect (to / and to the archived briefing at tag riddle-v0-final). Nothing here runs Python, holds a seed, or can sign anything --
 # it serves apps/web and nothing else.
 FROM nginx:1.27-alpine
 
@@ -10,18 +10,17 @@ COPY apps/web/ /usr/share/nginx/html/
 # version, so a CDN in front cannot keep serving last week's app.js beside this
 # week's data: a new URL is a new object. Every .html is stamped, and relative
 # paths such as combat/app.js count; absolute URLs (fonts) have a ':' and are
-# left alone. Both real pages must end up stamped or the build fails.
+# left alone. The combat page must end up stamped or the build fails.
 RUN v=$(date +%s) && for f in /usr/share/nginx/html/*.html; do \
       sed -E -i "s#(src|href)=\"([a-z0-9_-]+(/[a-z0-9_-]+)*\.(js|css))\"#\1=\"\2?v=$v\"#g" "$f"; \
-    done && grep -q "combat/app.js?v=$v" /usr/share/nginx/html/index.html \
-    && grep -q "app.js?v=$v" /usr/share/nginx/html/legacy.html
+    done && grep -q "combat/app.js?v=$v" /usr/share/nginx/html/index.html
 
 # dash.html/dash.js are the LOCAL fighter page, served by `qdojo bot dash` on
 # 127.0.0.1 against an API that exists only on the player's own machine. On the
 # public site they would be a dead page, so they do not ship in this image.
 RUN rm -f /usr/share/nginx/html/dash.html /usr/share/nginx/html/dash.js
 
-# llms.txt (and legacy-llms.txt, the signed riddle briefing) must arrive as
+# llms.txt must arrive as
 # readable text, not a download, because the whole
 # point is that a person or an agent can open it in a browser. The page's own
 # files say max-age=300: without an origin header the CDN in front kept an
@@ -93,7 +92,8 @@ RUN mkdir -p /etc/nginx/templates && printf '%s\n' \
     '  index index.html;' \
     '  charset utf-8;' \
     '  location = /llms.txt { default_type text/plain; }' \
-    '  location = /legacy-llms.txt { default_type text/plain; }' \
+    '  location = /legacy.html { return 301 /; }' \
+    '  location = /legacy-llms.txt { return 301 https://github.com/jonsggi/qdojo/blob/riddle-v0-final/docs/archive/riddle-v0/apps/web/llms.txt; }' \
     '  location ~ \.py$ { default_type text/plain; }' \
     '  location /data/combat/v1/ {' \
     '    proxy_pass ${QDOJO_LIVE_DATA}/;' \
