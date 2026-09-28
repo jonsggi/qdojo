@@ -185,12 +185,27 @@ the robots were checked at 1x, 2x, 3x and 4x.
 ### Animation
 
 `frames` and `strip` draw the sprite in poses (the v4 skeleton and clips,
-unchanged). A pose moves joints by whole
+plus the two candidate-3 clips below). A pose moves joints by whole
 pixels: `dx`/`dy` move everything above the hips (the hips follow, the feet stay
 planted, so knees bend naturally), `hx`/`hy` add to the head, `jump` lifts the
 whole sprite; `lead` and `rear` choose arm states (guard, jab, wind, up, down,
-block, grab, pull, knee, fling), `legs` a leg state (plant, chamber, kick,
-kneel, crouch, step) and `blink` dims the eyes, visor, lens or screen.
+block, grab, pull, knee, fling, hay, sweep, and `flick` for the lead hand),
+`legs` a leg state (plant, chamber, kick, kneel, crouch, step, brace) and
+`blink` dims the eyes, visor, lens or screen.
+
+Four pose effects exist only in clips:
+
+- `reactor` (1 or 2) swings the chest hatch open on a red reactor; at 2 it is
+  white-hot and the glow spills onto the chest plate;
+- `vent` (1 or 2) blows coolant jets from both shoulders, at 2 with a cloud;
+- `spark` throws sparks from the lead elbow servo;
+- `ghost` is a second pose drawn first and laid behind the figure in one pale
+  teal ramp with a dark teal outline: an afterimage.
+
+Every effect touches the body, so the "no floating pixels" test covers them,
+and none appears in frame zero of `idle`, the static sprite or the card: the
+still art and its fixtures are byte-for-byte unchanged, which is why the
+renderer version stays `qdojo-fighters-v5-preview`.
 
 | Clip | fps | frames | |
 | --- | --- | --- | --- |
@@ -206,13 +221,18 @@ kneel, crouch, step) and `blink` dims the eyes, visor, lens or screen.
 | throw | 10 | 7 | step in and grab with both hands, pull back |
 | recover | 6 | 6 | hands on knees, then back to guard |
 | exhausted | 5 | 6 | hunched over, hands on knees, breathing |
+| stand | 10 | 8 | LAST STAND: feet braced, guard dropped; the chest hatch opens on a red reactor, coolant jets from both shoulders; a wide two-handed haymaker and its low follow-through; recoil with a sparking elbow servo |
+| feint | 12 | 6 | FEINT: a sharp shoulder fake and a flick of the lead hand, then a quick pull-back that leaves the half-thrown jab behind as an afterimage |
 
 Nothing in `avatars.js` plays a clip. `anim.js` does: one animation loop for
 the page, frames chosen from the elapsed clock, strips built lazily. An avatar
 opts in with `data-anim` (see the list at the top of `anim.js`). The combat
-replay plays `jab`, `kick`, `throw`, `block`, `duck`, `recover` and
-`exhausted` for the matching actions and `hit` when a fighter loses HP without
-attacking or blocking. With `prefers-reduced-motion` the static art stays.
+replay plays `jab`, `kick`, `throw`, `block`, `duck`, `recover`,
+`exhausted`, `stand` (LAST_STAND) and `feint` (FEINT) for the matching actions
+and `hit` when a fighter loses HP without attacking or blocking (a punished
+feint shows `hit`). The clips are the same for every fight; how hard the
+reactor burns for a given beat is the stage's job (combat/stages.css), because
+it depends on the bonus in the trace. With `prefers-reduced-motion` the static art stays.
 `anim.html` is the sparring ring used to check every clip. The signature move
 is a character trait derived from the identity, never from rank or results.
 

@@ -24,6 +24,13 @@
  *   QDojoStages.pick(seed)                           -> stage index
  *   QDojoStages.list                                 -> [{ key, name }]
  *   QDojoStages.paint(ctx, W, H, index, seed, t, makeCanvas)  (tests, tools)
+ *   QDojoStages.moveFx(trace, otherTrace, names)     -> which move effect to play
+ *
+ * moveFx is the one place that reads a beat: it picks the decoration for the
+ * candidate-3 moves (LAST STAND's reactor glow, FEINT's afterimage and its
+ * BAITED / WHIFF words) from the trace the replay already derived. It never
+ * changes a number, and it reads reason codes generically, so new codes from
+ * the engine (STAND_BONUS, FEINT_BAITED, ...) need no change here.
  */
 'use strict';
 const QDojoStages = (() => {
@@ -1271,6 +1278,44 @@ const QDojoStages = (() => {
     return { stage: list[m.index], destroy: () => destroy(m) };
   }
 
-  return Object.freeze({ mount, pick, paint, list, count: () => mounted.size, hash });
+  // ---- move effects ------------------------------------------------------------------
+
+  /* The effect for one side of one beat, from its trace `t`, the other side's
+   * trace `o` and the action names by id. Returns
+   *   { stand: { bonus, level 0-3, landed, blocked } | null,
+   *     feint: { baited, whiff } | null,
+   *     read: true when this side punished the other side's feint }.
+   * LAST STAND's bonus is the trace's stand_bonus; without that field, the
+   * damage left after the base, opening and power parts. A feint worked when a
+   * reason says so (…BAIT…); when no feint reason exists at all, when the
+   * other side defended (BLOCK, DUCK, RECOVER) and the feint cost nothing. */
+  const DEFENCES = ['BLOCK', 'DUCK', 'RECOVER'];
+  const num = v => (typeof v === 'number' && isFinite(v) ? v : 0);
+  function standBonus(t) {
+    if (typeof t.stand_bonus === 'number' && isFinite(t.stand_bonus)) return Math.max(0, t.stand_bonus);
+    if (typeof t.computed_damage !== 'number' || typeof t.base_damage !== 'number') return 0;
+    return Math.max(0, t.computed_damage - t.base_damage - num(t.opening_bonus) - num(t.power_bonus));
+  }
+  function feintOf(t, o, names) {
+    const rs = (t.reasons || []).map(String);
+    if (rs.some(r => /BAIT|FEINT_(OK|WORKED|SUCCESS)/.test(r))) return { baited: true, whiff: false };
+    if (rs.some(r => /WHIFF|FEINT_(PUNISHED|READ|CAUGHT|STUFFED|FAILED)/.test(r)) || num(t.actual_hp_lost) > 0) return { baited: false, whiff: true };
+    const coded = rs.some(r => /FEINT/.test(r));
+    return { baited: !coded && DEFENCES.includes(names[o.effective]), whiff: false };
+  }
+  function moveFx(t, o, names) {
+    const out = { stand: null, feint: null, read: false };
+    if (!t || !o || !names) return out;
+    const me = names[t.effective], them = names[o.effective];
+    if (me === 'LAST_STAND') {
+      const bonus = standBonus(t);
+      out.stand = { bonus, level: bonus <= 0 ? 0 : bonus < 6 ? 1 : bonus < 16 ? 2 : 3, landed: num(o.actual_hp_lost) > 0 && num(t.computed_damage) > 0, blocked: them === 'BLOCK' && !num(t.computed_damage) };
+    }
+    if (me === 'FEINT') out.feint = feintOf(t, o, names);
+    if (them === 'FEINT') out.read = feintOf(o, t, names).whiff && num(t.computed_damage) > 0;
+    return out;
+  }
+
+  return Object.freeze({ mount, pick, paint, list, count: () => mounted.size, hash, moveFx });
 })();
 if (typeof module !== 'undefined') module.exports = QDojoStages;

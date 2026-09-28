@@ -103,3 +103,31 @@ test('every draw stays finite and inside a sane range around the canvas', () => 
     }
   }
 });
+
+test('moveFx reads LAST STAND and FEINT from a trace, generically, and nothing else', () => {
+  const names = ['JAB', 'KICK', 'BLOCK', 'DUCK', 'THROW', 'RECOVER', 'EXHAUSTED', 'LAST_STAND', 'FEINT'];
+  // Objects from the vm realm: compare plain copies.
+  const fx0 = (...a) => JSON.parse(JSON.stringify(S.moveFx(...a)));
+  const side = (eff, o = {}) => Object.assign({ effective: eff, computed_damage: 0, base_damage: 0, opening_bonus: 0, power_bonus: 0, actual_hp_lost: 0, reasons: [] }, o);
+  // The bonus comes from stand_bonus when the trace has it...
+  let fx = fx0(side(7, { stand_bonus: 16, computed_damage: 24, base_damage: 8 }), side(0, { actual_hp_lost: 24 }), names);
+  assert.deepEqual(fx.stand, { bonus: 16, level: 3, landed: true, blocked: false });
+  // ...else from the damage left after base, opening and power.
+  fx = fx0(side(7, { computed_damage: 21, base_damage: 8, opening_bonus: 8 }), side(0, { actual_hp_lost: 21 }), names);
+  assert.equal(fx.stand.bonus, 5);
+  assert.equal(fx.stand.level, 1);
+  // Blocked: no bonus dealt, embers only.
+  fx = fx0(side(7), side(2), names);
+  assert.deepEqual(fx.stand, { bonus: 0, level: 0, landed: false, blocked: true });
+  // A feint: a reason code that says it worked, one that says it was punished, or HP lost.
+  assert.deepEqual(fx0(side(8, { reasons: ['FEINT_BAITED', 'OPENING_EARNED'] }), side(2), names).feint, { baited: true, whiff: false });
+  assert.deepEqual(fx0(side(8, { reasons: ['FEINT_PUNISHED'] }), side(1), names).feint, { baited: false, whiff: true });
+  assert.deepEqual(fx0(side(8, { actual_hp_lost: 8 }), side(0, { computed_damage: 8 }), names).feint, { baited: false, whiff: true });
+  // With no feint code at all, a defence that met the feint counts as baited.
+  assert.equal(fx0(side(8), side(3), names).feint.baited, true);
+  assert.equal(fx0(side(8, { reasons: ['FEINT_IGNORED'] }), side(3), names).feint.baited, false);
+  // The attacker who punished it READ IT; other moves get no effect.
+  assert.equal(fx0(side(0, { computed_damage: 8 }), side(8, { actual_hp_lost: 8 }), names).read, true);
+  assert.deepEqual(fx0(side(0, { computed_damage: 8 }), side(1), names), { stand: null, feint: null, read: false });
+  assert.deepEqual(fx0(null, side(1), names), { stand: null, feint: null, read: false });
+});

@@ -27,7 +27,20 @@
   const A = typeof QDojoAvatars !== 'undefined' ? QDojoAvatars : null;
   const ANIM = typeof QDojoAnim !== 'undefined' ? QDojoAnim : null;
   const STAGES = typeof QDojoStages !== 'undefined' ? QDojoStages : null;
-  const NAMES = L.NAMES;
+  // Action names by id. The ids are the protocol's in every ruleset: 0-5 the
+  // six classic moves, 6 EXHAUSTED (internal), 7 LAST_STAND and 8 FEINT
+  // (candidate 3 only; a ruleset without them never produces those ids).
+  const NAMES = L.NAMES.length > 8 ? L.NAMES : Object.freeze(L.NAMES.concat(['LAST_STAND', 'FEINT']));
+  const ID = Object.freeze(Object.assign({ LAST_STAND: 7, FEINT: 8 }, L.ID));
+  // Display strings per action (deck line, purpose, flavour, key, clip): combat/moves.js.
+  const MOVES = window.QDojoMoves || {};
+  const moveOf = n => MOVES[n] || {};
+  const moveName = n => String(n).replace(/_/g, ' ');
+  // Only these carry the power strike (engine: "power slot ... is not an attack"); LAST STAND and FEINT never do.
+  const POWERABLE = [ID.JAB, ID.KICK, ID.THROW];
+  // What a BLOCK stops: the strikes.
+  const STRIKES = [ID.JAB, ID.KICK, ID.LAST_STAND];
+  const FX = STAGES && STAGES.moveFx ? STAGES.moveFx : () => ({ stand: null, feint: null, read: false });
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -1148,6 +1161,8 @@
     ['OPENING', 'Earned by ducking a jab or throw, or by landing a clean jab. +' + R.opening_damage + ' damage on the very next beat if that beat lands; otherwise it expires.'],
     ['GUARD', 'Consecutive BLOCKs. Each one costs ' + R.block_streak_cost + ' more stamina than the last (up to ' + R.limits.guard_streak + ' in a row). Blocking a KICK also costs strain stamina, never HP.'],
     ['POWER', 'One per fight: mark a JAB, KICK or THROW for +' + R.power_damage + ' damage at +' + R.power_cost + ' cost. Spent even if it misses.'],
+    ...(R.submitted_action_ids.includes(ID.LAST_STAND) ? [['LAST STAND', 'A strike that hits harder the further you trail, +' + ((R.last_stand || {}).per_hp_behind || 1) + ' damage per HP behind (at most +' + ((R.last_stand || {}).cap || 16) + '), so it is worth nothing while you lead. A BLOCK stops it and a KICK out-trades it while the gap is small. It never carries POWER. Replays show the bonus as LAST STAND +N and the reactor burns brighter with it.']] : []),
+    ...(R.submitted_action_ids.includes(ID.FEINT) ? [['FEINT', 'A cheap fake-out strike. It baits a BLOCK, DUCK or RECOVER (BAITED! in replays) and loses to any real attack (WHIFF; the attacker READ IT). It never carries POWER. Its exact effect is on the RULES screen.']] : []),
     ['ROUND / BEAT', R.rounds + ' rounds of ' + R.beats_per_round + ' beats. Both plans for a round are sealed, then both resolve beat by beat, simultaneously.'],
     ['COMMIT / REVEAL', 'Each round a bot first commits a hash of its plan and a secret salt, then reveals both. Nobody can change a plan after seeing the other one.'],
     ['TICK', 'The chain\'s clock. Deadlines are ticks. A countdown on this site is time left to act, never health.'],
@@ -1169,7 +1184,7 @@
   function viewHelp() {
     setView(screen('GLOSSARY', 'EVERY WORD ON THIS SITE') + '<section class="panel"><h3>TERMS</h3><dl class="kv help-kv">' +
       helpEntries().map(([k, v]) => '<dt>' + esc(k) + '</dt><dd>' + esc(v) + '</dd>').join('') + '</dl></section>' +
-      '<section class="panel"><h3>KEYS</h3><p>Replays: LEFT/RIGHT step, SPACE play/pause, HOME/END, or pick a row in the beat table. Practice: 1-6 pick actions, P power, BACKSPACE clear, ENTER fight. MOTION: OFF shows the same information with nothing moving.</p></section>');
+      '<section class="panel"><h3>KEYS</h3><p>Replays: LEFT/RIGHT step, SPACE play/pause, HOME/END, or pick a row in the beat table. Practice: 1-6 pick actions (7 LAST STAND and 8 FEINT where the ruleset has them), P power, BACKSPACE clear, ENTER fight. MOTION: OFF shows the same information with nothing moving.</p></section>');
   }
 
   // ---- the replay player -------------------------------------------------------------
@@ -1194,17 +1209,38 @@
 
   function actionTag(name, power, intended) {
     const exhausted = intended != null && name === 'EXHAUSTED';
-    return '<span class="act act-' + esc(name.toLowerCase()) + '">' + (exhausted ? esc(intended) + ' &rarr; ' : '') + esc(name) + (power ? ' <i class="pw" title="power strike">&#9733;</i>' : '') + '</span>';
+    return '<span class="act act-' + esc(String(name).toLowerCase()) + '">' + (exhausted ? esc(moveName(intended)) + ' &rarr; ' : '') + esc(moveName(name)) + (power ? ' <i class="pw" title="power strike">&#9733;</i>' : '') + '</span>';
   }
 
   function sideSummary(t, o) {
     const eff = NAMES[t.effective], bits = [];
     if (t.actual_hp_lost > 0) bits.push('<b class="neg">-' + t.actual_hp_lost + ' HP</b>');
-    else if (t.effective === L.ID.BLOCK && [L.ID.JAB, L.ID.KICK].includes(o.effective)) bits.push('<b class="blocked">BLOCKED &middot; 0 HP</b>');
-    else if (o.computed_damage === 0 && [L.ID.JAB, L.ID.KICK, L.ID.THROW].includes(o.effective) && t.effective === L.ID.DUCK) bits.push('<b class="blocked">EVADED</b>');
+    else if (t.effective === ID.BLOCK && STRIKES.includes(o.effective)) bits.push('<b class="blocked">BLOCKED &middot; 0 HP</b>');
+    else if (o.computed_damage === 0 && [ID.JAB, ID.KICK, ID.THROW].includes(o.effective) && t.effective === ID.DUCK) bits.push('<b class="blocked">EVADED</b>');
+    const fx = FX(t, o, NAMES), ofx = FX(o, t, NAMES);
+    if (fx.stand && fx.stand.bonus > 0) bits.push('<b class="stand-bonus">LAST STAND +' + fx.stand.bonus + '</b>');
+    if (fx.feint) bits.push(fx.feint.baited ? '<b class="feint-ok">FEINT WORKED</b>' : fx.feint.whiff ? '<b class="feint-whiff">WHIFF</b>' : '');
+    if (ofx.feint && ofx.feint.baited) bits.push('<b class="feint-ok">BAITED</b>');
+    if (fx.read) bits.push('<b class="feint-read">READ IT</b>');
     if (t.strain) bits.push('<span class="strain">-' + t.strain + ' ST strain</span>');
     if (t.after.opening) bits.push('<span class="opening">OPENING</span>');
-    return actionTag(eff, t.power, NAMES[t.intended]) + '<div class="sum">' + (bits.join(' ') || '<span class="muted">no damage</span>') + '</div>';
+    return actionTag(eff, t.power, NAMES[t.intended]) + '<div class="sum">' + (bits.filter(Boolean).join(' ') || '<span class="muted">no damage</span>') + '</div>';
+  }
+
+  /* The beat's one-sentence headline (combat/logic.js), with the candidate-3
+   * moves spelled as words and, until logic.js says so itself, the stand bonus
+   * and the feint's result added at the end. */
+  const words = text => String(text).replace(/LAST_STAND/g, 'LAST STAND').replace(/last_stand/g, 'last stand');
+  function headlineOf(a, b, names) {
+    // (A cause logic.js does not know yet comes back as "null": dropped.)
+    let h = words(L.beatHeadline(a, b, names)).replace(/ (null|undefined)(?=\s|$)/g, '');
+    for (const [t, o, s] of [[a, b, 'A'], [b, a, 'B']]) {
+      const fx = FX(t, o, NAMES), who = names[s], them = names[s === 'A' ? 'B' : 'A'];
+      if (fx.stand && fx.stand.bonus > 0 && !/\+\s?\d+|bonus/i.test(h)) h += ' ' + who + "'s last stand: +" + fx.stand.bonus + ' for trailing by ' + Math.max(0, t.before && o.before ? o.before.hp - t.before.hp : 0) + ' HP.';
+      if (fx.feint && fx.feint.baited && !/bait/i.test(h)) h += ' ' + who + "'s feint baited " + them + "'s " + moveName(NAMES[o.effective]) + '.';
+      if (fx.feint && fx.feint.whiff && !/whiff|read/i.test(h)) h += ' ' + them + ' read the feint.';
+    }
+    return h;
   }
 
   function frameLabel(f, total) {
@@ -1220,6 +1256,10 @@
       default: return String(total);
     }
   }
+
+  // The sprite clip for each action (avatars.js); moves.js may name its own.
+  const CLIPS = Object.assign({ JAB: 'jab', KICK: 'kick', THROW: 'throw', DUCK: 'duck', BLOCK: 'block', RECOVER: 'recover', EXHAUSTED: 'exhausted', LAST_STAND: 'stand', FEINT: 'feint' },
+    ...Object.entries(MOVES).filter(([, m]) => m && m.clip).map(([n, m]) => ({ [n]: m.clip })));
 
   /* opts: { frames, ids: {A, B}, names: {A, B}, links: bool, replay (for labels),
    *         mySide (practice: explanations say YOU), autoplay } */
@@ -1237,6 +1277,7 @@
         '<div class="corner-hud">' + head + cbar('hp', 'HP') + cbar('st', 'STAMINA') + '<span class="rmarks"></span>' +
         '<div class="flags"><span class="flag flag-power"></span><span class="flag flag-opening">OPENING</span><span class="flag flag-guard"></span></div></div>' +
         '<div class="fighter-box"><span class="fshadow" aria-hidden="true"></span><span class="avatar avatar-stage" data-anim="manual" data-identity="' + esc(id) + '" aria-hidden="true">' + (A ? A.svg(id, 'sprite') : '') + '</span>' +
+        '<span class="fx-reactor" aria-hidden="true"></span><span class="fx-steam" aria-hidden="true"><i></i><i></i></span><span class="fx-ghost" aria-hidden="true"></span><span class="fx-call" aria-hidden="true"></span>' +
         '<span class="pop" aria-hidden="true"></span><span class="fx-spark" aria-hidden="true"></span><span class="fx-word" aria-hidden="true"></span><span class="win-plate" aria-hidden="true">WINNER</span></div>' +
         '<div class="side-now"></div></div>';
     };
@@ -1245,10 +1286,10 @@
       if (f.kind === 'beat') {
         const a = f.trace.A, b = f.trace.B;
         const cell = (t, o) => '<td>' + actionTag(NAMES[t.effective], t.power, NAMES[t.intended]) + '</td><td class="num">' + (t.actual_hp_lost ? '<span class="neg">-' + t.actual_hp_lost + '</span> ' : '') + t.after.hp + '</td><td class="num">' + t.after.stamina + (t.strain ? ' <span class="strain">(-' + t.strain + ')</span>' : '') + '</td>';
-        return '<tr class="' + cls + '" data-i="' + i + '" tabindex="-1"><td>' + (f.round + 1) + '</td><td>' + (f.beat + 1) + '</td>' + cell(a, b) + cell(b, a) + '<td class="reasons" title="' + esc('A: ' + a.reasons.join(' ') + ' / B: ' + b.reasons.join(' ')) + '">' + esc(L.beatHeadline(a, b, names)) + '</td></tr>';
+        return '<tr class="' + cls + '" data-i="' + i + '" tabindex="-1"><td>' + (f.round + 1) + '</td><td>' + (f.beat + 1) + '</td>' + cell(a, b) + cell(b, a) + '<td class="reasons" title="' + esc('A: ' + a.reasons.join(' ') + ' / B: ' + b.reasons.join(' ')) + '">' + esc(headlineOf(a, b, names)) + '</td></tr>';
       }
       if (f.kind === 'unexecuted') {
-        return '<tr class="' + cls + '" data-i="' + i + '" tabindex="-1"><td>' + (f.round + 1) + '</td><td>' + (f.beat + 1) + '</td><td colspan="3">' + esc(NAMES[f.intended.A]) + (f.power.A ? ' &#9733;' : '') + '</td><td colspan="3">' + esc(NAMES[f.intended.B]) + (f.power.B ? ' &#9733;' : '') + '</td><td class="reasons">UNEXECUTED: revealed, not played (fight already over)</td></tr>';
+        return '<tr class="' + cls + '" data-i="' + i + '" tabindex="-1"><td>' + (f.round + 1) + '</td><td>' + (f.beat + 1) + '</td><td colspan="3">' + esc(moveName(NAMES[f.intended.A])) + (f.power.A ? ' &#9733;' : '') + '</td><td colspan="3">' + esc(moveName(NAMES[f.intended.B])) + (f.power.B ? ' &#9733;' : '') + '</td><td class="reasons">UNEXECUTED: revealed, not played (fight already over)</td></tr>';
       }
       let text = '';
       if (f.kind === 'start') text = 'ROUND 1: both start at HP ' + f.a.hp + ', STAMINA ' + f.a.stamina;
@@ -1285,7 +1326,7 @@
     const els = {};
     for (const s of ['A', 'B']) {
       const c = $('.corner-' + s, root);
-      els[s] = { corner: c, avatar: $('.avatar', c), hp: $('.cbar-hp', c), st: $('.cbar-st', c), power: $('.flag-power', c), opening: $('.flag-opening', c), guard: $('.flag-guard', c), now: $('.side-now', c), pop: $('.pop', c), spark: $('.fx-spark', c), word: $('.fx-word', c), marks: $('.rmarks', c), lost: $('.cbar-hp .cbar-lost', c), cap: $('.cap-' + s, root) };
+      els[s] = { corner: c, avatar: $('.avatar', c), hp: $('.cbar-hp', c), st: $('.cbar-st', c), power: $('.flag-power', c), opening: $('.flag-opening', c), guard: $('.flag-guard', c), now: $('.side-now', c), pop: $('.pop', c), spark: $('.fx-spark', c), word: $('.fx-word', c), reactor: $('.fx-reactor', c), steam: $('.fx-steam', c), ghost: $('.fx-ghost', c), call: $('.fx-call', c), marks: $('.rmarks', c), lost: $('.cbar-hp .cbar-lost', c), cap: $('.cap-' + s, root) };
     }
     if (ANIM) ANIM.mount(root);
     const stageEl = $('.stage', root), announcer = $('.announcer span', root);
@@ -1325,6 +1366,12 @@
         x.guard.textContent = 'GUARD ' + me.guard_streak;
         x.guard.classList.toggle('on', me.guard_streak > 0);
         x.corner.className = 'corner corner-' + s + (t ? ' pose-' + NAMES[t.effective].toLowerCase() : '') + (t && t.actual_hp_lost ? ' took-hit' : '') + (me.hp === 0 ? ' down' : '');
+        // LAST STAND's reactor burns as hard as the bonus it dealt (0-3); the
+        // glow is still with motion off, only the burst needs motion.
+        const fx = t ? FX(t, f.trace[s === 'A' ? 'B' : 'A'], NAMES) : null;
+        if (fx && fx.stand) x.corner.dataset.stand = String(fx.stand.level); else delete x.corner.dataset.stand;
+        x.call.textContent = fx && fx.stand ? 'LAST STAND' + (fx.stand.bonus > 0 ? ' +' + fx.stand.bonus : '') : fx && fx.feint && fx.feint.baited ? 'FEINT!' : fx && fx.read ? 'READ IT!' : '';
+        x.call.className = 'fx-call' + (fx && fx.stand ? ' c-stand' : fx && (fx.feint || fx.read) ? ' c-feint' : '');
         x.pop.textContent = t && t.actual_hp_lost ? '-' + t.actual_hp_lost : '';
         if (f.kind === 'beat') {
           x.now.innerHTML = sideSummary(t, f.trace[s === 'A' ? 'B' : 'A']);
@@ -1334,9 +1381,9 @@
             const h = L.hindsight(R, { a: f.trace.A.before, b: f.trace.B.before }, s, f.trace);
             if (h) lines.push(h.text);
           }
-          x.cap.innerHTML = '<h4>' + esc(names[s]) + '</h4><ul>' + lines.map(l => '<li' + (/^HINDSIGHT/.test(l) ? ' class="hindsight"' : '') + '>' + esc(l) + '</li>').join('') + '</ul>';
+          x.cap.innerHTML = '<h4>' + esc(names[s]) + '</h4><ul>' + lines.map(words).map(l => '<li' + (/^HINDSIGHT/.test(l) ? ' class="hindsight"' : '') + '>' + esc(l) + '</li>').join('') + '</ul>';
         } else if (f.kind === 'unexecuted') {
-          x.now.innerHTML = '<span class="act act-unexec">' + esc(NAMES[f.intended[s]]) + (f.power[s] ? ' &#9733;' : '') + '</span><div class="sum muted">not played</div>';
+          x.now.innerHTML = '<span class="act act-unexec">' + esc(moveName(NAMES[f.intended[s]])) + (f.power[s] ? ' &#9733;' : '') + '</span><div class="sum muted">not played</div>';
           x.cap.innerHTML = '<h4>' + esc(names[s]) + '</h4><p class="muted">Revealed intention, never executed: the fight ended earlier. Not counted as play.</p>';
         } else {
           x.now.innerHTML = '';
@@ -1348,6 +1395,7 @@
         els[s].marks.innerHTML = won.map(x => '<i class="rmark" title="Ahead on HP after round ' + (x.round + 1) + ' (display only)">&#9733;</i>').join('');
         els[s].marks.setAttribute('aria-label', won.length ? names[s] + ' ahead on HP after ' + won.length + ' round' + (won.length === 1 ? '' : 's') : '');
         els[s].pop.classList.remove('go'); els[s].spark.classList.remove('go'); els[s].word.classList.remove('go'); els[s].lost.classList.remove('drain');
+        for (const k of ['reactor', 'steam', 'ghost', 'call']) els[s][k].classList.remove('go');
       }
       // The round box counts beats left in the round (never a fake timer).
       const left = f.kind === 'beat' || f.kind === 'unexecuted' ? R.beats_per_round - f.beat - 1 : f.kind === 'start' || f.kind === 'round' ? R.beats_per_round : null;
@@ -1367,7 +1415,7 @@
       note.textContent = text;
       // The whole exchange in one plain sentence: the same text with motion off.
       const head = $('.beat-headline', root);
-      head.textContent = f.kind === 'beat' ? L.beatHeadline(f.trace.A, f.trace.B, names)
+      head.textContent = f.kind === 'beat' ? headlineOf(f.trace.A, f.trace.B, names)
         : f.kind === 'unexecuted' ? 'Revealed but never played: the fight was already over.'
         : f.kind === 'break' ? 'Break between rounds: +' + f.recovery.A + ' / +' + f.recovery.B + ' stamina; HP, opening, guard and power carry over.'
         : f.kind === 'end' ? L.outcomeLabel({ outcome: f.outcome }).text
@@ -1453,27 +1501,42 @@
         }
       }
       if (f.kind !== 'beat') return;
-      let big = 0, power = false;
+      let big = 0, power = false, heavy = 0;
       for (const s of ['A', 'B']) {
         const t = f.trace[s], o = f.trace[s === 'A' ? 'B' : 'A'], x = els[s];
         const oEff = NAMES[o.effective];
         if (t.actual_hp_lost > 0) {
           big = Math.max(big, t.actual_hp_lost);
-          if (o.power && ['JAB', 'KICK', 'THROW'].includes(oEff)) power = true;
+          if (o.power && POWERABLE.includes(o.effective)) power = true;
           x.spark.className = 'fx-spark' + (t.actual_hp_lost >= 12 ? ' big' : '');
           replay(x.spark, 'go');
           replay(x.pop, 'go');
           replay(x.lost, 'drain');
           x.word.textContent = '';
-        } else if (t.effective === L.ID.BLOCK && [L.ID.JAB, L.ID.KICK].includes(o.effective)) {
+        } else if (t.effective === ID.BLOCK && STRIKES.includes(o.effective)) {
           x.word.textContent = 'BLOCKED'; x.word.className = 'fx-word w-block'; replay(x.word, 'go');
-        } else if (o.computed_damage === 0 && [L.ID.JAB, L.ID.KICK, L.ID.THROW].includes(o.effective) && t.effective === L.ID.DUCK) {
+        } else if (o.computed_damage === 0 && [ID.JAB, ID.KICK, ID.THROW].includes(o.effective) && t.effective === ID.DUCK) {
           x.word.textContent = 'EVADE'; x.word.className = 'fx-word w-evade'; replay(x.word, 'go');
         } else {
           x.word.textContent = '';
         }
+        // Candidate-3 moves: the reactor burst and steam, the feint's afterimage,
+        // and BAITED! over the fighter who fell for it or WHIFF over the feinter.
+        const fx = FX(t, o, NAMES), ofx = FX(o, t, NAMES);
+        if (fx.stand) {
+          replay(x.reactor, 'go'); replay(x.steam, 'go'); replay(x.call, 'go');
+          if (fx.stand.landed) heavy = Math.max(heavy, fx.stand.level >= 2 ? 2 : 1);
+        }
+        if (fx.feint) {
+          replay(x.ghost, 'go');
+          if (fx.feint.whiff && !t.actual_hp_lost) { x.word.textContent = 'WHIFF'; x.word.className = 'fx-word w-whiff'; replay(x.word, 'go'); }
+          if (fx.feint.baited) replay(x.call, 'go');
+        }
+        if (fx.read) replay(x.call, 'go');
+        if (ofx.feint && ofx.feint.baited) { x.word.textContent = 'BAITED!'; x.word.className = 'fx-word w-bait'; replay(x.word, 'go'); }
       }
-      if (big >= 12) replay(stageEl, big >= 20 ? 'shake-big' : 'shake');
+      if (heavy) replay(stageEl, heavy > 1 || big >= 20 ? 'shake-big' : 'shake');
+      else if (big >= 12) replay(stageEl, big >= 20 ? 'shake-big' : 'shake');
       if (power) replay(stageEl, 'flash-power');
     }
     function animateFrame(f) {
@@ -1485,8 +1548,8 @@
           const t = f.trace[s];
           // Every combat action has its own clip; a fighter who loses HP while
           // not attacking or blocking shows the hit reaction instead.
-          const clip = { JAB: 'jab', KICK: 'kick', THROW: 'throw', DUCK: 'duck', BLOCK: 'block', RECOVER: 'recover', EXHAUSTED: 'exhausted' }[NAMES[t.effective]];
-          const struck = t.actual_hp_lost && (clip === 'duck' || clip === 'recover' || clip === 'exhausted');
+          const clip = CLIPS[NAMES[t.effective]];
+          const struck = t.actual_hp_lost && (clip === 'duck' || clip === 'recover' || clip === 'exhausted' || clip === 'feint');
           if (clip && !struck) ANIM.play(els[s].avatar, clip);
           else if (t.actual_hp_lost) ANIM.play(els[s].avatar, 'hit', 80 / speed);
           if (t.actual_hp_lost) {
@@ -1737,13 +1800,13 @@
   }
 
   function scoutHtml(hex, s, d) {
-    const freqRows = NAMES.map((n, a) => {
+    const freqRows = R.action_names.map((n, a) => {
       const cells = [0, 1, 2].map(r => {
         const tot = sumOf(s.perRound[r]);
-        const c = s.perRound[r][a];
+        const c = s.perRound[r][a] || 0;
         return '<td class="num">' + (tot ? '<span class="fbar" style="width:' + Math.round(40 * c / tot) + 'px"></span>' + pct(c, tot) + ' <span class="muted">(' + c + ')</span>' : '—') + '</td>';
       }).join('');
-      return '<tr><td>' + actionTag(n) + '</td>' + cells + '<td class="num muted">' + s.unexecuted[a] + '</td></tr>';
+      return '<tr><td>' + actionTag(n) + '</td>' + cells + '<td class="num muted">' + (s.unexecuted[a] || 0) + '</td></tr>';
     }).join('');
     const results = Object.entries(s.results).map(([m, r]) => '<tr><td>' + esc(m.toUpperCase()) + '</td><td class="num">' + r.W + '</td><td class="num">' + r.D + '</td><td class="num">' + r.L + '</td><td class="num">' + r.FW + '</td><td class="num">' + r.FL + '</td></tr>').join('');
     const pw = s.power;
@@ -2000,7 +2063,7 @@
       const beats = r.result.beats || [];
       const cell = (side, i) => {
         const plan = r.plans[side], a = plan.actions[i], t = beats[i] && beats[i][side === 'A' ? 'a' : 'b'];
-        const eff = t ? NAMES[t.effective] : NAMES[a];
+        const eff = t ? NAMES[t.effective] : NAMES[a];  // actionTag spells LAST_STAND as words
         const lost = t && t.actual_hp_lost ? '<i class="neg">-' + t.actual_hp_lost + '</i>' : '';
         return '<td class="' + (t ? '' : 'unexec') + '">' + actionTag(eff, i === plan.power_slot) + lost + '</td>';
       };
@@ -2053,25 +2116,41 @@
     let st = me.stamina, guard = me.guard_streak;
     return actions.map((a, i) => {
       if (a == null) return null;
-      const cost = R.base_costs[a] + (a === L.ID.BLOCK ? R.block_streak_cost * guard : 0) + (i === powerSlot ? R.power_cost : 0);
+      const cost = R.base_costs[a] + (a === ID.BLOCK ? R.block_streak_cost * guard : 0) + (i === powerSlot ? R.power_cost : 0);
       const ok = st >= cost;
-      const eff = ok ? a : L.ID.EXHAUSTED;
+      const eff = ok ? a : ID.EXHAUSTED;
       st -= ok ? cost : 0;
-      st = Math.min(R.limits.stamina, st + (eff === L.ID.RECOVER ? R.recover_unhit : eff === L.ID.EXHAUSTED ? R.exhausted_recovery : R.ordinary_recovery));
-      guard = eff === L.ID.BLOCK ? Math.min(R.limits.guard_streak, guard + 1) : 0;
+      st = Math.min(R.limits.stamina, st + (eff === ID.RECOVER ? R.recover_unhit : eff === ID.EXHAUSTED ? R.exhausted_recovery : R.ordinary_recovery));
+      guard = eff === ID.BLOCK ? Math.min(R.limits.guard_streak, guard + 1) : 0;
       return { cost, ok, after: st };
     });
   }
 
+  // The move deck: the ruleset's submitted actions only (candidate 1 and 2
+  // fights keep six; candidate 3 adds LAST STAND and FEINT), each on its key.
+  const deckIds = () => R.submitted_action_ids.slice();
+  const keyOf = a => moveOf(NAMES[a]).key || String(a + 1);
+  const deckLabel = a => moveOf(NAMES[a]).label || moveName(NAMES[a]);
+  // LAST STAND's bonus if it landed now: +per_hp_behind per HP you trail, capped.
+  function standPreview(me, them) {
+    const ls = R.last_stand || {}, per = Number.isInteger(ls.per_hp_behind) ? ls.per_hp_behind : 1, cap = Number.isInteger(ls.cap) ? ls.cap : 16;
+    return Math.max(0, Math.min(cap, per * (them.hp - me.hp)));
+  }
   function planner(me, npc) {
-    const cost = a => R.base_costs[a] + (a === L.ID.BLOCK ? '+' : '');
+    const cost = a => R.base_costs[a] + (a === ID.BLOCK ? '+' : '');
+    const ids = deckIds(), keys = ids.map(keyOf);
+    const bonus = standPreview(me, practice.state.b);
+    const tile = a => '<button class="act-btn mv-' + NAMES[a].toLowerCase() + '" data-a="' + a + '" title="' + esc(moveName(NAMES[a]) + ': ' + (moveOf(NAMES[a]).deck || purposeText(NAMES[a]))) + '">' +
+      '<span class="key">' + esc(keyOf(a)) + '</span><b>' + esc(deckLabel(a)) + '</b><span class="cost">' + cost(a) + ' ST</span>' +
+      (a === ID.LAST_STAND ? '<span class="stand-now' + (bonus ? '' : ' off') + '" title="Bonus if it lands now: +1 per HP you trail">+' + bonus + '</span>' : '') + '</button>';
     return '<section class="panel panel-green planner" id="planner"><h3>ROUND ' + (practice.state.round_index + 1) + ' &middot; YOUR MOVES</h3>' +
       '<p class="planner-status"><span>HP <b>' + me.hp + '</b></span><span>STAMINA <b>' + me.stamina + '</b></span><span>POWER <b>' + (me.power_available ? 'READY' : 'SPENT') + '</b></span>' + (me.opening ? '<span class="pos">OPENING</span>' : '') +
       '<span class="sealed">' + esc(npc.name) + '\'S PLAN: <b>SEALED</b></span></p>' +
       '<div class="slots" role="listbox" aria-label="Your plan">' + [0, 1, 2, 3, 4, 5].map(i => '<div class="slot" role="option" data-slot="' + i + '" tabindex="0"><span class="slot-no">BEAT ' + (i + 1) + '</span><span class="slot-act"></span><span class="slot-st"></span><button class="slot-pw" data-pw="' + i + '" title="Power strike on this beat (+' + R.power_cost + ' cost, +' + R.power_damage + ' damage if it lands)">&#9733; POWER</button></div>').join('') + '</div>' +
-      '<div class="palette">' + R.submitted_action_ids.map(a => '<button class="act-btn mv-' + NAMES[a].toLowerCase() + '" data-a="' + a + '" title="' + esc(PURPOSE[NAMES[a]]) + '"><span class="key">' + (a + 1) + '</span><b>' + NAMES[a] + '</b><span class="cost">' + cost(a) + ' ST</span></button>').join('') + '</div>' +
+      '<div class="palette palette-' + ids.length + '">' + ids.map(tile).join('') + '</div>' +
       '<p class="planner-actions"><button class="btn btn-start" id="fight" disabled>FIGHT! &#9654;</button> <button class="btn btn-sm btn-cyan" id="clear">CLEAR</button> <span id="plan-err" class="neg tiny" role="alert"></span></p>' +
-      '<p class="tiny muted">Tap a move to fill the selected beat, or press 1-6. Tap a beat to change it. POWER (or P) adds +' + R.power_damage + ' damage to one JAB, KICK or THROW per fight. The small number is your stamina after that beat if nothing hits you; red means you would be EXHAUSTED.</p></section>';
+      '<p class="tiny muted">Tap a move to fill the selected beat, or press ' + esc(keys[0] + '-' + keys[keys.length - 1]) + '. Tap a beat to change it. POWER (or P) adds +' + R.power_damage + ' damage to one JAB, KICK or THROW per fight' + (ids.includes(ID.LAST_STAND) ? ' (never to a LAST STAND)' : '') + '. The small number is your stamina after that beat if nothing hits you; red means you would be EXHAUSTED.' +
+      (ids.includes(ID.LAST_STAND) ? ' The +N on LAST STAND is its bonus if it landed now.' : '') + '</p></section>';
   }
 
   function paintDraft() {
@@ -2083,12 +2162,14 @@
       el.setAttribute('aria-selected', String(i === draft.sel));
       el.classList.toggle('filled', a != null);
       el.classList.toggle('broke', !!p && !p.ok);
-      $('.slot-act', el).textContent = a == null ? '?' : NAMES[a];
+      $('.slot-act', el).textContent = a == null ? '?' : deckLabel(a);
       $('.slot-act', el).className = 'slot-act' + (a == null ? '' : ' act act-' + NAMES[a].toLowerCase());
       $('.slot-st', el).textContent = p ? (p.ok ? 'ST ' + p.after : 'EXHAUSTED') : '';
       const pb = $('.slot-pw', el);
-      const canPw = pwOk && a != null && [L.ID.JAB, L.ID.KICK, L.ID.THROW].includes(a);
+      const canPw = pwOk && a != null && POWERABLE.includes(a);
       pb.disabled = !canPw;
+      pb.classList.toggle('no-pw', a != null && !POWERABLE.includes(a));
+      pb.title = a != null && !POWERABLE.includes(a) ? moveName(NAMES[a]) + ' cannot carry the power strike' : 'Power strike on this beat (+' + R.power_cost + ' cost, +' + R.power_damage + ' damage if it lands)';
       pb.classList.toggle('on', draft.power_slot === i);
       pb.setAttribute('aria-pressed', String(draft.power_slot === i));
     });
@@ -2099,14 +2180,14 @@
     const root = $('#planner');
     const setAction = a => {
       draft.actions[draft.sel] = a;
-      if (draft.power_slot === draft.sel && ![L.ID.JAB, L.ID.KICK, L.ID.THROW].includes(a)) draft.power_slot = -1;
+      if (draft.power_slot === draft.sel && !POWERABLE.includes(a)) draft.power_slot = -1;
       const next = draft.actions.findIndex((x, i) => x == null && i > draft.sel);
       draft.sel = next >= 0 ? next : Math.min(5, draft.sel + 1);
       paintDraft();
     };
     const togglePower = i => {
       const a = draft.actions[i];
-      if (practice.state.a.power_available !== 1 || ![L.ID.JAB, L.ID.KICK, L.ID.THROW].includes(a)) return;
+      if (practice.state.a.power_available !== 1 || !POWERABLE.includes(a)) return;
       draft.power_slot = draft.power_slot === i ? -1 : i;
       paintDraft();
     };
@@ -2132,7 +2213,8 @@
     root.addEventListener('keydown', e => {
       if (e.target.tagName === 'INPUT') return;
       let handled = true;
-      if (/^[1-6]$/.test(e.key)) setAction(Number(e.key) - 1);
+      const byKey = deckIds().find(a => keyOf(a) === e.key);
+      if (byKey != null) setAction(byKey);
       else if (e.key === 'ArrowRight') { draft.sel = Math.min(5, draft.sel + 1); paintDraft(); }
       else if (e.key === 'ArrowLeft') { draft.sel = Math.max(0, draft.sel - 1); paintDraft(); }
       else if (e.key === 'Backspace' || e.key === 'Delete') { draft.actions[draft.sel] = null; if (draft.power_slot === draft.sel) draft.power_slot = -1; paintDraft(); }
@@ -2157,6 +2239,55 @@
     RECOVER: 'Restores stamina; exposed, and recovers less if hit',
     EXHAUSTED: 'Internal: an unaffordable move. Pays nothing, exposed',
   };
+  const purposeText = n => PURPOSE[n] || moveOf(n).purpose || '';
+
+  // Small pixel icons, one character per pixel ('.' is empty).
+  function pixIcon(rows, colors, cls) {
+    const w = rows[0].length, h = rows.length;
+    let d = '';
+    rows.forEach((r, y) => [...r].forEach((ch, x) => { if (ch !== '.') d += '<rect x="' + x + '" y="' + y + '" width="1" height="1" fill="' + colors[ch] + '"/>'; }));
+    return '<svg class="pix-ico ' + cls + '" viewBox="0 0 ' + w + ' ' + h + '" width="' + w * 4 + '" height="' + h * 4 + '" shape-rendering="crispEdges" aria-hidden="true" focusable="false">' + d + '</svg>';
+  }
+  const ICON_STAND = pixIcon(['..s......s..', '.ss......ss.', '..s......s..', '..########..', '..#oooooo#..', '..#oRRRRo#..', '..#oRYYRo#..', '..#oRYYRo#..', '..#oRRRRo#..', '..#oooooo#..', '..########..', '............'],
+    { s: '#e8f4fa', '#': '#3a3f47', o: '#ff8a2a', R: '#ff2a1a', Y: '#fff0a8' }, 'ico-stand');
+  const ICON_FEINT = pixIcon(['..............', '..tt..TT..WWW.', '.tttt.TTT.WWWW', '.tttt.TTT.WWKW', '.tttt.TTT.WWWW', '..tt..TT..WWW.', '..............'],
+    { t: '#2f5a62', T: '#5f98a2', W: '#c9d1d9', K: '#6b7483' }, 'ico-feint');
+
+  // A ruleset block (last_stand, feint) listed as it is: the page never
+  // assumes a number the ruleset does not state.
+  const ruleBlock = b => b && typeof b === 'object' ? Object.entries(b).map(([k, v]) => esc(k.replace(/_/g, ' ')) + ' <b>' + esc(v) + '</b>').join(' &middot; ') : '';
+
+  // Explainer boxes for the candidate-3 moves, shown only when the ruleset has them.
+  function moveExplainers() {
+    const sub = R.submitted_action_ids, d = R.damage, out = [];
+    const ls = ID.LAST_STAND, fe = ID.FEINT;
+    if (sub.includes(ls)) {
+      const L3 = R.last_stand || {}, per = Number.isInteger(L3.per_hp_behind) ? L3.per_hp_behind : 1, cap = Number.isInteger(L3.cap) ? L3.cap : 16;
+      const base = d[ls][ID.JAB], kick = d[ID.KICK][ls], back = d[ls][ID.KICK], need = Math.max(0, kick - back + 1);
+      const gap = Math.ceil(cap / per) + 14;
+      out.push('<section class="panel move-explainer ex-stand"><div class="ex-head">' + ICON_STAND + '<h3>LAST STAND</h3><span class="move-cost">' + R.base_costs[ls] + ' ST</span></div>' +
+        '<p class="ex-formula"><b>DAMAGE = ' + base + ' + min(' + cap + ', ' + (per === 1 ? '' : per + ' &times; ') + 'HP YOU TRAIL)</b></p>' +
+        '<p class="prose">The further behind you are, the harder it hits: +' + per + ' per HP you trail, at most +' + cap + '. Level or ahead, it is a plain ' + base + '-damage strike. ' +
+        'Trailing by ' + gap + ' HP, it lands for <b>' + base + ' + ' + Math.min(cap, per * gap) + ' = ' + (base + Math.min(cap, per * gap)) + '</b> (an opening still adds on top).</p>' +
+        '<ul class="plain rules-list prose"><li><b>BLOCK</b> stops it for ' + d[ls][ID.BLOCK] + '.</li>' +
+        '<li><b>KICK</b> hits it for ' + kick + ' while it deals ' + back + ' + bonus: the kick wins the trade until the bonus reaches ' + need + '.</li>' +
+        '<li>It lands on a DUCK (' + d[ls][ID.DUCK] + ') and punishes a RECOVER (' + d[ls][ID.RECOVER] + ' + bonus).</li>' +
+        '<li>It can never carry the POWER strike.</li></ul>' +
+        (moveOf('LAST_STAND').flavour ? '<p class="ex-flavour">' + esc(moveOf('LAST_STAND').flavour) + '</p>' : '') +
+        (R.last_stand ? '<p class="tiny muted">FROM THE RULESET: ' + ruleBlock(R.last_stand) + '</p>' : '') + '</section>');
+    }
+    if (sub.includes(fe)) {
+      const hitBy = sub.filter(j => d[j][fe] > 0), bait = sub.filter(j => ['BLOCK', 'DUCK', 'RECOVER'].includes(NAMES[j]));
+      out.push('<section class="panel move-explainer ex-feint"><div class="ex-head">' + ICON_FEINT + '<h3>FEINT</h3><span class="move-cost">' + R.base_costs[fe] + ' ST</span></div>' +
+        '<p class="ex-formula"><b>' + esc(moveOf('FEINT').deck || 'A fake-out: it baits a defence and loses to a real attack.') + '</b></p>' +
+        '<ul class="plain rules-list prose"><li><b>BAITS</b> ' + bait.map(j => '<span class="mv">' + esc(moveName(NAMES[j])) + '</span>').join(' ') + ': the replay says BAITED!</li>' +
+        '<li><b>LOSES TO</b> ' + (hitBy.map(j => '<span class="mv">' + esc(moveName(NAMES[j])) + ' <b>' + d[j][fe] + '</b></span>').join(' ') || 'nothing in this matrix') + ': the replay says WHIFF.</li>' +
+        '<li>It can never carry the POWER strike.</li></ul>' +
+        (moveOf('FEINT').flavour ? '<p class="ex-flavour">' + esc(moveOf('FEINT').flavour) + '</p>' : '') +
+        (R.feint ? '<p class="tiny muted">FROM THE RULESET: ' + ruleBlock(R.feint) + '</p>' : '') + '</section>');
+    }
+    return out.join('');
+  }
   const REASONS = ['HIT', 'BLOCKED', 'EVADED', 'THROW_INTERRUPTED', 'THROW_CLASH', 'INSUFFICIENT_STAMINA', 'RECOVERY_PUNISHED', 'GUARD_STRAIN', 'OPENING_EARNED', 'OPENING_USED', 'OPENING_EXPIRED', 'POWER_USED', 'POWER_WASTED', 'KO', 'DOUBLE_KO'];
 
   // The fixed purpose text, plus what this ruleset's matrix adds to it
@@ -2164,7 +2295,7 @@
   function purposeOf(n, i) {
     const d = R.damage, id = name => R.action_names.indexOf(name);
     const J = id('JAB'), K = id('KICK'), D = id('DUCK');
-    let text = PURPOSE[n] || '';
+    let text = purposeText(n);
     if (i === J && d[J][K] > d[K][J]) text += '; out-trades a kick (' + d[J][K] + ' to ' + d[K][J] + ')';
     if (i === K && d[K][J] > d[J][K]) text += '; wins a trade with a jab (' + d[K][J] + ' to ' + d[J][K] + ')';
     if (i === D && d[D][J] > 0) text += '; counters a jab for ' + d[D][J];
@@ -2184,10 +2315,11 @@
   }
 
   async function viewRules(tok) {
-    const moves = R.action_names.map((n, i) => '<tr><td class="num">' + i + '</td><td>' + actionTag(n) + (R.submitted_action_ids.includes(i) ? '' : ' <span class="muted">(internal)</span>') + '</td><td class="num">' +
+    const RN = R.action_names;
+    const moves = RN.map((n, i) => '<tr><td class="num">' + i + '</td><td>' + actionTag(n) + (R.submitted_action_ids.includes(i) ? '' : ' <span class="muted">(internal)</span>') + '</td><td class="num">' +
       R.base_costs[i] + (n === 'BLOCK' ? ' + ' + R.block_streak_cost + '&times;guard' : '') + '</td><td class="wraptd">' + esc(purposeOf(n, i)) + '</td></tr>').join('');
-    const matrix = '<tr><th>ATTACKER \\ DEFENDER</th>' + R.action_names.map(n => '<th class="num">' + n + '</th>').join('') + '</tr>' +
-      R.damage.map((row, i) => '<tr><th>' + R.action_names[i] + '</th>' + row.map(v => '<td class="num' + (v ? ' dmg' : ' zero') + '">' + v + '</td>').join('') + '</tr>').join('');
+    const matrix = '<tr><th>ATTACKER \\ DEFENDER</th>' + RN.map(n => '<th class="num" title="' + esc(moveName(n)) + '">' + esc(moveOf(n).label || moveName(n)) + '</th>').join('') + '</tr>' +
+      R.damage.map((row, i) => '<tr><th>' + esc(moveName(RN[i])) + '</th>' + row.map(v => '<td class="num' + (v ? ' dmg' : ' zero') + '">' + v + '</td>').join('') + '</tr>').join('');
     const I = R.initial;
     setView(screen('RULES', esc(rulesLabel(R.semantic_version)) + ' (' + esc(R.semantic_version) + ') &middot; EVERY NUMBER BELOW IS READ FROM THE RULESET') +
       '<section class="panel panel-cyan"><h3>RULESET DIGEST</h3><p id="digest" class="muted">Computing&hellip;</p><p class="tiny">SOURCE: ' + esc(RULES_INFO.source.toUpperCase()) + '. ' + esc(RULES_INFO.note) + '</p></section>' +
@@ -2204,6 +2336,7 @@
       '<li>A missed deadline is a <b>TIMEOUT</b> (forfeit), never a knockout. Deadlines are ticks, not health.</li>' +
       '</ul></section>' +
       '<section class="panel"><h3>MOVES</h3><div class="tscroll"><table><thead><tr><th class="num">ID</th><th>ACTION</th><th class="num">COST</th><th>PURPOSE</th></tr></thead><tbody>' + moves + '</tbody></table></div></section>' +
+      moveExplainers() +
       '<section class="panel"><h3>DAMAGE MATRIX</h3><p class="tiny">Damage dealt BY the row action TO the column action, before opening/power. Both sides read the same pre-beat snapshot. Bonuses never turn a zero into damage.</p>' +
       '<div class="tscroll"><table class="matrix">' + matrix + '</table></div></section>' +
       '<section class="panel"><h3>SIMULTANEOUS RESOLUTION</h3><p class="tiny">Each beat both actions are read from the same pre-beat snapshot: costs, both damages, strain, recovery, opening and guard are computed for both sides before either state changes. ' +
@@ -2267,14 +2400,14 @@
   function moveCards() {
     const sub = R.submitted_action_ids;
     return sub.map(i => {
-      const n = NAMES[i], row = R.damage[i];
+      const n = R.action_names[i], row = R.damage[i];
       const lands = sub.filter(j => row[j] > 0), stopped = sub.filter(j => row[j] === 0);
       return '<article class="move-card move-' + n.toLowerCase() + '">' +
         '<header>' + actionTag(n) + '<span class="move-cost" title="Stamina cost">' + R.base_costs[i] + (n === 'BLOCK' ? '+' : '') + ' ST</span></header>' +
-        '<p class="move-purpose">' + esc(PURPOSE[n]) + '.</p>' +
+        '<p class="move-purpose">' + esc(purposeText(n)) + '.</p>' +
         '<dl class="move-dl">' +
-        (lands.length ? '<dt>LANDS ON</dt><dd>' + lands.map(j => '<span class="mv">' + esc(NAMES[j]) + ' <b>' + row[j] + '</b></span>').join(' ') + '</dd>' : '<dt>DAMAGE</dt><dd>none: it defends or recovers</dd>') +
-        (lands.length && stopped.length ? '<dt>STOPPED BY</dt><dd>' + stopped.map(j => '<span class="mv">' + esc(NAMES[j]) + '</span>').join(' ') + '</dd>' : '') +
+        (lands.length ? '<dt>LANDS ON</dt><dd>' + lands.map(j => '<span class="mv">' + esc(moveName(R.action_names[j])) + ' <b>' + row[j] + (j !== i && i === ID.LAST_STAND ? '+' : '') + '</b></span>').join(' ') + '</dd>' : '<dt>DAMAGE</dt><dd>' + (n === 'FEINT' ? 'none: it is a bluff (see FEINT below)' : 'none: it defends or recovers') + '</dd>') +
+        (lands.length && stopped.length ? '<dt>STOPPED BY</dt><dd>' + stopped.map(j => '<span class="mv">' + esc(moveName(R.action_names[j])) + '</span>').join(' ') + '</dd>' : '') +
         '</dl></article>';
     }).join('');
   }
@@ -2296,9 +2429,9 @@
       step(4, 'RESOLVE', 'The six beats resolve in pairs, simultaneously, from the same snapshot. Damage, stamina and openings carry into the next round.') +
       '</ol><p class="prose muted">Every step has a deadline measured in chain <b>ticks</b>. Miss one and you forfeit: that shows as TIMEOUT, never as a knockout.</p></section>' +
 
-      '<section class="panel" id="g-moves"><h3>THE SIX MOVES</h3>' +
+      '<section class="panel" id="g-moves"><h3>THE ' + (['', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT'][R.submitted_action_ids.length] || R.submitted_action_ids.length) + ' MOVES</h3>' +
       '<p class="prose">Everyone starts with <b>' + I.hp + ' HP</b> and <b>' + I.stamina + ' stamina</b>. Moves cost stamina; a move you cannot afford becomes <b>EXHAUSTED</b> and leaves you wide open. Numbers below are damage dealt.</p>' +
-      '<div class="move-grid">' + moveCards() + '</div>' +
+      '<div class="move-grid">' + moveCards() + '</div>' + moveExplainers() +
       '<p class="prose tiny muted">Full matrix, opening and power rules: <a href="#rules">RULES</a>.</p></section>' +
 
       '<section class="panel" id="g-win"><h3>HOW TO WIN</h3><div class="win-grid">' +

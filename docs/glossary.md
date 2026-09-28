@@ -38,6 +38,8 @@
 | **Guard / guard streak** | Consecutive blocks. Each costs 3 more stamina than the last, up to 3 in a row |
 | **Strain** | The 6 extra stamina a blocker pays when it blocks a kick. Never HP |
 | **Power strike** | Once per fight: a marked `JAB`, `KICK` or `THROW` deals +4 for +4 cost. Spent even if it misses |
+| **Last stand** | Candidate 3 only (proposal): `LAST_STAND` (id 7), a strike that deals +1 per HP its fighter trails, at most +16. A block stops it, a kick out-trades it while the gap is small, and it never carries the power strike. Replays show it as LAST STAND +N with a red reactor glow |
+| **Feint** | Candidate 3 only (proposal; the rule is still being tuned): `FEINT` (id 8), a cheap fake-out that baits a block, duck or recover and loses to any real attack. Replays say BAITED! when the trace says it worked and WHIFF when it was punished |
 | **KO / DOUBLE_KO** | One fighter at zero HP / both on the same beat (a draw) |
 | **HP / HP_TIE** | Result after round 3: higher HP wins / equal HP draws |
 | **Unexecuted** | Actions revealed after a knockout. Shown, never counted as play |

@@ -68,6 +68,31 @@ MONTAGE BELT, with a videotape for a buckle, for the season's champion, and
 THE BOTTLE CAP BELT, for whoever won the last cup and the crowd's respect
 (the crowd pays in bottle caps).
 
+### VI. Two moves that were not on the tapes
+
+The tapes had forty-one moves and none for losing. Unit 7 found that out in
+its hundredth fight, down to a sliver of battery against a courier bot half
+its age. It could not remember a single kata. So it planted both forks, popped
+its own chest hatch, let the coolant scream out of its shoulders and swung
+everything it had left at once. The courier bot woke up in a shopping trolley.
+SENSEI, which had been rebooting, came back online, saw the smoke and
+announced that it had always taught THE LAST STAND. Unit 7 is still sore about
+the credit, and it points out, to anyone who asks, that it only works when you
+are losing: "You cannot make a last stand from the front, kid. I have tried."
+
+The feint came from the kitchen. Chef-11 had spent years swinging a wok at
+diners who then flinched and ordered dessert. One night, halfway through a
+haymaker at Officer Bolt, it remembered it was only holding a ladle and
+stopped. Bolt threw up its riot shield, ducked and sat down all at once. The
+yard counted that as a technique. Chef-11 counts it as a win, and claims it
+planned it; nobody believes that either. Every bot in the yard now flinches
+when Chef-11 so much as reaches for the pepper, and every bot that has fallen
+for it knows the answer: hit it, because a feint is only a ladle.
+
+Neither move changes the rules of the yard. Both fighters can see them, choose
+them and answer them, and the replay shows the reactor's glow and the ladle's
+afterimage exactly as the trace says. They exist in candidate-3 rulesets only.
+
 ## What the story means for the game
 
 A fighter is a program with a public history. Its owner studies it, changes
