@@ -6,8 +6,9 @@
 // did not run at all.
 //
 // Layout: index.html is the combat site, combat.html a redirect to / for old
-// links, dash.html the local-only fighter page, anim.html the sprite ring.
-// The riddle arcade (legacy.html, app.js) was removed on 2026-09-27.
+// links, anim.html the sprite ring. The riddle arcade (legacy.html, app.js)
+// was removed on 2026-09-27 and the local riddle fighter page (dash.html) on
+// 2026-09-28.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -20,7 +21,7 @@ const read = name => fs.readFileSync(path.join(WEB, name), 'utf8');
 const scriptsOf = html => [...html.matchAll(/<script src="([a-z0-9_/-]+\.js)"/g)].map(m => m[1]);
 const stylesOf = html => [...html.matchAll(/<link rel="stylesheet" href="([a-z0-9_/-]+\.css)"/g)].map(m => m[1]);
 
-for (const name of ['dash.js', 'anim.js', 'avatars.js', 'combat/engine.js', 'combat/ruleset.js',
+for (const name of ['anim.js', 'avatars.js', 'combat/engine.js', 'combat/ruleset.js',
   'combat/npcs.js', 'combat/logic.js', 'combat/stages.js', 'combat/app.js', 'tests/e2e/run.cjs']) {
   test(`${name} parses as a whole file`, () => {
     // a leading #! line is valid for node but not for vm.Script
@@ -29,7 +30,7 @@ for (const name of ['dash.js', 'anim.js', 'avatars.js', 'combat/engine.js', 'com
 }
 
 test('every page loads only scripts and styles that exist', () => {
-  for (const page of ['index.html', 'dash.html', 'anim.html']) {
+  for (const page of ['index.html', 'anim.html']) {
     const html = read(page);
     for (const src of scriptsOf(html).concat(stylesOf(html))) {
       assert.ok(fs.existsSync(path.join(WEB, src)), `${page} loads ${src}, which is missing`);
