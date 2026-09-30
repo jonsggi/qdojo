@@ -59,6 +59,8 @@ for the record and does not describe the current system.
 | [matchmaking.md](matchmaking.md) | normative | The book, compatibility, pairing order, budgets |
 | [competition.md](competition.md) | normative | Rating, belts, faults, seasons, duels, cups |
 | [nft.md](nft.md) | normative | Fighter NFTs: what owning one does, the market, the sim and Qubic backends, frozen art |
+| [research/qubic-nft-ecosystem-2026-09-30.md](research/qubic-nft-ecosystem-2026-09-30.md) | reference | How NFTs work on Qubic today (QBAY, QX, costs, testnet), with sources and a recommendation |
+| [proposals/licensing.md](proposals/licensing.md) | proposal | Licences for code, contract, art and NFT holders (AUD-028) |
 | [model.md](model.md) | normative | The acceptance gates for balance, cost and economics |
 | [fixtures/commitment-v1.json](fixtures/commitment-v1.json) | reference | Frozen commitment test vector |
 | [reference/](reference/) | reference | `combat_v1.py` (independent arithmetic aid) and `check_docs.py` (this index's link and matrix check) |

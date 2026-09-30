@@ -1,6 +1,6 @@
 # AUD-028 — The repository has no licence
 
-- **Status:** Open
+- **Status:** Open (proposal ready: [docs/proposals/licensing.md](../../docs/proposals/licensing.md); needs the owner's decision)
 - **Priority:** P1 — open-source release
 - **Type:** Legal
 - **Evidence:** No LICENSE file; builders cannot safely reuse the example planner

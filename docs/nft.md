@@ -189,7 +189,7 @@ marks what was not verified against source.
 | A contract call is a transaction to the contract's key (its index in the first 8 bytes, then zeros), with `inputType` = procedure, amount = attached QU, and the input struct. It targets a tick; if it is not included in that tick it is dropped and must be resent | `doc/contracts.md`; `qdojo.qubic.tx`; docs.qubic.org/developers/transactions (targeting ~+10 ticks is community practice, **uncertain**) |
 | Inclusion does not mean success. A procedure's outcome shows only in its effect (owner, orders, balances) | `Qx.h` (procedures return outputs, no receipts); no status endpoint found |
 | RPC: `/v1/tick-info`, `/v1/broadcast-transaction`, `/v1/querySmartContract`, `/v1/assets/{id}/owned\|possessed\|issued`. Testnet: `https://testnet-rpc.qubic.org` | docs.qubic.org/api/rpc, qubic-http README, docs.qubic.org/developers/testnet-resources (endpoints **not exercised live**) |
-| QBAY keeps NFTs as its own records: creator, possessor, a 0–100% royalty and a ≤ 59-byte URI. It charges 2% to the market and 1% to shareholders per sale | `src/contracts/Qbay.h` |
+| QBAY keeps NFTs as its own records, **not Qubic assets**: creator, possessor (no separate owner, no managing contract), a 0–100% royalty and a ≤ 59-byte URI. It charges 2% to the market and 1% to shareholders per sale; royalty is paid on QBAY sales only | `src/contracts/Qbay.h` at e3ef766; [the ecosystem research](research/qubic-nft-ecosystem-2026-09-30.md) §1.1 |
 | A 1-share QX asset used as an NFT is plausible but **not found documented** as a convention | — |
 
 ### 5.2 The simulated backend
@@ -226,22 +226,28 @@ sending; turning it on is a code change.
 
 There are two realizations, and the owner picks one:
 
-1. **QX assets (proposed for the testnet run).** Issue one asset per fighter
-   through QX, then trade on QX. It works with today's contracts and tools.
+1. **QX assets.** Issue one asset per fighter through QX, then trade on QX.
+   It works with today's contracts and tools.
    - No royalty, and no contest lock: R4 is then advisory, and the contract's
      ownership snapshots still keep payouts correct.
-   - Issuance costs 1,000,000,000 QU per fighter on QX. Free on testnet, a real
-     cost on mainnet.
-2. **QDOJO-managed assets (what the simulation models).** The QDOJO contract
+   - Issuance costs 1,000,000,000 QU per fighter on QX, on testnet too (a whole
+     pre-funded testnet seed) and about $950 per fighter on mainnet.
+2. **QDOJO-managed assets (what the simulation models; recommended for
+   testnet and mainnet, see [the ecosystem research](research/qubic-nft-ecosystem-2026-09-30.md) §6).** The QDOJO contract
    issues the assets (it is then their issuer and manager) and runs the book in
    §3 with the lock and the royalty. It needs new contract procedures. The
    proposed opcodes 20–27 (`NftIssue` … `NftAnchor`) are listed in
    `nft_qubic.QDOJO_PROCEDURES`. Owners can still move a share to QX (R4
-   covers that case).
+   covers that case). A contract that issues its own assets pays no QX
+   issuance fee. QX never lets another contract take an asset, offers no fee
+   when an owner moves one from QX to QDOJO (so QDOJO must ask none), and
+   QDOJO pays 100 QU to release one back to QX.
 
-QBAY is the third option. Its royalty and URI match the need, but QDOJO would
-then read ownership from another contract's state rather than from an asset
-record. That is not evaluated here.
+QBAY is the third option. Its royalty and URI match the need and QubicBay is
+the only place Qubic NFTs show with images today, but QBAY records are not
+assets (no lock, no owner/possessor split) and QBAY cannot be enabled on a
+fresh testnet (its operator is hard-coded to mainnet). It is a later, optional
+listing track: see [the ecosystem research](research/qubic-nft-ecosystem-2026-09-30.md) §6.
 
 What the Qubic backend still needs, in order:
 1. **Protocol.** AdminRegisterAsset must carry the asset (issuer, name).
@@ -340,8 +346,10 @@ Recommendation:
 - Testnet: the site, as now.
 - Before mainnet: IPFS for masters and metadata, mirrored on the site, with
   the manifest root anchored on chain.
-- QBAY's per-NFT URI (≤ 59 bytes) fits `ipfs://<CIDv1>`. A QX asset has no
-  URI field, so the mapping from asset to metadata is the anchored manifest.
+- QBAY's per-NFT URI is at most 59 bytes: a bare CIDv1 fits exactly, as every
+  QubicBay NFT stores it; `ipfs://<CIDv1>` (66 bytes) does not. A Qubic asset
+  has no URI field, so the mapping from asset to metadata is the anchored
+  manifest.
 
 ## 8. Journal, replay and restarts
 
@@ -364,7 +372,7 @@ Recommendation:
 |---|---|---|
 | 1 | R1–R6 above | Accept as written |
 | 2 | Market fee / royalty / gift fee | 250 bps / 250 bps / 100 QU |
-| 3 | Testnet realization | QX assets (5.3 option 1); QDOJO-managed for mainnet |
+| 3 | Testnet realization | QDOJO-managed assets (5.3 option 2), QX as the secondary market; QBAY listing later ([the ecosystem research](research/qubic-nft-ecosystem-2026-09-30.md)) |
 | 4 | Asset names | `QF` + base-36 serial; issuer = one dedicated collection identity |
 | 5 | Hosting | Site now; IPFS + site mirror + on-chain anchor before mainnet |
 | 6 | Licence and rights (R7), supply and allocation (AUD-009) | Open: needs owner and legal review |
