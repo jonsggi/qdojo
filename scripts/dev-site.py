@@ -4,7 +4,7 @@
   uv run qdojo combat api --db rm.sqlite --export DIR --port 8795 &
   python3 scripts/dev-site.py --api http://127.0.0.1:8795 --port 8080
 
-- /data/combat/v1/X  -> {api}/X, falling back to apps/web/data/combat/v1/X (the baked copy)
+- /data/combat/v1/X  -> {api}/X, falling back to apps/web/data/combat/v1/X (only the sample is committed)
 - /api/v1/...        -> {api}/api/v1/..., or a 503 JSON error when the API is down
 - anything else      -> apps/web
 

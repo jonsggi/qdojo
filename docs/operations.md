@@ -116,7 +116,7 @@ testnet: [testnet.md](testnet.md).
 | Lineup | `~/.qdojo/combat/lineup-arena.json` (label, policy / planner / llm, founding, cups, duels, ranked, reliability); without `--lineup`, eight built-in demo bots |
 | Public export | `~/.qdojo/combat/public/combat/v1/`, written by the runner every few ticks |
 | Read API + data server | systemd user unit `qdojo-combat-api` ([deploy/systemd/qdojo-combat-api.service](../deploy/systemd/qdojo-combat-api.service)): `qdojo combat api` on the tailnet (100.101.145.63:8790). It follows the arena journal into `~/.qdojo/combat/readmodel.sqlite` (plus a private `readmodel.replica` snapshot), answers `/api/v1/` ([api.md](api.md) §3.2) and serves the export on every other path. It replaces `qdojo-combat-data` (the plain `http.server`) |
-| Site | Dokploy builds `Dockerfile`; nginx ([deploy/nginx/default.conf.template](../deploy/nginx/default.conf.template)) proxies `/data/combat/v1/` to `QDOJO_LIVE_DATA` (falling back to the baked copy) and `/api/v1/` to `QDOJO_LIVE_API` (answering a JSON 503 when it is down, so the site uses the static files). `QDOJO_SITE_URL` is the public origin in share links, canonical URL, robots.txt and sitemap.xml. Every response carries the security headers in [deploy/nginx/qdojo-headers.conf](../deploy/nginx/qdojo-headers.conf) (CSP, nosniff, frame and referrer policy); unknown paths get the styled 404.html |
+| Site | Dokploy builds `Dockerfile`; nginx ([deploy/nginx/default.conf.template](../deploy/nginx/default.conf.template)) proxies `/data/combat/v1/` to `QDOJO_LIVE_DATA` (falling back to the recorded sample in the image) and `/api/v1/` to `QDOJO_LIVE_API` (answering a JSON 503 when it is down, so the site uses the static files). `QDOJO_SITE_URL` is the public origin in share links, canonical URL, robots.txt and sitemap.xml. Every response carries the security headers in [deploy/nginx/qdojo-headers.conf](../deploy/nginx/qdojo-headers.conf) (CSP, nosniff, frame and referrer policy); unknown paths get the styled 404.html |
 
 The `demo` profile differs from the specified development values so a small
 bot population keeps fighting and seasons turn over quickly: 2,400-tick epochs
@@ -239,7 +239,7 @@ systemctl --user restart qdojo-combat-live     # SIGTERM saves the journal; rest
 Handling problems:
 - **STALE on the site.** The runner has stopped exporting. Check the
   unit's status and log, then restart it.
-- **Site shows the baked copy.** The data server or the tailnet is down.
+- **Site shows the recorded sample ("arena offline").** The data server or the tailnet is down.
   Check `qdojo-combat-api`, and whether the Dokploy host can reach this
   host's tailnet address.
 - **Site says "recent fights only".** `/api/v1/status` did not answer for

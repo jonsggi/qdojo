@@ -29,8 +29,8 @@ RUN rm -rf /usr/share/nginx/html/anim.html /usr/share/nginx/html/tests /usr/shar
 # Live combat data (/data/combat/v1/) is not baked into the image: it is
 # proxied to the live arena's data server, so spectators see fights within
 # seconds and main is not flooded with data commits. If that server is down,
-# the copy baked into the image answers instead and the page's STALE badge
-# shows its age. QDOJO_LIVE_DATA is substituted by the nginx image's template
+# the recorded sample baked into the image answers instead and the page says
+# the arena is offline. QDOJO_LIVE_DATA is substituted by the nginx image's template
 # step at container start (deploy/nginx/default.conf.template).
 #
 # The read API (/api/v1/: full history, pagination, search; docs/api.md §3.2)

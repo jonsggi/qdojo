@@ -19,3 +19,9 @@ apps/web/data/*.json
 
 # Local audit reports (not versioned)
 /audit/
+
+# A live combat export is served by the data server, never committed: only the
+# recorded sample the site falls back to lives in git.
+/apps/web/data/combat/v1/*
+!/apps/web/data/combat/v1/sample/
+
