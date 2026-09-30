@@ -8,9 +8,13 @@
 // QPI-built contract:
 //   - "start"  -> the journal's manifest is written into the zeroed state,
 //                 then INITIALIZE runs at the start tick;
-//   - "owner"  -> Core universe: the fighter's one-unit asset (issuer =
-//                 fighter_id, name QDOJOF) is issued once and its ownership and
-//                 possession are moved; "null" moves it to NULL_ID (unavailable);
+//   - "owner"  -> Core universe: the fighter's one-unit asset is issued once
+//                 and its ownership and possession are moved. The asset is the
+//                 one the journal's admin frames bind (a pre-scan applies the
+//                 contract's binding rules): AdminBindAsset (103) names issuer
+//                 and name, the legacy AdminRegisterAsset (100) means issuer =
+//                 fighter_id, name QDOJOF. "null" makes it unavailable: the
+//                 share is split over two holders, so there is no single owner;
 //   - "mint"   -> Core spectrum: increaseEnergy(who, amount);
 //   - "fail"   -> transfers to `who` must fail: while such a caller's
 //                 Dispatch runs, the contract's QU are parked elsewhere, so
@@ -26,7 +30,14 @@
 //
 // With QDOJO_LOCKSTEP_PORT the parity-tested C++ port
 // (contracts/combat_contract/combat_contract.h) runs next to the contract and
-// every call result and the event digest are compared after every step.
+// every call result and the event digest are compared after every step. The
+// port serves one ruleset per build (QDOJO_RULESET); on a journal of another
+// ruleset only the contract runs (the harness builds one test binary per
+// ruleset, so every journal is also run in lockstep).
+//
+// QDOJO_EXTRA_JOURNALS (a colon-separated list of paths) adds journals that
+// are not committed, e.g. a copy of the live arena's journal
+// (scripts/combat-journal-from-devnet.py).
 #define NO_UEFI
 
 #include "contract_testing.h"
@@ -236,7 +247,13 @@ public:
         int possession;
         m256i owner;
     };
-    std::map<std::string, Holding> holdings;   // fighter asset -> current ownership/possession record
+    struct AssetKey
+    {
+        m256i issuer;
+        uint64 name;
+    };
+    std::map<std::string, std::vector<AssetKey>> bound;   // fighter id -> assets its bindings named
+    std::map<std::string, Holding> holdings;   // asset (issuer || name) -> current ownership/possession record
     std::set<std::string> failing;             // callers whose paybacks must fail
     double dispatchSeconds = 0, endTickSeconds = 0, beginTickSeconds = 0;
     unsigned long long dispatches = 0, endTicks = 0;
@@ -281,23 +298,44 @@ public:
         increaseEnergy(who, amount);
     }
 
+    static std::string assetKey(const AssetKey& a)
+    {
+        return key(a.issuer) + std::string((const char*)&a.name, 8);
+    }
+
+    // Moves every asset the fighter was bound to. present=false ("owner":
+    // null, ownership unavailable) burns the one share (a transfer to NULL_ID
+    // in Core): no owner record holds it, so QDOJO reads "unavailable". A
+    // burned asset cannot come back.
     void setOwner(const m256i& fighterId, bool present, const m256i& owner)
     {
-        auto it = holdings.find(key(fighterId));
+        auto b = bound.find(key(fighterId));
+        if (b == bound.end())
+            return;  // never bound: the contract never asks
+        for (const AssetKey& a : b->second)
+            moveAsset(a, present, owner);
+    }
+
+    void moveAsset(const AssetKey& a, bool present, const m256i& owner)
+    {
+        auto it = holdings.find(assetKey(a));
         if (it == holdings.end())
         {
             if (!present)
                 return;  // never issued: stays unavailable
             int issuance, ownership, possession;
-            char name[7] = { 'Q', 'D', 'O', 'J', 'O', 'F', 0 };
+            char name[7] = { 0 };
             char unit[7] = { 0 };
-            ASSERT_EQ(issueAsset(fighterId, name, 0, unit, 1, QDOJO_CONTRACT_INDEX, &issuance, &ownership, &possession), 1);
-            it = holdings.emplace(key(fighterId), Holding{ ownership, possession, fighterId }).first;
+            for (int i = 0; i < 7; ++i)
+                name[i] = (char)((a.name >> (8 * i)) & 0xff);
+            ASSERT_EQ(issueAsset(a.issuer, name, 0, unit, 1, QDOJO_CONTRACT_INDEX, &issuance, &ownership, &possession), 1);
+            it = holdings.emplace(assetKey(a), Holding{ ownership, possession, a.issuer }).first;
         }
         m256i dest = present ? owner : m256i::zero();
         if (dest == it->second.owner)
             return;
-        int dstOwnership, dstPossession;
+        ASSERT_FALSE(isZero(it->second.owner)) << "a burned fighter asset cannot be owned again";
+        int dstOwnership = -1, dstPossession = -1;
         ASSERT_TRUE(transferShareOwnershipAndPossession(it->second.ownership, it->second.possession, dest, 1,
             &dstOwnership, &dstPossession, true));
         it->second = Holding{ dstOwnership, dstPossession, dest };
@@ -497,12 +535,92 @@ struct ReplaySummary
     uint64 events = 0;
 };
 
+// codec.asset_name_ok
+static bool assetNameOk(uint64 v)
+{
+    int n = 0;
+    while (n < 8 && ((v >> (8 * n)) & 0xff) != 0)
+        ++n;
+    if (n < 1 || n > 7 || (v >> (8 * n)) != 0)
+        return false;
+    for (int i = 0; i < n; ++i)
+    {
+        unsigned c = (unsigned)((v >> (8 * i)) & 0xff);
+        bool upper = c >= 65 && c <= 90, digit = c >= 48 && c <= 57;
+        if (!(upper || (i > 0 && digit)))
+            return false;
+    }
+    return true;
+}
+
+// The assets the journal's admin frames bind to each fighter, by the
+// contract's rules (contract.py _op_admin_register_asset / _bind_asset): the
+// "owner" records then move those assets in Core's universe.
+static void prescanBindings(const std::string& path, const m256i& admin, QdojoChain& chain)
+{
+    std::ifstream in(path);
+    std::string line;
+    std::getline(in, line);
+    std::map<std::string, std::string> holder;   // asset -> fighter id
+    while (std::getline(in, line))
+    {
+        if (line.find("\"k\":\"call\"") == std::string::npos)
+            continue;
+        JVal r = parseJson(line);
+        if (r.at("amount").num != 0 || !(idOf(r.at("who").str) == admin))
+            continue;
+        std::vector<uint8_t> f = unhex(r.at("frame").str);
+        if (f.size() < 512 || f[0] != 0x51 || f[1] != 0x44 || f[2] != 0x43 || f[3] != 0x31)
+            continue;
+        unsigned op = f[4] | (f[5] << 8), len = f[16] | (f[17] << 8);
+        QdojoChain::AssetKey a;
+        m256i fid = m256i::zero();
+        memcpy(fid.m256i_u8, &f[24], 32);
+        if (op == 100 && len == 37 && f[24 + 36] <= 1)
+        {
+            a.issuer = fid;
+            a.name = QDOJO_LEGACY_ASSET_NAME;
+        }
+        else if (op == 103 && len == 77 && f[24 + 36] <= 1)
+        {
+            memcpy(a.issuer.m256i_u8, &f[24 + 37], 32);
+            memcpy(&a.name, &f[24 + 69], 8);
+            if (isZero(a.issuer) || !assetNameOk(a.name))
+                continue;
+        }
+        else
+        {
+            continue;
+        }
+        std::string ak = QdojoChain::assetKey(a), fk = key(fid);
+        auto h = holder.find(ak);
+        if (h != holder.end() && h->second != fk)
+            continue;  // BAD_STATE: bound to another fighter
+        for (auto it = holder.begin(); it != holder.end();)
+            it = it->second == fk ? holder.erase(it) : std::next(it);   // a rebinding releases the old asset
+        holder[ak] = fk;
+        auto& v = chain.bound[fk];
+        bool have = false;
+        for (const auto& x : v)
+            have = have || (x.issuer == a.issuer && x.name == a.name);
+        if (!have)
+            v.push_back(a);
+    }
+}
+
+static ReplaySummary replayPath(const char* name, const std::string& path);
+
 // Replays one journal; every mismatch is a gtest failure. Returns the summary.
 static ReplaySummary replay(const char* name)
 {
+    return replayPath(name, journalPath(name));
+}
+
+static ReplaySummary replayPath(const char* name, const std::string& path)
+{
     ReplaySummary sum;
-    std::ifstream in(journalPath(name));
-    EXPECT_TRUE((bool)in) << "cannot open " << journalPath(name) << " (set QDOJO_JOURNAL_DIR)";
+    std::ifstream in(path);
+    EXPECT_TRUE((bool)in) << "cannot open " << path << " (set QDOJO_JOURNAL_DIR)";
     if (!in)
         return sum;
     std::string line;
@@ -513,7 +631,10 @@ static ReplaySummary replay(const char* name)
     EXPECT_TRUE(loadManifest(head, manifest));
 
     std::unique_ptr<QdojoChain> chain(new QdojoChain());
+    prescanBindings(path, manifest.admin, *chain);
+    bool lock = false;   // the port runs in lockstep only on a journal of its ruleset
 #ifdef QDOJO_LOCKSTEP_PORT
+    lock = hex(qdojo_combat::RULESET_DIGEST, 32) == head.at("ruleset_digest").str;
     qdojo_contract::Manifest pm;
     {
         // The port's manifest from the same header (test_contract.cpp load_manifest).
@@ -591,8 +712,8 @@ static ReplaySummary replay(const char* name)
                           << "/" << lo.faults.engine;
         }
 #ifdef QDOJO_LOCKSTEP_PORT
-        if (port->event_seq != chain->st().eventSeq || memcmp(port->event_digest, chain->st().eventDigest.m256i_u8, 32) != 0
-            || port->balance != chain->st().balance)
+        if (lock && (port->event_seq != chain->st().eventSeq || memcmp(port->event_digest, chain->st().eventDigest.m256i_u8, 32) != 0
+            || port->balance != chain->st().balance))
         {
             ++failures;
             ADD_FAILURE() << name << ": diverged from the port after " << what << " at tick " << t << ": events "
@@ -630,7 +751,8 @@ static ReplaySummary replay(const char* name)
             chain->initialize(manifest, t);
             EXPECT_EQ(chain->st().initOk, 1) << name << ": INITIALIZE rejected the manifest";
 #ifdef QDOJO_LOCKSTEP_PORT
-            EXPECT_TRUE(qdojo_contract::init(*port, pm, t));
+            if (lock)
+                EXPECT_TRUE(qdojo_contract::init(*port, pm, t));
 #endif
             started = true;
             check("start", (long long)t);
@@ -687,8 +809,10 @@ static ReplaySummary replay(const char* name)
             ++sum.codes[out.code];
             EXPECT_NE(out.code, QDOJO_HOST_ERROR) << name << ": host error at tick " << t;
 #ifdef QDOJO_LOCKSTEP_PORT
-            qdojo_contract::CallResult pr = qdojo_contract::dispatch(*port, host, portId(who), frame.data(), amount, t);
-            if (pr.code != out.code || pr.op != out.op || pr.target != out.target || pr.refunded != out.refunded)
+            qdojo_contract::CallResult pr{};
+            if (lock)
+                pr = qdojo_contract::dispatch(*port, host, portId(who), frame.data(), amount, t);
+            if (lock && (pr.code != out.code || pr.op != out.op || pr.target != out.target || pr.refunded != out.refunded))
             {
                 ++failures;
                 ADD_FAILURE() << name << ": call result differs at tick " << t << ": contract " << (int)out.code << "/"
@@ -704,8 +828,11 @@ static ReplaySummary replay(const char* name)
             chain->endTick(t);
             ++sum.ends;
 #ifdef QDOJO_LOCKSTEP_PORT
-            qdojo_contract::end_tick(*port, host, t);
-            qdojo_contract::begin_tick(*port, host, t + 1);
+            if (lock)
+            {
+                qdojo_contract::end_tick(*port, host, t);
+                qdojo_contract::begin_tick(*port, host, t + 1);
+            }
 #endif
             check("end_tick", (long long)t);
         }
@@ -714,7 +841,8 @@ static ReplaySummary replay(const char* name)
             uint64 t = (uint64)r.at("t").num;
             chain->beginTick(t);
 #ifdef QDOJO_LOCKSTEP_PORT
-            qdojo_contract::begin_tick(*port, host, t);
+            if (lock)
+                qdojo_contract::begin_tick(*port, host, t);
 #endif
             check("begin_tick", (long long)t);
         }
@@ -754,7 +882,7 @@ static ReplaySummary replay(const char* name)
         EXPECT_EQ(hex(eo.events.get(eo.count - 1).digest.m256i_u8, 32), sum.finalDigest);
     }
 #ifdef QDOJO_LOCKSTEP_PORT
-    for (uint32 season = 1; season <= 2; ++season)
+    for (uint32 season = 1; lock && season <= 2; ++season)
     {
         QDOJO::GetStandings_input gi{ season };
         QDOJO::GetStandings_output go{};
@@ -773,8 +901,10 @@ static ReplaySummary replay(const char* name)
     }
 #endif
 
-    printf("%s: %zu records, %zu calls, %zu END_TICKs, %llu events, balance %lld QU; codes", name, sum.records, sum.calls,
-        sum.ends, (unsigned long long)sum.events, sum.balance);
+    printf("%s (ruleset %.16s..., QDOJO table %u, lockstep port %s): %zu records, %zu calls, %zu END_TICKs, %llu events, "
+           "balance %lld QU; codes",
+        name, head.at("ruleset_digest").str.c_str(), (unsigned)chain->st().ruleset, lock ? "on" : "off", sum.records,
+        sum.calls, sum.ends, (unsigned long long)sum.events, sum.balance);
     for (const auto& kv : sum.codes)
         printf(" %dx%d", kv.first, kv.second);
     printf("\n    final event digest %s (reference %s) %s\n", sum.finalDigest.c_str(), sum.expectedDigest.c_str(),
@@ -824,6 +954,10 @@ TEST(ContractQdojo, InitializeWithCompiledManifest)
     qdojo_test::QdojoChain chain;
     chain.initializeCompiled(1000);
     EXPECT_EQ(chain.st().initOk, 1);
+    EXPECT_EQ(chain.st().ruleset, QDOJO_MANIFEST_RULESET);          // candidate 3
+    EXPECT_EQ(qdojo_test::hex(chain.st().m.rulesetDigest.m256i_u8, 32),
+        "cf19b7cfee8ccbdd2a3bbf31132f8327eab63a5341ca7528d682353c32c01bf4");
+    EXPECT_EQ(chain.st().m.genesisTick, 1000);
     EXPECT_EQ(chain.st().generation, 1u);
     EXPECT_EQ(chain.st().lastServiced, 1000u);
     EXPECT_EQ(chain.st().nSlots, 4u);  // admin + house + dev + share
@@ -854,4 +988,39 @@ TEST(ContractQdojo, ReplaySeason)
 TEST(ContractQdojo, ReplayDemoProfile)
 {
     qdojo_test::replay("demo-profile.journal");
+}
+
+// Candidate 2 and candidate 3 (LAST_STAND, FEINT) journals: scripts/combat-contract-journals.py.
+TEST(ContractQdojo, ReplayFuzzC2)
+{
+    qdojo_test::replay("fuzz-c2.journal");
+}
+
+TEST(ContractQdojo, ReplayFuzzC3)
+{
+    qdojo_test::replay("fuzz-c3.journal");
+}
+
+TEST(ContractQdojo, ReplaySeasonC3)
+{
+    qdojo_test::replay("season-c3.journal");
+}
+
+// Journals that are not committed (QDOJO_EXTRA_JOURNALS=path[:path...]), e.g.
+// the live arena's journal converted by scripts/combat-journal-from-devnet.py.
+TEST(ContractQdojo, ReplayExtraC3)
+{
+    const char* list = getenv("QDOJO_EXTRA_JOURNALS");
+    if (!list || !*list)
+    {
+        printf("QDOJO_EXTRA_JOURNALS not set; nothing to replay\n");
+        return;
+    }
+    std::stringstream ss(list);
+    std::string path;
+    while (std::getline(ss, path, ':'))
+    {
+        if (!path.empty())
+            qdojo_test::replayPath(path.substr(path.find_last_of('/') + 1).c_str(), path);
+    }
 }

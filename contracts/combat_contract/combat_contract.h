@@ -100,8 +100,13 @@ enum Op : uint16_t {
     OP_DUEL_OFFER = 5, OP_DUEL_ACCEPT = 6, OP_COMMIT = 7, OP_REVEAL = 8, OP_ADVANCE = 9,
     OP_WITHDRAW = 10, OP_CUP_REGISTER = 11, OP_CUP_WITHDRAW = 12, OP_CUP_CHECK_IN = 13,
     OP_DUEL_CANCEL = 14, OP_ADMIN_REGISTER_ASSET = 100, OP_ADMIN_CREATE_CUP = 101,
-    OP_ADMIN_RETIRE_RULESET = 102,
+    OP_ADMIN_RETIRE_RULESET = 102, OP_ADMIN_BIND_ASSET = 103,
 };
+
+// AdminRegisterAsset (100) names no asset: it binds the interim asset
+// (issuer = fighter_id, name "QDOJOF"); AdminBindAsset (103) carries the
+// fighter's real asset (codec.LEGACY_ASSET_NAME, contract.py _bind).
+static constexpr uint64_t LEGACY_ASSET_NAME = 0x464f4a4f4451ULL;
 
 // Event type numbers: contract.py EVENT_TYPES.
 enum EventType : uint16_t {
@@ -247,6 +252,8 @@ struct Asset {
     uint32_t registry_version;
     uint8_t house_npc;
     uint8_t used;
+    Id issuer;              // the fighter's Qubic asset: issuer identity...
+    uint64_t asset_name;    // ...and name (u64, first character in the low byte)
 };
 
 struct Account {
@@ -2068,14 +2075,18 @@ inline int32_t body_len(uint16_t op) {
         case OP_ADMIN_REGISTER_ASSET: return 32 + 4 + 1;
         case OP_ADMIN_CREATE_CUP: return 32 + 4 + 4 + 8 + 8 + 1 + 1 + 2 + 2 + 2 + 2;
         case OP_ADMIN_RETIRE_RULESET: return 32;
+        case OP_ADMIN_BIND_ASSET: return 32 + 4 + 1 + 32 + 8;
         default: return -1;
     }
 }
 
 // Structural plan check at decode (codec.decode_plan + Plan.of): BAD_PLAN.
 inline bool plan_shape_ok(const uint8_t* p) {
+    // types.Plan.of: action ids 0..5, 7 (LAST_STAND) and 8 (FEINT) under every
+    // ruleset; whether the ruleset admits them is validate_plan's (BAD_PLAN) after
+    // the commitment check.
     for (uint32_t i = 0; i < 6; ++i)
-        if (p[i] > 5) return false;
+        if (p[i] > 8 || p[i] == 6) return false;
     uint8_t slot = p[6];
     if (slot == qdojo_combat::NO_POWER_SLOT) return true;
     if (slot > 5) return false;
@@ -2143,13 +2154,32 @@ inline bool archived(uint64_t id, uint64_t next) { return id >= 1 && id < next; 
         if (!accepted(_r)) return _r;  \
     } while (0)
 
-inline Res op_admin_register_asset(State& s, const Id& inv, Reader r, int64_t amount) {
-    QD_TRY(need_zero(amount));
-    Id fid = r.id();
-    uint32_t version = uint32_t(r.u(4));
-    uint8_t npc = uint8_t(r.u(1));
-    if (!id_eq(inv, s.m.admin)) return rej(NOT_OWNER);
-    if (npc > 1) return rej(BAD_BODY);
+// codec.asset_name_ok: 1-7 characters, an upper-case letter first, then A-Z or
+// 0-9, zero padded.
+inline bool asset_name_ok(uint64_t v) {
+    uint32_t n = 0;
+    while (n < 8 && ((v >> (8 * n)) & 0xff) != 0) ++n;
+    if (n < 1 || n > 7) return false;
+    for (uint32_t i = n; i < 8; ++i)
+        if (((v >> (8 * i)) & 0xff) != 0) return false;
+    uint8_t c0 = uint8_t(v & 0xff);
+    if (c0 < 65 || c0 > 90) return false;
+    for (uint32_t i = 1; i < n; ++i) {
+        uint8_t ch = uint8_t((v >> (8 * i)) & 0xff);
+        if (!((ch >= 65 && ch <= 90) || (ch >= 48 && ch <= 57))) return false;
+    }
+    return true;
+}
+
+// contract.py _bind: one asset never backs two fighters; then the registry
+// entry (a port bound: FULL when the table is full).
+inline Res bind_asset(State& s, const Id& fid, uint32_t version, uint8_t npc, const Id& issuer, uint64_t name) {
+    for (uint32_t i = 0; i < CAP_ASSETS; ++i) {
+        ++s.work.scan_steps;
+        const Asset& x = s.assets[i];
+        if (x.used && !id_eq(x.fighter_id, fid) && id_eq(x.issuer, issuer) && x.asset_name == name)
+            return rej(BAD_STATE);
+    }
     int32_t a = asset_index(s, fid);
     if (a < 0) {
         for (uint32_t i = 0; i < CAP_ASSETS; ++i) {
@@ -2164,10 +2194,43 @@ inline Res op_admin_register_asset(State& s, const Id& inv, Reader r, int64_t am
     s.assets[a].fighter_id = fid;
     s.assets[a].registry_version = version;
     s.assets[a].house_npc = npc;
+    s.assets[a].issuer = issuer;
+    s.assets[a].asset_name = name;
+    return ok();
+}
+
+inline Res op_admin_register_asset(State& s, const Id& inv, Reader r, int64_t amount) {
+    QD_TRY(need_zero(amount));
+    Id fid = r.id();
+    uint32_t version = uint32_t(r.u(4));
+    uint8_t npc = uint8_t(r.u(1));
+    if (!id_eq(inv, s.m.admin)) return rej(NOT_OWNER);
+    if (npc > 1) return rej(BAD_BODY);
+    QD_TRY(bind_asset(s, fid, version, npc, fid, LEGACY_ASSET_NAME));
     Body b{};
     b_id(b, fid);
     b_u64(b, version);
     b_u64(b, npc);
+    emit(s, EV_ASSET_REGISTERED, b);
+    return ok();
+}
+
+inline Res op_admin_bind_asset(State& s, const Id& inv, Reader r, int64_t amount) {
+    QD_TRY(need_zero(amount));
+    Id fid = r.id();
+    uint32_t version = uint32_t(r.u(4));
+    uint8_t npc = uint8_t(r.u(1));
+    Id issuer = r.id();
+    uint64_t name = r.u(8);
+    if (!id_eq(inv, s.m.admin)) return rej(NOT_OWNER);
+    if (npc > 1 || id_eq(issuer, id_zero()) || !asset_name_ok(name)) return rej(BAD_BODY);
+    QD_TRY(bind_asset(s, fid, version, npc, issuer, name));
+    Body b{};
+    b_id(b, fid);
+    b_u64(b, version);
+    b_u64(b, npc);
+    b_id(b, issuer);
+    b_u64(b, name);
     emit(s, EV_ASSET_REGISTERED, b);
     return ok();
 }
@@ -2762,6 +2825,7 @@ inline Res run_handler(State& s, Host& h, const Id& inv, const Frame& fr, int64_
         case OP_ADMIN_REGISTER_ASSET: return op_admin_register_asset(s, inv, r, amount);
         case OP_ADMIN_CREATE_CUP: return op_admin_create_cup(s, inv, r, amount, t);
         case OP_ADMIN_RETIRE_RULESET: return op_admin_retire_ruleset(s, inv, r, amount);
+        case OP_ADMIN_BIND_ASSET: return op_admin_bind_asset(s, inv, r, amount);
         default: return rej(BAD_OPCODE);
     }
 }

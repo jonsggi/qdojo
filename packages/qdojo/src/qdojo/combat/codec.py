@@ -209,6 +209,9 @@ class Op(IntEnum):
     ADMIN_REGISTER_ASSET = 100
     ADMIN_CREATE_CUP = 101
     ADMIN_RETIRE_RULESET = 102
+    # AdminRegisterAsset naming the fighter's real Qubic asset (issuer, name):
+    # the binding a deployed contract reads ownership from (docs/nft.md §5.3).
+    ADMIN_BIND_ASSET = 103
 
 
 # Field layouts per opcode (docs/protocol.md §3). Width 32 is a raw 32-byte
@@ -241,7 +244,33 @@ BODIES: dict[Op, tuple[tuple[str, object], ...]] = {
                           ("max_entrants", 1), ("level_ticks", 2), ("first_level_delay", 2),
                           ("checkin_ticks", 2), ("replay_delay", 2)),
     Op.ADMIN_RETIRE_RULESET: (("ruleset_digest", _ID),),
+    Op.ADMIN_BIND_ASSET: (("fighter_id", _ID), ("registry_version", 4), ("house_npc", 1),
+                          ("asset_issuer", _ID), ("asset_name", 8)),
 }
+
+# The legacy AdminRegisterAsset (100) names no asset. It binds the fighter to
+# the interim asset (issuer = fighter_id, name "QDOJOF"), which nobody can
+# issue on a real chain; ADMIN_BIND_ASSET (103) carries the real one.
+LEGACY_ASSET_NAME = int.from_bytes(b"QDOJOF", "little")
+
+
+def asset_name_u64(name: str) -> int:
+    """A Qubic asset name as the chain stores it: ASCII, zero padded, the first
+    character in the low byte of a u64 (qdojo.qubic.contracts.asset_name_bytes)."""
+    raw = name.encode("ascii") if name.isascii() else b""
+    value = int.from_bytes(raw.ljust(8, b"\0"), "little") if len(raw) <= 7 else 0
+    if not asset_name_ok(value):
+        raise CodecError("BAD_BODY", f"not a Qubic asset name: {name!r}")
+    return value
+
+
+def asset_name_ok(value: int) -> bool:
+    """1-7 characters, an upper-case letter first, then A-Z or 0-9, zero padded."""
+    raw = value.to_bytes(8, "little")
+    n = next((i for i, b in enumerate(raw) if b == 0), 8)
+    if not 1 <= n <= 7 or any(raw[n:]):
+        return False
+    return 65 <= raw[0] <= 90 and all(65 <= b <= 90 or 48 <= b <= 57 for b in raw[1:n])
 
 
 class Code(IntEnum):

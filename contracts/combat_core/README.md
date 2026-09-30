@@ -30,8 +30,9 @@ Qubic smart contract.
   - every constant of both tables equals `docs/combat-v1.json` and
     `docs/combat-v1-candidate-2.json`;
   - the canonical JSON of each file hashes to its table's digest.
-- `contracts/qubic/QDOJO.h` still embeds candidate 1 only; a Qubic deployment
-  on candidate 2 must regenerate its constants from the candidate 2 table.
+- `contracts/qubic/QDOJO.h` holds candidates 1, 2 and 3 as tables keyed by
+  digest (its manifest picks one at INITIALIZE); its constants were written
+  from these tables and are checked by replaying journals of every ruleset.
 - Invalid input is rejected with an `Error` code and never clamped into shape.
   This covers an impossible state, a terminal fight, a bad plan and a noncanonical state encoding.
 - The reason bits are stable (see the header comment) and descriptive only.

@@ -5,7 +5,8 @@ Runs NPC-driven bots on a fresh devnet (fake QU, synthetic identities):
 ranked fights, a forfeit, a duel series and a cup; then writes
   apps/web/data/combat/v1/sample/...          (public export shape, labelled sample)
   apps/web/data/nft/v1/sample/...             (the sample fighter NFTs' frozen art and metadata)
-  packages/qdojo/tests/combat/fixtures/contract/*.journal   (inputs + final event digest)
+  packages/qdojo/tests/combat/fixtures/contract/*.journal   (inputs + final event digest; the
+      candidate-2/3 ones through scripts/combat-contract-journals.py)
 Deterministic: identical output on every run.
 """
 from __future__ import annotations
@@ -146,6 +147,8 @@ def main():
         import runpy
         runpy.run_path(str(ROOT / "scripts/combat-contract-scenarios.py"))["main"](TRACES / "scenarios.journal")
         runpy.run_path(str(ROOT / "scripts/combat-demo-profile-journal.py"))["main"](TRACES / "demo-profile.journal")
+        # Candidate 2 and 3 journals (fuzz-c2, fuzz-c3, season-c3).
+        runpy.run_path(str(ROOT / "scripts/combat-contract-journals.py"))["main"]()
         fights = len(c.fights)
         kinds = sorted({x.result["kind"] for x in c.contests.values() if x.result})
         print(f"sample: {fights} fights, contests {kinds}; journal {len(net.world.journal)} records")

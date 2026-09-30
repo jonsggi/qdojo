@@ -292,7 +292,8 @@ class CombatContract:
         self.owner_of = owner_of
         self.transfer = transfer
         self.ledger = Ledger()
-        self.assets: dict[bytes, tuple[int, bool]] = {}        # fighter_id -> (registry_version, house_npc)
+        # fighter_id -> (registry_version, house_npc, asset issuer, asset name u64)
+        self.assets: dict[bytes, tuple[int, bool, bytes, int]] = {}
         self.fighters: dict[bytes, Fighter] = {}
         self.offers: dict[int, mm.Offer] = {}
         self.contests: dict[int, Contest] = {}
@@ -491,9 +492,28 @@ class CombatContract:
             raise Reject(Code.NOT_OWNER, "admin only")
         if f["house_npc"] not in (0, 1):
             raise Reject(Code.BAD_BODY)
-        self.assets[f["fighter_id"]] = (f["registry_version"], bool(f["house_npc"]))
-        self._emit("ASSET_REGISTERED", f["fighter_id"], f["registry_version"], f["house_npc"])
+        fid = f["fighter_id"]
+        self._bind(fid, f["registry_version"], f["house_npc"], fid, codec.LEGACY_ASSET_NAME)
+        self._emit("ASSET_REGISTERED", fid, f["registry_version"], f["house_npc"])
         return CallResult(Code.OK)
+
+    def _op_admin_bind_asset(self, inv, f, amount, t):
+        """AdminRegisterAsset with the fighter's real asset (issuer, name): one
+        indivisible Qubic asset per fighter, never shared by two fighters."""
+        self._need_zero(amount)
+        if inv != self.m.admin:
+            raise Reject(Code.NOT_OWNER, "admin only")
+        if f["house_npc"] not in (0, 1) or f["asset_issuer"] == bytes(32) or not codec.asset_name_ok(f["asset_name"]):
+            raise Reject(Code.BAD_BODY, "house_npc 0/1, a nonzero issuer and a valid asset name")
+        fid = f["fighter_id"]
+        self._bind(fid, f["registry_version"], f["house_npc"], f["asset_issuer"], f["asset_name"])
+        self._emit("ASSET_REGISTERED", fid, f["registry_version"], f["house_npc"], f["asset_issuer"], f["asset_name"])
+        return CallResult(Code.OK)
+
+    def _bind(self, fid, version, house_npc, issuer, name):
+        if any(a[2] == issuer and a[3] == name for k, a in self.assets.items() if k != fid):
+            raise Reject(Code.BAD_STATE, "that asset is bound to another fighter")
+        self.assets[fid] = (version, bool(house_npc), issuer, name)
 
     def _op_admin_retire_ruleset(self, inv, f, amount, t):
         self._need_zero(amount)

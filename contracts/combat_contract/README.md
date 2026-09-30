@@ -98,8 +98,25 @@ step the runner also asserts two things:
 | fuzz-1 | 3253 | 1203 | 2000 | 1332 | final digest identical |
 | fuzz-2 | 3300 | 1253 | 2000 | 1427 | final digest identical |
 | season | 11206 | 516 | 10675 | 901 | final digest identical |
-| scenarios | 1912 | 300 | 1534 | 442 | final digest identical |
+| scenarios | 1938 | 312 | 1542 | 450 | final digest identical |
 | demo-profile | 1793 | 482 | 1300 | 667 | final digest identical |
+| fuzz-c2 (candidate 2) | 1662 | 623 | 1000 | 707 | final digest identical |
+| fuzz-c3 (candidate 3) | 3350 | 1292 | 2000 | 1466 | final digest identical |
+| season-c3 (candidate 3) | 2111 | 596 | 1500 | 946 | final digest identical |
+
+The port selects its ruleset at build time (`QDOJO_RULESET`, as in
+`combat_core.h`); `make contract-test` builds `test_contract_c1`, `_c2` and
+`_c3`, and each replays the journals of its ruleset and skips the others. The
+candidate-2/3 journals come from `scripts/combat-contract-journals.py`. The
+live arena's journal (candidate 3, 117,600 ticks, 92,132 calls), converted
+with `scripts/combat-journal-from-devnet.py`, also replays to its recorded
+digest (2026-09-30; not committed, ~100 MB).
+
+Two fixes of 2026-09-30, both matching the reference: a reveal's plan bytes
+accept action ids 7 and 8 at decode under every ruleset (`Plan.of`), so the
+commitment is checked before the ruleset's legality (BAD_COMMITMENT before
+BAD_PLAN); and AdminBindAsset (opcode 103) records each fighter's asset
+(issuer, name) and refuses an asset already bound to another fighter.
 
 `--trace DIR` writes one line per event (`E seq tick type body digest`) and one
 line per call (`C tick code op target refunded`). The format matches a
@@ -218,11 +235,12 @@ the parity journals, except the terminal-id answers.
    - smaller capacities, grown later with `EXPAND`;
    - trimming the event ring and the season bitmaps;
    - a heartbeat design that does not need to write state every tick.
-5. **Asset ownership.** The spec maps a fighter to one indivisible Qubic
-   asset (issuer and name). AdminRegisterAsset (opcode 100) carries neither,
-   so the adapter's `OwnerOf` has nothing to iterate over. The descriptor
-   must gain the issuance. After that, test ownership against possession
-   and against managing-contract rights.
+5. **Asset ownership.** Done for the binding: AdminBindAsset (opcode 103)
+   carries (issuer, name); the port keeps it in the registry and the Qubic
+   contract reads ownership from that asset. The host interface stays
+   `owner_of(fighter_id)`, as in the reference. Testing ownership against
+   possession and managing-contract rights is part of the NFT procedures
+   (contracts/qubic/README.md, "What remains", item 5).
 6. **Transfer semantics.** `qpi.transfer` returns the remaining balance, or
    a negative value on failure. Still to prove on the pinned Core:
    - which recipients can fail;

@@ -9,7 +9,7 @@ import os
 import random
 
 from qdojo.combat.codec import Code, Op
-from qdojo.combat.types import SUBMITTED, Plan
+from qdojo.combat.types import ATTACKS, SUBMITTED, Plan
 from qdojo.combat.sim import commit_fields, identity, reveal_fields
 
 from .test_contract import ADMIN, Player, world  # noqa: F401  (fixture)
@@ -39,7 +39,9 @@ def _check_locks(w):
                 assert c.fighters[fid].lock == "CONTEST" and c.fighters[fid].lock_ref == ct.contest_id
 
 
-def traffic(world, ticks, seed=0xF022, check=True):
+def traffic(world, ticks, seed=0xF022, check=True, actions=SUBMITTED, power=False):
+    """`actions` are the plan alphabet (a later ruleset's submitted set); with
+    `power`, some plans also designate a power slot while power is available."""
     rng = random.Random(seed)
     players = [Player(world, f"z{i}") for i in range(8)]
     c = world.contract
@@ -90,7 +92,12 @@ def traffic(world, ticks, seed=0xF022, check=True):
                                                   rng.random() < 0.04)
                     if absent:
                         continue            # this fighter never commits this round and faults
-                    plan = Plan.of([rng.choice(SUBMITTED) for _ in range(6)])
+                    plan = Plan.of([rng.choice(actions) for _ in range(6)])
+                    if power:
+                        st = fight.state.a if slot == "A" else fight.state.b
+                        slots = [i for i, a in enumerate(plan.actions) if a in ATTACKS]
+                        if st.power_available and slots and rng.random() < 0.3:
+                            plan = Plan.of(plan.actions, rng.choice(slots))
                     fields, salt = commit_fields(world, fight.fight_id, side.fighter_id, side.operator, plan,
                                                  salt=bytes(rng.getrandbits(8) for _ in range(32)))
                     world.send(side.operator, Op.COMMIT, **fields)

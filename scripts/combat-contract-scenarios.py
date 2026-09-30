@@ -15,7 +15,10 @@ what random traffic rarely reaches:
   minimum; a service gap voiding a duel, an open offer and a cup
   (SERVICE_VOID); ruleset retirement; strangers (NOT_OWNER, refunds that
   take the last account slots, direct paybacks, one failing) and
-  account-capacity FULL for a new registrant.
+  account-capacity FULL for a new registrant; a candidate-1 reveal carrying
+  LAST_STAND (BAD_COMMITMENT on a wrong salt, then BAD_PLAN); AdminBindAsset
+  (103) binds, rejections, a sale through the bound asset, and an asset with
+  no owner (BAD_STATE).
 
 A short timing profile (commit 4, reveal 3) keeps the journal small. Salts
 come from a seeded RNG, so regeneration is byte-identical. Run directly or
@@ -33,10 +36,11 @@ sys.path.insert(0, str(ROOT / "packages/qdojo/src"))
 sys.path.insert(0, str(ROOT / "packages/qdojo/tests"))
 
 from qdojo.combat import store  # noqa: E402
-from qdojo.combat.codec import Code, Mode, Op  # noqa: E402
+from qdojo.combat.codec import Code, Mode, Op, asset_name_u64  # noqa: E402
 from qdojo.combat.contract import development_manifest  # noqa: E402
 from qdojo.combat.rules import candidate_1  # noqa: E402
 from qdojo.combat.sim import World, commit_fields, identity, reveal_fields  # noqa: E402
+from qdojo.combat.types import Action, Plan  # noqa: E402
 from combat.test_contract import ADMIN, DEV, HOUSE, KO_PLAN, RESTS, SHARE, Player  # noqa: E402
 
 OUT = ROOT / "packages/qdojo/tests/combat/fixtures/contract/scenarios.journal"
@@ -272,6 +276,59 @@ class Scenario:
         w.skip_ticks(2)
         self.step()
         assert c.cups[cup5].status == "ABORTED"
+
+        # A candidate-1 reveal carrying a candidate-3 action (LAST_STAND) decodes,
+        # is checked against its commitment first (a wrong salt: BAD_COMMITMENT)
+        # and is then refused by the ruleset (BAD_PLAN); that fighter forfeits.
+        E = [self.player(f"e{i}") for i in range(2)]
+        self.duel(E[0], E[1])
+        fight = next(x for x in c.fights.values() if x.phase != "DONE" and x.slot_of(E[0].fid))
+        self.step()
+        stand = Plan.of([Action.LAST_STAND, Action.JAB, Action.JAB, Action.JAB, Action.JAB, Action.JAB])
+        salts = {}
+        for p, plan in ((E[0], stand), (E[1], RESTS)):
+            salt = bytes(self.rng.getrandbits(8) for _ in range(32))
+            fields, salts[p.fid] = commit_fields(w, fight.fight_id, p.fid, p.operator, plan, salt=salt)
+            self.ok(w.send(p.operator, Op.COMMIT, **fields))
+        self.run_while(lambda: fight.phase == "COMMIT")
+        self.ok(w.send(E[0].operator, Op.REVEAL, **reveal_fields(w, fight.fight_id, E[0].fid, stand, bytes(32))),
+                Code.BAD_COMMITMENT)
+        self.ok(w.send(E[0].operator, Op.REVEAL, **reveal_fields(w, fight.fight_id, E[0].fid, stand,
+                                                                 salts[E[0].fid])), Code.BAD_PLAN)
+        self.ok(w.send(E[1].operator, Op.REVEAL, **reveal_fields(w, fight.fight_id, E[1].fid, RESTS,
+                                                                 salts[E[1].fid])))
+        self.run_while(lambda: fight.phase != "DONE")
+        assert c.contests[fight.contest_id].result["kind"] == "FORFEIT"
+
+        # AdminBindAsset (103): the registry names a real asset (issuer, name).
+        # Rejections; a sale and re-registration read through the bound asset;
+        # an asset with no owner ("unavailable") refuses registration BAD_STATE.
+        issuer = identity("sc-nft-issuer")
+        B = []
+        for j in range(3):
+            fid, owner = identity(f"fighter:sc-nft-{j}"), identity(f"owner:sc-nft-{j}")
+            w.owners[fid] = owner
+            w.mint(owner, 10_000)
+            B.append((fid, owner))
+
+        def bind(fid, name, who=ADMIN, iss=issuer, code=Code.OK):
+            value = asset_name_u64(name) if isinstance(name, str) else name
+            return self.ok(w.send(who, Op.ADMIN_BIND_ASSET, fighter_id=fid, registry_version=1, house_npc=0,
+                                  asset_issuer=iss, asset_name=value), code)
+
+        bind(B[0][0], "QF0001", who=U[3].owner, code=Code.NOT_OWNER)
+        bind(B[0][0], "QF0001", iss=bytes(32), code=Code.BAD_BODY)
+        bind(B[0][0], int.from_bytes(b"qf1", "little"), code=Code.BAD_BODY)
+        for j, (fid, owner) in enumerate(B):
+            bind(fid, f"QF000{j + 1}")
+            self.ok(w.send(owner, Op.REGISTER_FIGHTER, fighter_id=fid, registry_version=1))
+        bind(B[2][0], "QF0001", code=Code.BAD_STATE)           # bound to B[0]
+        buyer = identity("sc-nft-buyer")
+        w.owners[B[0][0]] = buyer
+        self.ok(w.send(B[0][1], Op.REGISTER_FIGHTER, fighter_id=B[0][0], registry_version=1), Code.NOT_OWNER)
+        self.ok(w.send(buyer, Op.REGISTER_FIGHTER, fighter_id=B[0][0], registry_version=1))
+        w.owners[B[1][0]] = None                               # on chain: the one share burned
+        self.ok(w.send(buyer, Op.REGISTER_FIGHTER, fighter_id=B[1][0], registry_version=1), Code.BAD_STATE)
 
         # Ruleset retirement: admission refused, attachment refunded.
         self.ok(w.send(ADMIN, Op.ADMIN_RETIRE_RULESET, ruleset_digest=bytes(32)))
