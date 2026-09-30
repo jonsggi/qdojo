@@ -175,13 +175,39 @@ the fields listed, without host alignment. Extra body bytes reject.
 | 100 | AdminRegisterAsset | fighter_id[32], registry_version u32, house_npc u8 |
 | 101 | AdminCreateCup | ruleset_digest[32], timing_profile_id u32, fee_profile_id u32, entry_fee u64, registration_close u64, min_entrants u8, max_entrants u8, level_ticks u16, first_level_delay u16, checkin_ticks u16, replay_delay u16 |
 | 102 | AdminRetireRuleset | ruleset_digest[32] |
+| 103 | AdminBindAsset | fighter_id[32], registry_version u32, house_npc u8, asset_issuer[32], asset_name u64 |
 
-Opcodes 100–102 are accepted only from the manifest's admin identity.
+Opcodes 100–103 are accepted only from the manifest's admin identity.
 AdminCreateCup attaches the sponsorship, which is reserved immediately and
 never raked. None of them can touch an accepted contest, a credit or a result.
 
 RegisterFighter binds an already recognized registry asset after confirming
-ownership; it does not mint an NFT or invent an asset ID. Issuance/registry
+ownership; it does not mint an NFT or invent an asset ID.
+
+The registry names each fighter's Qubic asset, and ownership is read from
+that asset's owner record (one owner holding the one share; anything else is
+"unavailable", BAD_STATE):
+
+- **AdminBindAsset (103)** names the asset: `asset_issuer` and `asset_name`,
+  the name stored as the chain stores it (ASCII, zero padded, first character
+  in the low byte of the u64; 1–7 characters, an upper-case letter first,
+  then A–Z or 0–9). A zero issuer, an invalid name or `house_npc` > 1 is
+  BAD_BODY. An asset already bound to another fighter is BAD_STATE: one asset
+  never backs two fighters. The admin may rebind a fighter (a new
+  `registry_version` makes the owner register again). The event is
+  ASSET_REGISTERED with five fields (fighter_id, registry_version, house_npc,
+  asset_issuer, asset_name).
+- **AdminRegisterAsset (100)** is the original form. It names no asset and
+  binds the interim asset (issuer = fighter_id, name `QDOJOF`), which nobody
+  can issue on a real chain because nobody holds a fighter id's key. It stays
+  for the simulated arenas and their journals (its ASSET_REGISTERED event
+  keeps its three fields, so old journals replay to the same digests). A
+  deployment registers fighters with 103.
+
+Under the recommended NFT model ([nft.md](nft.md) §5.3) the issuer is the
+QDOJO contract itself (`qpi.issueAsset` with issuer = the contract), so the
+bound issuer is the contract's identity; a QX-issued asset binds the same way
+with its own issuer. Issuance/registry
 administration and cup creation are deployment administration interfaces, with
 their own reviewed manifest-controlled authorization; see §8.
 

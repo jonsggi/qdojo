@@ -244,10 +244,13 @@ then read ownership from another contract's state rather than from an asset
 record. That is not evaluated here.
 
 What the Qubic backend still needs, in order:
-1. **Protocol.** AdminRegisterAsset must carry the asset (issuer, name).
-   `contracts/qubic/QDOJO.h` binds a fighter to issuer = fighter_id with name
-   `QDOJOF` as an interim. No one holds a fighter_id's private key, so that
-   asset can never be issued. It must become the token's real issuer and name.
+1. **Protocol.** Done (2026-09-30): AdminBindAsset (opcode 103) carries the
+   asset (issuer, name), and the contract reads ownership from that asset
+   ([protocol.md](protocol.md) §3; reference, C++ port and `QDOJO.h` agree on
+   the parity journals). The live arena registers new fighters with it, naming
+   their token's issuer and name. The original AdminRegisterAsset (100) still
+   binds the interim issuer = fighter_id, name `QDOJOF`, which nobody can
+   issue; it stays for the simulated arenas and their journals only.
 2. **Signing and sending.** Sign with `qdojo.qubic.tx.Transaction.sign` and
    broadcast with `qdojo.qubic.node.Node.broadcast` (or POST
    `/v1/broadcast-transaction`), targeting the current tick + ~10. The riddle
