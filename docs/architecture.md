@@ -3,7 +3,7 @@
 > **Purpose:** the moving parts of QDOJO, one fight's lifecycle, and what is real versus simulated today. \
 > **Audience:** everyone who reads code; contract and protocol reviewers; operators. \
 > **Status:** reference. Normative detail lives in the documents linked from each section. \
-> **Last verified:** 2026-09-26 against `packages/qdojo/src/qdojo/combat/`, `contracts/`, `apps/web/` and the `Dockerfile`.
+> **Last verified:** 2026-09-26 against `packages/qdojo/src/qdojo/combat/`, `contracts/`, `apps/web/` and the `Dockerfile`; the contract row 2026-09-30.
 
 ## Contents
 
@@ -90,7 +90,7 @@ exact deadlines and failure rules are in [protocol.md](protocol.md) §4–5.
 | Rules engine | **Real.** Python, C++ and browser engines agree on 10,000 frozen fights | `combat/engine.py`, `contracts/combat_core/`, `apps/web/combat/engine.js` |
 | Practice and NPCs | **Real**, local and free | `combat/npcs.py`, `combat/training.py` |
 | Contract logic | **Real code, simulated chain.** The reference contract runs in-process; `SimChain` adds latency, drops, reordering and execution fees | `combat/contract.py`, `combat/chainsim.py` |
-| Contract on Qubic | **Written, not deployed.** Passes Core's contract checker and replays the parity journals in core-lite's harness | `contracts/qubic/QDOJO.h` |
+| Contract on Qubic | **Written, not deployed.** Candidates 1–3 as tables keyed by digest (the compiled manifest names candidate 3); fighters bound to a real asset (issuer, name, opcode 103). Passes Core's contract checker and replays every parity journal, and the live arena's journal, in core-lite's harness. No NFT market or issuance on chain yet | `contracts/qubic/QDOJO.h`, `contracts/combat_contract/` (the parity-tested port it transliterates) |
 | Fighter NFTs | **Simulated behind one port.** One-share assets (issuer, name, owner, possessor, manager), a QX-style market with escrow, fees, royalty and contest locks, journalled; a Qubic adapter stub that builds QX transactions and never sends ([nft.md](nft.md)) | `combat/nft.py`, `combat/nft_qubic.py`, `combat/nft_freeze.py` |
 | Money | **Fake QU only.** No real QU is escrowed or paid | — |
 | Identities | **Synthetic**, derived from labels on the devnet; no seed is read | `combat/sim.py` |

@@ -4,7 +4,8 @@
   core_harness.py verify       qubic/contract-verify (the checker Core's CI pins) on QDOJO.h,
                                plus negative controls that prove the tool parses the whole file
   core_harness.py test         core-lite's GoogleTest harness (Linux/clang): build
-                               test/contract_qdojo.cpp and replay every journal
+                               test/contract_qdojo.cpp (one binary per port ruleset) and
+                               replay every journal; QDOJO_EXTRA_JOURNALS adds uncommitted ones
   core_harness.py core-syntax  pinned qubic/core: clang syntax-only compile of the same test;
                                reports errors attributable to QDOJO.h / the test (Core's own
                                test build is MSVC-only, so Core headers do not compile on Linux)
@@ -16,6 +17,7 @@ Nothing here touches a network node or a seed.
 """
 import argparse
 import os
+import re
 import subprocess
 import sys
 
@@ -28,6 +30,11 @@ CORE = ("https://github.com/qubic/core.git", "e3ef766686e5d69a2bdd17a12213f1d21d
 CORE_LITE = ("https://github.com/qubic/core-lite.git", "5ad97af4b1ccb077580a39abfbe1891783d93c78")
 VERIFY = ("https://github.com/qubic/contract-verify.git", "970ce102d56df53b68f1b8fa65b2dd445d5c9d81")
 CPPPARSER = ("https://github.com/satya-das/cppparser.git", "3b5801f7389fcad3b8b1865d5ca10b1141d1c9e5")
+# QDOJO's construction epoch in contract_def.h: the epoch of the pinned
+# core-lite/core release (EPOCH 232), so a local TESTNET node built from this
+# checkout constructs QDOJO at start. A real deployment takes the epoch the
+# proposal schedules (proposal N, IPO N+1, construction N+2; docs/testnet.md).
+CONSTRUCTION_EPOCH = 232
 
 
 def run(cmd, cwd=None, env=None, check=True, log=None):
@@ -80,38 +87,58 @@ def register(core_dir):
         s = s.replace(fix(a), fix(b))
         a = edits[1][0]
         assert s.count(fix(a)) == 1, "contract_def.h anchor 2 not found"
-        s = s.replace(fix(a), fix(a + "    {\"QDOJO\", 240, 10000, sizeof(QDOJO::StateData)}, // qdojo combat (local test build only; not proposed)\n"))
+        s = s.replace(fix(a), fix(a + "    {\"QDOJO\", %d, 10000, sizeof(QDOJO::StateData)}, // qdojo combat (local test build only; not proposed)\n"
+                                  % CONSTRUCTION_EPOCH))
         a = edits[2][0]
         assert s.count(fix(a)) == 1, "contract_def.h anchor 3 not found"
         s = s.replace(fix(a), fix(a + "    REGISTER_CONTRACT_FUNCTIONS_AND_PROCEDURES(QDOJO);\n"))
         open(p, "wb").write(s.encode())
+    else:
+        # An earlier harness registered another epoch: keep the entry, fix the epoch.
+        t = re.sub(r'\{"QDOJO", \d+, ', '{"QDOJO", %d, ' % CONSTRUCTION_EPOCH, s)
+        if t != s:
+            open(p, "wb").write(t.encode())
     lite = os.path.exists(os.path.join(core_dir, "src", "platform", "msvc_polyfill.h"))
     p = os.path.join(core_dir, "test", "CMakeLists.txt")
-    s = open(p).read()
-    if "qdojo_core_tests" not in s:
-        if lite:
-            s += """
-# ---- qdojo: a separate target so only the QDOJO contract test is compiled ----
-# Same flags as qubic_core_tests in core-lite, minus -w so warnings stay visible.
-# common_def.cpp defines the Core globals, stdlib_impl.cpp the NO_UEFI memory helpers.
-add_executable(qdojo_core_tests contract_qdojo.cpp common_def.cpp stdlib_impl.cpp)
-target_compile_options(qdojo_core_tests PRIVATE -include "${LOGGING_VM_TEST_CONFIG}")
-apply_test_compiler_flags(qdojo_core_tests)
-target_compile_options(qdojo_core_tests PRIVATE -mrdrnd -Wno-error -mbmi -mlzcnt -fshort-wchar)
+    old = open(p).read()
+    marker = "\n# ---- qdojo: "
+    s = old[:old.index(marker)] + "\n" if marker in old else old    # regenerate our section every time
+    # One test binary per ruleset: QDOJO.h holds every ruleset (a table per
+    # digest) and replays every journal in each; the lockstep port is
+    # compiled for one ruleset (QDOJO_RULESET), so each binary checks the
+    # journals of its ruleset step by step against the port.
+    if lite:
+        sources = "contract_qdojo.cpp common_def.cpp stdlib_impl.cpp"
+        flags = """  target_compile_options(${T} PRIVATE -include "${LOGGING_VM_TEST_CONFIG}")
+  apply_test_compiler_flags(${T})
+  target_compile_options(${T} PRIVATE -mrdrnd -Wno-error -mbmi -mlzcnt -fshort-wchar)
 """
-        else:
-            s += """
-# ---- qdojo: a separate target so only the QDOJO contract test is compiled ----
-add_executable(qdojo_core_tests contract_qdojo.cpp)
-apply_test_compiler_flags(qdojo_core_tests)
-target_compile_options(qdojo_core_tests PRIVATE -mrdrnd)
+        libs = " Blosc2::blosc2_static"
+    else:
+        sources = "contract_qdojo.cpp"
+        flags = """  apply_test_compiler_flags(${T})
+  target_compile_options(${T} PRIVATE -mrdrnd)
 """
-        s += """if(QDOJO_PORT_DIR)
-  target_include_directories(qdojo_core_tests PRIVATE ${QDOJO_PORT_DIR})
-  target_compile_definitions(qdojo_core_tests PRIVATE QDOJO_LOCKSTEP_PORT=1)
-endif()
-target_link_libraries(qdojo_core_tests PRIVATE GTest::gtest_main platform_common platform_os%s)
-""" % (" Blosc2::blosc2_static" if lite else "")
+        libs = ""
+    s += f"""
+# ---- qdojo: separate targets so only the QDOJO contract test is compiled ----
+# Same flags as qubic_core_tests{" in core-lite, minus -w so warnings stay visible" if lite else ""}.
+# qdojo_core_tests (port ruleset 1), qdojo_core_tests_c2, qdojo_core_tests_c3.
+foreach(QDOJO_RS 1 2 3)
+  if(QDOJO_RS EQUAL 1)
+    set(T qdojo_core_tests)
+  else()
+    set(T qdojo_core_tests_c${{QDOJO_RS}})
+  endif()
+  add_executable(${{T}} {sources})
+{flags}  if(QDOJO_PORT_DIR)
+    target_include_directories(${{T}} PRIVATE ${{QDOJO_PORT_DIR}})
+    target_compile_definitions(${{T}} PRIVATE QDOJO_LOCKSTEP_PORT=1 QDOJO_RULESET=${{QDOJO_RS}})
+  endif()
+  target_link_libraries(${{T}} PRIVATE GTest::gtest_main platform_common platform_os{libs})
+endforeach()
+"""
+    if s != old:
         open(p, "w").write(s)
 
 
@@ -180,11 +207,20 @@ def cmd_test(work, jobs):
     build = os.path.join(work, "build-core-lite")
     os.makedirs(build, exist_ok=True)
     configure(d, build, True)
-    run(["ninja", f"-j{jobs}", "qdojo_core_tests"], cwd=build, log=os.path.join(work, "build-core-lite.log"))
+    targets = ["qdojo_core_tests", "qdojo_core_tests_c2", "qdojo_core_tests_c3"]
+    run(["ninja", f"-j{jobs}"] + targets, cwd=build, log=os.path.join(work, "build-core-lite.log"))
     env = dict(os.environ, QDOJO_JOURNAL_DIR=JOURNALS)
-    rc = run([os.path.join(build, "test", "qdojo_core_tests")], cwd=build, env=env, check=False)
-    if rc != 0:
-        sys.exit("test: FAILED")
+    failed = []
+    # Every test in the port-ruleset-1 binary (QDOJO replays every journal; the
+    # port follows the candidate-1 ones), then the candidate-2 and candidate-3
+    # journals again with the port built for their ruleset.
+    for target, only in zip(targets, (None, "*C2*", "*C3*")):
+        cmd = [os.path.join(build, "test", target)] + ([f"--gtest_filter={only}"] if only else [])
+        if run(cmd, cwd=build, env=env, check=False) != 0:
+            failed.append(target)
+    if failed:
+        sys.exit(f"test: FAILED ({', '.join(failed)})")
+    print("test: every journal replayed through QDOJO.h in Core's harness; lockstep with the port for each ruleset")
 
 
 def cmd_core_syntax(work, jobs):

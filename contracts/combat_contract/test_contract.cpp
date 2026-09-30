@@ -310,6 +310,9 @@ struct Tracer {
     }
 };
 
+// A build serves one ruleset (QDOJO_RULESET); a journal of another is skipped.
+static int skipped = 0;
+
 static bool replay(const std::string& path, const char* trace_dir, MaxWork& mw, std::string& summary) {
     std::ifstream in(path);
     if (!in) {
@@ -322,6 +325,12 @@ static bool replay(const std::string& path, const char* trace_dir, MaxWork& mw, 
     if (head.at("schema").str != "qdojo.combat.journal.v1") {
         std::fprintf(stderr, "%s: not a combat journal\n", path.c_str());
         return false;
+    }
+    if (head.at("ruleset_digest").str != hex(qdojo_combat::RULESET_DIGEST, 32)) {
+        summary = path.substr(path.find_last_of('/') + 1) + ": ruleset " + head.at("ruleset_digest").str.substr(0, 16) +
+                  "... is not this build's (QDOJO_RULESET=" + std::to_string(QDOJO_RULESET) + "); skipped";
+        ++skipped;
+        return true;
     }
     Manifest m;
     if (!load_manifest(head, m)) {
@@ -477,7 +486,9 @@ int main(int argc, char** argv) {
         MaxWork mw;
         std::string summary;
         bool ok = replay(j, trace_dir, mw, summary);
-        std::printf("%s %s\n", ok ? "PASS" : "FAIL", summary.c_str());
+        bool skip = summary.find("skipped") != std::string::npos;
+        std::printf("%s %s\n", !ok ? "FAIL" : skip ? "SKIP" : "PASS", summary.c_str());
+        if (skip) continue;
         std::printf("  max work per entry point:\n");
         print_work("dispatch", mw.call);
         print_work("end_tick", mw.end);
@@ -491,6 +502,10 @@ int main(int argc, char** argv) {
     print_work("dispatch", total.call);
     print_work("end_tick", total.end);
     print_work("begin_tick", total.begin);
-    std::printf("%d of %zu journals failed\n", failures, journals.size());
+    std::printf("%d of %zu journals failed, %d skipped (other rulesets)\n", failures, journals.size(), skipped);
+    if (size_t(skipped) == journals.size()) {
+        std::printf("no journal of this build's ruleset\n");
+        return 1;
+    }
     return failures ? 1 : 0;
 }

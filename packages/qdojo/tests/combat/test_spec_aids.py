@@ -65,10 +65,9 @@ def test_frozen_fight_fixtures_match_engine():
 def manifest_from_header(head):
     from qdojo.combat.contract import Manifest
     from qdojo.combat.ledger import FeeProfile
-    from qdojo.combat.rules import candidate_1
     return Manifest(
         bytes.fromhex(head["network_id"]), bytes.fromhex(head["contract_id"]), bytes.fromhex(head["admin"]),
-        candidate_1(), {int(k): tuple(v) for k, v in head["timing"].items()},
+        rules_mod.by_digest(head["ruleset_digest"]), {int(k): tuple(v) for k, v in head["timing"].items()},
         {int(k): FeeProfile(int(k), f["rake_bps"], f["house_bps"], f["dev_bps"], f["share_bps"],
                             bytes.fromhex(f["house"]), bytes.fromhex(f["dev"]), bytes.fromhex(f["share"]))
          for k, f in head["fees"].items()},
@@ -86,6 +85,9 @@ def test_contract_parity_journals_replay_to_their_digest():
     from qdojo.combat import store
     paths = sorted((ROOT / "packages/qdojo/tests/combat/fixtures/contract").glob("*.journal"))
     assert len(paths) >= 3
+    # Every packaged ruleset has at least one contract journal (the C++ ports
+    # replay each against the build or table for its digest).
+    assert {store.load(p)[0]["ruleset_digest"] for p in paths} == set(rules_mod.KNOWN.values())
     for path in paths:
         head, records = store.load(path)
         assert records[-1]["k"] == "digest"

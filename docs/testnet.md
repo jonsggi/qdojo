@@ -3,7 +3,8 @@
 > **Purpose:** the checklist for moving the public arena from the simulated chain (devnet) to Qubic testnet: what the code supports today, the exact steps, and what is still missing. \
 > **Audience:** operators, the contract owner. \
 > **Status:** guide. A checklist, not an implementation: several steps need code that does not exist yet (marked **MISSING**). Qubic facts are cited; anything not confirmed is marked **UNCONFIRMED**. \
-> **Last verified:** 2026-09-28 (repository state on branch work/golive; Qubic docs and repositories as linked, read 2026-09-28)
+> **Last verified:** 2026-09-30 (contract section: branch work/contract-c3; Qubic facts from the round-3 NFT research against qubic/core `e3ef766`, v1.305) \
+> Earlier: 2026-09-28 (repository state on branch work/golive; Qubic docs and repositories as linked, read 2026-09-28)
 
 The site needs no code change for the move. Every network-dependent word on
 it (the DEVNET/TESTNET badge, the footer line, the currency, the FAQ, the
@@ -18,7 +19,7 @@ guess (`apps/web/combat/app.js`, `NETWORKS`).
 
 | Piece | Today | For testnet |
 |---|---|---|
-| Contract | `contracts/qubic/QDOJO.h`, Core's dialect. Passes `qubic/contract-verify`, compiles in core-lite, replays all parity journals in Core's harness ([contracts/qubic/README.md](../contracts/qubic/README.md)) | Never ran on a ticking node. Construction epoch, procedure IDs and asset issuance still open (§3.1) |
+| Contract | `contracts/qubic/QDOJO.h`, Core's dialect: candidates 1, 2 and 3 as tables keyed by digest (the compiled manifest names candidate 3 and the demo-c3 economics), fighters bound to a real asset (issuer, name) by AdminBindAsset. Passes `qubic/contract-verify`, compiles in core-lite, replays every parity journal and the live arena's journal in Core's harness ([contracts/qubic/README.md](../contracts/qubic/README.md)) | Never ran on a ticking node. Release manifest, contract index, the NFT procedures and the fee reserve still open (§3.1) |
 | Qubic client | `packages/qdojo/src/qdojo/qubic/`: K12, FourQ, SchnorrQ, identities, transactions, the node TCP protocol (`node.py`: tick info, entity, broadcast, tick transactions, contract functions, owned assets), byte-identical to qubic-cli (`scripts/crosscheck-signer.py`) | Reusable as is |
 | Arena runtime | `qdojo combat live` drives the reference contract on `SimChain` (`combat/chainsim.py`): simulated latency, drops, fees and asset registry | **MISSING:** a chain adapter that sends `Dispatch` transactions to a Qubic node and reads confirmed state back (§3.6) |
 | Export, read API | Written from the reference contract's state and the devnet journal (`combat/export.py`, `combat/readmodel.py`) | **MISSING:** an exporter and read model fed from confirmed on-chain transactions and contract functions |
@@ -56,31 +57,78 @@ guess (`apps/web/combat/app.js`, `NETWORKS`).
 
 ### 3.1 Contract
 
-- [ ] Set QDOJO's construction epoch to the testnet's epoch. It is registered
-      with 240; core-lite's testnet starts at `EPOCH 232`, so the node would
-      never construct it ([contracts/qubic/README.md](../contracts/qubic/README.md)).
-      On a public testnet, take the epoch the Qubic developers assign.
-- [ ] Replace the placeholder procedure and function IDs ("What remains",
-      item 7) and record the final numbers in [protocol.md](protocol.md) and
-      the Python client.
-- [ ] Get a contract index: the contract goes into `src/contracts/QDOJO.h`
-      and is registered in `src/contract_core/contract_def.h` with the next
-      free index ([core contracts doc](https://github.com/qubic/core/blob/main/doc/contracts.md)).
-      The contract's identity (from the index) becomes the export's
-      `contract_id`.
-- [ ] Asset issuance for fighters (item 5): the interim binding is issuer =
-      fighter_id, name `QDOJOF`, but nothing issues it yet.
-- [ ] Re-run the proof set after these edits: `contract-verify`, the
-      core-lite test (`test_qdojo_core.cpp`, all parity journals), and
-      `core_harness.py` (commands in [contracts/qubic/README.md](../contracts/qubic/README.md#commands)).
-- [ ] Still open and worth measuring on a ticking node: execution-fee cost
-      (item 3), the 1.4 ms per-tick state digest (item 4), epoch-boundary
-      tick succession (item 8).
+Done on branch work/contract-c3 (details and outputs in
+[contracts/qubic/README.md](../contracts/qubic/README.md)):
 
-Mainnet inclusion is a different path (computor proposal, 451 votes, a
-676-share Dutch-auction IPO, construction two epochs later;
-[lifecycle](https://docs.qubic.org/developers/smart-contracts/lifecycle/)) and
-is out of scope here.
+- [x] Candidate 3 in the contract. QDOJO.h holds candidates 1, 2 and 3 as
+      tables keyed by digest; INITIALIZE takes the table of the manifest's
+      digest and admission accepts only that digest. Replayed in Core's
+      harness: every committed journal (candidate 1, 2 and 3) and the live
+      arena's candidate-3 journal (117,600 ticks, 92,132 calls), each to the
+      reference's final event digest.
+- [x] The compiled-in manifest names candidate 3 and the live demo-c3
+      economics (timing 9/8, tiers 5,000 and 20,000 QU, fee profiles 1 and 2,
+      2,400-tick epochs). Its identities are still the synthetic test keys.
+- [x] Registration carries the asset: AdminBindAsset (opcode 103) names the
+      fighter's issuer and asset name, and ownership is read from that asset
+      ([protocol.md](protocol.md) §3). The interim issuer = fighter_id binding
+      of opcode 100 stays only for simulated arenas.
+- [x] The construction epoch in the local build is the pinned release's epoch,
+      232 (`core_harness.py`, `CONSTRUCTION_EPOCH`), so a local TESTNET node
+      constructs QDOJO at start.
+- [x] Procedure and function IDs are the contract's own ABI and are frozen for
+      v1: `Dispatch` is user procedure 1; the queries are functions 1–10
+      ([contracts/qubic/README.md](../contracts/qubic/README.md)). What the
+      network assigns is the contract **index** (below).
+
+Still open:
+
+- [ ] **Release manifest.** Real admin, house, dev and share identities
+      (testnet seeds, §3.3), the testnet `network_id` (§3.5), and timing
+      windows recomputed for the measured tick length (§3.2). Replace
+      `loadDefaultManifest` with these values before any build that leaves
+      this host.
+- [ ] **Contract index.** The next free index in `contract_def.h` is 31
+      today (qubic/core `e3ef766`). The index fixes the contract identity,
+      which becomes the export's `contract_id`. At index 31 or higher QDOJO
+      may call QX (1) and QBAY (12); lower-index contracts cannot call it.
+- [ ] **Fighter NFT procedures (recommended model, [nft.md](nft.md) §5.3).**
+      QDOJO issues each fighter's one-share asset itself (`qpi.issueAsset`,
+      issuer = the contract; no QX fee) and keeps management; then binds it
+      with the 103 shape (issuer = the contract's identity). Still to write,
+      with parity tests against journals carrying `nft` records: the issue
+      procedure, the §3 book (asks, bids, escrow, royalty, the contest lock),
+      `PRE_ACQUIRE_SHARES` accepting QX returns at fee 0 for QDOJO-issued
+      assets only, `PRE_RELEASE_SHARES` refusing pulls, and an owner-invoked
+      exit to QX while the fighter is IDLE (QDOJO pays QX's 100 QU). Without
+      them a testnet run can bind QX-issued assets through 103, at
+      1,000,000,000 QU per issuance even on testnet (one pre-funded seed each).
+- [ ] **Execution-fee reserve.** A contract whose reserve reaches 0 skips
+      BEGIN_TICK/END_TICK and refuses user procedures. QDOJO dirties its
+      1.5 MB state every tick (about 1.4 ms of K12 per tick on this host);
+      decide how Dispatch attachments refill the reserve (`qpi.burn`) before
+      a long run.
+- [ ] Re-run the proof set after any edit: `make qubic-verify`,
+      `make qubic-core-test`, `make qubic-core-syntax` (commands in
+      [contracts/qubic/README.md](../contracts/qubic/README.md#commands)).
+- [ ] Measure on a ticking node: execution fees (README item 3), the per-tick
+      state digest (item 4), epoch-boundary tick succession (item 8).
+
+Mainnet inclusion is a different path, and so is a slot on the public
+testnet run by the Qubic developers ([core contracts doc](https://github.com/qubic/core/blob/main/doc/contracts.md),
+"Development" to "Deployment"; [lifecycle](https://docs.qubic.org/developers/smart-contracts/lifecycle/)):
+
+1. a PR to `qubic/core` `develop` with the `contract_def.h` entry at the next
+   free index, passing `contract-verify`, GoogleTest coverage, a core-dev
+   review of style and dialect, and a multi-node testnet run;
+2. the proposal text with the final source in `qubic/proposal/SmartContracts`;
+3. a computor proposal in epoch N with at least 451 votes and more yes than no;
+4. epoch N+1: the code ships and a Dutch-auction IPO sells 676 shares; the
+   proceeds are burned into QDOJO's execution-fee reserve;
+5. epoch N+2: construction. A failed IPO leaves the contract unusable.
+
+Epochs are one week and end on Wednesday at 12:00 UTC; ticks ran at about
+0.7 s on mainnet in epoch 232.
 
 ### 3.2 Node and network
 
@@ -95,7 +143,7 @@ is out of scope here.
       then point the adapter at the testnet node or
       `https://testnet-rpc.qubic.org` (**UNCONFIRMED** reachability, see §2).
 - [ ] Measure the real tick length. Commit and reveal windows are in ticks
-      (demo-c2: 9 and 8 at 1.5 s per tick); a slower chain needs the windows
+      (demo-c3: 9 and 8 at 1.5 s per tick); a slower chain needs the windows
       recomputed so a planner still gets a few seconds, and the export's
       `deployment.tick_seconds` must carry the measured value.
 
@@ -125,7 +173,7 @@ reuse a seed that holds mainnet QU.
       yours.
 - [ ] On a self-run core-lite testnet every built-in computor seed and any
       custom seed starts with 10B QU ([core-lite](https://github.com/qubic/core-lite)).
-- [ ] Size the funding: stake tiers (5,000 / 20,000 on demo-c2), cup entry
+- [ ] Size the funding: stake tiers (5,000 / 20,000 on demo-c3), cup entry
       fees, and the contract's execution-fee reserve (unknown until item 3 is
       measured).
 
@@ -139,8 +187,9 @@ site and every verifier trust. For testnet:
       stable; the site only shows the read API when the API's `network_id`
       matches the manifest's.
 - [ ] `contract_id`: the contract's identity from its index (§3.1).
-- [ ] `ruleset_digest`, `semantic_version`: unchanged (combat-v1-candidate-2,
-      `231607f8…`); the site shows it as RULES V2.
+- [ ] `ruleset_digest`, `semantic_version`: unchanged from the live arena
+      (combat-v1-candidate-3, `cf19b7cf…`), the ruleset the contract's
+      compiled manifest names.
 - [ ] `timing_profiles`, `tiers`, `fee_profiles`, `match_interval_ticks`,
       `ticks_per_epoch`: as deployed in the contract, recomputed for the real
       tick length (§3.2).
@@ -178,14 +227,17 @@ What exists is the reference contract on `SimChain`. A testnet arena needs:
 ([nft.md](nft.md) §5). A testnet arena is created with `qubic`; today that
 backend is a stub and the live arena refuses to start with it.
 
-- [ ] Pick the realization ([nft.md](nft.md) §5.3, decision 4 in §2):
-      QX assets (proposed for the testnet run; issuance through QX, free on
-      testnet, no royalty or contest lock) or QDOJO-managed assets (the
-      simulated model; needs the proposed opcodes 20–27 in
-      `nft_qubic.QDOJO_PROCEDURES` implemented in `QDOJO.h`).
-- [ ] **MISSING:** the protocol change so AdminRegisterAsset carries the
-      real (issuer, name): the interim issuer = fighter_id, name `QDOJOF`
-      can never be issued, because nobody holds a fighter_id's key.
+- [ ] Pick the realization ([nft.md](nft.md) §5.3, decision 4 in §2).
+      Recommended: QDOJO-issued, QDOJO-managed assets with an exit to QX (the
+      simulated model; needs the NFT procedures of §3.1 in `QDOJO.h`). The
+      fallback is QX assets: issuance costs 1,000,000,000 QU per asset on
+      testnet too, and there is no royalty or contest lock. QBAY records are
+      not assets and QBAY cannot mint on a fresh testnet (its operator is a
+      hard-coded mainnet identity), so do not bind to QBAY.
+- [x] The protocol change so registration carries the real (issuer, name):
+      AdminBindAsset, opcode 103 ([protocol.md](protocol.md) §3). The live
+      arena already registers new fighters with it, naming their simulated
+      NFT's issuer and asset name.
 - [ ] **MISSING:** signing and sending (`qubic.tx.Transaction.sign`,
       `Node.broadcast`, targeting the current tick + ~10), confirmation
       (`Node.tick_transactions`, then re-read the effect, resend when
@@ -237,10 +289,12 @@ backend is a stub and the live arena refuses to start with it.
 
 | Gap | Where | Blocks |
 |---|---|---|
-| Construction epoch, final procedure/function IDs, contract index | `contracts/qubic/QDOJO.h`, qubic/core registration | Deploying the contract |
+| Release manifest (real identities, testnet `network_id`, timing for the measured tick), contract index | `contracts/qubic/QDOJO.h` `loadDefaultManifest`, qubic/core registration | Deploying the contract |
+| NFT procedures in the contract (issue, book, lock, royalty, QX exit and return) | `contracts/qubic/QDOJO.h`, parity journals with `nft` records | QDOJO-managed fighter NFTs (QX-issued assets can bind through opcode 103 meanwhile) |
+| Execution-fee reserve policy | `contracts/qubic/QDOJO.h` | A long run on a ticking node |
 | A testnet node with QDOJO (12–16 GB RAM, or a slot on the public testnet via the Qubic developers) | Infrastructure | Everything on chain |
 | Chain adapter over `qubic.node.Node` | `packages/qdojo/src/qdojo/combat/` | Arena, bots |
 | Exporter and read model from chain | `combat/export.py`, `combat/readmodel.py` | Site data, API |
-| `QDOJOF` issuance and transfers on chain | Contract, `nft_backend: qubic` | Fighter NFTs |
+| Fighter asset issuance and transfers on chain | Contract, `nft_backend: qubic` | Fighter NFTs |
 | A testnet `network_id` value | Manifest | Site/API pairing |
 | Execution-fee and tick-length measurements | Live node | Timing windows, economics |

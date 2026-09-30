@@ -14,10 +14,10 @@ cpp-test:
 	contracts/combat_core/test_combat_core_c2 .
 	g++ -std=c++17 -O2 -Wall -Wextra -Werror -DQDOJO_RULESET=3 -o contracts/combat_core/test_combat_core_c3 contracts/combat_core/test_combat_core.cpp
 	contracts/combat_core/test_combat_core_c3 .
+# The port selects its ruleset at build time: each build replays the journals of its ruleset.
 contract-test:
 	for r in 1 2 3; do printf '#include "combat_contract.h"\n' | g++ -std=c++17 -x c++ -fsyntax-only -Wall -Wextra -Werror -Wconversion -fno-exceptions -fno-rtti -nostdinc++ -DQDOJO_RULESET=$$r -Icontracts/combat_contract - || exit 1; done
-	g++ -std=c++17 -O2 -Wall -Wextra -Werror -o contracts/combat_contract/test_contract contracts/combat_contract/test_contract.cpp
-	contracts/combat_contract/test_contract packages/qdojo/tests/combat/fixtures/contract/*.journal
+	for r in 1 2 3; do g++ -std=c++17 -O2 -Wall -Wextra -Werror -DQDOJO_RULESET=$$r -o contracts/combat_contract/test_contract_c$$r contracts/combat_contract/test_contract.cpp || exit 1; contracts/combat_contract/test_contract_c$$r packages/qdojo/tests/combat/fixtures/contract/*.journal || exit 1; done
 # Qubic Core tooling for contracts/qubic/QDOJO.h (clones and builds in QDOJO_QUBIC_WORK, default /tmp/qdojo-qubic; -j1).
 qubic-verify:
 	python3 contracts/qubic/core_harness.py verify

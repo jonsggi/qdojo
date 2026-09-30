@@ -32,7 +32,7 @@ from . import evaluate as E
 from . import export, invariants, join, store
 from .bot import Bot, Budget, planner_chooser, policy_chooser
 from .chainsim import FeeModel, SimChain, SimQubicClient
-from .codec import Mode, Op
+from .codec import Mode, Op, asset_name_u64
 from .devnet import PROFILES, Devnet, DevnetClient, roles
 from .nft import QDOJO, NFTPolicy, SimFighterNFTs
 from .sim import identity
@@ -406,7 +406,11 @@ class Arena:
             self.w.mint(owner, 10**12)
         c = self.w.contract
         if fid not in c.fighters:
-            self.w.send(admin, Op.ADMIN_REGISTER_ASSET, fighter_id=fid, registry_version=1, house_npc=0)
+            # The registry names the fighter's NFT (issuer, asset name), as a
+            # deployed contract needs it to read ownership (docs/nft.md §5.3).
+            tok = self.w.nft.tokens[fid]
+            self.w.send(admin, Op.ADMIN_BIND_ASSET, fighter_id=fid, registry_version=1, house_npc=0,
+                        asset_issuer=tok.issuer, asset_name=asset_name_u64(tok.name))
             self.w.send(owner, Op.REGISTER_FIGHTER, fighter_id=fid, registry_version=1)
         return fid
 

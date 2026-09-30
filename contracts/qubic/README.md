@@ -8,17 +8,17 @@ as this host allows.
 
 | File | Contents |
 |---|---|
-| `QDOJO.h` | The contract, in Core's restricted C++ dialect. It has one `Dispatch` user procedure taking `Array<uint8,512>`, `INITIALIZE`, `BEGIN_TICK`, `END_TICK`, and ten bounded query functions. SHA-256 is implemented inside the contract. |
-| `test_qdojo_core.cpp` | A GoogleTest for Core's contract test harness (`test/contract_testing.h`). It replays every reference journal through the QPI-built contract. Install it as `test/contract_qdojo.cpp`. |
+| `QDOJO.h` | The contract, in Core's restricted C++ dialect. It has one `Dispatch` user procedure taking `Array<uint8,512>`, `INITIALIZE`, `BEGIN_TICK`, `END_TICK`, and ten bounded query functions. SHA-256 is implemented inside the contract. The combat-v1 candidates 1, 2 and 3 are compiled-in tables keyed by digest. |
+| `test_qdojo_core.cpp` | A GoogleTest for Core's contract test harness (`test/contract_testing.h`). It replays every reference journal through the QPI-built contract (and any journal named in `QDOJO_EXTRA_JOURNALS`). Install it as `test/contract_qdojo.cpp`. |
 | `core_harness.py` | Reproduces every check below from pinned upstream commits: `verify`, `test`, `core-syntax`, `all`. |
 
 Summary. Commit and tool versions are in [Pins](#pins).
 
 | Check | Tool | Result |
 |---|---|---|
-| Dialect compliance | qubic/contract-verify, the SHA that Core's CI pins | **PASSED**. Six injected violations are all rejected, so the tool really parses the whole file. |
+| Dialect compliance | qubic/contract-verify, the SHA that Core's CI pins | **PASSED** (2026-09-30). Six injected violations are all rejected, so the tool really parses the whole file. |
 | Compiles inside Core's test harness | core-lite (the Linux/clang port of Core), clang 18 | **Yes.** QDOJO.h has no errors and 18 warnings, all `-Wunused-parameter` from the QPI macros. |
-| Journal replay through the real contract | core-lite GoogleTest `qdojo_core_tests` | **All 4 journals end at the reference's final event digest.** The call results and the event digest also match the C++ port after every step. |
+| Journal replay through the real contract | core-lite GoogleTest `qdojo_core_tests`, `_c2`, `_c3` | **All 8 committed journals (candidates 1, 2 and 3) and the live arena's candidate-3 journal (117,600 ticks, 92,132 calls) end at the reference's final event digest.** On each journal the call results and the event digest also match the C++ port after every step, with the port built for that journal's ruleset. |
 | Ledger and QU conservation after every step | the same test, through the `GetLedger` query and Core's spectrum | balance == liabilities == the contract's real QU balance; every fault counter is 0 |
 | Compiles against pinned qubic/core | clang syntax-only compile of the same test | **0 errors in QDOJO.h or the test.** Core's own headers produce 324 errors, because Core's test build is MSVC-only. |
 | Local testnet node with QDOJO | core-lite `TESTNET` + `TESTNET_LITE_RAM` | **Built and launched, but could not run.** The node reports `Total RAM required 12 GB`, and under a 3 GB cap it was OOM-killed about 10 s after launch. See [Local testnet](#local-testnet-core-lite-step-4). |
@@ -94,30 +94,70 @@ follows.
   long long)` wins overload resolution in any translation unit that includes
   `<cstdlib>`, and the test harness does.
 
+## Drift against the reference (audit of 2026-09-30)
+
+The reference is `packages/qdojo/src/qdojo/combat/contract.py` with
+`engine.py`, `ledger.py`, `matchmaking.py`, `series.py`, `rating.py` and
+`codec.py`. The portable C++ (`contracts/combat_core`, `contracts/combat_contract`)
+is proven equal to it by `make cpp-test` and `make contract-test`; QDOJO.h
+transliterates `combat_contract.h`. Commit `1064e711` wrote QDOJO.h; `f8a734ed`
+mirrored the pair limits and the expired-offer sweep. This is what had drifted
+since, and what was done about it.
+
+| Area | Reference today | QDOJO.h before | Now | On chain? |
+|---|---|---|---|---|
+| Engine: rulesets | Candidates 1, 2, 3; the live arena runs candidate 3 (`cf19b7cf…`: 9 actions, LAST_STAND 7, FEINT 8, HP 120, stamina 48, guard-break opening 2, stand bonus) | Candidate 1 only, hard-coded | **Ported.** Candidates 1–3 as tables keyed by digest; INITIALIZE takes the manifest digest's table (unknown digest: `initOk = 0`) | Yes |
+| Engine: reason bits 15–17 | Descriptive trace fields; no rule reads them | Not computed (bits 0–14 neither) | Constants defined, not computed: the contract publishes plans and end states (REVEALED, ROUND_RESOLVED) and readers rebuild the trace | No (reader-side) |
+| Plan decoding | `Plan.of` accepts ids 0–5, 7, 8 under every ruleset; the ruleset's legality is BAD_PLAN after the commitment check | Rejected ids > 5 at decode: a reveal with LAST_STAND and a wrong salt got BAD_PLAN instead of BAD_COMMITMENT (the C++ port too) | **Fixed** in both C++ files; covered by `scenarios.journal` | Yes |
+| Pair limits, expired-offer sweep | Manifest fields; expired ranked offers closed every matching tick | Already mirrored (`f8a734ed`) | — | Yes |
+| Fees and tiers | Up to 4 fee profiles (rake, house/dev/share split) and 8 tiers from the manifest; live: tiers 5,000/20,000, profiles 5% and 10% | Same logic; compiled manifest was the dev fixture (one 1,000 QU tier, one profile, timing 24/12, 10,000-tick epochs) | **Compiled manifest = the live demo-c3 economics** (below). The logic was already equal | Values are the release manifest's |
+| Duel stake multiples, cup entry 2×, sponsorship 0.1× and its withholding rule, market activity | Arena policy (`live.EVENTS`), carried out by the admin and the bots | — | Not ported | No (operator policy) |
+| Cups, duels, series | Bracket, byes, check-in, replay, postponement, prizes, aborts; SINGLE/BO3/BO5 | Equal (`scenarios.journal`, the fuzz journals) | — | Yes |
+| Seasons | Stats, ratings, standings with the specified thresholds (12/4/3/3) | Equal (`GetStandings`) | — | Yes |
+| Scaled qualification | `Qualification(scale=True)` for the demo profiles: a query-side rule outside the manifest | Not present | Not ported. `GetStandings` keeps the specified thresholds; the export applies the demo rule | No (query-side; port it only if it becomes the specified rule) |
+| Belts, titles | Display only (`rating.belt_info`, `titles.py`) | Not present | Left out | No |
+| Fighter asset binding | Ownership by fighter id from the NFT ledger | issuer = fighter_id, name `QDOJOF`: an asset nobody can issue | **Fixed.** AdminBindAsset (opcode 103) names issuer and asset name; `ownerOf` reads that asset. Opcode 100 keeps the interim binding for simulated arenas | Yes |
+| NFT market and issuance | `nft.py`: QDOJO-managed one-share assets, asks, escrowed bids, fees, royalty, contest lock, deferred settlement, art anchor | None | Not ported (see [What remains](#what-remains), item 5) | Yes, under the recommended model |
+| Procedure and function IDs | — | "Placeholders" | Frozen as the v1 ABI: `Dispatch` 1, queries 1–10. The network assigns the contract index, not these | Yes |
+| Construction epoch | — | 240 in the harness registration; testnet at 232 | 232 (`core_harness.py` `CONSTRUCTION_EPOCH`) | Deployment value |
+| Execution fees | `chainsim.FeeModel` simulates them; the arena funds a reserve | None | Not ported (the real reserve is Core's) | Policy open |
+
 ## Deviations the chain forces (behaviour otherwise identical)
 
 - **The manifest is compiled in.**
-  - `INITIALIZE` loads a TEST PROFILE (`loadDefaultManifest`). This is the
-    fuzz journal's header: its synthetic test identities, and
-    `contractId = SELF`. It is not a release manifest.
-  - The pair limits `pairStartsPerEpoch` and `pairRematchTicks` are manifest
-    fields. The compiled profile uses the specified 2 and 120
-    (`QDOJO_PAIR_STARTS_PER_EPOCH`, `QDOJO_PAIR_REMATCH_TICKS`). The harness
-    loads them from each journal header, so `demo-profile.journal` (6 and 60)
-    also replays.
+  - `INITIALIZE` loads a TEST PROFILE (`loadDefaultManifest`): the fuzz
+    journal's synthetic test identities, `contractId = SELF`, and the live
+    arena's demo-c3 economics: ruleset candidate 3
+    (`QDOJO_MANIFEST_RULESET`), timing 9/8, tiers 5,000 and 20,000 QU, fee
+    profiles 1 (5% rake) and 2 (10%), 2,400-tick epochs from the construction
+    tick, four-epoch seasons, a 300-tick closeout, 3 rated starts per pair per
+    epoch and a 60-tick rematch gap. It is not a release manifest: the
+    identities and `network_id` must be replaced.
   - A test may write `StateData::m` and set `manifestLoaded` before
     `INITIALIZE`. On chain the state arrives zeroed, so the compiled profile
-    is always used.
-  - The checks in `init` are unchanged. A failing manifest leaves
-    `initOk = 0`. Every entry point is then inert, and `Dispatch` hands the
-    attachment straight back.
+    is always used. The harness loads each journal's header this way, so
+    journals of every ruleset and profile replay in one build.
+  - The checks in `init` are unchanged, plus the ruleset lookup. A failing
+    manifest leaves `initOk = 0`. Every entry point is then inert, and
+    `Dispatch` hands the attachment straight back.
+- **The rulesets are tables keyed by digest.** `rulesetOf` maps the three
+  packaged digests to `StateData::ruleset`; the engine's per-ruleset
+  functions (`hpOf`, `staminaOf`, `openingDamage`, `powerDamage`,
+  `maxOpening`, `isSubmitted`, `baseCost`, `damage`) read it. The portable
+  port selects one ruleset at build time instead (`QDOJO_RULESET`); both are
+  allowed because a deployment only ever admits its manifest's digest. The
+  table costs one state byte and no loop bound; it lets one binary replay every
+  journal.
 - **`Host::owner_of` becomes `ownerOf`.**
-  - It reads the single owner (shares > 0) of the asset whose issuer is
-    `fighter_id` and whose name is `QDOJOF`, through
-    `AssetOwnershipIterator`.
-  - No record, several owners, or a NULL_ID owner means "unavailable".
-  - This is an interim binding. `AdminRegisterAsset` still carries no
-    issuance; that is the protocol gap listed in the port README, item 5.
+  - It reads the single owner (shares > 0) of the fighter's registry asset,
+    the (issuer, name) its AdminBindAsset named, through
+    `AssetOwnershipIterator`. For the legacy AdminRegisterAsset the asset is
+    issuer = `fighter_id`, name `QDOJOF`.
+  - Every managing contract counts, so the owner is found whether QDOJO or QX
+    manages the share.
+  - No registry entry, no record (a burned share), several owners, or a
+    NULL_ID owner means "unavailable" (BAD_STATE). `scenarios.journal` now
+    covers this path: the harness burns the share.
 - **`Host::transfer` becomes `qpi.transfer(...) >= 0`, called only by `Dispatch`.**
   - The reference transfers in exactly two places: the refund payback and
     `Withdraw`. Both pay the invocator, and both are the last action of the
@@ -150,8 +190,10 @@ follows.
   | 9 | `GetStandings` | the current or previous season; 16 rows and 16 playoff ids |
   | 10 | `GetLedger` | balance, the sum of liabilities, faults |
 
-  `Dispatch` is user procedure 1. All IDs are placeholders. The real numbers
-  are deployment values.
+  `Dispatch` is user procedure 1. These IDs are the contract's own ABI and are
+  frozen for v1; a new query takes the next free number. What the network
+  assigns is the contract index (the next free one is 31 at qubic/core
+  `e3ef766`), which fixes the contract identity.
 
 ## Verification: qubic/contract-verify
 
@@ -193,7 +235,7 @@ Each journal record maps to a Core action:
 | Record | What the test does |
 |---|---|
 | `start` | Writes the journal's manifest into the zeroed state, then runs `INITIALIZE` at the start tick. |
-| `owner` | Issues the one-unit `QDOJOF` asset once with the fighter id as issuer, then moves ownership and possession with Core's `transferShareOwnershipAndPossession`. |
+| `owner` | Moves the fighter's one-unit asset with Core's `transferShareOwnershipAndPossession`, issuing it first if needed. The asset is the one the journal's admin frames bind (a pre-scan applies the contract's binding rules): the (issuer, name) of AdminBindAsset (103), or issuer = fighter id, name `QDOJOF` for AdminRegisterAsset (100). `"owner": null` burns the share (a transfer to NULL_ID), so no owner record holds it. |
 | `mint` | `increaseEnergy`. |
 | `call` | The attachment moves from the caller's spectrum entry to the contract, and `Dispatch` runs at `system.tick = t`. |
 | `fail` | While a failing caller's `Dispatch` runs, the contract's QU are parked on another entity. `qpi.transfer` then really fails, for insufficient balance. |
@@ -215,31 +257,51 @@ At the end it checks:
 - that `GetEvents` returns the last events;
 - `GetStandings` for seasons 1 and 2 against the port's `query_standings`.
 
-Result on this host (`qdojo_core_tests`, Release, core-lite 5ad97af, clang 18):
+`core_harness.py test` builds three binaries from the same sources:
+`qdojo_core_tests` (port built for candidate 1), `qdojo_core_tests_c2` and
+`qdojo_core_tests_c3`. QDOJO.h replays every journal in each; the lockstep
+port only follows journals of its own ruleset. The harness runs all tests in
+the first binary, then the `*C2*` and `*C3*` tests in the other two, so every
+journal is replayed both against the reference digest and in lockstep with
+the port.
+
+| Journal | Ruleset | Written by | Covers |
+|---|---|---|---|
+| `scenarios` | 1 | `scripts/combat-contract-scenarios.py` | cups, capacity, strangers; since 2026-09-30 also AdminBindAsset (binds, rejections, a sale, a burned share) and a candidate-1 reveal carrying LAST_STAND |
+| `fuzz-1`, `fuzz-2`, `season`, `demo-profile` | 1 | `scripts/combat-sample-data.py` | random traffic, a bot season, non-default pair limits |
+| `fuzz-c2` | 2 | `scripts/combat-contract-journals.py` | random traffic, 1,000 ticks, power slots |
+| `fuzz-c3` | 3 | same | random traffic, 2,000 ticks, all eight actions (153 LAST_STAND and 145 FEINT reveals), power slots |
+| `season-c3` | 3 | same | NPC bots on the demo-c3 profile, 1,500 ticks (44 LAST_STAND, 69 FEINT) |
+| live arena (not committed) | 3 | `scripts/combat-journal-from-devnet.py ~/.qdojo/combat/arena OUT` | the live arena from tick 1 to 117,601: 92,132 calls, 116,768 events |
+
+Result on this host (2026-09-30, `QDOJO_EXTRA_JOURNALS=<live copy> make qubic-core-test`,
+Release, core-lite 5ad97af, clang 18; `rc=0`):
 
 ```
-[ RUN      ] ContractQdojo.StateAndLocalsSizes
-sizeof(QDOJO::StateData) = 1439280 bytes (1405.5 KiB); MAX_CONTRACT_STATE_SIZE = 1073741824
-  fighters 1024 x 496, assets 2048 x 40, accounts 2048 x 96, events 2048 x 184, pairs 4096 x 40
+sizeof(QDOJO::StateData) = 1521208 bytes (1485.6 KiB); MAX_CONTRACT_STATE_SIZE = 1073741824
+  fighters 1024 x 496, assets 2048 x 80, accounts 2048 x 96, events 2048 x 184, pairs 4096 x 40
   offers 128 x 296, contests 32 x 496, fights 32 x 296, cups 8 x 5976
-locals: Ctx 27576, Dispatch 27624, END_TICK 29112, BEGIN_TICK 27576, INITIALIZE 27576 (limit 32768)
-K12 over 1439280 state bytes: 1425.4 us per digest (this host, 20 reps)
-[ RUN      ] ContractQdojo.InitializeWithCompiledManifest               OK
-[ RUN      ] ContractQdojo.ReplayScenarios
-scenarios.journal: 1912 records, 300 calls, 1534 END_TICKs, 442 events, balance 49609 QU; codes 0x283 2x3 4x4 7x3 10x1 12x2 18x2 19x1 29x1
-    final event digest b803e6c26f5f30c5f9ee5bbb5ffeaf36b3f84b34d9e7668ae29d8142bb6166a0 (reference b803e6c2…6166a0) MATCH
-[ RUN      ] ContractQdojo.ReplayFuzz1
-fuzz-1.journal: 3253 records, 1203 calls, 2000 END_TICKs, 1332 events, balance 81765 QU; codes 0x889 2x86 11x207 18x17 24x4
-    final event digest 8738c597e78ac5fc1704f8ab2c6f4de9ada42ae340947383624b6e99591daaca (reference 8738c597…1daaca) MATCH
-[ RUN      ] ContractQdojo.ReplayFuzz2
-fuzz-2.journal: 3300 records, 1253 calls, 2000 END_TICKs, 1427 events, balance 62662 QU; codes 0x994 2x93 11x145 18x14 24x7
-    final event digest 4cc7979d2b53405752e199996cc7e3a5ed526b5967172ffaa74181f98da26318 (reference 4cc7979d…da26318) MATCH
-[ RUN      ] ContractQdojo.ReplaySeason
-season.journal: 11206 records, 516 calls, 10675 END_TICKs, 901 events, balance 251000 QU; codes 0x516
-    final event digest 20bff91896fe40971aa1c81e98b2d7ce6ad8d58bb201e4e12f5f581c64330f47 (reference 20bff918…64330f47) MATCH
-[  PASSED  ] 6 tests.
-Maximum resident set size: 2.1 GB (Core's test spectrum + universe); build of the test TU: 27 s, 336 MB
+locals: Ctx 27672, Dispatch 27720, END_TICK 29208, BEGIN_TICK 27672, INITIALIZE 27672 (limit 32768)
+scenarios.journal (ruleset 12085c86a61ffd10..., QDOJO table 1, lockstep port on): 1938 records, 312 calls, 1542 END_TICKs, 450 events, balance 51609 QU; codes 0x287 2x3 4x6 7x5 10x1 12x2 18x2 19x1 23x2 24x1 25x1 29x1
+    final event digest dc581744c20ac7f7337c05b6acfbd7f4dfaf0451b244e6fe13d30acf13c4d340 MATCH
+fuzz-1.journal     (table 1, lockstep on)  final event digest 8738c597…1daaca MATCH
+fuzz-2.journal     (table 1, lockstep on)  final event digest 4cc7979d…da26318 MATCH
+season.journal     (table 1, lockstep on)  final event digest 37579348…dcdc19a6f MATCH
+demo-profile.journal (table 1, lockstep on) final event digest 40eac55d…ff519f6 MATCH
+fuzz-c2.journal    (table 2)  1662 records, 623 calls, 707 events   final event digest 835e4a89…be145d8a MATCH
+fuzz-c3.journal    (table 3)  3350 records, 1292 calls, 1466 events final event digest 662b43f7…b140af17 MATCH
+season-c3.journal  (table 3)  2111 records, 596 calls, 946 events   final event digest e11f0f0e…fb256428 MATCH
+live-c3.journal    (table 3)  210398 records, 92132 calls, 117600 END_TICKs, 116768 events; codes 0x73765 7x214 9x6 12x36 13x43 14x18038 18x4 27x26
+    final event digest 9ed25db77d0a54934ee7122c0844995aab0617602ca576226078c5ba09cba65f (reference 9ed25db7…) MATCH
+[  PASSED  ] 11 tests.                                   (qdojo_core_tests)
+fuzz-c2.journal (lockstep port on) MATCH   [  PASSED  ] 1 test.    (qdojo_core_tests_c2)
+fuzz-c3, season-c3, live-c3 (lockstep port on) MATCH   [  PASSED  ] 3 tests.   (qdojo_core_tests_c3)
+test: every journal replayed through QDOJO.h in Core's harness; lockstep with the port for each ruleset
 ```
+
+Full log lines are abbreviated here; the harness prints every digest in full.
+The live journal also replays in the portable port
+(`contracts/combat_contract/test_contract_c3 <copy>`: PASS, same digest).
 
 In the scenarios journal, code 29 is `TRANSFER_FAILED`. That result is
 Core's real `qpi.transfer` failing: a withdrawal fails, then is retried.
@@ -247,14 +309,17 @@ Core's real `qpi.transfer` failing: a withdrawal fails, then is retried.
 The failed direct payback in the same journal also goes through Core. The
 `REFUND_CREDIT` event and the digest match.
 
-`core_harness.py all --jobs 1` reproduced every result in this section from fresh
-shallow clones of the pinned commits: the verifier, the four digest matches, and
-the pinned-core syntax check.
+The earlier run (2026-09-24, candidate 1 only) reproduced these results from
+fresh shallow clones with `core_harness.py all --jobs 1`. On 2026-09-30 the
+three targets were run one by one (`make qubic-verify`, `make qubic-core-test`,
+`make qubic-core-syntax`), from a fresh core-lite and core checkout.
 
 Time spent in the contract, measured around Core's call wrappers on this host
 (AVX-512, Release, one run, with other jobs on the machine). The averages are
-stable between runs. The maxima are noisy: in the harness rerun, the
-scenarios Dispatch max was 753 µs.
+stable between runs. The maxima are noisy. This table is from the
+candidate-1 run of 2026-09-24; on 2026-09-30, with a parallel build on the
+two CPUs, the averages were 9–34 µs per Dispatch and 1.3–9 µs per END_TICK
+over all journals (the live journal: 14.3 µs and 6.6 µs).
 
 | Journal | Dispatch avg | Dispatch max | END_TICK avg | END_TICK max |
 |---|---:|---:|---:|---:|
@@ -264,8 +329,9 @@ scenarios Dispatch max was 753 µs.
 | season | 10.0 µs | 44 µs | 1.3 µs | 2033 µs |
 
 Core then rehashes the dirty state with K12, and QDOJO dirties it every tick.
-This takes about **1.4 ms per tick** for the 1.44 MB state, which is about
-1000× the average END_TICK. That confirms the port README's item 4: the state
+This takes about **1.4 ms per tick** for the 1.44 MB state (2026-09-24,
+idle host; 3.2 ms measured on 2026-09-30 for 1.52 MB with a build running
+beside it), which is about 1000× the average END_TICK. That confirms the port README's item 4: the state
 digest is the dominant recurring cost.
 
 ### Negative controls for the replay
@@ -277,7 +343,10 @@ the replay catches it.
 |---|---|
 | JAB vs RECOVER deals 13 damage instead of 12 | **Detected.** fuzz-1 diverges from the port at tick 52. The first diverging event is `ROUND_RESOLVED`, the next call's result differs, and the final digest mismatches. |
 | `scheduleLevel` does not store the cup before `fightsInUse` | **Not detected**, and it cannot be. When a level is scheduled, the stale state copy holds the same reservation (0) and the same counted status, because every pairing has decremented `reserved` before `advanceLevel`. The store is kept as a safe aliasing rule. |
-| `ownerOf` treats a NULL_ID owner as available | **Not detected.** No committed journal contains an `owner: null` record, so the "owner unavailable" path (`BAD_STATE` in `authorize`) is **not covered by any journal**, in the port or here. |
+| `ownerOf` treats a NULL_ID owner as available | **Not detected** (2026-09-24): no journal had an `owner: null` record. Since 2026-09-30 `scenarios.journal` burns a bound fighter's share and expects BAD_STATE, so the path is covered. |
+| (2026-09-30) FEINT earns opening 1 instead of the guard-break 2 | **Detected.** fuzz-c3 and season-c3 end at other digests. |
+| (2026-09-30) plan decoding rejects action ids 7 and 8 again | **Detected by the lockstep only.** At tick 1522 of `scenarios` the contract answers BAD_PLAN at decode where the port answers BAD_COMMITMENT (a wrong salt) and then BAD_PLAN (op 8). Result codes are not in the event digest, so the final digest still matches; the call-result comparison catches it. |
+| (2026-09-30) `ownerOf` reads the interim asset (issuer = fighter_id, `QDOJOF`) instead of the bound one | **Detected.** At tick 1525 of `scenarios` a fighter bound by AdminBindAsset cannot register (NOT_OWNER where the port says OK); the digest mismatches. |
 
 ## Pinned qubic/core (e3ef766): what compiles
 
@@ -308,8 +377,8 @@ of warning; for example, Nostromo.h has 87 and Pulse.h has 65.
 
 | | Size |
 |---|---:|
-| `sizeof(QDOJO::StateData)` | 1,439,280 bytes (1405.5 KiB) |
-| port's `sizeof(State)` | 1,403,296 bytes |
+| `sizeof(QDOJO::StateData)` | 1,521,208 bytes (1485.6 KiB); 1,439,280 before the asset (issuer, name) was added to each registry entry |
+| port's `sizeof(State)` | 1,485,224 bytes |
 
 The difference has two causes:
 
@@ -323,7 +392,7 @@ The difference has two causes:
 | events | 2048 × 184 |
 | accounts | 2048 × 96 |
 | pairs | 4096 × 40 |
-| assets | 2048 × 40 |
+| assets | 2048 × 80 |
 | cups | 8 × 5976 |
 | offers | 128 × 296 |
 | contests | 32 × 496 |
@@ -353,7 +422,7 @@ The harness does the following:
    1. Fetches core-lite at `5ad97af`.
    2. Registers QDOJO in `src/contract_core/contract_def.h`, after QTREAT,
       keeping CRLF line endings, with the entry
-      `{"QDOJO", 240, 10000, sizeof(QDOJO::StateData)}` and
+      `{"QDOJO", 232, 10000, sizeof(QDOJO::StateData)}` (`CONSTRUCTION_EPOCH`) and
       `REGISTER_CONTRACT_FUNCTIONS_AND_PROCEDURES(QDOJO)`.
    3. Appends a `qdojo_core_tests` target to `test/CMakeLists.txt`. Its
       sources are `contract_qdojo.cpp`, `common_def.cpp` (Core globals) and
@@ -389,17 +458,35 @@ a real Core build"](../combat_contract/README.md#what-remains-before-a-real-core
 1. **Transliterate, verify, test in Core's harness.** Done. Core's own
    Windows/MSVC CI build and a multi-node testnet were not run.
 2. **Nesting depth, locals under 32 KiB.** Done. No `CALL`s. Locals peak at
-   29,112 bytes (`END_TICK`). That is within 3.6 KiB of the limit, so adding
-   state to `Ctx` needs care.
+   29,208 bytes (`END_TICK`). That is within 3.5 KiB of the limit, so adding
+   state to `Ctx` needs care; the NFT procedures below will need their own
+   scratch budget.
 3. **SHA-256 cost.** The wall time is measured above. The execution-fee model
    was not measured; it needs a node that charges fees.
 4. **State digest cost.** Measured: about 1.4 ms K12 per tick, every tick.
    The mitigations in that list are still open:
    - smaller capacities or `EXPAND`;
    - a heartbeat that does not dirty state every tick.
-5. **Asset ownership.** The interim binding is issuer = fighter_id, name
-   `QDOJOF`. The descriptor still lacks the issuance. The NULL_ID
-   ("unavailable") path is untested by the journals.
+5. **Asset ownership.** Done for the binding: AdminBindAsset (103) carries
+   (issuer, name) and `ownerOf` reads that asset; the "unavailable" path is
+   covered. Still open is the recommended NFT model, in which QDOJO issues and
+   manages the assets itself (docs/nft.md §5.3; round-3 research against
+   qubic/core `e3ef766`):
+   - an issue procedure: `qpi.issueAsset(name, SELF, 0, 1, 0)` (issuer = the
+     contract; no QX fee), then `qpi.transferShareOwnershipAndPossession` to
+     the owner, and the binding in the 103 shape with issuer = the contract's
+     identity;
+   - the market of `nft.py` §3: asks, escrowed bids, fees, royalty, the
+     contest lock and deferred settlement, with parity journals that carry
+     `nft` records;
+   - `PRE_ACQUIRE_SHARES` accepting assets QX releases back at fee 0, for
+     QDOJO-issued assets only; `PRE_RELEASE_SHARES` refusing every pull;
+   - an owner-invoked exit to QX (`qpi.releaseShares` to index 1, offered fee
+     ≥ 100 QU) only while the fighter is IDLE;
+   - the frozen-art anchor (bare CIDv1 references, the manifest root on chain).
+
+   Meanwhile a QX-issued asset binds through 103 as it is (1,000,000,000 QU
+   per issuance, also on testnet).
 6. **Transfer semantics.**
    - Failure is a negative return value with no mutation (read in Core's
      source and exercised by the test).
@@ -407,7 +494,8 @@ a real Core build"](../combat_contract/README.md#what-remains-before-a-real-core
    - Which real recipients can fail on mainnet, other than through
      insufficient balance, is still open. The test induces failure through
      the balance.
-7. **Procedure and function IDs.** Still placeholders.
+7. **Procedure and function IDs.** Frozen as the v1 ABI (`Dispatch` 1,
+   queries 1–10). The contract index is assigned at registration.
 8. **Tick successor across an epoch boundary.** Not tested. The harness never
    runs `BEGIN_EPOCH`/`END_EPOCH`, and no seamless epoch transition happens.
 9. **NOT_DIRECT.** Not implemented, because semantics are kept identical.
@@ -480,9 +568,17 @@ build reports 12 GB.
 A run with a larger cap was not attempted, because it would starve the
 running validation campaign.
 
-**QDOJO would not have run anyway.** QDOJO is registered with construction
-epoch 240, and the testnet starts at `EPOCH 232`. So even a node with enough
-RAM would not construct it this epoch. A real testnet run needs:
+**Construction epoch.** That run registered QDOJO with construction epoch
+240 while the testnet starts at `EPOCH 232`, so even a node with enough RAM
+would not have constructed it. Since 2026-09-30 the harness registers it at
+232. What a real local testnet run still needs:
 
-- the construction epoch set to the testnet epoch;
-- a machine with at least 12 GB free.
+- a machine with at least 12 GB free (core-lite's README says 16 GB);
+- the node built as above from a checkout the harness has registered
+  (`python3 contracts/qubic/core_harness.py test --work DIR` registers QDOJO
+  in `DIR/core-lite`), then `Qubic --node-mode 3 --ticking-delay 1000` under
+  a memory cap, with `PATH` emptied;
+- a release-shaped manifest in `loadDefaultManifest` (real identities, the
+  testnet `network_id`), and seeds for the admin and the bots
+  (docs/testnet.md §3.3), because the compiled profile's admin is a synthetic
+  test key with no seed.

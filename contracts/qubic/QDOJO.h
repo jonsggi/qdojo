@@ -28,8 +28,12 @@
 // Deviations forced by the chain, not by the reference (see README.md):
 //   - the manifest is compiled in (QDOJO_DEFAULT_*); a test may preload
 //     StateData::m and set manifestLoaded before INITIALIZE;
-//   - a fighter's registry asset is (issuer = fighter_id, name "QDOJOF"),
-//     because AdminRegisterAsset carries no issuance (protocol gap);
+//   - the combat-v1 rulesets are compiled-in tables keyed by digest
+//     (candidates 1, 2 and 3); INITIALIZE picks the table of the manifest's
+//     digest, and admission accepts only that digest;
+//   - a fighter's registry asset is the (issuer, name) that AdminBindAsset
+//     (opcode 103) names; the legacy AdminRegisterAsset (100) binds the
+//     interim (issuer = fighter_id, name "QDOJOF") that nobody can issue;
 //   - a refund payback or a withdrawal is a qpi.transfer made by Dispatch
 //     itself; a negative return is the "transfer failed" path.
 
@@ -138,6 +142,7 @@ constexpr uint16 QDOJO_OP_DUEL_CANCEL = 14;
 constexpr uint16 QDOJO_OP_ADMIN_REGISTER_ASSET = 100;
 constexpr uint16 QDOJO_OP_ADMIN_CREATE_CUP = 101;
 constexpr uint16 QDOJO_OP_ADMIN_RETIRE_RULESET = 102;
+constexpr uint16 QDOJO_OP_ADMIN_BIND_ASSET = 103;
 
 // Event types (contract.py EVENT_TYPES)
 constexpr uint16 QDOJO_EV_SERVICE_GAP = 1;
@@ -218,13 +223,23 @@ constexpr uint8 QDOJO_AB_EXPIRED = 2;
 constexpr uint8 QDOJO_AB_CAPACITY = 3;
 constexpr uint8 QDOJO_AB_NO_CHAMPION = 4;
 
-// ---- combat-v1 engine constants (combat_core.h, docs/combat-v1.json) ----
+// ---- combat-v1 engine constants (combat_core.h) ----
+// Every packaged ruleset is compiled in as a table keyed by digest
+// (QDOJO_RS_C1..C3; see rulesetOf and the per-ruleset functions in the engine
+// section):
+//   1 = docs/combat-v1.json              combat-v1-candidate-1  12085c86...
+//   2 = docs/combat-v1-candidate-2.json  combat-v1-candidate-2  231607f8...
+//   3 = docs/combat-v1-candidate-3.json  combat-v1-candidate-3  cf19b7cf...
+// A deployment serves exactly its manifest's digest. The values shared by all
+// three tables are the constants below.
+constexpr uint8 QDOJO_RS_NONE = 0;
+constexpr uint8 QDOJO_RS_C1 = 1;
+constexpr uint8 QDOJO_RS_C2 = 2;
+constexpr uint8 QDOJO_RS_C3 = 3;
+// The ruleset the compiled-in manifest names (loadDefaultManifest).
+constexpr uint8 QDOJO_MANIFEST_RULESET = QDOJO_RS_C3;
 constexpr uint8 QDOJO_ROUNDS = 3;
 constexpr uint8 QDOJO_BEATS_PER_ROUND = 6;
-constexpr uint16 QDOJO_INITIAL_HP = 100;
-constexpr uint16 QDOJO_INITIAL_STAMINA = 60;
-constexpr uint16 QDOJO_LIMIT_HP = 100;
-constexpr uint16 QDOJO_LIMIT_STAMINA = 60;
 constexpr uint8 QDOJO_LIMIT_GUARD_STREAK = 3;
 constexpr uint16 QDOJO_BLOCK_STREAK_COST = 3;
 constexpr uint16 QDOJO_BLOCK_STRAIN = 6;
@@ -233,17 +248,41 @@ constexpr uint16 QDOJO_RECOVER_UNHIT = 18;
 constexpr uint16 QDOJO_RECOVER_HIT = 6;
 constexpr uint16 QDOJO_EXHAUSTED_RECOVERY = 6;
 constexpr uint16 QDOJO_BREAK_RECOVERY = 10;
-constexpr uint16 QDOJO_OPENING_DAMAGE = 4;
-constexpr uint16 QDOJO_POWER_DAMAGE = 4;
 constexpr uint16 QDOJO_POWER_COST = 4;
+constexpr uint16 QDOJO_STAND_PER_HP = 1;          // candidate 3: LAST STAND bonus per HP behind
+constexpr uint16 QDOJO_STAND_CAP = 16;            // candidate 3: LAST STAND bonus cap
 constexpr uint8 QDOJO_JAB = 0;
 constexpr uint8 QDOJO_KICK = 1;
 constexpr uint8 QDOJO_BLOCK = 2;
 constexpr uint8 QDOJO_DUCK = 3;
 constexpr uint8 QDOJO_THROW = 4;
 constexpr uint8 QDOJO_RECOVER = 5;
-constexpr uint8 QDOJO_EXHAUSTED = 6;
-constexpr uint8 QDOJO_SUBMITTED_ACTION_COUNT = 6;
+constexpr uint8 QDOJO_EXHAUSTED = 6;               // internal only; never in a submitted plan
+constexpr uint8 QDOJO_LAST_STAND = 7;              // candidate 3
+constexpr uint8 QDOJO_FEINT = 8;                   // candidate 3
+constexpr uint8 QDOJO_ACTION_COUNT = 9;
+// Reason bits (combat_core.h Reason; stable, descriptive only). The contract
+// publishes each round's end state and both plans (ROUND_RESOLVED, REVEALED);
+// no rule reads a reason, so the contract does not compute them. Readers
+// rebuild the per-beat trace, reasons included, from those events.
+constexpr uint32 QDOJO_R_HIT = 1U << 0;
+constexpr uint32 QDOJO_R_BLOCKED = 1U << 1;
+constexpr uint32 QDOJO_R_EVADED = 1U << 2;
+constexpr uint32 QDOJO_R_THROW_INTERRUPTED = 1U << 3;
+constexpr uint32 QDOJO_R_THROW_CLASH = 1U << 4;
+constexpr uint32 QDOJO_R_INSUFFICIENT_STAMINA = 1U << 5;
+constexpr uint32 QDOJO_R_RECOVERY_PUNISHED = 1U << 6;
+constexpr uint32 QDOJO_R_GUARD_STRAIN = 1U << 7;
+constexpr uint32 QDOJO_R_OPENING_EARNED = 1U << 8;
+constexpr uint32 QDOJO_R_OPENING_USED = 1U << 9;
+constexpr uint32 QDOJO_R_OPENING_EXPIRED = 1U << 10;
+constexpr uint32 QDOJO_R_POWER_USED = 1U << 11;
+constexpr uint32 QDOJO_R_POWER_WASTED = 1U << 12;
+constexpr uint32 QDOJO_R_KO = 1U << 13;
+constexpr uint32 QDOJO_R_DOUBLE_KO = 1U << 14;
+constexpr uint32 QDOJO_R_STAND_BONUS = 1U << 15;   // candidate 3
+constexpr uint32 QDOJO_R_GUARD_BROKEN = 1U << 16;  // candidate 3
+constexpr uint32 QDOJO_R_FEINT_BAITED = 1U << 17;  // candidate 3
 constexpr uint8 QDOJO_NO_POWER_SLOT = 255;
 constexpr uint8 QDOJO_OUTCOME_NONE = 0;
 constexpr uint8 QDOJO_OUTCOME_KO = 1;
@@ -266,10 +305,10 @@ constexpr uint8 QDOJO_MAGIC_1 = 0x44;
 constexpr uint8 QDOJO_MAGIC_2 = 0x43;
 constexpr uint8 QDOJO_MAGIC_3 = 0x31;
 
-// The registry asset behind a fighter: issuer = fighter_id, this asset name
-// ("QDOJOF", little-endian), one indivisible unit. Interim binding until the
-// AdminRegisterAsset descriptor carries the issuance (protocol gap).
-constexpr uint64 QDOJO_FIGHTER_ASSET_NAME = 0x464f4a4f4451ULL;
+// The legacy AdminRegisterAsset (100) binds issuer = fighter_id with this name
+// ("QDOJOF", little-endian; codec.LEGACY_ASSET_NAME). AdminBindAsset (103)
+// names the real asset.
+constexpr uint64 QDOJO_LEGACY_ASSET_NAME = 0x464f4a4f4451ULL;
 
 // ---- event-body ASCII strings (contract.py _event_body tag 2) ------------------
 constexpr uint8 QDOJO_STR_OPEN = 1;  // OPEN
@@ -324,11 +363,19 @@ constexpr uint64 QDOJO_GENESIS_1 = 0x2bf11b1d547c1e7aULL;
 constexpr uint64 QDOJO_GENESIS_2 = 0x6c5e7186ccbff0a4ULL;
 constexpr uint64 QDOJO_GENESIS_3 = 0x140aaceb1529c72dULL;
 
-// qdojo_combat::RULESET_DIGEST (combat_core.h) as four LE words
-constexpr uint64 QDOJO_RULESET_0 = 0x10fd1fa6865c0812ULL;
-constexpr uint64 QDOJO_RULESET_1 = 0x22d5cb0a69b63064ULL;
-constexpr uint64 QDOJO_RULESET_2 = 0x582480ed904fa9c5ULL;
-constexpr uint64 QDOJO_RULESET_3 = 0x2c84e49f93f41758ULL;
+// Ruleset digests (combat_core.h CANDIDATE_n.digest) as four LE words
+constexpr uint64 QDOJO_C1_DIGEST_0 = 0x10fd1fa6865c0812ULL;
+constexpr uint64 QDOJO_C1_DIGEST_1 = 0x22d5cb0a69b63064ULL;
+constexpr uint64 QDOJO_C1_DIGEST_2 = 0x582480ed904fa9c5ULL;
+constexpr uint64 QDOJO_C1_DIGEST_3 = 0x2c84e49f93f41758ULL;
+constexpr uint64 QDOJO_C2_DIGEST_0 = 0x47371523f8071623ULL;
+constexpr uint64 QDOJO_C2_DIGEST_1 = 0xacc17659fd22c9f4ULL;
+constexpr uint64 QDOJO_C2_DIGEST_2 = 0xea395acd42256206ULL;
+constexpr uint64 QDOJO_C2_DIGEST_3 = 0x748b6b884d8788b0ULL;
+constexpr uint64 QDOJO_C3_DIGEST_0 = 0xddcb8ceecfb719cfULL;
+constexpr uint64 QDOJO_C3_DIGEST_1 = 0x27832f1331bf3b2aULL;
+constexpr uint64 QDOJO_C3_DIGEST_2 = 0x2875ca41533ab6eaULL;
+constexpr uint64 QDOJO_C3_DIGEST_3 = 0xf41bc0323c3582d6ULL;
 
 struct QDOJO2
 {
@@ -441,6 +488,8 @@ struct QDOJO : public ContractBase
         uint32 registryVersion;
         uint8 houseNpc;
         uint8 used;
+        id issuer;                  // the fighter's one-unit Qubic asset: issuer...
+        uint64 assetName;           // ...and name (first character in the low byte)
     };
 
     struct Account
@@ -692,6 +741,7 @@ struct QDOJO : public ContractBase
         Manifest m;
         uint8 manifestLoaded;       // set by a test that preloads m before INITIALIZE
         uint8 initOk;               // the manifest passed init's checks
+        uint8 ruleset;              // QDOJO_RS_C1..C3: the table of m.rulesetDigest
         // ledger
         sint64 balance;
         sint64 paidOut;
@@ -1463,13 +1513,21 @@ struct QDOJO : public ContractBase
     }
 
     // =========================================================== host: asset ownership
-    // Host::owner_of: the single owner of the fighter's one-unit registry asset
-    // (issuer = fighter_id, name QDOJO_FIGHTER_ASSET_NAME). No record, several
-    // owners or a NULL_ID owner mean "unavailable"; the contract never guesses.
-    static bit ownerOf(Ctx& c, const id& fid, id& out)
+    // Host::owner_of: the single owner (shares > 0) of the fighter's registry
+    // asset, the (issuer, name) its AdminBindAsset named (or, for the legacy
+    // AdminRegisterAsset, issuer = fighter_id and name QDOJO_LEGACY_ASSET_NAME).
+    // Every managing contract counts: QDOJO-managed and QX-managed shares alike.
+    // No registry entry, no record, several owners or a NULL_ID owner mean
+    // "unavailable"; the contract never guesses.
+    static bit ownerOf(const StateData& s, Ctx& c, const id& fid, id& out)
     {
-        c.own_asset.issuer = fid;
-        c.own_asset.assetName = QDOJO_FIGHTER_ASSET_NAME;
+        c.own_a = assetIndex(s, c, fid);
+        if (c.own_a < 0)
+        {
+            return false;
+        }
+        c.own_asset.issuer = s.assets.get(c.own_a).issuer;
+        c.own_asset.assetName = s.assets.get(c.own_a).assetName;
         c.own_count = 0;
         c.own_owner = NULL_ID;
         c.own_iter.begin(c.own_asset);
@@ -1710,7 +1768,7 @@ struct QDOJO : public ContractBase
             {
                 return false;
             }
-            return ownerOf(c, c.el_fid, c.el_owner) && c.el_owner == who;
+            return ownerOf(s, c, c.el_fid, c.el_owner) && c.el_owner == who;
         }
         return false;
     }
@@ -1752,7 +1810,7 @@ struct QDOJO : public ContractBase
     // =========================================================== authority
     static void authorize(const StateData& s, Ctx& c, uint32 fi, const id& inv, uint32 authVersion, Res& r)
     {
-        if (!ownerOf(c, s.fighters.get(fi).fighterId, c.au_owner))
+        if (!ownerOf(s, c, s.fighters.get(fi).fighterId, c.au_owner))
         {
             setRej(r, QDOJO_BAD_STATE);
             return;
@@ -1861,37 +1919,111 @@ struct QDOJO : public ContractBase
     }
 
     // =========================================================== combat-v1 engine (combat_core.h)
-    static bit validFighter(const EFighter& f)
+    // The ruleset tables, keyed by digest. rs is StateData::ruleset.
+    static uint8 rulesetOf(const id& digest)
     {
-        return f.hp <= QDOJO_LIMIT_HP && f.stamina <= QDOJO_LIMIT_STAMINA && f.opening <= 1
+        if (digest == id(QDOJO_C1_DIGEST_0, QDOJO_C1_DIGEST_1, QDOJO_C1_DIGEST_2, QDOJO_C1_DIGEST_3))
+        {
+            return QDOJO_RS_C1;
+        }
+        if (digest == id(QDOJO_C2_DIGEST_0, QDOJO_C2_DIGEST_1, QDOJO_C2_DIGEST_2, QDOJO_C2_DIGEST_3))
+        {
+            return QDOJO_RS_C2;
+        }
+        if (digest == id(QDOJO_C3_DIGEST_0, QDOJO_C3_DIGEST_1, QDOJO_C3_DIGEST_2, QDOJO_C3_DIGEST_3))
+        {
+            return QDOJO_RS_C3;
+        }
+        return QDOJO_RS_NONE;
+    }
+
+    static id rulesetDigestOf(uint8 rs)
+    {
+        if (rs == QDOJO_RS_C1)
+        {
+            return id(QDOJO_C1_DIGEST_0, QDOJO_C1_DIGEST_1, QDOJO_C1_DIGEST_2, QDOJO_C1_DIGEST_3);
+        }
+        if (rs == QDOJO_RS_C2)
+        {
+            return id(QDOJO_C2_DIGEST_0, QDOJO_C2_DIGEST_1, QDOJO_C2_DIGEST_2, QDOJO_C2_DIGEST_3);
+        }
+        return id(QDOJO_C3_DIGEST_0, QDOJO_C3_DIGEST_1, QDOJO_C3_DIGEST_2, QDOJO_C3_DIGEST_3);
+    }
+
+    // initial_hp = limit_hp: 100, 120, 120
+    static uint16 hpOf(uint8 rs)
+    {
+        return rs == QDOJO_RS_C1 ? 100 : 120;
+    }
+
+    // initial_stamina = limit_stamina: 60, 48, 48
+    static uint16 staminaOf(uint8 rs)
+    {
+        return rs == QDOJO_RS_C1 ? 60 : 48;
+    }
+
+    // opening_damage: 4, 8, 8
+    static uint16 openingDamage(uint8 rs)
+    {
+        return rs == QDOJO_RS_C1 ? 4 : 8;
+    }
+
+    // power_damage: 4, 12, 12
+    static uint16 powerDamage(uint8 rs)
+    {
+        return rs == QDOJO_RS_C1 ? 4 : 12;
+    }
+
+    // Opening limit: 1; 2 under candidate 3 (a feint's guard-break opening).
+    static uint8 maxOpening(uint8 rs)
+    {
+        return rs == QDOJO_RS_C3 ? 2 : 1;
+    }
+
+    // submitted_mask: 0x03f (JAB..RECOVER); candidate 3 0x1bf (also LAST_STAND, FEINT).
+    static bit isSubmitted(uint8 rs, uint8 a)
+    {
+        return a <= QDOJO_RECOVER || (rs == QDOJO_RS_C3 && (a == QDOJO_LAST_STAND || a == QDOJO_FEINT));
+    }
+
+    static bit validFighter(uint8 rs, const EFighter& f)
+    {
+        return f.hp <= hpOf(rs) && f.stamina <= staminaOf(rs) && f.opening <= maxOpening(rs)
             && f.guardStreak <= QDOJO_LIMIT_GUARD_STREAK && f.powerAvailable <= 1;
     }
 
+    // May carry the power strike.
     static bit isAttack(uint8 a)
     {
         return a == QDOJO_JAB || a == QDOJO_KICK || a == QDOJO_THROW;
     }
 
-    static void initialFighter(EFighter& f)
+    // Stopped by a block; can break a baited guard (candidate 3).
+    static bit isStrike(uint8 a)
     {
-        f.hp = QDOJO_INITIAL_HP;
-        f.stamina = QDOJO_INITIAL_STAMINA;
+        return a == QDOJO_JAB || a == QDOJO_KICK || a == QDOJO_LAST_STAND;
+    }
+
+    static void initialFighter(uint8 rs, EFighter& f)
+    {
+        f.hp = hpOf(rs);
+        f.stamina = staminaOf(rs);
         f.opening = 0;
         f.guardStreak = 0;
         f.powerAvailable = 1;
     }
 
-    static void newEState(EState& st)
+    static void newEState(uint8 rs, EState& st)
     {
-        initialFighter(st.a);
-        initialFighter(st.b);
+        initialFighter(rs, st.a);
+        initialFighter(rs, st.b);
         st.roundIndex = 0;
         st.outcome = QDOJO_OUTCOME_NONE;
         st.winner = QDOJO_WINNER_NONE;
     }
 
-    // BASE_COSTS = {6, 12, 4, 4, 9, 0, 0}
-    static uint16 baseCost(uint8 a)
+    // BASE_COSTS = {6, 12, 4, 4, 9, 0, 0, 0, 0}; candidate 3: LAST_STAND 8, FEINT 2.
+    static uint16 baseCost(uint8 rs, uint8 a)
     {
         switch (a)
         {
@@ -1900,41 +2032,79 @@ struct QDOJO : public ContractBase
         case QDOJO_BLOCK: return 4;
         case QDOJO_DUCK: return 4;
         case QDOJO_THROW: return 9;
+        case QDOJO_LAST_STAND: return rs == QDOJO_RS_C3 ? 8 : 0;
+        case QDOJO_FEINT: return rs == QDOJO_RS_C3 ? 2 : 0;
         default: return 0;
         }
     }
 
-    // DAMAGE[attacker][defender], before opening/power bonuses.
-    static uint16 damage(uint8 att, uint8 def)
+    // DAMAGE[attacker][defender], before opening, power and LAST STAND bonuses.
+    // Candidate 1 (docs/combat-v1.json):
+    //   JAB   8 vs JAB/KICK/THROW, 12 vs RECOVER/EXHAUSTED
+    //   KICK 14 vs JAB/KICK/THROW, 18 vs DUCK/RECOVER/EXHAUSTED
+    //   THROW 14 vs BLOCK, 18 vs RECOVER/EXHAUSTED
+    // Candidate 2: JAB 10 vs KICK; KICK 4 vs JAB; DUCK 4 vs JAB; THROW 20 vs BLOCK.
+    // Candidate 3 = candidate 2 plus the LAST_STAND and FEINT columns (JAB 8/4,
+    //   KICK 14/8, THROW 0/8) and the LAST_STAND row (8 vs JAB/KICK/DUCK/THROW/
+    //   LAST_STAND, 12 vs RECOVER/EXHAUSTED, 4 vs FEINT, 0 vs BLOCK). FEINT deals nothing.
+    static uint16 damage(uint8 rs, uint8 att, uint8 def)
     {
+        if (rs != QDOJO_RS_C3 && (att > QDOJO_EXHAUSTED || def > QDOJO_EXHAUSTED))
+        {
+            return 0;
+        }
         switch (att)
         {
         case QDOJO_JAB:
-            return (def == QDOJO_JAB || def == QDOJO_KICK || def == QDOJO_THROW) ? 8
+            if (def == QDOJO_KICK)
+            {
+                return rs == QDOJO_RS_C1 ? 8 : 10;
+            }
+            if (def == QDOJO_FEINT)
+            {
+                return 4;
+            }
+            return (def == QDOJO_JAB || def == QDOJO_THROW || def == QDOJO_LAST_STAND) ? 8
                 : (def == QDOJO_RECOVER || def == QDOJO_EXHAUSTED) ? 12 : 0;
         case QDOJO_KICK:
-            return (def == QDOJO_JAB || def == QDOJO_KICK || def == QDOJO_THROW) ? 14
+            if (def == QDOJO_JAB)
+            {
+                return rs == QDOJO_RS_C1 ? 14 : 4;
+            }
+            if (def == QDOJO_FEINT)
+            {
+                return 8;
+            }
+            return (def == QDOJO_KICK || def == QDOJO_THROW || def == QDOJO_LAST_STAND) ? 14
                 : (def == QDOJO_DUCK || def == QDOJO_RECOVER || def == QDOJO_EXHAUSTED) ? 18 : 0;
+        case QDOJO_DUCK:
+            return (rs != QDOJO_RS_C1 && def == QDOJO_JAB) ? 4 : 0;
         case QDOJO_THROW:
-            return def == QDOJO_BLOCK ? 14 : (def == QDOJO_RECOVER || def == QDOJO_EXHAUSTED) ? 18 : 0;
+            if (def == QDOJO_BLOCK)
+            {
+                return rs == QDOJO_RS_C1 ? 14 : 20;
+            }
+            return (def == QDOJO_RECOVER || def == QDOJO_EXHAUSTED) ? 18 : def == QDOJO_FEINT ? 8 : 0;
+        case QDOJO_LAST_STAND:
+            return (def == QDOJO_RECOVER || def == QDOJO_EXHAUSTED) ? 12 : def == QDOJO_FEINT ? 4
+                : def == QDOJO_BLOCK ? 0 : 8;
         default:
             return 0;
         }
     }
 
     // Full cost of an intended action from the pre-beat guard streak (step 1).
-    static uint16 actionCost(uint8 intended, uint8 guardStreak, bit power)
+    static uint16 actionCost(uint8 rs, uint8 intended, uint8 guardStreak, bit power)
     {
-        return uint16(baseCost(intended) + (intended == QDOJO_BLOCK ? QDOJO_BLOCK_STREAK_COST * guardStreak : 0)
+        return uint16(baseCost(rs, intended) + (intended == QDOJO_BLOCK ? QDOJO_BLOCK_STREAK_COST * guardStreak : 0)
             + (power ? QDOJO_POWER_COST : 0));
     }
 
     // Plan validation against the round-start fighter (combat.md section 3).
-    static bit validatePlan(const EPlan& p, const EFighter& start)
+    static bit validatePlan(uint8 rs, const EPlan& p, const EFighter& start)
     {
-        if (p.actions.get(0) >= QDOJO_SUBMITTED_ACTION_COUNT || p.actions.get(1) >= QDOJO_SUBMITTED_ACTION_COUNT
-            || p.actions.get(2) >= QDOJO_SUBMITTED_ACTION_COUNT || p.actions.get(3) >= QDOJO_SUBMITTED_ACTION_COUNT
-            || p.actions.get(4) >= QDOJO_SUBMITTED_ACTION_COUNT || p.actions.get(5) >= QDOJO_SUBMITTED_ACTION_COUNT)
+        if (!isSubmitted(rs, p.actions.get(0)) || !isSubmitted(rs, p.actions.get(1)) || !isSubmitted(rs, p.actions.get(2))
+            || !isSubmitted(rs, p.actions.get(3)) || !isSubmitted(rs, p.actions.get(4)) || !isSubmitted(rs, p.actions.get(5)))
         {
             return false;
         }
@@ -1953,10 +2123,10 @@ struct QDOJO : public ContractBase
         return start.powerAvailable == 1;
     }
 
-    static void choose(const EFighter& f, uint8 intended, bit power, Half& h)
+    static void choose(uint8 rs, const EFighter& f, uint8 intended, bit power, Half& h)
     {
         h.power = power ? 1 : 0;
-        h.cost = actionCost(intended, f.guardStreak, power);
+        h.cost = actionCost(rs, intended, f.guardStreak, power);
         if (f.stamina >= h.cost)
         {
             h.effective = intended;
@@ -1970,7 +2140,7 @@ struct QDOJO : public ContractBase
     }
 
     // Steps 2-10 for one side (combat_core.h detail::finish, state part only).
-    static void finishSide(Ctx& c, const EFighter& before, const Half& me, const Half& them, uint16 myDealt,
+    static void finishSide(Ctx& c, uint8 rs, const EFighter& before, const Half& me, const Half& them, uint16 myDealt,
         uint16 incoming, EFighter& out)
     {
         out = before;
@@ -1999,11 +2169,17 @@ struct QDOJO : public ContractBase
             c.fs_gain = QDOJO_ORDINARY_RECOVERY;
         }
         c.fs_st = uint16(out.stamina + c.fs_gain);
-        out.stamina = c.fs_st < QDOJO_LIMIT_STAMINA ? c.fs_st : QDOJO_LIMIT_STAMINA;
+        out.stamina = c.fs_st < staminaOf(rs) ? c.fs_st : staminaOf(rs);
         out.opening = ((me.effective == QDOJO_DUCK && (them.effective == QDOJO_JAB || them.effective == QDOJO_THROW))
                           || (me.effective == QDOJO_JAB && myDealt > 0 && incoming == 0))
             ? 1
             : 0;
+        // Candidate 3: a FEINT that baits a BLOCK or a DUCK earns the guard-break opening (2).
+        if (rs == QDOJO_RS_C3 && me.effective == QDOJO_FEINT
+            && (them.effective == QDOJO_BLOCK || them.effective == QDOJO_DUCK))
+        {
+            out.opening = 2;
+        }
         if (me.effective == QDOJO_BLOCK)
         {
             out.guardStreak = uint8(before.guardStreak + 1) > QDOJO_LIMIT_GUARD_STREAK ? QDOJO_LIMIT_GUARD_STREAK
@@ -2017,13 +2193,13 @@ struct QDOJO : public ContractBase
 
     // Resolves one beat from both pre-beat snapshots (combat.md section 6).
     // Results: c.eg_na, c.eg_nb, c.eg_terminal.
-    static uint8 resolveBeat(Ctx& c, const EFighter& a, const EFighter& b, uint8 ia, uint8 ib, bit pa, bit pb)
+    static uint8 resolveBeat(Ctx& c, uint8 rs, const EFighter& a, const EFighter& b, uint8 ia, uint8 ib, bit pa, bit pb)
     {
-        if (!validFighter(a) || !validFighter(b))
+        if (!validFighter(rs, a) || !validFighter(rs, b))
         {
             return QDOJO_E_BAD_STATE;
         }
-        if (ia >= QDOJO_SUBMITTED_ACTION_COUNT || ib >= QDOJO_SUBMITTED_ACTION_COUNT)
+        if (!isSubmitted(rs, ia) || !isSubmitted(rs, ib))
         {
             return QDOJO_E_BAD_ACTION;
         }
@@ -2035,24 +2211,51 @@ struct QDOJO : public ContractBase
         {
             return QDOJO_E_BAD_ACTION;
         }
-        choose(a, ia, pa, c.eg_ha);
-        choose(b, ib, pb, c.eg_hb);
-        c.eg_baseA = damage(c.eg_ha.effective, c.eg_hb.effective);
-        c.eg_baseB = damage(c.eg_hb.effective, c.eg_ha.effective);
+        choose(rs, a, ia, pa, c.eg_ha);
+        choose(rs, b, ib, pb, c.eg_hb);
+        c.eg_baseA = damage(rs, c.eg_ha.effective, c.eg_hb.effective);
+        c.eg_baseB = damage(rs, c.eg_hb.effective, c.eg_ha.effective);
+        c.eg_standA = 0;
+        c.eg_standB = 0;
+        if (rs == QDOJO_RS_C3)
+        {
+            // 4a: a guard-break opening (2) takes a strike through a block, dealing its kick damage.
+            if (a.opening == 2 && isStrike(c.eg_ha.effective) && c.eg_hb.effective == QDOJO_BLOCK)
+            {
+                c.eg_baseA = damage(rs, c.eg_ha.effective, QDOJO_KICK);
+            }
+            if (b.opening == 2 && isStrike(c.eg_hb.effective) && c.eg_ha.effective == QDOJO_BLOCK)
+            {
+                c.eg_baseB = damage(rs, c.eg_hb.effective, QDOJO_KICK);
+            }
+            // 4b: LAST STAND adds its bonus for every HP behind, capped, on a positive base.
+            if (c.eg_ha.effective == QDOJO_LAST_STAND && c.eg_baseA > 0 && b.hp > a.hp)
+            {
+                c.eg_standA = uint16(QDOJO_STAND_PER_HP * (b.hp - a.hp)) < QDOJO_STAND_CAP
+                    ? uint16(QDOJO_STAND_PER_HP * (b.hp - a.hp))
+                    : QDOJO_STAND_CAP;
+            }
+            if (c.eg_hb.effective == QDOJO_LAST_STAND && c.eg_baseB > 0 && a.hp > b.hp)
+            {
+                c.eg_standB = uint16(QDOJO_STAND_PER_HP * (a.hp - b.hp)) < QDOJO_STAND_CAP
+                    ? uint16(QDOJO_STAND_PER_HP * (a.hp - b.hp))
+                    : QDOJO_STAND_CAP;
+            }
+        }
         c.eg_dealtA = 0;
         c.eg_dealtB = 0;
         if (c.eg_baseA > 0)
         {
-            c.eg_dealtA = uint16(c.eg_baseA + (a.opening ? QDOJO_OPENING_DAMAGE : 0)
-                + ((pa && c.eg_ha.effective == ia) ? QDOJO_POWER_DAMAGE : 0));
+            c.eg_dealtA = uint16(c.eg_baseA + c.eg_standA + (a.opening ? openingDamage(rs) : 0)
+                + ((pa && c.eg_ha.effective == ia) ? powerDamage(rs) : 0));
         }
         if (c.eg_baseB > 0)
         {
-            c.eg_dealtB = uint16(c.eg_baseB + (b.opening ? QDOJO_OPENING_DAMAGE : 0)
-                + ((pb && c.eg_hb.effective == ib) ? QDOJO_POWER_DAMAGE : 0));
+            c.eg_dealtB = uint16(c.eg_baseB + c.eg_standB + (b.opening ? openingDamage(rs) : 0)
+                + ((pb && c.eg_hb.effective == ib) ? powerDamage(rs) : 0));
         }
-        finishSide(c, a, c.eg_ha, c.eg_hb, c.eg_dealtA, c.eg_dealtB, c.eg_na);
-        finishSide(c, b, c.eg_hb, c.eg_ha, c.eg_dealtB, c.eg_dealtA, c.eg_nb);
+        finishSide(c, rs, a, c.eg_ha, c.eg_hb, c.eg_dealtA, c.eg_dealtB, c.eg_na);
+        finishSide(c, rs, b, c.eg_hb, c.eg_ha, c.eg_dealtB, c.eg_dealtA, c.eg_nb);
         c.eg_terminal = (c.eg_na.hp == 0 || c.eg_nb.hp == 0) ? 1 : 0;
         return QDOJO_E_OK;
     }
@@ -2090,9 +2293,9 @@ struct QDOJO : public ContractBase
     }
 
     // Resolves one round (combat.md section 7). Results: c.eg_end, c.eg_executed.
-    static uint8 resolveRound(Ctx& c, const EState& start, const EPlan& pa, const EPlan& pb)
+    static uint8 resolveRound(Ctx& c, uint8 rs, const EState& start, const EPlan& pa, const EPlan& pb)
     {
-        if (!validFighter(start.a) || !validFighter(start.b) || start.roundIndex >= QDOJO_ROUNDS)
+        if (!validFighter(rs, start.a) || !validFighter(rs, start.b) || start.roundIndex >= QDOJO_ROUNDS)
         {
             return QDOJO_E_BAD_STATE;
         }
@@ -2100,11 +2303,11 @@ struct QDOJO : public ContractBase
         {
             return QDOJO_E_TERMINAL;
         }
-        if (!validatePlan(pa, start.a))
+        if (!validatePlan(rs, pa, start.a))
         {
             return QDOJO_E_BAD_PLAN_A;
         }
-        if (!validatePlan(pb, start.b))
+        if (!validatePlan(rs, pb, start.b))
         {
             return QDOJO_E_BAD_PLAN_B;
         }
@@ -2112,7 +2315,7 @@ struct QDOJO : public ContractBase
         c.eg_executed = 0;
         for (c.eg_beat = 0; c.eg_beat < QDOJO_BEATS_PER_ROUND; c.eg_beat++)
         {
-            c.eg_err = resolveBeat(c, c.eg_s.a, c.eg_s.b, pa.actions.get(c.eg_beat), pb.actions.get(c.eg_beat),
+            c.eg_err = resolveBeat(c, rs, c.eg_s.a, c.eg_s.b, pa.actions.get(c.eg_beat), pb.actions.get(c.eg_beat),
                 pa.powerSlot == c.eg_beat, pb.powerSlot == c.eg_beat);
             if (c.eg_err != QDOJO_E_OK)
             {
@@ -2135,12 +2338,12 @@ struct QDOJO : public ContractBase
             return QDOJO_E_OK;
         }
         // Inter-round recovery: +BREAK_RECOVERY stamina (capped), next round.
-        c.eg_s.a.stamina = uint16(c.eg_s.a.stamina + QDOJO_BREAK_RECOVERY) < QDOJO_LIMIT_STAMINA
+        c.eg_s.a.stamina = uint16(c.eg_s.a.stamina + QDOJO_BREAK_RECOVERY) < staminaOf(rs)
             ? uint16(c.eg_s.a.stamina + QDOJO_BREAK_RECOVERY)
-            : QDOJO_LIMIT_STAMINA;
-        c.eg_s.b.stamina = uint16(c.eg_s.b.stamina + QDOJO_BREAK_RECOVERY) < QDOJO_LIMIT_STAMINA
+            : staminaOf(rs);
+        c.eg_s.b.stamina = uint16(c.eg_s.b.stamina + QDOJO_BREAK_RECOVERY) < staminaOf(rs)
             ? uint16(c.eg_s.b.stamina + QDOJO_BREAK_RECOVERY)
-            : QDOJO_LIMIT_STAMINA;
+            : staminaOf(rs);
         c.eg_s.roundIndex = uint8(c.eg_s.roundIndex + 1);
         c.eg_end = c.eg_s;
         return QDOJO_E_OK;
@@ -2237,7 +2440,7 @@ struct QDOJO : public ContractBase
         c.nf_f.commitLast = addU64(s, t, c.nf_f.commitTicks);
         c.nf_f.revealLast = addU64(s, c.nf_f.commitLast, c.nf_f.revealTicks);
         c.nf_f.contextDigest = contextDigest(s, c, con, c.nf_fid, t, uint32(c.nf_ti), uint32(c.nf_fe));
-        newEState(c.nf_f.st);
+        newEState(s.ruleset, c.nf_f.st);
         c.nf_f.roundStateDigest = roundStateDigest(c, c.nf_f.contextDigest, c.nf_f.st);
         s.fights.set(c.nf_slot, c.nf_f);
         con.currentFight = c.nf_fid;
@@ -2751,7 +2954,7 @@ struct QDOJO : public ContractBase
     // `f` is the caller's working copy of fight slot fs.
     static void resolve(StateData& s, Ctx& c, uint32 fs, Fight& f, uint64 t)
     {
-        if (resolveRound(c, f.st, f.plan.get(0), f.plan.get(1)) != QDOJO_E_OK)
+        if (resolveRound(c, s.ruleset, f.st, f.plan.get(0), f.plan.get(1)) != QDOJO_E_OK)
         {
             s.faults.engine += 1;  // unreachable: both plans were validated at reveal
             return;
@@ -3596,7 +3799,7 @@ struct QDOJO : public ContractBase
 
     static bit stillValid(const StateData& s, Ctx& c, uint32 k)
     {
-        if (!ownerOf(c, s.offers.get(k).fighterId, c.sv_owner))
+        if (!ownerOf(s, c, s.offers.get(k).fighterId, c.sv_owner))
         {
             return false;
         }
@@ -3759,15 +3962,24 @@ struct QDOJO : public ContractBase
         case QDOJO_OP_ADMIN_REGISTER_ASSET: return 32 + 4 + 1;
         case QDOJO_OP_ADMIN_CREATE_CUP: return 32 + 4 + 4 + 8 + 8 + 1 + 1 + 2 + 2 + 2 + 2;
         case QDOJO_OP_ADMIN_RETIRE_RULESET: return 32;
+        case QDOJO_OP_ADMIN_BIND_ASSET: return 32 + 4 + 1 + 32 + 8;
         default: return -1;
         }
     }
 
     // Structural plan check at decode (codec.decode_plan + Plan.of): BAD_PLAN.
+    // Action ids 0..5, 7 (LAST_STAND) and 8 (FEINT) under every ruleset
+    // (types.Plan.of); whether the ruleset admits them is validatePlan's
+    // (BAD_PLAN), after the commitment check.
+    static bit actionIdOk(uint8 a)
+    {
+        return a <= QDOJO_RECOVER || a == QDOJO_LAST_STAND || a == QDOJO_FEINT;
+    }
+
     static bit planShapeOk(const Array<uint8, 512>& fr, uint32 at)
     {
-        if (fr.get(at) > 5 || fr.get(at + 1) > 5 || fr.get(at + 2) > 5 || fr.get(at + 3) > 5 || fr.get(at + 4) > 5
-            || fr.get(at + 5) > 5)
+        if (!actionIdOk(fr.get(at)) || !actionIdOk(fr.get(at + 1)) || !actionIdOk(fr.get(at + 2))
+            || !actionIdOk(fr.get(at + 3)) || !actionIdOk(fr.get(at + 4)) || !actionIdOk(fr.get(at + 5)))
         {
             return false;
         }
@@ -3874,26 +4086,44 @@ struct QDOJO : public ContractBase
     }
 
     // =========================================================== handlers (contract.py _op_*)
-    static void opAdminRegisterAsset(StateData& s, Ctx& c, const id& inv, const Array<uint8, 512>& fr, sint64 amount,
-        Res& r)
+    // codec.asset_name_ok: 1-7 characters, an upper-case letter first, then A-Z
+    // or 0-9, zero padded.
+    static bit assetNameOk(Ctx& c, uint64 v)
     {
-        if (amount)
+        c.an_n = 0;
+        for (c.an_i = 0; c.an_i < 8; c.an_i++)
         {
-            setRej(r, QDOJO_BAD_AMOUNT);
-            return;
+            c.an_ch = uint8((v >> (8 * c.an_i)) & 0xff);
+            if (c.an_ch == 0)
+            {
+                break;
+            }
+            if (c.an_i == 0 ? (c.an_ch < 65 || c.an_ch > 90)
+                            : !((c.an_ch >= 65 && c.an_ch <= 90) || (c.an_ch >= 48 && c.an_ch <= 57)))
+            {
+                return false;
+            }
+            c.an_n += 1;
         }
-        c.h_fid = rdId(fr, c);
-        c.h_version = uint32(rdU(fr, c, 4));
-        c.h_npc = uint8(rdU(fr, c, 1));
-        if (inv != s.m.admin)
+        if (c.an_n < 1 || c.an_n > 7)
         {
-            setRej(r, QDOJO_NOT_OWNER);
-            return;
+            return false;
         }
-        if (c.h_npc > 1)
+        return (v >> (8 * c.an_n)) == 0;
+    }
+
+    // contract.py _bind: one asset never backs two fighters; then the registry
+    // entry (the table bound: FULL when it is full).
+    static void bindAsset(StateData& s, Ctx& c, const id& issuer, uint64 name, Res& r)
+    {
+        for (c.ba_i = 0; c.ba_i < QDOJO_CAP_ASSETS; c.ba_i++)
         {
-            setRej(r, QDOJO_BAD_BODY);
-            return;
+            if (s.assets.get(c.ba_i).used && s.assets.get(c.ba_i).fighterId != c.h_fid
+                && s.assets.get(c.ba_i).issuer == issuer && s.assets.get(c.ba_i).assetName == name)
+            {
+                setRej(r, QDOJO_BAD_STATE);
+                return;
+            }
         }
         c.h_a = assetIndex(s, c, c.h_fid);
         if (c.h_a < 0)
@@ -3916,11 +4146,81 @@ struct QDOJO : public ContractBase
         c.h_asset.fighterId = c.h_fid;
         c.h_asset.registryVersion = c.h_version;
         c.h_asset.houseNpc = c.h_npc;
+        c.h_asset.issuer = issuer;
+        c.h_asset.assetName = name;
         s.assets.set(c.h_a, c.h_asset);
+        setOk(r, 0);
+    }
+
+    static void opAdminRegisterAsset(StateData& s, Ctx& c, const id& inv, const Array<uint8, 512>& fr, sint64 amount,
+        Res& r)
+    {
+        if (amount)
+        {
+            setRej(r, QDOJO_BAD_AMOUNT);
+            return;
+        }
+        c.h_fid = rdId(fr, c);
+        c.h_version = uint32(rdU(fr, c, 4));
+        c.h_npc = uint8(rdU(fr, c, 1));
+        if (inv != s.m.admin)
+        {
+            setRej(r, QDOJO_NOT_OWNER);
+            return;
+        }
+        if (c.h_npc > 1)
+        {
+            setRej(r, QDOJO_BAD_BODY);
+            return;
+        }
+        bindAsset(s, c, c.h_fid, QDOJO_LEGACY_ASSET_NAME, r);
+        if (!accepted(r))
+        {
+            return;
+        }
         bReset(c);
         bId(c, c.h_fid);
         bU64(c, c.h_version);
         bU64(c, c.h_npc);
+        emit(s, c, QDOJO_EV_ASSET_REGISTERED);
+        setOk(r, 0);
+    }
+
+    // AdminBindAsset (103): the registry names the fighter's real Qubic asset.
+    static void opAdminBindAsset(StateData& s, Ctx& c, const id& inv, const Array<uint8, 512>& fr, sint64 amount,
+        Res& r)
+    {
+        if (amount)
+        {
+            setRej(r, QDOJO_BAD_AMOUNT);
+            return;
+        }
+        c.h_fid = rdId(fr, c);
+        c.h_version = uint32(rdU(fr, c, 4));
+        c.h_npc = uint8(rdU(fr, c, 1));
+        c.h_issuer = rdId(fr, c);
+        c.h_name = rdU(fr, c, 8);
+        if (inv != s.m.admin)
+        {
+            setRej(r, QDOJO_NOT_OWNER);
+            return;
+        }
+        if (c.h_npc > 1 || isZero(c.h_issuer) || !assetNameOk(c, c.h_name))
+        {
+            setRej(r, QDOJO_BAD_BODY);
+            return;
+        }
+        bindAsset(s, c, c.h_issuer, c.h_name, r);
+        if (!accepted(r))
+        {
+            return;
+        }
+        bReset(c);
+        bId(c, c.h_fid);
+        bU64(c, c.h_version);
+        bU64(c, c.h_npc);
+        bId(c, c.h_issuer);
+        bU64(c, c.h_name);
         emit(s, c, QDOJO_EV_ASSET_REGISTERED);
         setOk(r, 0);
     }
@@ -3967,7 +4267,7 @@ struct QDOJO : public ContractBase
             setRej(r, QDOJO_UNKNOWN_FIGHTER);
             return;
         }
-        if (!ownerOf(c, c.h_fid, c.h_owner))
+        if (!ownerOf(s, c, c.h_fid, c.h_owner))
         {
             setRej(r, QDOJO_BAD_STATE);
             return;
@@ -4041,7 +4341,7 @@ struct QDOJO : public ContractBase
             return;
         }
         c.h_f = s.fighters.get(c.h_fi);
-        if (!ownerOf(c, c.h_fid, c.h_owner))
+        if (!ownerOf(s, c, c.h_fid, c.h_owner))
         {
             setRej(r, QDOJO_BAD_STATE);
             return;
@@ -4227,7 +4527,7 @@ struct QDOJO : public ContractBase
             setRej(r, QDOJO_NOT_FOUND);
             return;
         }
-        c.h_have = ownerOf(c, s.offers.get(c.h_k).fighterId, c.h_owner);
+        c.h_have = ownerOf(s, c, s.offers.get(c.h_k).fighterId, c.h_owner);
         if (inv != s.offers.get(c.h_k).owner && inv != s.offers.get(c.h_k).op && !(c.h_have && inv == c.h_owner))
         {
             setRej(r, QDOJO_NOT_OWNER);
@@ -4633,7 +4933,7 @@ struct QDOJO : public ContractBase
             c.h_plan.actions.set(c.h_i, fr.get(c.h_planAt + c.h_i));
         }
         c.h_plan.powerSlot = fr.get(c.h_planAt + 6);
-        if (!validatePlan(c.h_plan, c.ff_side == 0 ? c.h_fight.st.a : c.h_fight.st.b))
+        if (!validatePlan(s.ruleset, c.h_plan, c.ff_side == 0 ? c.h_fight.st.a : c.h_fight.st.b))
         {
             setRej(r, QDOJO_BAD_PLAN);
             return;
@@ -5168,6 +5468,9 @@ struct QDOJO : public ContractBase
         case QDOJO_OP_ADMIN_REGISTER_ASSET:
             opAdminRegisterAsset(s, c, inv, fr, amount, r);
             break;
+        case QDOJO_OP_ADMIN_BIND_ASSET:
+            opAdminBindAsset(s, c, inv, fr, amount, r);
+            break;
         case QDOJO_OP_ADMIN_CREATE_CUP:
             opAdminCreateCup(s, c, inv, fr, amount, t, r);
             break;
@@ -5547,42 +5850,51 @@ struct QDOJO : public ContractBase
 
     // Compiled-in manifest. TEST PROFILE ONLY: the identities are the synthetic
     // test keys of the committed journals (fuzz-1 header), not release values.
-    // The reviewed release manifest replaces this before any proposal.
-    static void loadDefaultManifest(StateData& s, Ctx& c, const id& self)
+    // The economics are the live demo arena's (devnet.PROFILES["demo-c3"]):
+    // candidate 3 (QDOJO_MANIFEST_RULESET), timing 9/8, ranked tiers 5,000
+    // and 20,000 QU, fee profile 1 (5% rake) for ranked fights and duels and
+    // 2 (10%) for cups, 2,400-tick epochs, four-epoch seasons, a 300-tick
+    // closeout, 3 rated starts per pair per epoch and a 60-tick rematch gap.
+    // Epoch 1 starts at the construction tick. The reviewed release manifest
+    // replaces this before any proposal (docs/testnet.md).
+    static void loadDefaultManifest(StateData& s, Ctx& c, const id& self, uint64 constructionTick)
     {
         setMemory(s.m, 0);
         s.m.networkId = id(0xd0d0d0d0d0d0d0d0ULL, 0xd0d0d0d0d0d0d0d0ULL, 0xd0d0d0d0d0d0d0d0ULL, 0xd0d0d0d0d0d0d0d0ULL);
         s.m.contractId = self;
         s.m.admin = id(0x012fe519b42f69e5ULL, 0x8e842cbf92770eceULL, 0x7261f994e78c6b9eULL, 0x1f22bba056878139ULL);
-        s.m.rulesetDigest = id(QDOJO_RULESET_0, QDOJO_RULESET_1, QDOJO_RULESET_2, QDOJO_RULESET_3);
+        s.m.rulesetDigest = rulesetDigestOf(QDOJO_MANIFEST_RULESET);
         setMemory(c.in_tp, 0);
         c.in_tp.profileId = 1;
-        c.in_tp.commitTicks = 24;
-        c.in_tp.revealTicks = 12;
+        c.in_tp.commitTicks = 9;
+        c.in_tp.revealTicks = 8;
         c.in_tp.used = 1;
         s.m.timing.set(0, c.in_tp);
-        setMemory(c.in_fp, 0);
-        c.in_fp.profileId = 1;
-        c.in_fp.rakeBps = 500;
-        c.in_fp.houseBps = 6000;
-        c.in_fp.devBps = 1000;
-        c.in_fp.shareBps = 3000;
-        c.in_fp.house = id(0x4e9c8feedeb2fc1aULL, 0x43ba12519e9c4835ULL, 0xb0c6e36824626962ULL, 0xfa1e4aa6aafca645ULL);
-        c.in_fp.dev = id(0x4c3beb15ecc0b84eULL, 0xc00fd4a3d672919dULL, 0x37897f8070728769ULL, 0xf93e0e05d6e58816ULL);
-        c.in_fp.share = id(0xfd881c815fefcd1eULL, 0xc4b92cca7ff61183ULL, 0x3b4caa1e7b03042aULL, 0x48eb438782b99763ULL);
-        c.in_fp.used = 1;
-        s.m.fees.set(0, c.in_fp);
-        setMemory(c.in_tier, 0);
-        c.in_tier.tierId = 1;
-        c.in_tier.stake = 1000;
-        c.in_tier.used = 1;
-        s.m.tiers.set(0, c.in_tier);
-        s.m.genesisTick = 0;
+        for (c.in_i = 0; c.in_i < 2; c.in_i++)
+        {
+            setMemory(c.in_fp, 0);
+            c.in_fp.profileId = c.in_i + 1;
+            c.in_fp.rakeBps = c.in_i == 0 ? 500 : 1000;
+            c.in_fp.houseBps = 6000;
+            c.in_fp.devBps = 1000;
+            c.in_fp.shareBps = 3000;
+            c.in_fp.house = id(0x4e9c8feedeb2fc1aULL, 0x43ba12519e9c4835ULL, 0xb0c6e36824626962ULL, 0xfa1e4aa6aafca645ULL);
+            c.in_fp.dev = id(0x4c3beb15ecc0b84eULL, 0xc00fd4a3d672919dULL, 0x37897f8070728769ULL, 0xf93e0e05d6e58816ULL);
+            c.in_fp.share = id(0xfd881c815fefcd1eULL, 0xc4b92cca7ff61183ULL, 0x3b4caa1e7b03042aULL, 0x48eb438782b99763ULL);
+            c.in_fp.used = 1;
+            s.m.fees.set(c.in_i, c.in_fp);
+            setMemory(c.in_tier, 0);
+            c.in_tier.tierId = uint16(c.in_i + 1);
+            c.in_tier.stake = c.in_i == 0 ? 5000 : 20000;
+            c.in_tier.used = 1;
+            s.m.tiers.set(c.in_i, c.in_tier);
+        }
+        s.m.genesisTick = constructionTick;
         s.m.genesisEpoch = 1;
-        s.m.ticksPerEpoch = 10000;
+        s.m.ticksPerEpoch = 2400;
         s.m.seasonStartEpoch = 1;
         s.m.seasonEpochs = 4;
-        s.m.seasonCloseoutTicks = 1200;
+        s.m.seasonCloseoutTicks = 300;
         s.m.maxFighters = 1024;
         s.m.maxAccounts = 2048;
         s.m.maxOffers = 64;
@@ -5595,8 +5907,8 @@ struct QDOJO : public ContractBase
         s.m.offerLifetimeHi = 1200;
         s.m.cooldownTicks = 240;
         s.m.faultsPerEpoch = 3;
-        s.m.pairStartsPerEpoch = QDOJO_PAIR_STARTS_PER_EPOCH;
-        s.m.pairRematchTicks = QDOJO_PAIR_REMATCH_TICKS;
+        s.m.pairStartsPerEpoch = 3;
+        s.m.pairRematchTicks = 60;
     }
 
     // combat_contract.h init(). initOk stays 0 for a manifest the compiled
@@ -5605,10 +5917,11 @@ struct QDOJO : public ContractBase
     {
         if (!s.manifestLoaded)
         {
-            loadDefaultManifest(s, c, self);
+            loadDefaultManifest(s, c, self, constructionTick);
         }
         s.initOk = 0;
-        if (s.m.rulesetDigest != id(QDOJO_RULESET_0, QDOJO_RULESET_1, QDOJO_RULESET_2, QDOJO_RULESET_3))
+        s.ruleset = rulesetOf(s.m.rulesetDigest);
+        if (s.ruleset == QDOJO_RS_NONE)
         {
             return;
         }
@@ -5687,6 +6000,7 @@ struct QDOJO : public ContractBase
         sint64 mts_best;
         Asset own_asset;
         AssetOwnershipIterator own_iter;
+        sint32 own_a;
         uint32 own_count;
         id own_owner;
         sint32 ga_i;
@@ -5720,6 +6034,8 @@ struct QDOJO : public ContractBase
         Half eg_hb;
         uint16 eg_baseA;
         uint16 eg_baseB;
+        uint16 eg_standA;
+        uint16 eg_standB;
         uint16 eg_dealtA;
         uint16 eg_dealtB;
         EFighter eg_na;
@@ -5878,6 +6194,12 @@ struct QDOJO : public ContractBase
         uint32 rAt;
         id h_fid;
         id h_owner;
+        id h_issuer;
+        uint64 h_name;
+        uint32 an_i;
+        uint32 an_n;
+        uint8 an_ch;
+        uint32 ba_i;
         id h_newOp;
         id h_ruleset;
         id h_oppId;
