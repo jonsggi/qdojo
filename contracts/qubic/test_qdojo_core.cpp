@@ -85,6 +85,10 @@ struct JVal
         }
         return it->second;
     }
+    bool has(const std::string& k) const
+    {
+        return obj.count(k) != 0;
+    }
 };
 
 struct JParser
@@ -555,13 +559,18 @@ static bool assetNameOk(uint64 v)
 
 // The assets the journal's admin frames bind to each fighter, by the
 // contract's rules (contract.py _op_admin_register_asset / _bind_asset): the
-// "owner" records then move those assets in Core's universe.
+// "owner" records then move those assets in Core's universe. A fighter bound
+// by AdminMirrorOwner (104) has no asset on this chain (the contract reads the
+// mirrored owner), so it never enters `bound` and its "owner" records, which
+// a qbay-mirror world still writes, move nothing; 100 and 103 on it are
+// refused (BAD_STATE) and bind nothing.
 static void prescanBindings(const std::string& path, const m256i& admin, QdojoChain& chain)
 {
     std::ifstream in(path);
     std::string line;
     std::getline(in, line);
-    std::map<std::string, std::string> holder;   // asset -> fighter id
+    std::map<std::string, std::string> holder;   // asset (or mirrored source, id) -> fighter id
+    std::set<std::string> mirrored;              // fighters bound by 104
     while (std::getline(in, line))
     {
         if (line.find("\"k\":\"call\"") == std::string::npos)
@@ -588,11 +597,35 @@ static void prescanBindings(const std::string& path, const m256i& admin, QdojoCh
             if (isZero(a.issuer) || !assetNameOk(a.name))
                 continue;
         }
+        else if (op == 104 && len == 89)
+        {
+            // fighter_id[32] version u32 house_npc u8 source_contract u32 source_id u64 owner[32] mirror_seq u64
+            unsigned npc = f[24 + 36];
+            uint32_t src = 0;
+            uint64 sid = 0, seq = 0;
+            memcpy(&src, &f[24 + 37], 4);
+            memcpy(&sid, &f[24 + 41], 8);
+            memcpy(&seq, &f[24 + 81], 8);
+            std::string fk = key(fid);
+            if (npc > 1 || src != QDOJO_MIRROR_SOURCE_QBAY || seq == 0 || mirrored.count(fk) || chain.bound.count(fk))
+                continue;  // rejected, an update of a mirrored fighter, or bound by 100/103 (BAD_STATE)
+            QdojoChain::AssetKey m;
+            m.issuer = m256i(src, 0, 0, 0);
+            m.name = sid;
+            std::string mk = QdojoChain::assetKey(m);
+            if (holder.count(mk))
+                continue;  // BAD_STATE: that (source, id) or asset backs another fighter
+            holder[mk] = fk;
+            mirrored.insert(fk);
+            continue;
+        }
         else
         {
             continue;
         }
         std::string ak = QdojoChain::assetKey(a), fk = key(fid);
+        if (mirrored.count(fk))
+            continue;  // BAD_STATE: 100/103 refuse a mirrored fighter
         auto h = holder.find(ak);
         if (h != holder.end() && h->second != fk)
             continue;  // BAD_STATE: bound to another fighter
@@ -808,6 +841,12 @@ static ReplaySummary replayPath(const char* name, const std::string& path)
             ++sum.calls;
             ++sum.codes[out.code];
             EXPECT_NE(out.code, QDOJO_HOST_ERROR) << name << ": host error at tick " << t;
+            if (r.has("code") && r.at("code").num != (long long)out.code)
+            {
+                ++failures;   // the reference's result code, when the journal records it
+                ADD_FAILURE() << name << ": call at tick " << t << ": result " << (int)out.code << ", reference "
+                              << r.at("code").num;
+            }
 #ifdef QDOJO_LOCKSTEP_PORT
             qdojo_contract::CallResult pr{};
             if (lock)
@@ -1004,6 +1043,18 @@ TEST(ContractQdojo, ReplayFuzzC3)
 TEST(ContractQdojo, ReplaySeasonC3)
 {
     qdojo_test::replay("season-c3.journal");
+}
+
+// AdminMirrorOwner (104, the qbay-mirror backend): scripts/combat-contract-mirror.py.
+// mirror.journal also records the reference's result code for every call.
+TEST(ContractQdojo, ReplayMirrorC3)
+{
+    qdojo_test::replay("mirror.journal");
+}
+
+TEST(ContractQdojo, ReplayMirrorArenaC3)
+{
+    qdojo_test::replay("mirror-arena.journal");
 }
 
 // Journals that are not committed (QDOJO_EXTRA_JOURNALS=path[:path...]), e.g.

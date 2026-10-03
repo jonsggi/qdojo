@@ -86,6 +86,7 @@ static constexpr uint32_t PASS_MATCHES = 4;
 // Result codes (docs/protocol.md section 6). HOST_ERROR is not a protocol
 // code: it marks a call the runtime can never produce (ticks running
 // backwards, an attachment that overflows the balance) and mutates nothing.
+// sync:begin result-codes (docs/reference/check_sync.py compares the marked tables)
 enum Code : uint8_t {
     OK = 0, DUPLICATE = 1, BAD_FRAME = 2, BAD_OPCODE = 3, BAD_BODY = 4, BAD_AMOUNT = 5,
     UNKNOWN_FIGHTER = 6, NOT_OWNER = 7, NOT_OPERATOR = 8, STALE_AUTH = 9, FIGHTER_BUSY = 10,
@@ -94,21 +95,28 @@ enum Code : uint8_t {
     ALREADY_COMMITTED = 22, BAD_STATE = 23, BAD_COMMITMENT = 24, BAD_PLAN = 25, ALREADY_REVEALED = 26,
     TERMINAL = 27, SERVICE_VOID = 28, TRANSFER_FAILED = 29, HOST_ERROR = 255,
 };
+// sync:end result-codes
 
+// sync:begin opcodes
 enum Op : uint16_t {
     OP_REGISTER_FIGHTER = 1, OP_SET_OPERATOR = 2, OP_QUEUE_ENTER = 3, OP_QUEUE_CANCEL = 4,
     OP_DUEL_OFFER = 5, OP_DUEL_ACCEPT = 6, OP_COMMIT = 7, OP_REVEAL = 8, OP_ADVANCE = 9,
     OP_WITHDRAW = 10, OP_CUP_REGISTER = 11, OP_CUP_WITHDRAW = 12, OP_CUP_CHECK_IN = 13,
     OP_DUEL_CANCEL = 14, OP_ADMIN_REGISTER_ASSET = 100, OP_ADMIN_CREATE_CUP = 101,
-    OP_ADMIN_RETIRE_RULESET = 102, OP_ADMIN_BIND_ASSET = 103,
+    OP_ADMIN_RETIRE_RULESET = 102, OP_ADMIN_BIND_ASSET = 103, OP_ADMIN_MIRROR_OWNER = 104,
 };
+// sync:end opcodes
 
 // AdminRegisterAsset (100) names no asset: it binds the interim asset
 // (issuer = fighter_id, name "QDOJOF"); AdminBindAsset (103) carries the
 // fighter's real asset (codec.LEGACY_ASSET_NAME, contract.py _bind).
 static constexpr uint64_t LEGACY_ASSET_NAME = 0x464f4a4f4451ULL;
+// AdminMirrorOwner (104): the only accepted source contract, QBAY (index 12;
+// codec.MIRROR_SOURCES).
+static constexpr uint32_t MIRROR_SOURCE_QBAY = 12;
 
 // Event type numbers: contract.py EVENT_TYPES.
+// sync:begin event-types
 enum EventType : uint16_t {
     EV_SERVICE_GAP = 1, EV_FIGHTER_REGISTERED = 2, EV_OPERATOR_SET = 3, EV_OFFER_OPEN = 4,
     EV_OFFER_CLOSED = 5, EV_MATCHED = 6, EV_DUEL_ACCEPTED = 7, EV_FIGHT_CREATED = 8,
@@ -117,8 +125,9 @@ enum EventType : uint16_t {
     EV_WITHDRAW_FAILED = 17, EV_CUP_CREATED = 18, EV_CUP_ENTRY = 19, EV_CUP_BRACKET = 20,
     EV_CUP_LEVEL = 21, EV_CUP_PAIRING = 22, EV_CUP_FINISHED = 23, EV_ASSET_REGISTERED = 24,
     EV_RULESET_RETIRED = 25, EV_REFUND_CREDIT = 26, EV_CUP_WITHDRAWN = 27, EV_CUP_CHECKED_IN = 28,
-    EV_CUP_REPLAY_SCHEDULED = 29,
+    EV_CUP_REPLAY_SCHEDULED = 29, EV_OWNER_MIRRORED = 30,
 };
+// sync:end event-types
 
 enum Lock : uint8_t { L_IDLE = 0, L_QUEUED = 1, L_DUEL_OFFER = 2, L_CONTEST = 3, L_TOURNAMENT = 4 };
 enum OfferStatus : uint8_t { O_OPEN = 1, O_MATCHED = 2, O_CANCELLED = 3, O_EXPIRED = 4, O_INVALIDATED = 5 };
@@ -254,6 +263,12 @@ struct Asset {
     uint8_t used;
     Id issuer;              // the fighter's Qubic asset: issuer identity...
     uint64_t asset_name;    // ...and name (u64, first character in the low byte)
+    // AdminMirrorOwner (104), contract.py self.mirrors: the NFT lives on another
+    // network; issuer is the source contract's identity, asset_name its NFT id,
+    // and the owner is the one the bridge last set (zero: unavailable).
+    uint8_t mirrored;
+    uint64_t mirror_seq;
+    Id mirror_owner;
 };
 
 struct Account {
@@ -769,8 +784,16 @@ inline int64_t min_tier_stake(const State& s) {
     return best;
 }
 
+// contract.py _owner: Host::owner_of, or for a mirrored fighter the owner the
+// bridge last set (a zero owner is "unavailable").
 inline bool owner_of(State& s, Host& h, const Id& fid, Id& out) {
     ++s.work.owner_queries;
+    int32_t a = asset_index(s, fid);
+    if (a >= 0 && s.assets[a].mirrored) {
+        if (id_eq(s.assets[a].mirror_owner, id_zero())) return false;
+        out = s.assets[a].mirror_owner;
+        return true;
+    }
     return h.owner_of(fid, out);
 }
 inline bool transfer(State& s, Host& h, const Id& to, int64_t amount) {
@@ -2056,6 +2079,7 @@ inline uint64_t le(const uint8_t* p, uint32_t width) {
     return v;
 }
 
+// sync:begin body-lengths
 inline int32_t body_len(uint16_t op) {
     switch (op) {
         case OP_REGISTER_FIGHTER: return 32 + 4;
@@ -2076,9 +2100,11 @@ inline int32_t body_len(uint16_t op) {
         case OP_ADMIN_CREATE_CUP: return 32 + 4 + 4 + 8 + 8 + 1 + 1 + 2 + 2 + 2 + 2;
         case OP_ADMIN_RETIRE_RULESET: return 32;
         case OP_ADMIN_BIND_ASSET: return 32 + 4 + 1 + 32 + 8;
+        case OP_ADMIN_MIRROR_OWNER: return 32 + 4 + 1 + 4 + 8 + 32 + 8;
         default: return -1;
     }
 }
+// sync:end body-lengths
 
 // Structural plan check at decode (codec.decode_plan + Plan.of): BAD_PLAN.
 inline bool plan_shape_ok(const uint8_t* p) {
@@ -2196,7 +2222,16 @@ inline Res bind_asset(State& s, const Id& fid, uint32_t version, uint8_t npc, co
     s.assets[a].house_npc = npc;
     s.assets[a].issuer = issuer;
     s.assets[a].asset_name = name;
+    s.assets[a].mirrored = 0;
+    s.assets[a].mirror_seq = 0;
+    s.assets[a].mirror_owner = id_zero();
     return ok();
+}
+
+// contract.py _not_mirrored: 100 and 103 refuse a fighter bound by 104.
+inline Res not_mirrored(State& s, const Id& fid) {
+    int32_t a = asset_index(s, fid);
+    return (a >= 0 && s.assets[a].mirrored) ? rej(BAD_STATE) : ok();
 }
 
 inline Res op_admin_register_asset(State& s, const Id& inv, Reader r, int64_t amount) {
@@ -2206,6 +2241,7 @@ inline Res op_admin_register_asset(State& s, const Id& inv, Reader r, int64_t am
     uint8_t npc = uint8_t(r.u(1));
     if (!id_eq(inv, s.m.admin)) return rej(NOT_OWNER);
     if (npc > 1) return rej(BAD_BODY);
+    QD_TRY(not_mirrored(s, fid));
     QD_TRY(bind_asset(s, fid, version, npc, fid, LEGACY_ASSET_NAME));
     Body b{};
     b_id(b, fid);
@@ -2224,6 +2260,7 @@ inline Res op_admin_bind_asset(State& s, const Id& inv, Reader r, int64_t amount
     uint64_t name = r.u(8);
     if (!id_eq(inv, s.m.admin)) return rej(NOT_OWNER);
     if (npc > 1 || id_eq(issuer, id_zero()) || !asset_name_ok(name)) return rej(BAD_BODY);
+    QD_TRY(not_mirrored(s, fid));
     QD_TRY(bind_asset(s, fid, version, npc, issuer, name));
     Body b{};
     b_id(b, fid);
@@ -2232,6 +2269,46 @@ inline Res op_admin_bind_asset(State& s, const Id& inv, Reader r, int64_t amount
     b_id(b, issuer);
     b_u64(b, name);
     emit(s, EV_ASSET_REGISTERED, b);
+    return ok();
+}
+
+// AdminMirrorOwner (104), contract.py _op_admin_mirror_owner: the first call
+// binds the fighter to (source contract, source id); every call sets the
+// owner, in strictly increasing mirror_seq order. A zero owner means "gone".
+inline Res op_admin_mirror_owner(State& s, const Id& inv, Reader r, int64_t amount) {
+    QD_TRY(need_zero(amount));
+    Id fid = r.id();
+    uint32_t version = uint32_t(r.u(4));
+    uint8_t npc = uint8_t(r.u(1));
+    uint32_t src = uint32_t(r.u(4));
+    uint64_t sid = r.u(8);
+    Id owner = r.id();
+    uint64_t seq = r.u(8);
+    if (!id_eq(inv, s.m.admin)) return rej(NOT_OWNER);
+    if (npc > 1 || src != MIRROR_SOURCE_QBAY || seq == 0) return rej(BAD_BODY);
+    Id issuer = id_zero();  // the source contract's identity: its index, little-endian
+    for (uint32_t i = 0; i < 4; ++i) issuer.b[i] = uint8_t(src >> (8 * i));
+    int32_t a = asset_index(s, fid);
+    if (a >= 0 && s.assets[a].mirrored) {
+        const Asset& x = s.assets[a];
+        if (x.registry_version != version || x.house_npc != npc || !id_eq(x.issuer, issuer) || x.asset_name != sid)
+            return rej(BAD_STATE);
+        if (seq <= x.mirror_seq) return rej(STALE);
+    } else {
+        if (a >= 0) return rej(BAD_STATE);  // bound to an asset on this chain (100/103)
+        QD_TRY(bind_asset(s, fid, version, npc, issuer, sid));
+        a = asset_index(s, fid);
+        s.assets[a].mirrored = 1;
+    }
+    s.assets[a].mirror_owner = owner;
+    s.assets[a].mirror_seq = seq;
+    Body b{};
+    b_id(b, fid);
+    b_u64(b, src);
+    b_u64(b, sid);
+    b_id(b, owner);
+    b_u64(b, seq);
+    emit(s, EV_OWNER_MIRRORED, b);
     return ok();
 }
 
@@ -2826,6 +2903,7 @@ inline Res run_handler(State& s, Host& h, const Id& inv, const Frame& fr, int64_
         case OP_ADMIN_CREATE_CUP: return op_admin_create_cup(s, inv, r, amount, t);
         case OP_ADMIN_RETIRE_RULESET: return op_admin_retire_ruleset(s, inv, r, amount);
         case OP_ADMIN_BIND_ASSET: return op_admin_bind_asset(s, inv, r, amount);
+        case OP_ADMIN_MIRROR_OWNER: return op_admin_mirror_owner(s, inv, r, amount);
         default: return rej(BAD_OPCODE);
     }
 }

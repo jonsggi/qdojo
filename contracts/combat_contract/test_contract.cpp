@@ -410,6 +410,12 @@ static bool replay(const std::string& path, const char* trace_dir, MaxWork& mw, 
                 std::fprintf(stderr, "%s: host error at tick %llu\n", path.c_str(), (unsigned long long)t);
                 ok = false;
             }
+            // Optional: the reference's result code (result codes are not in the event digest).
+            if (r.has("code") && r.at("code").num != (long long)cr.code) {
+                std::fprintf(stderr, "%s: call at tick %llu: result %u, reference %lld\n", path.c_str(),
+                             (unsigned long long)t, cr.code, r.at("code").num);
+                ok = false;
+            }
             fold(mw.call, s.work);
             check("call", (long long)t);
         } else if (k == "end") {
