@@ -2,8 +2,8 @@
 
 > **Purpose:** what a fighter NFT is, what owning one does in the game, how it is traded, how the simulation models Qubic, and what a real Qubic backend still needs. \
 > **Audience:** the owner (decisions marked **Proposal**), contract and backend implementers, reviewers of AUD-009 and AUD-010. \
-> **Status:** normative for the simulated arena (`combat/nft.py`, `combat/live.py`); the Qubic backend (`combat/nft_qubic.py`) is a stub that never sends. Proposals in §2 and §3 stand until the owner accepts or changes them. \
-> **Last reviewed:** 2026-09-27
+> **Status:** normative for the simulated arena (`combat/nft.py`, `combat/live.py`) and the qbay-mirror backend (`combat/nft_qbay.py`, §5.4); the Qubic backend (`combat/nft_qubic.py`) is a stub that never sends. Proposals in §2 and §3 stand until the owner accepts or changes them. \
+> **Last reviewed:** 2026-10-03 (§5.4 and §5.5 added)
 
 Nothing here mints, sells or moves a real asset. The simulated chain uses fake
 QU and synthetic identities. The rules below are what the simulation enforces
@@ -16,6 +16,8 @@ today and what the real backend must enforce.
 - [3. Market and economics](#3-market-and-economics)
 - [4. The simulated market](#4-the-simulated-market)
 - [5. Backends and the Qubic facts they rest on](#5-backends-and-the-qubic-facts-they-rest-on)
+  - [5.4 The qbay-mirror backend](#54-the-qbay-mirror-backend)
+  - [5.5 Collection preparation](#55-collection-preparation-before-minting-our-own-qbay-collection)
 - [6. Public data](#6-public-data)
 - [7. Frozen art and metadata](#7-frozen-art-and-metadata)
 - [8. Journal, replay and restarts](#8-journal-replay-and-restarts)
@@ -56,7 +58,8 @@ poll, never a result, because a real write is a transaction.
 A rejected operation changes nothing and returns a code: `UNKNOWN_TOKEN`,
 `BAD_NAME`, `DUPLICATE`, `NOT_ISSUER`, `NOT_OWNER`, `NOT_POSSESSOR`,
 `LOCKED`, `RESERVED`, `INSUFFICIENT_FUNDS`, `BAD_PRICE`, `NO_ORDER`,
-`NOT_MANAGED`, `SELF_TRADE`, `BOOK_FULL` or `BAD_ARGS`.
+`NOT_MANAGED`, `SELF_TRADE`, `BOOK_FULL`, `BAD_ARGS` or, for a token mirrored
+from QBAY (§5.4), `TRADE_ON_QUBICBAY`.
 
 ## 2. Game rules
 
@@ -168,9 +171,10 @@ latency, reordering and drops.
 
 ## 5. Backends and the Qubic facts they rest on
 
-`nft_backend: sim | qubic` is chosen when an arena is created
+`nft_backend: sim | qubic | qbay-mirror` is chosen when an arena is created
 (`qdojo combat live --nft-backend`), stored in its `chain.json`, and published
-in the export's deployment block. Only `sim` runs.
+in the export's deployment block. `sim` and `qbay-mirror` (§5.4) run; `qubic`
+is a stub.
 
 ### 5.1 Qubic facts used
 
@@ -248,6 +252,8 @@ the only place Qubic NFTs show with images today, but QBAY records are not
 assets (no lock, no owner/possessor split) and QBAY cannot be enabled on a
 fresh testnet (its operator is hard-coded to mainnet). It is a later, optional
 listing track: see [the ecosystem research](research/qubic-nft-ecosystem-2026-09-30.md) §6.
+The qbay-mirror backend (§5.4) sidesteps the testnet problem: the NFTs stay on
+mainnet QBAY, and a read-only bridge mirrors their holders onto the testnet arena.
 
 What the Qubic backend still needs, in order:
 1. **Protocol.** Done (2026-09-30): AdminBindAsset (opcode 103) carries the
@@ -275,6 +281,201 @@ What the Qubic backend still needs, in order:
    `AssetLedger` into `QDOJO.h`, with parity tests against journals that
    contain `nft` records.
 
+### 5.4 The qbay-mirror backend
+
+`nft_backend: qbay-mirror` (`combat/nft_qbay.py`) runs the game on testnet
+(today: the simulated devnet) while each fighter's ownership comes from a
+**real QBAY NFT on Qubic mainnet**, mirrored by a bridge the operator runs.
+It is step 1 of the plan: prove the bridge read-only against an existing
+mainnet collection, at no cost, before minting our own.
+
+The bridge is **read-only toward mainnet**. It calls QBAY's contract
+functions through the public RPC (`qdojo.qubic.rpc`, which allows only
+`GET /v1/tick-info` and `POST /v1/querySmartContract` and has no broadcast).
+It never signs, holds a seed or sends a transaction.
+
+**Configuration** (`qbay.json`; `qdojo combat qbay pin` writes one, and the
+arena keeps its own copy, so a restart never switches collection):
+
+| Key | Meaning |
+|---|---|
+| `network`, `rpc_url` | `mainnet` (default `https://rpc.qubic.org`) or `testnet` |
+| `collection_id` | The QBAY collection |
+| `nfts` | The collection's NFT ids, ascending. **Rule: lineup fighter *i* gets `nfts[i]`**, i.e. the fighter's serial order equals the NFT's index in the collection |
+| `map` | Optional `{label: nft_id}` overrides of that rule |
+| `poll_seconds` | Poll interval (default 20, minimum 2) |
+| `stale_after_seconds` | When the data counts as stale (default 3 polls) |
+| `missing_confirmations` | Polls an NFT must read as gone before the arena acts on it (default 2) |
+| `membership` | How `nfts` was found: `chain-creator`, `qubicbay-api+chain` or `explicit` |
+
+**Membership.** A QBAY record holds **no collection id**: creator, possessor,
+royalty and URI only (`Qbay.h` `InfoOfNFT`). `qdojo combat qbay pin` therefore
+finds a collection's NFTs in one of two ways:
+- the creator has exactly one collection (`getUserCreatedCollection`): its
+  created NFTs (`getUserCreatedNFT`) are the collection, on chain only;
+- otherwise QubicBay's off-chain catalogue (`api.qubicbay.io/v1/nfts?collectionId=`,
+  `--api`) supplies the ids, and each is checked on chain: the creator and the
+  royalty must equal the collection's. Two collections of one creator with the
+  same royalty cannot be told apart on chain; that case needs the catalogue.
+
+**Binding.** Creating the arena validates the configuration against mainnet
+(the collection exists, every mapped NFT exists, belongs to it and is held).
+Each fighter is then bound by two journal records in the same tick:
+- a ledger `mirror` record (`nft.py` `_op_mirror`): the token, with
+  `manager: "QBAY"`, owner = possessor = the QBAY possessor, the creator, and
+  `metadata.qbay` (NFT id, collection, CID, royalty, the QubicBay link);
+- **AdminMirrorOwner (opcode 104)** from the admin identity: the contract binds
+  the fighter to (QBAY, NFT id) and records its owner ([protocol.md](protocol.md) §3).
+
+The owner then registers the fighter as for any asset. Registration is
+signed by the owner's identity: on the devnet the house bot does it for them;
+on a real testnet the owner signs it, or sets the house bot as operator.
+
+**Polling and replay.** The bridge polls the mapped NFTs every
+`poll_seconds` in a background thread, never in the tick loop. Each tick the
+arena takes the latest observations. Every **change** becomes the same two
+journal records: a ledger `mirror` record (event `MIRROR`, or `MIRROR_MISSING`
+for a vanished NFT) and AdminMirrorOwner with the next `mirror_seq`. Replays,
+snapshots, the read model and the invariants therefore see only journalled
+data. A restart replays the journal without calling the network; the tests
+prove it with a reader that raises on any call. `invariants.check` also
+asserts that the contract's mirrored owner and `mirror_seq` equal the
+ledger's for every mirrored token.
+
+**Reads.** owner = possessor = the QBAY possessor (QBAY has no split);
+creator and royalty from the record; the URI is the bare CIDv1; history is
+`MIRROR_BIND`, then `MIRROR` per observed change, then `MIRROR_MISSING` if the
+NFT disappears.
+
+**Writes are refused.** `ask`, `bid`, `transfer` and every other in-game
+market write return `TRADE_ON_QUBICBAY` ("trade on QubicBay", with the NFT's
+`https://qubicbay.io/nft/<id>` link), from the backend and again from the
+ledger. The in-game market and the house collectors are off under this
+backend.
+
+**Payouts and the lock.** QBAY cannot block a sale, so R4's contest lock does
+not exist here. Payouts stay correct anyway: each admission snapshots its
+payout recipient, the owner at entry (R3). A QubicBay sale mirrored
+mid-fight changes the contract's owner, but the running contest still pays the
+owner who entered it. The old owner cannot enter again, and the new owner
+registers once the fighter is idle (test
+`test_a_mid_fight_qubicbay_sale_pays_the_owner_who_entered`).
+
+**Lag.** A QubicBay sale reaches the arena after at most `poll_seconds` plus
+the RPC's own delay behind the chain's tick (about 0.7 s per tick on
+mainnet), and plus one arena tick. A disappearance takes
+`missing_confirmations` polls. The export shows the mainnet tick of the last
+good read.
+
+**Failure modes** (each is tested in `tests/combat/test_qbay_mirror.py`):
+
+| Case | Behaviour |
+|---|---|
+| RPC down or rate-limited | The client backs off (429/5xx, Retry-After) and the poll fails. Last known owners stay, and once the last good read is older than `stale_after_seconds` the export says `status: "stale"` (site: MIRROR STALE) |
+| NFT burned or missing (a zeroed row or no possessor) | After `missing_confirmations` polls: `MIRROR_MISSING`, owner unavailable (AdminMirrorOwner with a zero owner). The fighter cannot enter anything new; contests already entered pay their snapshot |
+| Unknown NFT in the config (beyond QBAY's `numberOfNFT`) | The arena refuses to start |
+| Unmapped NFT observed | Ignored and logged |
+| Collection does not match the config: missing collection, NFT of another creator or royalty | The arena refuses to start |
+| Creator changes at run time | `status: "mismatch"`; nothing is applied |
+| Restart while the RPC is down | Starts from the journal; the status is stale until the first good read |
+
+**Trust model.**
+- **Centralised bridge, testnet only.** On testnet the QDOJO contract cannot
+  read mainnet, so it trusts the admin identity's AdminMirrorOwner calls. The
+  operator could lie about an owner. Anyone can check: every mirror record
+  carries the mainnet tick it was read at, and QBAY is public.
+- On mainnet no bridge is needed: QDOJO would read `getInfoOfNFTById` itself,
+  as QTREAT does ([research](research/qubic-nft-ecosystem-2026-09-30.md) §3).
+- The bridge only reports. It cannot move an NFT, and nobody's QubicBay
+  holdings depend on it.
+
+**Identities.** A QBAY possessor is a mainnet identity, and the same seed
+gives the same identity on testnet and on the devnet:
+- the derivation (seed → K12 subseed → private key → FourQ public key →
+  60-character identity) has no network input (`qdojo.qubic.ids`, ported from
+  Qubic's `key_utils.cpp`, byte-checked against qubic-cli);
+- a transaction carries no chain id: source, destination, amount, tick, input
+  type, size, input, signature (`qdojo.qubic.tx`, `transactions.h`).
+
+So a holder can sign on testnet with the seed that holds the NFT on mainnet.
+**Caution:** with no chain id, a signed transaction is valid on any network
+whose tick equals its target tick. Recommend that holders sign testnet
+transactions with zero amounts only, or delegate to an operator identity
+(SetOperator) that holds no mainnet funds.
+
+**QBAY layouts** (`qdojo.qubic.qbay`, from `Qbay.h` at `e3ef766`, natural C++
+alignment; checked against the RPC's answer sizes, the offsets QubicBay's own
+front end reads, and recorded answers in `tests/fixtures/qbay/mainnet.json`):
+
+| Function (id) | Input | Output |
+|---|---|---|
+| getInfoOfNFTById (7) | `u32 NFTId` (4 B) | 248 B: creator 0, possessor 32, askUser 64, creatorOfAuction 96 (ids, 32 B); salePrice s64 128, askMaxPrice s64 136, currentPriceOfAuction u64 144; royalty u32 152, NFTidForExchange u32 156; URI 160 (64 B, 59 kept); statusOfAuction u8 224; auction start/end dates 225–236 (12 × u8); statusOfSale, statusOfAsk, paymentMethodOfAsk, statusOfExchange, paymentMethodOfAuction 237–241 (bit = 1 B); padding to 248 |
+| getInfoOfCollectionById (5) | `u32 idOfCollection` (4 B) | 120 B: creator 0; priceForDropMint u64 32; royalty u32 40; currentSize s32 44 (what is left to mint); maxSizeHoldingPerOneId u32 48; URI 52 (64 B); typeOfCollection 116 (0 drop, 1 normal) |
+| getInfoOfMarketplace (3) | none | 56 B: priceOfCFB, priceOfQubic, numberOfNFTIncoming, earnedQubic, earnedCFB (u64 at 0–32); numberOfCollection u32 40; numberOfNFT u32 44; statusOfMarketPlace 48 |
+| getUserCreatedNFT (9), getUserCreatedCollection (8) | `id user, u32 offset, u32 count` (40 B) | `u32[1024]` (4096 B), newest first. The offset is effectively 1-based, and `offset + count` must not exceed the total |
+
+`getInfoOfNFTById` has no bounds check: an id past `numberOfNFT` reads a
+zeroed row, which the client reports as "does not exist".
+
+**Live check (2026-10-03, epoch 233, tick 82,935,631):** QBAY had 20
+collections and 5,800 NFTs. NFT 5795's URI was the research's
+`bafkreiehy5id…cg4hq`, and its creator `BITEOF…` and possessor `OWYWND…`
+equal QubicBay's API. The demo mirrored **BITE: Ocean Rebels (collection
+17)**, whose first eight NFTs (5497 … 5592) map onto an eight-fighter arena.
+The membership came from QubicBay's catalogue (the creator also owns
+collection 19), and all 23 NFTs were checked on chain.
+- Phase 1: 300 ticks at 0.4 s, real polling every 10 s. The eight holders
+  (`ZMFCIJ…`, `MURATP…` ×2, `XEXXHJ…`, `GBSXQY…` ×2, `ZUZBFX…`, `OWYWND…`)
+  were bound, registered and fought: 4 contests, 6 fights. The status was
+  live; restarting from the snapshot left the invariants clean.
+- Phase 2: a simulated QubicBay sale. The reader overrode NFT 5497's
+  possessor, and nothing was sent anywhere. The sale reached the arena at
+  tick 420 as `MIRROR` plus AdminMirrorOwner seq 2. The new holder's bot took
+  over the next tick.
+- Phase 3: the RPC "down". Owners were kept, and after 30 s the status was
+  `stale` (age 60 s, 5 consecutive failures) in the export, the read API and
+  the site (MIRROR STALE).
+
+
+### 5.5 Collection preparation (before minting our own QBAY collection)
+
+- [ ] **Art freeze.** Run `qdojo combat nft freeze` and `verify` (§7). The
+      art and metadata never change after minting: a QBAY URI cannot be
+      edited.
+- [ ] **IPFS.** Pin every image and every metadata JSON, with us and a
+      pinning service (QubicBay uploads through Pinata). The on-chain URI
+      keeps **59 bytes**: store the **bare CIDv1** (`bafkrei…`, exactly 59
+      characters), never `ipfs://…` (66 bytes, truncated). Inside the JSON,
+      prefer `ipfs://` for `image`; public gateways are degrading, and only
+      `gateway.pinata.cloud` served raw JSON in our checks.
+- [ ] **Metadata shape** that QubicBay reads (checked on Ocean Rebels 5497
+      and Garth 1832):
+      `{"name", "description", "image", "attributes": [{"trait_type", "value"}]}`.
+      The collection URI's JSON is
+      `{"name", "description", "image": <CID>, "banner": <CID>, "externalLink"}`.
+      Add `external_url` (the fighter page), `license` and `license_uri`.
+- [ ] **The 1,000-id mapping.** A 1,000-piece collection is `volume` 1.
+      Mint as a **normal** collection (type 1, house-minted at 0 QU) in
+      fighter serial order. NFT ids are global, so other people's mints may
+      interleave. Pin the real ids after minting (`qdojo combat qbay pin`);
+      the rule stays "fighter serial *n* = the *n*-th NFT of the collection".
+- [ ] **Size and price in CFB.** `createCollection` charges $100 for 200 NFTs
+      (`volume` 0) or $200 × k for k × 1,000 (k ≤ 10), in CFB at the
+      contract's `priceOfCFB`, burned. At 454,000 CFB/USD (2026-10-03),
+      1,000 NFTs cost 90,800,000 CFB and 200 cost 45,400,000 CFB. The CFB must
+      be possessed by the creator under QBAY's management. Minting into your
+      own collection costs 0 QU.
+- [ ] **Royalty ≤ 10%.** The contract allows up to 97%, but QubicBay's UI
+      caps it at 10%. The royalty applies to QBAY sales only, never to free
+      transfers.
+- [ ] **Licence label.** QubicBay records one label per collection, off chain:
+      EXCLUSIVE, NON_EXCLUSIVE, COMMERCIAL or PERSONAL. Pick **COMMERCIAL**. It
+      matches [the licensing proposal](proposals/licensing.md): holders get a16z
+      "Can't Be Evil" COMMERCIAL-NO-HATE rights to their fighter, and the
+      creator keeps its rights. The label alone is not a licence, so put the
+      full text's permanent URI in every token's metadata and in the
+      collection description.
+
 ## 6. Public data
 
 - **Export.**
@@ -286,6 +487,14 @@ What the Qubic backend still needs, in order:
   - `market.json`: listings and recent sales.
   - Each fighter's `asset` block in `index.json`: the ownership history the
     fighter page shows.
+  - qbay-mirror (§5.4): every mirrored token carries `manager: "QBAY"`,
+    `mirror` (NFT id, collection, `seq`, `missing`, the mainnet tick of the
+    read, the holder's Qubic identity) and `metadata.qbay` (CID, royalty,
+    QubicBay links). The bridge's freshness is `deployment.mirror` in
+    `index.json`, `collection.mirror` in `nfts.json` and `mirror_status` in
+    each `nfts/<id>.json` (`status`: live, stale or mismatch; `last_ok_at`;
+    `age_seconds`; `mainnet_tick`; `last_error`). The read API adds the same
+    `mirror_status` to `/api/v1/nfts` and `/api/v1/nfts/<id>`.
 - **Read API** ([api.md](api.md) §3.2):
   - `GET /api/v1/nfts?owner=&for_sale=1&sort=serial|price|last_sale&page=`
   - `GET /api/v1/nfts/<fighter_id>` (the token, `book`, `history`, `sales`).
@@ -379,3 +588,4 @@ Recommendation:
 | 4 | Asset names | `QF` + base-36 serial; issuer = one dedicated collection identity |
 | 5 | Hosting | Site now; IPFS + site mirror + on-chain anchor before mainnet |
 | 6 | Licence and rights (R7), supply and allocation (AUD-009) | Open: needs owner and legal review |
+| 7 | Testnet with a mainnet QBAY collection (§5.4): accept the centralised bridge for testnet, the 10% royalty cap and the COMMERCIAL label (§5.5) | Step 1 (read-only mirror of an existing collection) done; mint our own collection next |

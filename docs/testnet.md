@@ -23,7 +23,7 @@ guess (`apps/web/combat/app.js`, `NETWORKS`).
 | Qubic client | `packages/qdojo/src/qdojo/qubic/`: K12, FourQ, SchnorrQ, identities, transactions, the node TCP protocol (`node.py`: tick info, entity, broadcast, tick transactions, contract functions, owned assets), byte-identical to qubic-cli (`scripts/crosscheck-signer.py`) | Reusable as is |
 | Arena runtime | `qdojo combat live` drives the reference contract on `SimChain` (`combat/chainsim.py`): simulated latency, drops, fees and asset registry | **MISSING:** a chain adapter that sends `Dispatch` transactions to a Qubic node and reads confirmed state back (§3.6) |
 | Export, read API | Written from the reference contract's state and the devnet journal (`combat/export.py`, `combat/readmodel.py`) | **MISSING:** an exporter and read model fed from confirmed on-chain transactions and contract functions |
-| Fighter NFTs | `nft_backend: sim` (`combat/nft.py`, [nft.md](nft.md)); `qubic` is a stub (`combat/nft_qubic.py`) that builds the real QX transactions and refuses to send; the live arena refuses to start with it | Realization choice, sending, confirmation and reads (§3.7) |
+| Fighter NFTs | `nft_backend: sim` (`combat/nft.py`, [nft.md](nft.md)); `qbay-mirror` (`combat/nft_qbay.py`, [nft.md](nft.md) §5.4) mirrors ownership read-only from a mainnet QBAY collection and runs today; `qubic` is a stub (`combat/nft_qubic.py`) that builds the real QX transactions and refuses to send | The plan: a mainnet QBAY collection with a testnet arena (§3.7); AdminMirrorOwner (104) in `QDOJO.h` |
 | Site | Static nginx image; endpoints from `QDOJO_LIVE_DATA` / `QDOJO_LIVE_API`, public origin from `QDOJO_SITE_URL`; labels from the export | Ready (§3.9) |
 
 ## 2. Decisions before starting
@@ -46,7 +46,11 @@ guess (`apps/web/combat/app.js`, `NETWORKS`).
    dev kit wants 24 GB or more.
 3. **Domain.** Keep `qdojo.jonsggi.com` or give the testnet arena its own
    origin (set `QDOJO_SITE_URL` accordingly).
-4. **NFT route.** Issue fighter assets from the QDOJO contract itself
+4. **NFT route.** The plan (2026-10-03): **fighters are a QBAY collection on
+   mainnet; the arena runs on testnet** and mirrors their holders through the
+   read-only bridge (`nft_backend: qbay-mirror`, [nft.md](nft.md) §5.4).
+   Step 1, proving the bridge against an existing mainnet collection, is
+   done. The earlier alternatives still stand if the plan changes: issue fighter assets from the QDOJO contract itself
    (`qpi.issueAsset`, contract keeps management rights) or through QX
    (QX-managed; fee **UNCONFIRMED**) ([core contracts doc](https://github.com/qubic/core/blob/main/doc/contracts.md),
    [QX](https://docs.qubic.org/learn/qx/)).
@@ -149,6 +153,13 @@ Epochs are one week and end on Wednesday at 12:00 UTC; ticks ran at about
 
 ### 3.3 Identities and seeds
 
+A seed gives the same identity on mainnet, testnet and the devnet: the
+derivation has no network input, and a transaction carries no chain id
+(`qdojo.qubic.ids`, `qdojo.qubic.tx`; [nft.md](nft.md) §5.4). So a
+transaction signed for tick T is valid on any network at tick T. Keep the
+identities that sign on testnet free of mainnet funds, or sign only
+zero-amount transactions with them.
+
 Never print a seed, never put one on a command line or in a log, and never
 reuse a seed that holds mainnet QU.
 
@@ -222,6 +233,36 @@ What exists is the reference contract on `SimChain`. A testnet arena needs:
       on their own port. Leave the devnet units untouched until the switch.
 
 ### 3.7 NFT backend
+
+**The plan: a mainnet QBAY collection with a testnet arena.**
+
+1. [x] **Read-only bridge against an existing collection** (step 1,
+   2026-10-03). The client and decoder are `qdojo.qubic.qbay` with
+   `qdojo.qubic.rpc`; the backend is `combat/nft_qbay.py`. The demo arena
+   mirrored BITE: Ocean Rebels (QBAY collection 17) onto eight fighters, then
+   handled a simulated QubicBay sale and an RPC outage
+   ([nft.md](nft.md) §5.4). It costs nothing and sends nothing.
+2. [ ] **`QDOJO.h` gets AdminMirrorOwner (104)**, re-proved in Core's harness
+   with a `mirror.journal`
+   ([contracts/qubic/README.md](../contracts/qubic/README.md#follow-up-adminmirrorowner-opcode-104-for-the-qbay-mirror-backend)).
+3. [ ] **Our own collection**, prepared with [nft.md](nft.md) §5.5: art
+   freeze, bare-CIDv1 IPFS pins, QubicBay's metadata shape, the 1,000-id
+   mapping, size and CFB price, royalty ≤ 10% and the COMMERCIAL label. Then
+   create and mint it on mainnet from the house identity and pin its ids with
+   `qdojo combat qbay pin`.
+4. [ ] **The testnet arena** created with `--nft-backend qbay-mirror
+   --qbay-config qbay.json`. Its bridge identity is the manifest's admin; it
+   needs testnet QU only for the AdminMirrorOwner transactions. That
+   identity must never hold mainnet funds: a transaction carries no chain id
+   (§3.3).
+5. [ ] **Holders register on testnet** with the seed that holds the NFT on
+   mainnet (the same identity, [nft.md](nft.md) §5.4), or delegate to an
+   operator.
+
+Trust model: the bridge is centralised and testnet-only. On mainnet QDOJO
+would read `getInfoOfNFTById` itself (the QTREAT pattern), with no bridge.
+
+The alternatives below stay as written in case the plan changes.
 
 `nft_backend: sim | qubic` is fixed when an arena is created
 ([nft.md](nft.md) §5). A testnet arena is created with `qubic`; today that

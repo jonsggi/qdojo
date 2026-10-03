@@ -176,8 +176,9 @@ the fields listed, without host alignment. Extra body bytes reject.
 | 101 | AdminCreateCup | ruleset_digest[32], timing_profile_id u32, fee_profile_id u32, entry_fee u64, registration_close u64, min_entrants u8, max_entrants u8, level_ticks u16, first_level_delay u16, checkin_ticks u16, replay_delay u16 |
 | 102 | AdminRetireRuleset | ruleset_digest[32] |
 | 103 | AdminBindAsset | fighter_id[32], registry_version u32, house_npc u8, asset_issuer[32], asset_name u64 |
+| 104 | AdminMirrorOwner | fighter_id[32], registry_version u32, house_npc u8, source_contract u32, source_id u64, owner[32], mirror_seq u64 |
 
-Opcodes 100–103 are accepted only from the manifest's admin identity.
+Opcodes 100–104 are accepted only from the manifest's admin identity.
 AdminCreateCup attaches the sponsorship, which is reserved immediately and
 never raked. None of them can touch an accepted contest, a credit or a result.
 
@@ -203,6 +204,26 @@ that asset's owner record (one owner holding the one share; anything else is
   for the simulated arenas and their journals (its ASSET_REGISTERED event
   keeps its three fields, so old journals replay to the same digests). A
   deployment registers fighters with 103.
+
+- **AdminMirrorOwner (104)** is for a fighter whose NFT lives on another
+  network: a mainnet QBAY NFT mirrored onto a testnet arena by the operator's
+  read-only bridge ([nft.md](nft.md) §5.4). The first call binds the fighter
+  to (`source_contract`, `source_id`); the only accepted source is 12 (QBAY),
+  and `source_id` is the QBAY NFT id. Every call sets the fighter's owner,
+  which the contract then uses instead of an asset owner record. A zero
+  `owner` means the NFT is gone, and ownership is "unavailable" (BAD_STATE).
+  `mirror_seq` must be at least 1 and strictly greater than the last one
+  (STALE otherwise), so a delayed or replayed update can never roll ownership
+  back. A source other than 12, a zero `mirror_seq` or `house_npc` > 1 is
+  BAD_BODY. A (source, id) bound to another fighter, a later call naming
+  another source or registration, and a fighter already bound by 100 or 103
+  are all BAD_STATE; 100 and 103 likewise refuse a mirrored fighter. The
+  registry entry is (registry_version, house_npc, the source contract's
+  identity, `source_id`). The event is OWNER_MIRRORED (fighter_id,
+  source_contract, source_id, owner, mirror_seq), appended as event type 30.
+  As with a sale of a real asset, a new owner changes nothing until they
+  register the fighter, and admissions keep their snapshotted payout
+  recipient.
 
 Under the recommended NFT model ([nft.md](nft.md) §5.3) the issuer is the
 QDOJO contract itself (`qpi.issueAsset` with issuer = the contract), so the

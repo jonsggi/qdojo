@@ -2761,16 +2761,17 @@
     paint();
   }
 
-  const NFT_EVENT = { MINT: 'MINTED', ASK: 'LISTED', DELIST: 'DELISTED', BID: 'BID', CANCEL_BID: 'BID WITHDRAWN', SALE: 'SOLD', TRANSFER: 'TRANSFERRED', CUSTODY: 'TO CUSTODIAN', RELEASE: 'CUSTODY RETURNED', MANAGE: 'MANAGEMENT MOVED' };
+  const NFT_EVENT = { MINT: 'MINTED', ASK: 'LISTED', DELIST: 'DELISTED', BID: 'BID', CANCEL_BID: 'BID WITHDRAWN', SALE: 'SOLD', TRANSFER: 'TRANSFERRED', CUSTODY: 'TO CUSTODIAN', RELEASE: 'CUSTODY RETURNED', MANAGE: 'MANAGEMENT MOVED', MIRROR_BIND: 'MIRRORED', MIRROR: 'MOVED ON MAINNET', MIRROR_MISSING: 'GONE ON MAINNET' };
   function nftEventRow(e) {
     const who = h => (HEX64.test(h || '') ? ownerLink(h) : esc(h || ''));
     let what = '';
     if (e.kind === 'MINT') what = 'to ' + who(e.to) + (e.legacy_history ? ' <span class="muted">(imported with ' + esc(e.legacy_history.length) + ' earlier owners)</span>' : '');
+    else if (e.kind === 'MIRROR_BIND' || e.kind === 'MIRROR' || e.kind === 'MIRROR_MISSING') what = (e.from ? who(e.from) + ' &rarr; ' : '') + (e.to ? who(e.to) : e.kind === 'MIRROR_MISSING' ? '<span class="muted">nobody</span>' : '') + ' <span class="muted">QBAY #' + esc(e.nft_id) + (e.mainnet_tick ? ', mainnet tick ' + esc(numberFmt(e.mainnet_tick)) : '') + '</span>';
     else if (e.kind === 'SALE') what = who(e.from) + ' &rarr; ' + who(e.to) + ' for ' + qu(e.price) + ' <span class="muted">fee ' + esc(numberFmt(e.fee)) + ', royalty ' + esc(numberFmt(e.royalty)) + '</span>';
     else if (e.kind === 'TRANSFER' || e.kind === 'CUSTODY' || e.kind === 'RELEASE') what = who(e.from) + ' &rarr; ' + who(e.to) + (e.via ? ' <span class="muted">via ' + esc(e.via) + '</span>' : '');
     else if (e.kind === 'MANAGE') what = esc(e.from) + ' &rarr; ' + esc(e.to);
     else what = who(e.from) + (e.price ? ' at ' + qu(e.price) : '') + (e.replaces ? ' <span class="muted">(was ' + esc(numberFmt(e.replaces)) + ')</span>' : '');
-    const cls = e.kind === 'SALE' || e.kind === 'TRANSFER' || e.kind === 'MINT' ? ' class="nft-own"' : '';
+    const cls = e.kind === 'SALE' || e.kind === 'TRANSFER' || e.kind === 'MINT' || /^MIRROR/.test(e.kind) ? ' class="nft-own"' : '';
     return '<li' + cls + '><span class="nft-t">T' + esc(e.tick) + '</span><span class="nft-k nft-k-' + esc(String(e.kind).toLowerCase()) + '">' + esc(NFT_EVENT[e.kind] || e.kind) + '</span><span class="nft-w">' + what + '</span></li>';
   }
   async function frozenCheck(t) {
@@ -2784,6 +2785,29 @@
       '<dl class="kv tiny nft-hashes"><dt>CARD SVG</dt><dd class="id wrap">' + esc(t.frozen.card_svg_sha256) + '</dd><dt>PNG MASTER</dt><dd><a href="' + esc(t.frozen.card_png) + '">1024 &times; 1024</a> <span class="id wrap">' + esc(t.frozen.card_png_sha256) + '</span></dd>' +
       '<dt>METADATA</dt><dd><a href="' + esc(t.frozen.metadata) + '">JSON</a> <span class="id wrap">' + esc(t.frozen.metadata_sha256) + '</span></dd><dt>RENDERER</dt><dd>' + esc(t.frozen.renderer || '?') + '</dd></dl>';
   }
+  /* qbay-mirror (docs/nft.md §5.4): the token is a QBAY NFT on Qubic mainnet;
+   * the arena mirrors its possessor through the operator's read-only bridge. */
+  function mirrorTag(st) {
+    if (!st) return '';
+    const s = st.status || 'stale';
+    const age = st.age_seconds != null ? ' &middot; ' + esc(Math.round(st.age_seconds)) + ' S AGO' : '';
+    return s === 'live' ? '<span class="nft-tag nft-tag-frozen" title="The bridge read mainnet recently">MIRROR LIVE' + age + '</span>'
+      : '<span class="nft-tag nft-tag-pending" title="Owners shown are the last ones the bridge read">' + (s === 'mismatch' ? 'MIRROR MISMATCH' : 'MIRROR STALE') + age + '</span>';
+  }
+  function mirrorPanel(t) {
+    const m = t.mirror, q = (t.metadata || {}).qbay || {}, st = t.mirror_status || {};
+    const url = q.url || ('https://qubicbay.io/nft/' + encodeURIComponent(m.nft_id));
+    const cid = q.cid || '';
+    return '<section class="panel panel-red nft-mirror"><h3>OWNERSHIP MIRRORED FROM QUBIC MAINNET (QBAY)</h3>' +
+      '<p>' + mirrorTag(st) + (m.missing ? ' <span class="nft-tag nft-tag-pending">NFT GONE ON MAINNET</span>' : '') + '</p>' +
+      '<dl class="kv"><dt>QBAY NFT</dt><dd><b>#' + esc(m.nft_id) + '</b> &middot; <a href="' + esc(url) + '" rel="noopener">VIEW ON QUBICBAY &rarr;</a></dd>' +
+      '<dt>COLLECTION</dt><dd>' + (q.collection_url ? '<a href="' + esc(q.collection_url) + '" rel="noopener">' : '') + esc(q.collection_name || 'collection') + ' #' + esc(m.collection_id) + (q.collection_url ? '</a>' : '') + (q.royalty_percent != null ? ' &middot; royalty ' + esc(q.royalty_percent) + '%' : '') + '</dd>' +
+      '<dt>HOLDER</dt><dd><span class="id wrap">' + esc(m.owner_identity || t.owner) + '</span></dd>' +
+      (cid ? '<dt>METADATA CID</dt><dd><span class="id wrap">' + esc(cid) + '</span></dd>' : '') +
+      '<dt>LAST READ</dt><dd>' + esc(st.last_ok_at || 'never') + (st.mainnet_tick ? ' &middot; mainnet tick ' + esc(numberFmt(st.mainnet_tick)) : '') + ' &middot; arena tick ' + esc(m.observed_tick) + '</dd></dl>' +
+      '<p class="tiny muted">The arena reads this NFT on Qubic mainnet and copies its holder here; it never writes to mainnet. Buy, sell and transfer it on QubicBay: the in-game market is off. A sale reaches the arena within a poll or two; a fight already entered pays the owner who entered it.' + (st.status && st.status !== 'live' ? ' <b>The bridge is behind: holders shown may be out of date' + (st.last_error ? ' (' + esc(st.last_error) + ')' : '') + '.</b>' : '') + '</p></section>';
+  }
+
   async function viewNft(tok, hex) {
     if (needData()) return;
     if (!HEX64.test(hex || '')) return notFound('A fighter ID is 64 lowercase hex digits.');
@@ -2802,23 +2826,24 @@
       '<div class="nft-hero">' +
       '<figure class="nft-frame">' + (A ? '<span class="nft-big" role="img" aria-label="Card art of ' + esc(nftTitle(t)) + '">' + A.svg(hex) + '</span>' : '') +
       '<figcaption>' + nftSaleTag(t) + (t.ask ? ' <b class="nft-ask">' + qu(t.ask.price) + '</b>' : '') + '</figcaption></figure>' +
-      '<div class="nft-side">' +
+      '<div class="nft-side">' + (t.mirror ? mirrorPanel(t) : '') +
       '<section class="panel panel-yellow"><h3>WHO HOLDS IT</h3><dl class="kv">' +
       '<dt>OWNER</dt><dd>' + ownerLink(t.owner) + ' <span class="tiny muted">registers the fighter, sets its operator and bot, receives its winnings</span></dd>' +
       '<dt>POSSESSOR</dt><dd>' + ownerLink(t.possessor) + (p ? ' <span class="nft-tag nft-tag-pending">CUSTODIAN</span>' : ' <span class="tiny muted">same as owner</span>') + '</dd>' +
-      '<dt>MANAGED BY</dt><dd>' + esc(t.manager) + (t.manager === 'QDOJO' ? ' <span class="tiny muted">trades here, between contests, with royalty</span>' : ' <span class="tiny muted">trades on QX: no contest lock, no royalty</span>') + '</dd>' +
+      '<dt>MANAGED BY</dt><dd>' + esc(t.manager) + (t.manager === 'QDOJO' ? ' <span class="tiny muted">trades here, between contests, with royalty</span>' : t.manager === 'QBAY' ? ' <span class="tiny muted">trades on QubicBay (mainnet): no contest lock; QBAY\'s own royalty</span>' : ' <span class="tiny muted">trades on QX: no contest lock, no royalty</span>') + '</dd>' +
       '<dt>CREATOR</dt><dd>' + ownerLink(t.creator) + ' <span class="tiny muted">royalty on resales</span></dd>' +
       '<dt>FIGHTER</dt><dd>' + fighterLink(hex, t.fighter_name) + (t.rating != null ? ' &middot; rating <b>' + esc(t.rating) + '</b>' : '') + (t.lock && t.lock !== 'IDLE' ? ' &middot; <span class="nft-tag nft-tag-pending" title="Transfers wait until it is idle">' + esc(t.lock) + '</span>' : '') + '</dd>' +
-      '<dt>ASSET</dt><dd>' + esc(t.name) + ' &middot; 1 share &middot; issuer <span class="id">' + esc(String(t.issuer).slice(0, 12)) + '&hellip;</span></dd></dl></section>' +
+      (t.mirror ? '' : '<dt>ASSET</dt><dd>' + esc(t.name) + ' &middot; 1 share &middot; issuer <span class="id">' + esc(String(t.issuer).slice(0, 12)) + '&hellip;</span></dd>') + '</dl></section>' +
       '<section class="panel"><h3>ART AND METADATA</h3><div id="nft-frozen"><span class="muted">checking&hellip;</span></div></section>' +
       '</div></div>' +
       '<div class="cols info-cols"><section class="panel panel-cyan"><h3>BIO AND TRAITS</h3>' + (A && A.bio ? '<p class="bio">' + esc(A.bio(hex)) + '</p>' : '') + '<dl class="kv nft-traits">' + traitRows + '</dl>' +
       '<p class="tiny muted">Traits are cosmetic and follow from the fighter ID; none of them changes a fight. No rarity was designed in.</p></section>' +
+      (t.mirror ? '<section class="panel panel-yellow"><h3>WHERE IT TRADES</h3><p>On QubicBay, on Qubic mainnet: <a href="' + esc(((t.metadata || {}).qbay || {}).url || 'https://qubicbay.io/nft/' + encodeURIComponent(t.mirror.nft_id)) + '" rel="noopener">QBAY NFT #' + esc(t.mirror.nft_id) + ' &rarr;</a></p><p class="tiny muted">There is no in-game order book for a mirrored fighter. QBAY cannot pause a sale during a contest; winnings still go to the owner who entered.</p></section>' :
       '<section class="panel panel-yellow"><h3>ORDER BOOK</h3>' + (orders ? '<div class="tscroll"><table><thead><tr><th></th><th class="num">PRICE</th><th>BY</th><th class="num">SINCE TICK</th></tr></thead><tbody>' + orders + '</tbody></table></div>' : '<p class="muted">No open ask or bid.</p>') +
-      '<p class="tiny muted">Bids are held in escrow. A bid that meets the ask trades at the resting order\'s price; while the fighter is in a contest, queue or cup the sale waits and settles the first tick it is idle.</p></section></div>' +
+      '<p class="tiny muted">Bids are held in escrow. A bid that meets the ask trades at the resting order\'s price; while the fighter is in a contest, queue or cup the sale waits and settles the first tick it is idle.</p></section>') + '</div>' +
       '<section class="panel"><h3>PROVENANCE (' + esc((t.history || []).length) + ' EVENTS)</h3><ol class="nft-events">' + (t.history || []).slice().reverse().map(nftEventRow).join('') + '</ol></section>' +
       '<section class="panel"><h3>SALES</h3>' + (sales ? '<div class="tscroll"><table><thead><tr><th class="num">TICK</th><th>SELLER</th><th>BUYER</th><th class="num">PRICE</th><th class="num">FEE</th><th class="num">ROYALTY</th></tr></thead><tbody>' + sales + '</tbody></table></div>' : '<p class="muted">Never sold.</p>') + '</section>' +
-      howToBuy({ collection: { issuer: t.issuer, asset_prefix: String(t.name).slice(0, 2) } }) +
+      (t.mirror ? '' : howToBuy({ collection: { issuer: t.issuer, asset_prefix: String(t.name).slice(0, 2) } })) +
       '<p class="practice-note"><a href="#fighter/' + esc(hex) + '">&larr; ' + esc(nftTitle(t)) + '\'s fights</a> &middot; <a href="#collection">the whole collection</a></p>');
     frozenCheck(t);
   }
@@ -2828,6 +2853,11 @@
     const t = await fetchJson('nfts/' + hex + '.json').catch(() => null);
     const anchor = $('#fighter-fights');
     if (tok !== viewToken || !t || !anchor) return;
+    if (t.mirror) {
+      const holder = t.mirror.owner_identity || String(t.owner);
+      anchor.insertAdjacentHTML('beforebegin', '<a class="nft-hook" href="#nft/' + esc(hex) + '"><span class="nft-tag nft-tag-frozen">QBAY</span> <b>NFT #' + esc(t.mirror.nft_id) + '</b> <span>OWNERSHIP MIRRORED FROM QUBIC MAINNET (QBAY) &middot; holder ' + esc(holder.slice(0, 8)) + '&hellip;</span> ' + mirrorTag(t.mirror_status) + (t.mirror.missing ? ' <span class="nft-tag nft-tag-pending">GONE</span>' : '') + ' <span class="nft-go">TOKEN PAGE &rarr;</span></a>');
+      return;
+    }
     anchor.insertAdjacentHTML('beforebegin', '<a class="nft-hook" href="#nft/' + esc(hex) + '"><span class="nft-tag nft-tag-frozen">NFT</span> <b>' + esc(t.name) + ' #' + esc(t.serial) + '</b> <span>owner ' + esc(String(t.owner).slice(0, 8)) + '&hellip;</span> ' + nftSaleTag(t) + (t.ask ? ' <b class="nft-ask">' + qu(t.ask.price) + '</b>' : '') + ' <span class="nft-go">TOKEN PAGE &rarr;</span></a>');
   }
 
