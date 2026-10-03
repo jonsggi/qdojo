@@ -22,7 +22,7 @@ const scriptsOf = html => [...html.matchAll(/<script src="([a-z0-9_/-]+\.js)"/g)
 const stylesOf = html => [...html.matchAll(/<link rel="stylesheet" href="([a-z0-9_/-]+\.css)"/g)].map(m => m[1]);
 
 for (const name of ['anim.js', 'avatars.js', 'combat/engine.js', 'combat/ruleset.js', 'combat/moves.js',
-  'combat/npcs.js', 'combat/logic.js', 'combat/stages.js', 'combat/app.js', 'tests/e2e/run.cjs']) {
+  'combat/npcs.js', 'combat/logic.js', 'combat/practice.js', 'combat/stages.js', 'combat/app.js', 'tests/e2e/run.cjs']) {
   test(`${name} parses as a whole file`, () => {
     // a leading #! line is valid for node but not for vm.Script
     assert.doesNotThrow(() => new vm.Script(read(name).replace(/^#!.*/, ''), { filename: name }), `${name} has a syntax error`);
@@ -45,6 +45,7 @@ test('index.html is the combat site: engine before its users', () => {
   assert.ok(at('combat/stages.js') < at('combat/app.js'), 'stages before the app that mounts them');
   assert.ok(at('combat/moves.js') >= 0 && at('combat/moves.js') < at('combat/app.js'), 'move display strings before the app');
   assert.ok(at('combat/engine.js') < at('combat/npcs.js') && at('combat/npcs.js') < at('combat/logic.js') && at('combat/logic.js') < at('combat/app.js'));
+  assert.ok(at('combat/logic.js') < at('combat/practice.js') && at('combat/practice.js') < at('combat/app.js'), 'practice.js after logic.js, before the app');
   assert.doesNotMatch(read('index.html'), /legacy\.html/, 'the riddle arcade is gone');
 });
 

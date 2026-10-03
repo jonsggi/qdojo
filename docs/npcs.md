@@ -114,3 +114,38 @@ Provide side-swapped paired trials, reproducible replays, batch evaluation,
 private opponent-model storage and a configurable per-decision compute budget.
 Practice rewards are local achievements only: no ranked points, QU,
 tradable rewards or combat-stat upgrades that can be farmed by resetting NPCs.
+
+## 5. Browser practice: shared replays and the local record
+
+A finished browser practice fight is shared as a link that replays that exact
+fight (`apps/web/combat/practice.js`):
+
+```
+#practice/<npc id>/<seed: 64 hex>/p1.<fight number>.<ruleset digest: first 16 hex>.<plans>.<check: 8 hex>
+<plans>  = one group per played round, joined by "-": six action ids (0-8) then the power slot (0-5, or n for none)
+```
+
+Example: `#practice/jabber-v1/abab…ab/p1.1.cf19b7cfee8ccbdd.3331333-330135n.6905a5fa`.
+
+- Only the human's plans travel. The browser re-runs the disclosed NPC policy
+  from the seed and fight number, resolves every round with the engine and
+  derives the result; nothing in the link is trusted as HP or a verdict.
+- The ruleset prefix selects the embedded ruleset that hashes to it, and the
+  fight is shown under that ruleset, not the active one. A link that names no
+  embedded ruleset is refused.
+- `check` is the first 8 hex of SHA-256 over `qdojo/practice/v1\0` followed by the
+  NPC id, seed, fight number, ruleset version, each executed beat
+  (`effectiveA,effectiveB,hpA,hpB`) and the outcome. A different value is shown
+  as a MISMATCH above the re-derived fight.
+- Refused, with a reason: another format version, more than 160 characters, an
+  unknown NPC, a bad seed, malformed rounds, illegal plans, rounds after a
+  knockout, or an unfinished fight.
+- `#practice/<npc>/<seed>` stays the seeded challenge link: a new fight against
+  the same opponent and seed.
+
+The local practice record (`localStorage` key `qdojo.practice.v1`) keeps wins,
+losses, draws and the best result per NPC under each ruleset version, kept apart
+and never combined. It counts each fight once and records the first-session steps.
+It is a local achievement, separate from ranked ratings. Damaged or older data is
+ignored with a notice. When storage is blocked, the record lasts only for the tab.
+The recommended ladder runs JABBER, KICKER, TURTLE, RANDOM, MIXED, SCOUT.
