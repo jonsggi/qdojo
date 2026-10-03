@@ -28,6 +28,12 @@ CANDIDATE_2_DIGEST = "231607f823153747f4c922fd5976c1ac06622542cd5a39eab088874d88
 CANDIDATE_3 = "combat-v1-candidate-3"
 CANDIDATE_3_DIGEST = "cf19b7cfee8ccbdd2a3bbf31132f8327eab63a5341ca7528d682353c32c01bf4"
 KNOWN = {CANDIDATE_1: CANDIDATE_1_DIGEST, CANDIDATE_2: CANDIDATE_2_DIGEST, CANDIDATE_3: CANDIDATE_3_DIGEST}
+# The ruleset the public quickstart targets: what the public demo arena runs
+# (its manifest's semantic_version). `qdojo combat train`, `evaluate` and
+# `doctor` default to it; older rulesets stay selectable with --ruleset.
+# Changing the arena's ruleset is a release step (docs/operations.md §8, "Rules change"):
+# bump this, the starter planner and the onboarding docs in the same commit.
+PUBLIC_ARENA = CANDIDATE_3
 TRIALS: tuple[str, ...] = ()        # unpinned rulesets under measurement (none now)
 
 _KEYS = {

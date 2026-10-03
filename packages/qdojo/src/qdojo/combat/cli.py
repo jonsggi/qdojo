@@ -13,7 +13,7 @@ import sys
 
 from . import evaluate as E
 from . import npcs, planner
-from .rules import CANDIDATE_1, KNOWN, by_version
+from .rules import KNOWN, PUBLIC_ARENA, by_version
 from .training import Contestant, explain, run_fight, summary, verify_replay
 
 
@@ -53,18 +53,29 @@ def cmd_npcs(a):
         print(f"{r['id']:<11} {r['behavior']}\n{'':<11} lesson: {r['lesson']}")
 
 
+def ruleset_line(rules) -> str:
+    """Printed before any result: which rules produced it."""
+    note = "the public arena's rules" if rules.semantic_version == PUBLIC_ARENA else \
+        f"NOT the public arena's rules ({PUBLIC_ARENA})"
+    return f"ruleset {rules.semantic_version} {rules.digest.hex()[:16]} ({note})"
+
+
 def cmd_train(a):
     """One free local fight. Without --planner, --as picks which policy you watch."""
     seed = _seed(a.seed)
-    you = _contestant("you", a.as_policy, a.planner, a.budget_ms, by_version(a.ruleset))
-    them = _contestant(a.npc, a.npc, None, a.budget_ms, by_version(a.ruleset))
-    replay = run_fight(you, them, seed, a.fight, by_version(a.ruleset))
+    rules = by_version(a.ruleset)
+    you = _contestant("you", a.as_policy, a.planner, a.budget_ms, rules)
+    them = _contestant(a.npc, a.npc, None, a.budget_ms, rules)
+    if not a.json:
+        print(ruleset_line(rules))
+    replay = run_fight(you, them, seed, a.fight, rules)
     slot = "A" if replay["fighters"]["A"]["name"] == "you" else "B"
     if a.out:
         with open(a.out, "w", encoding="utf-8") as f:
             json.dump(replay, f, indent=1)
     if a.json:
-        print(json.dumps({"replay": replay if not a.out else a.out, "you": slot,
+        print(json.dumps({"ruleset_digest": rules.digest.hex(), "semantic_version": rules.semantic_version,
+                          "replay": replay if not a.out else a.out, "you": slot,
                           "summary": summary(replay, slot), "explain": explain(replay, slot),
                           "diagnostics": you.diagnostics}))
         return
@@ -109,28 +120,62 @@ def _print_fight(replay: dict, you: str):
 
 
 def cmd_replay(a):
-    with open(a.file, encoding="utf-8") as f:
-        replay = json.load(f)
-    outcome = verify_replay(replay)
+    """A practice replay (from train --out) or an arena replay (an export's
+    fights/<id>/replay.json, a file or an http(s) URL)."""
+    from . import replaycheck
+    try:
+        replay = replaycheck.load(a.file)
+    except (OSError, ValueError) as exc:
+        raise CombatCliError(f"cannot read {a.file}: {exc}") from None
+    try:
+        if replaycheck.is_arena(replay):
+            report = replaycheck.verify_arena_replay(replay)
+            outcome, kind = report["outcome"], "arena"
+        else:
+            outcome, kind, report = verify_replay(replay), "practice", None
+    except replaycheck.ReplayMismatch as exc:
+        if a.json:
+            print(json.dumps({"verified": False, "error": str(exc)}))
+        else:
+            print(f"replay FAILED verification: {exc}")
+        sys.exit(1)
     if a.json:
-        print(json.dumps({"verified": True, "outcome": outcome}))
+        print(json.dumps({"verified": True, "kind": kind, "ruleset_digest": replay.get("ruleset_digest"),
+                          "outcome": outcome, **({"checks": report["checks"]} if report else {})}))
+        return
+    print(f"ruleset {replay.get('semantic_version', '?')} {str(replay.get('ruleset_digest'))[:16]}")
+    if report:
+        for line in report["checks"]:
+            print("  " + line)
+    if outcome is None:
+        print(f"{kind} replay verified so far; the fight has no result yet")
     else:
-        print(f"replay re-derived from its plans: {outcome['result']}, winner {outcome['winner'] or 'none (draw)'}")
+        print(f"{kind} replay re-derived from its plans: {outcome['result']}, "
+              f"winner {outcome['winner'] or 'none (draw)'}")
 
 
 def cmd_evaluate(a):
     """Side-swapped paired benchmark on seeds separate from training."""
     rules = by_version(a.ruleset)
+    all_pools = E.pools(rules)
+    pool_name = a.pool or ("builder" if a.planner else "roster")
+    if pool_name not in all_pools:
+        raise CombatCliError(f"unknown pool {pool_name!r}; known: {', '.join(all_pools)}")
+    pool = all_pools[pool_name]
+    if a.opponent:
+        try:
+            pool = {n: E.policy_by_name(n, rules) for n in a.opponent}
+        except KeyError as exc:
+            raise CombatCliError(str(exc)) from None
+        pool_name = "custom"
+    if a.planner:
+        return _evaluate_planners(a, rules, pool_name, pool)
+    seeds = a.seeds if a.seeds is not None else 100
     try:
         policy = E.policy_by_name(a.policy, rules)
     except KeyError as exc:
         raise CombatCliError(str(exc)) from None
-    all_pools = E.pools(rules)
-    if a.pool not in all_pools:
-        raise CombatCliError(f"unknown pool {a.pool!r}; known: {', '.join(all_pools)}")
-    pool = all_pools[a.pool]
-    if a.opponent:
-        pool = {n: E.policy_by_name(n, rules) for n in a.opponent}
+    a.pool, a.seeds = pool_name, seeds
     say = (lambda m: print(m, file=sys.stderr)) if not a.json else None
     rows = E.evaluate(policy, pool, a.seeds, suite=a.suite, policy_id=a.policy, progress=say, rules=rules)
     if a.json:
@@ -139,7 +184,56 @@ def cmd_evaluate(a):
                           "rows": rows}, indent=1))
     else:
         print(E.markdown(f"{a.policy} vs {a.pool} ({a.seeds} paired seeds, suite {a.suite}, "
-                         f"{rules.semantic_version})", rows))
+                         f"{rules.semantic_version} {rules.digest.hex()[:16]})", rows))
+
+
+def _evaluate_planners(a, rules, pool_name, pool):
+    """`evaluate --planner CMD [--planner CMD2 ...]`: each command on the same
+    seeds and opponents; with two or more, paired differences against the first.
+    Exits 1 if any round fell back because a planner failed."""
+    seeds = a.seeds if a.seeds is not None else 20
+    say = (lambda m: print(m, file=sys.stderr)) if not a.json else None
+    head = (f"{ruleset_line(rules)}\npool {pool_name}: {len(pool)} opponents ({', '.join(pool)})\n"
+            f"seed suite {a.suite!r}: {seeds} paired seeds per opponent, each fought twice with sides swapped")
+    if say:
+        say(head)
+    results = []
+    for text in a.planner:
+        cmd = shlex.split(text)
+        if say:
+            say(f"planner: {text}")
+        results.append(E.evaluate_planner(cmd, pool, seeds, a.suite, rules, a.budget_ms, say))
+    comparisons = [E.compare(results[0], r) for r in results[1:]]
+    failed = [r for r in results if r["planner"]["fallback_rounds"]]
+    if a.json:
+        print(json.dumps({"schema": "qdojo.combat.evaluation.v1", "ruleset_digest": rules.digest.hex(),
+                          "semantic_version": rules.semantic_version, "pool": pool_name,
+                          "opponents": list(pool), "seeds": seeds, "suite": a.suite,
+                          "fights_per_opponent": 2 * seeds, "budget_ms": a.budget_ms,
+                          "planners": [{k: v for k, v in r.items() if k != "pair_scores"} for r in results],
+                          "comparisons": comparisons}, indent=1))
+    else:
+        print(head)
+        for r in results:
+            p = r["planner"]
+            print()
+            print(E.planner_markdown(f"{' '.join(r['command'])} vs {pool_name}", r))
+            print(f"planner rounds {p['rounds']}: {p['rounds'] - p['fallback_rounds']} ran, "
+                  f"{p['fallback_rounds']} fell back to six RECOVERs"
+                  + (f" ({', '.join(f'{k} {v}' for k, v in p['failures'].items())}) in "
+                     f"{p['fights_with_fallback']} of {p['fights']} fights" if p["fallback_rounds"] else "")
+                  + f"; {p['adjusted_rounds']} adjusted (spent power slot dropped or illegal plan replaced); "
+                  f"slowest {p['max_ms']} ms")
+            if p["first_error"]:
+                print(f"first failure: {p['first_error']}")
+        for c in comparisons:
+            print(f"\n{' '.join(c['other'])} minus {' '.join(c['base'])}: {c['mean_difference']:+.3f} per pair "
+                  f"(95% interval {c['lower95']:+.3f} to {c['upper95']:+.3f}, {c['pairs']} pairs on identical seeds)")
+    if failed:
+        sys.stdout.flush()
+        print(f"qdojo: {len(failed)} planner(s) failed in some rounds; those rounds used the fallback plan, "
+              f"so their fights are not the planner's play (see fallback rounds above)", file=sys.stderr)
+        sys.exit(1)
 
 
 def add_parser(sub):
@@ -159,25 +253,30 @@ def add_parser(sub):
     d.add_argument("--fight", type=int, default=1, help="fight number within the seed")
     d.add_argument("--budget-ms", type=int, default=planner.DEFAULT_BUDGET_MS)
     d.add_argument("--out", help="write the replay JSON here")
-    d.add_argument("--ruleset", default=CANDIDATE_1, choices=tuple(KNOWN),
-                   help="packaged ruleset to fight under (default: %(default)s)")
+    d.add_argument("--ruleset", default=PUBLIC_ARENA, choices=tuple(KNOWN),
+                   help="packaged ruleset to fight under (default: %(default)s, the public arena's)")
     d.add_argument("--json", action="store_true")
     d.set_defaults(fn=cmd_train)
 
     d = s.add_parser("replay", help="re-derive a recorded fight from its plans")
-    d.add_argument("file")
+    d.add_argument("file", help="a practice replay (train --out) or an arena replay.json: a path or an http(s) URL")
     d.add_argument("--json", action="store_true")
     d.set_defaults(fn=cmd_replay)
 
     d = s.add_parser("evaluate", help="batched side-swapped benchmark against a pool")
+    d.add_argument("--planner", action="append",
+                   help="your planner command, e.g. 'python3 my_bot.py'; repeat to compare versions on the same seeds")
     d.add_argument("--policy", default="mixed-v1",
-                   help="an NPC, search-v1, search-blind, search-nores, or any pool policy")
-    d.add_argument("--pool", default="roster")
+                   help="without --planner: an NPC, search-v1, search-blind, search-nores, or any pool policy")
+    d.add_argument("--pool", help="opponent pool: roster, house, builder, baseline, ... "
+                                  "(default: builder with --planner, else roster)")
     d.add_argument("--opponent", action="append", help="evaluate only against these, repeatable")
-    d.add_argument("--seeds", type=int, default=100, help="paired seeds per opponent (two fights each)")
-    d.add_argument("--suite", default="test", help="seed namespace; keep training and test suites apart")
-    d.add_argument("--ruleset", default=CANDIDATE_1, choices=tuple(KNOWN),
-                   help="packaged ruleset to fight under (default: %(default)s)")
+    d.add_argument("--seeds", type=int, help="paired seeds per opponent, two fights each "
+                                             "(default: 20 with --planner, else 100)")
+    d.add_argument("--suite", default="test", help="seed namespace; tune on one (e.g. train), report another")
+    d.add_argument("--budget-ms", type=int, default=planner.DEFAULT_BUDGET_MS, help="with --planner: time per round")
+    d.add_argument("--ruleset", default=PUBLIC_ARENA, choices=tuple(KNOWN),
+                   help="packaged ruleset to fight under (default: %(default)s, the public arena's)")
     d.add_argument("--json", action="store_true")
     d.set_defaults(fn=cmd_evaluate)
 
