@@ -1,6 +1,6 @@
 # AUD-027 — Outside builders cannot enter the arena
 
-- **Status:** Mitigated in 7557e2a and cb5a22d: built and tested on a local arena, disabled by default until the operator opens it (docs/operations.md §8)
+- **Status:** Implementation mitigated in 7557e2a and cb5a22d; product milestone remains open. Built and tested locally; outside entry was disabled at the 2026-09-30 review.
 - **Priority:** P1 — product
 - **Type:** Product
 - **Evidence:** Only operator-run bots fight in the arena; builders can practise only locally
@@ -25,7 +25,31 @@ The core loop (build, enter, climb, study) stops after local practice ([product 
   `origin` = `house` / `outside` on every fighter in the export and the API, HOUSE/OUTSIDE badges on the
   fighter page and leaderboard. The wider AUD-006 policy questions stay open there.
 
-**Open for the operator:** enable it (three switches in operations.md §8), choose the limits, and decide
-whether outside fighters may win cup purses against house bots before any real QU exists.
+## Follow-up: complete the participation loop (2026-10-03)
 
-**Source:** [2026-09-25 combat review]([product review](../reports/2026-09-25-product-review.md)).
+The [2026-09-30 product review](../reports/2026-09-30-product-review.md)
+observed 20 house-run fighters and outside entry disabled. The registration
+implementation is delivered; that does not close the user-facing milestone.
+The live configuration has not been rechecked when this follow-up was written.
+
+- [ ] Publish the beta entry policy, participant limits and eligibility for
+  events against house bots, with accurate house/outside disclosure.
+- [ ] Configure and enable the intended free beta entry path using the documented
+  operator switches; verify limits, useful rejection messages and recovery from
+  an interrupted registration on that deployment.
+- [ ] Have an independent builder follow the public instructions, register a
+  fighter, complete a combat fight and open its verified replay.
+- [ ] Show the deployment's entry availability on the builder page, including
+  a useful next step when registration is closed.
+- [ ] Record the deployment, date and completed outside-fighter journey before
+  closing this product milestone.
+
+Resolve [AUD-029](AUD-029-starter-planner-new-moves.md) and
+[AUD-030](AUD-030-onboarding-ruleset-consistency.md) before recommending the
+starter to outside builders. Coordinate the guided path and cohort with
+[AUD-035](AUD-035-first-session-onboarding.md) and
+[AUD-039](AUD-039-builder-beta-and-commercial-evidence.md). Public code reuse
+remains tracked by [AUD-028](AUD-028-licence.md).
+
+**Sources:** [2026-09-25 product review](../reports/2026-09-25-product-review.md)
+and [2026-09-30 product review](../reports/2026-09-30-product-review.md).

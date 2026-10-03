@@ -1,6 +1,6 @@
 # AUD-021 — Kick dominates; duck and throw are near useless
 
-- **Status:** Mitigated by combat-v1 candidate 2 (digest `231607f8…`), implemented in every engine; campaign 10/11 gates (the resource-ablation gate fails at a ceiling, [model.md §8.1](../../docs/model.md#81-gates-campaign-same-seeds)); the live arena still runs candidate 1 until the orchestrator starts a `demo-c2` arena
+- **Status:** Mitigated by candidates 2 and 3; candidate 3 passes 11/11 campaign gates and was observed on the live arena on 2026-09-30. Human learning and outside-strategy validation remain open in [AUD-038](AUD-038-human-strategy-validation.md).
 - **Priority:** P2 — strategic depth
 - **Type:** Rules balance
 - **Evidence:** Net HP per beat in the live field: KICK +7.5, DUCK −4.8, THROW −0.1; power and opening add about 4 HP per fight
@@ -39,6 +39,11 @@ in the live-field simulation (candidate 2: 78.9% / 86%), with 24% of finishes
 within 8 HP (14%). Details: [model.md §9](../../docs/model.md#9-candidate-3-last-stand-and-feint).
 
 ## Resolution
+
+The following records the candidate-2 intervention. The candidate-3 follow-up
+is above; neither simulation campaign establishes human replay readability
+or independent builder engagement. Those questions are tracked separately in
+[AUD-038](AUD-038-human-strategy-validation.md).
 
 Candidate 2 changes numbers only (same engine, actions, plan bytes):
 jab out-trades kick 10 to 4 (was 8 to 14), duck counters a jab for 4, throw

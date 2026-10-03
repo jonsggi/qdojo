@@ -1,9 +1,9 @@
 # Audit findings and issue backlog
 
 > **Purpose:** audit findings, their status, and how to reproduce them. \
-> **Audience:** the owner; anyone touching money paths, custody or NFTs. \
-> **Status:** reference. The combat review (AUD-011 to AUD-028) is below. Of the ten riddle-era findings, three stay open (AUD-006, AUD-009, AUD-010) and seven are retired with the riddle code. \
-> **Last reviewed:** 2026-09-28: the riddle code was removed and its findings dispositioned.
+> **Audience:** the owner; product, game, frontend, protocol and operations contributors. \
+> **Status:** reference. Combat findings AUD-011 to AUD-028 and product follow-ups AUD-029 to AUD-041 are below. Of the ten riddle-era findings, AUD-006 remains open, AUD-009 and AUD-010 are mitigated, and seven are retired with the riddle code. \
+> **Last reviewed:** 2026-10-03: recorded the 2026-09-30 product review and updated its related findings.
 
 ## Riddle-era review 2026-09-16
 
@@ -61,16 +61,16 @@ Seven findings were fixed and deployed on 2026-09-25; the rest are open.
 | [AUD-018](issues/AUD-018-house-economics.md) | Mitigated (demo) f27a972 | P1 / paid launch gate | House economics do not close |
 | [AUD-019](issues/AUD-019-player-ev-and-event-farming.md) | **Mitigated** f27a972 | P1 / fairness / outside stakes | Honest players lose money; cups and duels were farmed |
 | [AUD-020](issues/AUD-020-ratings-and-seasons.md) | **Mitigated** f27a972 | P2 / competition quality | Ratings do not converge and season titles are noisy |
-| [AUD-021](issues/AUD-021-balance-kick-duck.md) | Mitigated (candidate 2 in code; 10/11 gates) | P2 / strategic depth | Kick dominates; duck and throw are near useless |
+| [AUD-021](issues/AUD-021-balance-kick-duck.md) | Mitigated (candidate 3: 11/11 gates; human study in AUD-038) | P2 / strategic depth | Kick dominates; duck and throw are near useless |
 | [AUD-022](issues/AUD-022-pacing.md) | Mitigated (profile `demo-c2`, 9/8 ticks; wiring 67f10c1) | P2 / spectator experience | A ranked fight takes twice the target time |
 | [AUD-023](issues/AUD-023-market-without-prices.md) | **Fixed** 65ac7b8 | P2 / NFT readiness | The simulated market has no prices |
 | [AUD-024](issues/AUD-024-unbounded-growth.md) | **Fixed** 67f10c1 | P2 / operations | index.json and restart time grow without bound |
 | [AUD-025](issues/AUD-025-overdue-invariant.md) | **Fixed** 67f10c1 | P1 / regression safety | Tests accepted overdue live fights |
 | [AUD-026](issues/AUD-026-read-model-database.md) | Fixed in 7557e2a, cb5a22d (deploy pending) | P1 / product foundation | Full history needs a read model, not static files |
-| [AUD-027](issues/AUD-027-outside-builder-entry.md) | Mitigated in 7557e2a, cb5a22d (built, off by default) | P1 / product | Outside builders cannot enter the arena |
+| [AUD-027](issues/AUD-027-outside-builder-entry.md) | Entry implemented; beta enablement and independent journey open | P1 / product | Outside builders cannot enter the arena |
 | [AUD-028](issues/AUD-028-licence.md) | Open (proposal ready) | P1 / open-source release | The repository has no licence |
 
-Suggested order for the open items:
+Suggested order recorded with the September 25 review:
 
 1. Keep the fixes honest: AUD-025 (tests that would have caught AUD-011).
 2. Foundations for outside players: AUD-026 (read model), AUD-027 (entry
@@ -78,3 +78,38 @@ Suggested order for the open items:
 3. Before any paid play: AUD-018 and AUD-019 (economics), re-measured after
    the 2026-09-25 bot fixes.
 4. Game quality: AUD-020, AUD-021, AUD-022, then AUD-023 and AUD-024.
+
+## Product review 2026-09-30 (issues recorded 2026-10-03)
+
+The [review and coverage map](reports/2026-09-30-product-review.md) distinguish
+reproduced defects, design findings and proposed research. Live observations
+are dated September 30; relevant code and the starter failures were rechecked
+on October 3 at 2eb5ef8b. These issues follow the repository's local Markdown
+backlog convention.
+
+| ID | Status | Priority / gate | Issue |
+|---|---|---|---|
+| [AUD-029](issues/AUD-029-starter-planner-new-moves.md) | Open | P1 / outside onboarding | Make the starter planner compatible with every supported ruleset |
+| [AUD-030](issues/AUD-030-onboarding-ruleset-consistency.md) | Open | P1 / outside onboarding | Align onboarding commands and explanations with the arena rules |
+| [AUD-031](issues/AUD-031-custom-planner-benchmark.md) | Open | P1 / builder improvement | Benchmark a builder's own planner directly from the CLI |
+| [AUD-032](issues/AUD-032-fight-debrief.md) | Open (proposal) | P1 / learning | Turn fight results into an actionable debrief |
+| [AUD-033](issues/AUD-033-practice-progress.md) | Open (proposal) | P2 / repeat play | Give practice a saved record and a clear next challenge |
+| [AUD-034](issues/AUD-034-share-completed-practice-fight.md) | Open | P1 / public correctness | Make practice sharing preserve the completed fight |
+| [AUD-035](issues/AUD-035-first-session-onboarding.md) | Open (proposal) | P1 / activation | Make the first session lead clearly to playing and building |
+| [AUD-036](issues/AUD-036-fight-layout-and-readability.md) | Open (design) | P2 / usability | Put fights and controls ahead of banners and technical detail |
+| [AUD-037](issues/AUD-037-spoiler-free-replays.md) | Open (proposal) | P2 / spectating | Offer spoiler-free replay viewing |
+| [AUD-038](issues/AUD-038-human-strategy-validation.md) | Open (research) | P1 / rules decisions | Validate strategic learning and replay readability with outside builders |
+| [AUD-039](issues/AUD-039-builder-beta-and-commercial-evidence.md) | Open (proposal) | P1 / product validation | Run a small builder beta and separate engagement from simulated economics |
+| [AUD-040](issues/AUD-040-frontend-modules.md) | Open | P2 / maintainability | Split the frontend controller into modules with clear ownership |
+| [AUD-041](issues/AUD-041-builder-journey-acceptance.md) | Open | P1 / regression protection | Test the published builder journey against the active ruleset |
+
+Outside-entry enablement extends **AUD-027**, rather than creating a duplicate.
+Human strategy validation extends AUD-021's measured balance work. Real costs,
+player economics and licensing remain with AUD-018, AUD-019 and AUD-028.
+
+Recommended order for this follow-up: repair the starter and rules agreement
+(029–030), add custom benchmarking (031) and journey coverage (041), complete
+entry and first-session guidance (027, 035), sharing and debriefs (034, 032),
+then run the builder cohort and human study (039, 038). Improve progress and
+presentation (033, 036–037) from that feedback and split the frontend
+incrementally (040).
