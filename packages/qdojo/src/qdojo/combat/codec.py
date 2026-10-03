@@ -212,6 +212,10 @@ class Op(IntEnum):
     # AdminRegisterAsset naming the fighter's real Qubic asset (issuer, name):
     # the binding a deployed contract reads ownership from (docs/nft.md §5.3).
     ADMIN_BIND_ASSET = 103
+    # The owner of a fighter whose NFT lives on ANOTHER network (a mainnet QBAY
+    # NFT mirrored onto a testnet arena by the operator's bridge): binds the
+    # fighter to (source contract, source id) and sets its owner (docs/nft.md §5.4).
+    ADMIN_MIRROR_OWNER = 104
 
 
 # Field layouts per opcode (docs/protocol.md §3). Width 32 is a raw 32-byte
@@ -246,7 +250,12 @@ BODIES: dict[Op, tuple[tuple[str, object], ...]] = {
     Op.ADMIN_RETIRE_RULESET: (("ruleset_digest", _ID),),
     Op.ADMIN_BIND_ASSET: (("fighter_id", _ID), ("registry_version", 4), ("house_npc", 1),
                           ("asset_issuer", _ID), ("asset_name", 8)),
+    Op.ADMIN_MIRROR_OWNER: (("fighter_id", _ID), ("registry_version", 4), ("house_npc", 1),
+                            ("source_contract", 4), ("source_id", 8), ("owner", _ID), ("mirror_seq", 8)),
 }
+
+# AdminMirrorOwner's only accepted source today: QBAY, Qubic's NFT contract (index 12).
+MIRROR_SOURCES = frozenset({12})
 
 # The legacy AdminRegisterAsset (100) names no asset. It binds the fighter to
 # the interim asset (issuer = fighter_id, name "QDOJOF"), which nobody can

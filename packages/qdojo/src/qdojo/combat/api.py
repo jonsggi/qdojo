@@ -349,7 +349,9 @@ class Reader:
             f"SELECT doc FROM nft_tokens {w} ORDER BY {order} LIMIT ? OFFSET ?", (*args, per, (page - 1) * per))]
         listed = self.c.execute("SELECT COUNT(*) FROM nft_tokens WHERE ask IS NOT NULL").fetchone()[0]
         n, volume = self.c.execute("SELECT COUNT(*), COALESCE(SUM(price), 0) FROM sales").fetchone()
-        return self.env("nfts", {"page": page, "per_page": per, "pages": pages, "total": total, "items": items,
+        mirror = rm.get_meta(self.c, "deployment", {}).get("mirror")
+        return self.env("nfts", {**({"mirror_status": mirror} if mirror else {}),
+                                 "page": page, "per_page": per, "pages": pages, "total": total, "items": items,
                                  "stats": {"tokens": str(self.c.execute("SELECT COUNT(*) FROM nft_tokens").fetchone()[0]),
                                            "listed": str(listed), "sales": str(n), "volume": str(volume)}})
 
@@ -369,6 +371,9 @@ class Reader:
         doc["sales"] = [{k: (str(v) if isinstance(v, int) else v) for k, v in json.loads(x[0]).items()}
                         for x in self.c.execute("SELECT doc FROM sales WHERE fighter_id = ? ORDER BY seq DESC",
                                                 (hexid,))]
+        mirror = rm.get_meta(self.c, "deployment", {}).get("mirror")
+        if doc.get("mirror") and mirror:              # qbay-mirror: the bridge's staleness as of the last export
+            doc["mirror_status"] = mirror
         return self.env("nft", doc)
 
     def economics(self) -> dict:

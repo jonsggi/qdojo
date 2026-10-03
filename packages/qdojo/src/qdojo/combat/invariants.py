@@ -9,7 +9,9 @@ Rules:
   minted, and the contract balance equals the sum of its liabilities.
 - NFTs (nft.check): market escrow equals open bids, asks belong to holders,
   names are valid and unique, and the contract's owner table agrees with the
-  NFT ledger.
+  NFT ledger. For a qbay-mirror arena, the contract's mirrored owner and
+  mirror_seq (AdminMirrorOwner) agree with the ledger's mirror records, and a
+  mirrored token has no in-game orders.
 - Locks: every non-IDLE fighter points at a live offer, contest or cup that
   includes it, and every live offer and contest holds its fighters' locks.
 - Liveness: no fight sits past its deadline without END_TICK acting on it; no
@@ -46,9 +48,20 @@ def check(world) -> list[str]:
     if ledger is not None:
         from .nft import check as check_nft
         out += [f"nft: {x}" for x in check_nft(ledger, world.balances)]
+        mirrors = getattr(c, "mirrors", {})
         for fid, tok in ledger.tokens.items():      # the contract sees exactly the ledger's owner
-            if world.owners.get(fid) != tok.owner:
+            gone = bool(tok.mirror and tok.mirror["missing"])
+            expected = None if gone else tok.owner
+            if world.owners.get(fid) != expected:
                 out.append(f"nft: owner table for {fid.hex()[:8]} differs from the ledger")
+            if tok.mirror is not None:              # qbay-mirror: AdminMirrorOwner carried the same owner and seq
+                m = mirrors.get(fid)
+                if m is None or m[0] != expected or m[1] != tok.mirror["seq"]:
+                    out.append(f"nft: mirrored owner of {fid.hex()[:8]} in the contract differs from the ledger")
+        for fid in mirrors:
+            tok = ledger.tokens.get(fid)
+            if tok is None or tok.mirror is None:
+                out.append(f"nft: contract mirrors {fid.hex()[:8]} but the ledger has no mirrored token")
 
     for fid, f in c.fighters.items():
         tag = fid.hex()[:8]

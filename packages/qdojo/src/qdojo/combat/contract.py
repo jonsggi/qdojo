@@ -280,7 +280,8 @@ EVENT_TYPES = {name: i + 1 for i, name in enumerate((
     "DUEL_ACCEPTED", "FIGHT_CREATED", "COMMITTED", "REVEALED", "ROUND_RESOLVED", "FIGHT_ENDED",
     "CONTEST_SETTLED", "RATING", "FAULT", "WITHDRAWN", "WITHDRAW_FAILED", "CUP_CREATED",
     "CUP_ENTRY", "CUP_BRACKET", "CUP_LEVEL", "CUP_PAIRING", "CUP_FINISHED", "ASSET_REGISTERED",
-    "RULESET_RETIRED", "REFUND_CREDIT", "CUP_WITHDRAWN", "CUP_CHECKED_IN", "CUP_REPLAY_SCHEDULED"))}
+    "RULESET_RETIRED", "REFUND_CREDIT", "CUP_WITHDRAWN", "CUP_CHECKED_IN", "CUP_REPLAY_SCHEDULED",
+    "OWNER_MIRRORED"))}
 
 
 # ---- the contract ----------------------------------------------------------
@@ -294,6 +295,10 @@ class CombatContract:
         self.ledger = Ledger()
         # fighter_id -> (registry_version, house_npc, asset issuer, asset name u64)
         self.assets: dict[bytes, tuple[int, bool, bytes, int]] = {}
+        # Fighters whose NFT lives on another network (AdminMirrorOwner, 104):
+        # fighter_id -> (mirrored owner or None when the NFT is gone, last mirror_seq).
+        # Their registry entry is (version, house_npc, source contract key, source id).
+        self.mirrors: dict[bytes, tuple[bytes | None, int]] = {}
         self.fighters: dict[bytes, Fighter] = {}
         self.offers: dict[int, mm.Offer] = {}
         self.contests: dict[int, Contest] = {}
@@ -402,7 +407,7 @@ class CombatContract:
             return True
         if req.op is Op.REGISTER_FIGHTER:
             fid = req.fields["fighter_id"]
-            return fid in self.assets and self.owner_of(fid) == who
+            return fid in self.assets and self._owner(fid) == who
         return False
 
     def _claim(self, *who: bytes):
@@ -442,9 +447,16 @@ class CombatContract:
             raise Reject(Code.UNKNOWN_FIGHTER)
         return f
 
+    def _owner(self, fid: bytes) -> bytes | None:
+        """Host::owner_of, or for a mirrored fighter the owner the bridge last set."""
+        mirrors = getattr(self, "mirrors", None)
+        if mirrors and fid in mirrors:
+            return mirrors[fid][0]
+        return self.owner_of(fid)
+
     def _confirmed_owner(self, f: Fighter) -> bytes:
         """The live asset owner. Unknown ownership is never treated as the old owner."""
-        owner = self.owner_of(f.fighter_id)
+        owner = self._owner(f.fighter_id)
         if owner is None:
             raise Reject(Code.BAD_STATE, "asset ownership unavailable")
         return owner
@@ -493,6 +505,7 @@ class CombatContract:
         if f["house_npc"] not in (0, 1):
             raise Reject(Code.BAD_BODY)
         fid = f["fighter_id"]
+        self._not_mirrored(fid)
         self._bind(fid, f["registry_version"], f["house_npc"], fid, codec.LEGACY_ASSET_NAME)
         self._emit("ASSET_REGISTERED", fid, f["registry_version"], f["house_npc"])
         return CallResult(Code.OK)
@@ -506,9 +519,46 @@ class CombatContract:
         if f["house_npc"] not in (0, 1) or f["asset_issuer"] == bytes(32) or not codec.asset_name_ok(f["asset_name"]):
             raise Reject(Code.BAD_BODY, "house_npc 0/1, a nonzero issuer and a valid asset name")
         fid = f["fighter_id"]
+        self._not_mirrored(fid)
         self._bind(fid, f["registry_version"], f["house_npc"], f["asset_issuer"], f["asset_name"])
         self._emit("ASSET_REGISTERED", fid, f["registry_version"], f["house_npc"], f["asset_issuer"], f["asset_name"])
         return CallResult(Code.OK)
+
+    def _not_mirrored(self, fid):
+        if fid in getattr(self, "mirrors", {}):
+            raise Reject(Code.BAD_STATE, "the fighter is bound to a mirrored NFT")
+
+    def _op_admin_mirror_owner(self, inv, f, amount, t):
+        """AdminMirrorOwner (104): a fighter whose NFT lives on another network
+        (a mainnet QBAY NFT) gets its owner from the operator's bridge, which
+        reads the source chain and calls this. The first call binds the fighter
+        to (source_contract, source_id); every call sets the owner, in strictly
+        increasing mirror_seq order. A zero owner means the NFT is gone (burned
+        or unreadable as held): ownership is then unavailable. Like a sale of a
+        real asset, a new owner changes nothing until they register the
+        fighter, and contests already entered pay the owner they snapshotted."""
+        self._need_zero(amount)
+        if inv != self.m.admin:
+            raise Reject(Code.NOT_OWNER, "admin only")
+        if f["house_npc"] not in (0, 1) or f["source_contract"] not in codec.MIRROR_SOURCES or f["mirror_seq"] == 0:
+            raise Reject(Code.BAD_BODY, "house_npc 0/1, a known source contract and mirror_seq >= 1")
+        fid, src, sid = f["fighter_id"], f["source_contract"], f["source_id"]
+        issuer = src.to_bytes(8, "little") + bytes(24)          # the source contract's identity
+        key = (f["registry_version"], bool(f["house_npc"]), issuer, sid)
+        mirrors = self.__dict__.setdefault("mirrors", {})
+        if fid in mirrors:
+            if self.assets.get(fid) != key:
+                raise Reject(Code.BAD_STATE, "the fighter is mirrored from another source")
+            if f["mirror_seq"] <= mirrors[fid][1]:
+                raise Reject(Code.STALE, "mirror_seq must increase")
+        else:
+            if fid in self.assets:
+                raise Reject(Code.BAD_STATE, "the fighter is bound to an asset on this chain")
+            self._bind(fid, f["registry_version"], f["house_npc"], issuer, sid)
+        owner = f["owner"] if f["owner"] != bytes(32) else None
+        mirrors[fid] = (owner, f["mirror_seq"])
+        self._emit("OWNER_MIRRORED", fid, src, sid, f["owner"], f["mirror_seq"])
+        return CallResult(Code.OK, data={"mirror_seq": f["mirror_seq"]})
 
     def _bind(self, fid, version, house_npc, issuer, name):
         if any(a[2] == issuer and a[3] == name for k, a in self.assets.items() if k != fid):
@@ -529,7 +579,7 @@ class CombatContract:
         asset = self.assets.get(fid)
         if asset is None or asset[0] != f["registry_version"]:
             raise Reject(Code.UNKNOWN_FIGHTER, "not a recognised registry asset")
-        owner = self.owner_of(fid)
+        owner = self._owner(fid)
         if owner is None:
             raise Reject(Code.BAD_STATE, "asset ownership unavailable")
         if owner != inv:
@@ -614,7 +664,7 @@ class CombatContract:
         o = self.offers.get(offer_id)
         if o is None or o.kind != kind:
             raise Reject(Code.NOT_FOUND)
-        live_owner = self.owner_of(o.fighter_id)
+        live_owner = self._owner(o.fighter_id)
         if inv not in (o.owner, o.operator) and not (live_owner is not None and inv == live_owner):
             raise Reject(Code.NOT_OWNER)
         if o.status == "MATCHED":
@@ -630,7 +680,7 @@ class CombatContract:
 
     def _still_valid(self, o: mm.Offer) -> bool:
         ftr = self.fighters.get(o.fighter_id)
-        owner = self.owner_of(o.fighter_id)
+        owner = self._owner(o.fighter_id)
         return (ftr is not None and owner is not None and owner == o.owner == ftr.owner
                 and ftr.operator == o.operator and ftr.auth_version == o.auth_version
                 and ftr.lock_ref == o.offer_id)

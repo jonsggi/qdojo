@@ -35,6 +35,7 @@ from .chainsim import FeeModel, SimChain, SimQubicClient
 from .codec import Mode, Op, asset_name_u64
 from .devnet import PROFILES, Devnet, DevnetClient, roles
 from .nft import QDOJO, NFTPolicy, SimFighterNFTs
+from . import nft_qbay as Q
 from .sim import identity
 from .types import ATTACKS, Plan
 from ..hashing import sha256
@@ -64,7 +65,8 @@ DEPLOYMENT = {"kind": "devnet", "currency": CURRENCY, "identities": "synthetic",
 
 ISSUER_LABEL = "qdojo-sim-issuer"
 ESCROW_LABEL = "qdojo-sim-nft-escrow"     # the QDOJO market's bid escrow (an external balance in the simulation)
-NFT_BACKENDS = ("sim", "qubic")
+BRIDGE_LABEL = "qdojo-qbay-bridge"        # the qbay-mirror bridge's ledger identity (issues the mirror records)
+NFT_BACKENDS = ("sim", "qubic", "qbay-mirror")
 EXPORT_CHECK_EVERY = 10          # exports between checks of the export against the contract
 # Hot-state bounds (AUD-024): finished fights, contests and offers leave the
 # contract's memory every COMPACT_EVERY ticks (store.compact); a verifiable
@@ -289,7 +291,8 @@ class Arena:
                  cup_every: int = 1800, duel_every: int = 300, market_every: int = 2400, log=print,
                  deterministic: bool = False, params: dict | None = None, snapshot_every: int = SNAPSHOT_EVERY,
                  join_inbox: Path | None = None, nft_backend: str = "sim", nft_frozen: Path | None = None,
-                 nft_frozen_url: str | None = None):
+                 nft_frozen_url: str | None = None, qbay_config: Path | None = None, qbay_reader=None,
+                 qbay_poll_ticks: int | None = None):
         self.dir = Path(directory)
         # Samples and tests only: derive policy seeds and salts from the seed.
         # A live arena keeps secrets-based salts, as a real bot must.
@@ -311,13 +314,21 @@ class Arena:
         self.chain.burned = state["burned"]
         self.rng = random.Random(state["seed"] ^ (self.w.tick * 7919))
         # Fighter NFTs (docs/nft.md). The backend is fixed when the arena is
-        # created; only "sim" can run: "qubic" is the stub the real RPC goes into.
+        # created. "sim" runs the simulated assets and market; "qbay-mirror"
+        # mirrors ownership from a mainnet QBAY collection (nft_qbay.py,
+        # docs/nft.md §5.4); "qubic" is the stub the real RPC goes into.
         state.setdefault("nft_backend", nft_backend)
-        if state["nft_backend"] != "sim":
+        self.mirror = None
+        self._lineup = lineup
+        self._qbay_initial = None
+        if state["nft_backend"] == "qbay-mirror":
+            self._setup_mirror(lineup, qbay_config, qbay_reader, qbay_poll_ticks)
+        elif state["nft_backend"] != "sim":
             raise SystemExit(f"nft backend {state['nft_backend']!r} cannot run an arena: the qubic adapter is a "
-                             "stub that never sends (nft_qubic.py); use sim")
-        self.nfts = SimFighterNFTs(self.w, self.chain, identity(ISSUER_LABEL))
-        self.nfts.genesis(identity(ISSUER_LABEL), roles()["house"], identity(ESCROW_LABEL), NFTPolicy())
+                             "stub that never sends (nft_qubic.py); use sim or qbay-mirror")
+        else:
+            self.nfts = SimFighterNFTs(self.w, self.chain, identity(ISSUER_LABEL))
+            self.nfts.genesis(identity(ISSUER_LABEL), roles()["house"], identity(ESCROW_LABEL), NFTPolicy())
         self.registry = self.nfts                  # older name, still used by join.py callers and scripts
         self._import_legacy_assets()
         self.frozen = self._load_frozen(nft_frozen, nft_frozen_url)
@@ -330,12 +341,112 @@ class Arena:
         for entry in lineup:
             fid = self._fighter_for(entry, admin)
             self.labels[fid] = entry
-            self._make_bot(fid)
+            if self.nfts.owner(fid) is not None:       # a mirrored NFT that is gone has no owner to run for
+                self._make_bot(fid)
         # Outside builders' fighters (join.py): labelled and disclosed, never run by a house bot.
         for entry in join.load_outside(self.dir):
             self.labels[bytes.fromhex(entry["fighter_id"])] = entry
         self.inbox = join.ArenaInbox(join_inbox) if join_inbox else None
+        self._qbay_initial = None
+        if self.mirror is not None and not self.qbay_poll_ticks:
+            self.mirror.start()                      # real polling, off the tick loop
         self.save()
+
+    # -- qbay-mirror (docs/nft.md §5.4) ---------------------------------------
+
+    @property
+    def mirrored(self) -> bool:
+        return self.mirror is not None
+
+    def _setup_mirror(self, lineup, qbay_config, reader, poll_ticks):
+        """The arena keeps its own copy of the mirror configuration (qbay.json),
+        so a restart never picks up a different collection or mapping. Only
+        creating an arena (or adding a fighter) reads mainnet before the first
+        tick; after that the bridge polls in the background and a replay reads
+        the journal alone."""
+        p = self.dir / "qbay.json"
+        try:
+            if p.exists():
+                cfg = Q.QbayConfig.load(p)
+                if qbay_config and Path(qbay_config).resolve() != p.resolve():
+                    self.log(f"qbay-mirror: the arena keeps its own {p.name}; {qbay_config} ignored")
+            elif qbay_config:
+                cfg = Q.QbayConfig.load(Path(qbay_config))
+            else:
+                raise SystemExit("a qbay-mirror arena needs --qbay-config FILE (docs/nft.md §5.4)")
+        except Q.ConfigError as exc:
+            raise SystemExit(f"qbay-mirror configuration: {exc}") from None
+        self.qbay_cfg, self.qbay_reader = cfg, reader or Q.make_reader(cfg)
+        self.qbay_poll_ticks = poll_ticks
+        issuer = identity(BRIDGE_LABEL)
+        self.nfts = Q.QbayMirrorNFTs(self.w, issuer)
+        if not self.w.nft.configured:
+            rep = self._qbay_validate([e["label"] for e in lineup])
+            coll = rep["collection"]
+            source = {"source": "QBAY", "network": cfg.network, "contract_index": 12,
+                      "collection_id": cfg.collection_id, "collection_name": cfg.collection_name,
+                      "creator": coll.creator.hex(), "creator_identity": Q.qbay.identity(coll.creator),
+                      "royalty_percent": coll.royalty, "uri": coll.uri, "type": coll.doc()["type"],
+                      "rpc": cfg.rpc, "membership": cfg.membership, "nfts_pinned": len(cfg.nfts),
+                      "collection_url": Q.collection_url(cfg.collection_id)}
+            r = self.nfts.genesis(issuer, roles()["house"], identity(ESCROW_LABEL), source)
+            if r["code"] != "OK":
+                raise SystemExit(f"qbay-mirror genesis refused: {r}")
+            self._qbay_initial = rep
+            p.write_text(json.dumps(cfg.doc(), indent=1) + "\n")
+        src = self.w.nft.source or {}
+        mapped = [t.mirror["nft_id"] for t in self.w.nft.tokens.values() if t.mirror]
+        mapped += list(cfg.assign([e["label"] for e in lineup]).values())
+        creator = bytes.fromhex(src["creator"]) if src.get("creator") else None
+        self.mirror = Q.Bridge(self.qbay_reader, cfg, mapped, creator, log=self.log)
+
+    def _qbay_validate(self, labels):
+        try:
+            return Q.validate(self.qbay_reader, self.qbay_cfg, self.qbay_cfg.assign(labels))
+        except (Q.ConfigError, Q.RpcError) as exc:
+            raise SystemExit(f"qbay-mirror: {exc}") from None
+
+    def _mirror_fighter(self, entry, admin) -> bytes:
+        """Bind a lineup fighter to its QBAY NFT: one ledger `mirror` record and
+        AdminMirrorOwner (104), both journalled; then the owner registers it."""
+        fid = self.nfts.id_for(entry["label"])
+        if fid not in self.w.nft.tokens:
+            nft_id = self.qbay_cfg.assign([e["label"] for e in self._lineup])[entry["label"]]
+            rep = self._qbay_initial
+            if rep is None or nft_id not in rep["nfts"]:
+                rep = self._qbay_validate([e["label"] for e in self._lineup])
+            info = rep["nfts"][nft_id]
+            if self.nfts.fighter_of(nft_id) is not None:
+                raise SystemExit(f"qbay-mirror: NFT {nft_id} is already bound to another fighter")
+            r = self.w.nft_call(self.nfts.issuer, "mirror",
+                                Q.bind_record(fid, self.qbay_cfg, rep["collection"], info, rep["tick"].get("tick")))
+            if r["code"] != "OK":
+                raise SystemExit(f"qbay-mirror: could not bind {entry['label']} to NFT {nft_id}: {r}")
+            tok = self.w.nft.tokens[fid]
+            c = self.w.send(admin, Op.ADMIN_MIRROR_OWNER, **Q.mirror_owner_fields(fid, tok, tok.owner))
+            if not c.ok:
+                raise SystemExit(f"qbay-mirror: AdminMirrorOwner refused for {entry['label']}: {c.code.name}")
+        owner = self.nfts.owner(fid)
+        if owner is None:
+            return fid
+        if self.w.balances.get(owner, 0) < 10**9:
+            self.w.mint(owner, 10**12)            # devnet QU for the house bot that runs the fighter
+        f = self.w.contract.fighters.get(fid)
+        if f is None or f.owner != owner:
+            self.w.send(owner, Op.REGISTER_FIGHTER, fighter_id=fid, registry_version=1)
+        return fid
+
+    def _mirror_step(self):
+        if self.qbay_poll_ticks and self.w.tick % self.qbay_poll_ticks == 0:
+            self.mirror.poll()
+        obs = self.mirror.take()
+        if obs:
+            self.mirror.state["applied"] += Q.apply_observations(self.w, self.nfts.issuer, roles()["admin"], obs,
+                                                                 log=self.log)
+
+    def close(self):
+        if self.mirror is not None:
+            self.mirror.stop()
 
     # -- persistence --------------------------------------------------------
 
@@ -392,6 +503,8 @@ class Arena:
                 "tokens": {t["fighter_id"]: t for t in doc.get("tokens", [])}}
 
     def _fighter_for(self, entry, admin) -> bytes:
+        if self.mirrored:
+            return self._mirror_fighter(entry, admin)
         fid = self.nfts.id_for(entry["label"])
         if fid not in self.w.nft.tokens:
             # Minted at registration (docs/nft.md §2): house fighters by the
@@ -519,6 +632,8 @@ class Arena:
     def _maybe_market(self):
         """Now and then owners list fighters and collectors bid (Market). An
         agreed sale completes at the first END_TICK its fighter is idle (nft.py)."""
+        if self.mirrored:
+            return                                   # mirrored fighters trade on QubicBay, not here
         if self.market_every > 0 and self.w.tick % self.market_every == 0:
             self.market.step()
 
@@ -533,6 +648,8 @@ class Arena:
             if owner is None or owner == bot.wallet:
                 continue
             f = c.fighters.get(fid)
+            if self.mirrored and self.w.balances.get(owner, 0) < 10**9:
+                self.w.mint(owner, 10**12)            # devnet QU for the bot that now runs for the new holder
             if f is not None and f.owner != owner:
                 r = self.w.send(owner, Op.REGISTER_FIGHTER, fighter_id=fid, registry_version=1)
                 if not r.ok:
@@ -566,6 +683,8 @@ class Arena:
         self._reserve()
         if self.inbox:
             self.inbox.drain(self)
+        if self.mirrored:
+            self._mirror_step()
         self.chain.advance()
         self._follow_owners()
         if self.inbox:
@@ -647,6 +766,8 @@ class Arena:
         doc = self.w.nft.token_doc(fid)
         f = self.w.contract.fighters.get(fid)
         entry = self.labels.get(fid, {})
+        if doc.get("mirror"):                         # the holder as a Qubic identity (QubicBay shows these)
+            doc["mirror"]["owner_identity"] = Q.qbay.identity(doc["owner"] and bytes.fromhex(doc["owner"]))
         return {**doc, "fighter_name": entry.get("label"), "origin": entry.get("origin", "house") if entry else None,
                 "rating": f.lifetime if f else None, "lock": f.lock if f else None,
                 "record": dict(f.record) if f else None, "frozen": self._frozen_of(fid.hex())}
@@ -654,13 +775,15 @@ class Arena:
     def nft_collection(self) -> dict:
         led = self.w.nft
         st = led.stats()
+        mirror = {**(led.source or {}), **self.mirror.status()} if self.mirrored else None
         return {"collection": {"name": "QDOJO fighters", "issuer": led.issuer.hex(), "asset_prefix": led.policy.name_prefix,
                                "shares_per_token": 1, "backend": led.backend, "policy": {
                                    k: v for k, v in vars(led.policy).items()},
                                "anchors": list(led.anchors),
                                "frozen": ({"manifest": self.frozen.get("manifest_url"), "root": self.frozen.get("root"),
                                            "renderer": self.frozen.get("renderer")} if self.frozen else None),
-                               "currency": CURRENCY, "chain": "simulated"},
+                               "currency": CURRENCY, "chain": "simulated",
+                               **({"mirror": mirror} if mirror else {})},
                 "stats": {k: (str(v) if isinstance(v, int) else v) for k, v in st.items()},
                 "tokens": [self._token_summary(f) for f in sorted(led.tokens, key=lambda f: led.tokens[f].serial)]}
 
@@ -677,6 +800,8 @@ class Arena:
         for fid in self.w.nft.tokens:
             doc = {"schema": "qdojo.combat.nft.v1", "network_id": self.w.manifest.network_id.hex(),
                    "generated_tick": str(self.w.tick), **self.nft_token(fid)}
+            if self.mirrored:
+                doc["mirror_status"] = self.mirror.status()
             p = d / f"{fid.hex()}.json"
             tmp = p.with_suffix(".tmp")
             tmp.write_text(json.dumps(doc, indent=1) + "\n")
@@ -691,7 +816,9 @@ class Arena:
             # origin: "house" (operator-run) or "outside" (registered and run by an outside builder)
             fighters[fid.hex()] = {"name": entry["label"], "driver": driver, "origin": entry.get("origin", "house"),
                                    "asset": self.nfts.public(fid)}
-        return {**DEPLOYMENT, "profile": self.net.profile, "tick_seconds": tick_seconds, "nft_backend": self.state["nft_backend"],
+        extra = {"mirror": {**(self.w.nft.source or {}), **self.mirror.status()}} if self.mirrored else {}
+        return {**DEPLOYMENT, **extra, "profile": self.net.profile, "tick_seconds": tick_seconds,
+                "nft_backend": self.state["nft_backend"],
                 "names": {f: v["name"] for f, v in fighters.items()}, "fighters": fighters,
                 "chain": {"latency_ticks": list(self.chain.latency), "drop_rate": self.chain.drop_rate,
                           "execution_reserve": self.chain.reserve, "fees_burned": self.chain.burned,
@@ -736,6 +863,7 @@ def run(devnet_dir: Path, lineup: list[dict], export_dir: Path, tick_seconds: fl
     export.export_all(arena.w.contract, export_dir, keep=keep, deployment=arena.deployment(tick_seconds),
                       qualification=arena.qualification, extras=arena.extras())
     arena.write_nft_files(export_dir)
+    arena.close()
     log(f"stopped at tick {arena.w.tick}; journal saved")
     return arena
 
@@ -751,7 +879,8 @@ def cmd_live(a):
     run(devnet_dir, lineup, Path(a.export), a.tick_seconds, a.export_every, a.keep, a.ticks,
         log=lambda m: print(time.strftime("%H:%M:%S"), m, flush=True), profile=a.profile, params=params,
         join_inbox=Path(a.join_inbox) if a.join_inbox else None, nft_backend=a.nft_backend,
-        nft_frozen=Path(a.nft_frozen) if a.nft_frozen else None, nft_frozen_url=a.nft_frozen_url)
+        nft_frozen=Path(a.nft_frozen) if a.nft_frozen else None, nft_frozen_url=a.nft_frozen_url,
+        qbay_config=Path(a.qbay_config) if a.qbay_config else None)
 
 
 def add_parser(s):
@@ -771,7 +900,9 @@ def add_parser(s):
     d.add_argument("--join-inbox", help="ENABLE outside builders: the inbox the API's join endpoints fill "
                                         "(off by default; docs/build-a-bot.md §8)")
     d.add_argument("--nft-backend", default="sim", choices=NFT_BACKENDS,
-                   help="fighter NFT backend of a NEW arena (docs/nft.md §5): sim; qubic is a stub that refuses to run")
+                   help="fighter NFT backend of a NEW arena (docs/nft.md §5): sim; qbay-mirror (ownership mirrored "
+                        "read-only from a mainnet QBAY collection, needs --qbay-config); qubic is a stub that refuses to run")
+    d.add_argument("--qbay-config", help="qbay-mirror configuration JSON (qdojo combat qbay pin writes one)")
     d.add_argument("--nft-frozen", help="a frozen art set (qdojo combat nft freeze --out DIR) whose hashes the export links")
     d.add_argument("--nft-frozen-url", help="the public URL of that set, e.g. /data/nft/v1/")
     d.set_defaults(fn=cmd_live)

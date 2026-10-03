@@ -30,6 +30,7 @@ from ..hashing import sha256
 
 SCHEMA = "qdojo.nft.v1"
 QDOJO, QX = "QDOJO", "QX"            # managing contracts a fighter share can be under
+QBAY = "QBAY"                        # a token mirrored from a QBAY NFT on another network (nft_qbay.py)
 MAX_AMOUNT = 1_000_000_000_000_000   # Qubic's MAX_AMOUNT (QU); prices and escrow stay below it
 NAME_RE = re.compile(r"^[A-Z][A-Z0-9]{0,6}$")   # Qubic asset name: 1-7 chars, A-Z first, then A-Z or 0-9
 BASE36 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -40,7 +41,11 @@ QX_SHAREHOLDERS = sha256(b"qdojo/sim/qx-shareholders\0")   # where the simulatio
 OK = "OK"
 CODES = (OK, "UNKNOWN_TOKEN", "BAD_NAME", "DUPLICATE", "NOT_ISSUER", "NOT_OWNER", "NOT_POSSESSOR", "LOCKED",
          "RESERVED", "INSUFFICIENT_FUNDS", "BAD_PRICE", "NO_ORDER", "NOT_MANAGED", "SELF_TRADE", "BOOK_FULL",
-         "BAD_ARGS", "NOT_CONFIGURED")
+         "BAD_ARGS", "NOT_CONFIGURED", "TRADE_ON_QUBICBAY")
+# Operations of the in-game market and of the asset layer that a mirrored
+# token refuses: its NFT trades on QubicBay, never here (docs/nft.md §5.4).
+MARKET_OPS = ("transfer", "ask", "cancel_ask", "bid", "cancel_bid", "settle", "custody", "release", "manage",
+              "qx_transfer")
 
 
 @dataclass(frozen=True)
@@ -96,6 +101,7 @@ class Token:
     shares: int = 1
     metadata: dict = field(default_factory=dict)
     events: list = field(default_factory=list)       # seqs of this token's events, oldest first
+    mirror: dict | None = None                       # QBAY mirror state (nft_id, seq, missing, ...), else None
 
 
 @dataclass
@@ -154,6 +160,7 @@ class AssetLedger:
         self.configured = False
         self.issuer = self.house = self.escrow = None
         self.backend = "sim"
+        self.source: dict | None = None             # qbay-mirror: the source collection (network, id, creator)
         self.policy = NFTPolicy()
         self.tokens: dict[bytes, Token] = {}
         self.names: dict[str, bytes] = {}
@@ -178,6 +185,15 @@ class AssetLedger:
             return {"code": "NOT_CONFIGURED"}
         if amount < 0 or env.balances.get(who, 0) < amount:
             return {"code": "INSUFFICIENT_FUNDS", "detail": "the attached amount exceeds the balance"}
+        if op in MARKET_OPS:
+            try:
+                tok = self.tokens.get(bytes.fromhex(str((args or {}).get("fighter_id", ""))))
+            except ValueError:
+                tok = None
+            if tok is not None and tok.manager == QBAY:
+                return {"code": "TRADE_ON_QUBICBAY",
+                        "detail": f"this fighter is QBAY NFT {tok.mirror['nft_id']}: trade it on QubicBay "
+                                  f"(https://qubicbay.io/nft/{tok.mirror['nft_id']}); the in-game market is off"}
         try:
             out = handler(env, who, dict(args or {}), amount, tick) or {}
         except Reject as r:
@@ -313,6 +329,10 @@ class AssetLedger:
             raise Reject("BAD_NAME", "name prefix")
         self.issuer, self.house, self.escrow = issuer, _b(a.get("house"), "house"), _b(a.get("escrow"), "escrow")
         self.policy, self.backend = policy, str(a.get("backend", "sim"))
+        src = a.get("source")
+        if self.backend == "qbay-mirror" and not isinstance(src, dict):
+            raise Reject("BAD_ARGS", "a qbay-mirror collection names its source (network, collection)")
+        self.source = dict(src) if isinstance(src, dict) else None
         self.configured = True
         self._event(t, "GENESIS", None, issuer=issuer, house=self.house, policy=asdict(policy))
         return {}
@@ -320,6 +340,8 @@ class AssetLedger:
     def _op_issue(self, env, who, a, amount, t):
         if who != self.issuer:
             raise Reject("NOT_ISSUER")
+        if self.backend == "qbay-mirror":
+            raise Reject("TRADE_ON_QUBICBAY", "tokens of a qbay-mirror arena come from the QBAY mirror only")
         fid, to = _b(a.get("fighter_id"), "fighter_id"), _b(a.get("to"), "to")
         creator = _b(a["creator"], "creator") if a.get("creator") else self.house
         if fid in self.tokens:
@@ -486,6 +508,68 @@ class AssetLedger:
         self._event(t, "TRANSFER", tok, **{"from": who, "to": to}, fee=fee, via=QX)
         return {}
 
+    def _op_mirror(self, env, who, a, amount, t):
+        """The bridge records what it observed on the source chain for one QBAY
+        NFT (nft_qbay.py): the first observation binds a token to the fighter,
+        later ones move it to the new possessor or mark it gone. Only the
+        issuer (the bridge's identity) may call it, only in a qbay-mirror
+        collection, and only with a change (a repeat is DUPLICATE). The record
+        carries the observed values, so replay never needs the network."""
+        if who != self.issuer:
+            raise Reject("NOT_ISSUER")
+        if self.backend != "qbay-mirror":
+            raise Reject("BAD_ARGS", "mirror records belong to a qbay-mirror collection")
+        fid = _b(a.get("fighter_id"), "fighter_id")
+        nft_id = a.get("nft_id")
+        if not isinstance(nft_id, int) or isinstance(nft_id, bool) or not 0 <= nft_id < 2_097_152:
+            raise Reject("BAD_ARGS", "nft_id")
+        possessor = _b(a["possessor"], "possessor") if a.get("possessor") else None
+        mainnet_tick = a.get("mainnet_tick")
+        tok = self.tokens.get(fid)
+        if tok is None:
+            if possessor is None:
+                raise Reject("UNKNOWN_TOKEN", "a missing NFT cannot be bound")
+            if any(x.mirror and x.mirror["nft_id"] == nft_id for x in self.tokens.values()):
+                raise Reject("DUPLICATE", "that NFT is bound to another fighter")
+            creator = _b(a.get("creator"), "creator")
+            name = _mirror_name(nft_id)
+            if name in self.names:
+                raise Reject("DUPLICATE", "asset name taken")
+            meta = a.get("metadata") or {}
+            if not isinstance(meta, dict):
+                raise Reject("BAD_ARGS", "metadata")
+            self.serial += 1
+            tok = Token(fid, self.serial, name, self.issuer, creator, False, possessor, possessor, t, manager=QBAY,
+                        metadata=meta)
+            tok.mirror = {"source": QBAY, "nft_id": nft_id, "collection_id": a.get("collection_id"),
+                          "network": a.get("network", "mainnet"), "seq": 1, "missing": False,
+                          "observed_tick": t, "mainnet_tick": mainnet_tick}
+            self.tokens[fid], self.names[name] = tok, fid
+            env.set_owner(fid, possessor)
+            self._event(t, "MIRROR_BIND", tok, to=possessor, nft_id=nft_id, mainnet_tick=mainnet_tick)
+            return {"name": name, "serial": self.serial, "seq": 1}
+        if tok.mirror is None or tok.mirror["nft_id"] != nft_id:
+            raise Reject("BAD_ARGS", "the fighter is not mirrored from that NFT")
+        m = tok.mirror
+        if possessor is None:
+            if m["missing"]:
+                raise Reject("DUPLICATE", "already marked missing")
+            m["missing"] = True
+            env.set_owner(fid, None)
+            kind, extra = "MIRROR_MISSING", {"from": tok.owner}
+        else:
+            if possessor == tok.owner and not m["missing"]:
+                raise Reject("DUPLICATE", "no change")
+            frm = tok.owner
+            tok.owner = tok.possessor = possessor
+            m["missing"] = False
+            env.set_owner(fid, possessor)
+            kind, extra = "MIRROR", {"from": frm, "to": possessor}
+        m["seq"] += 1
+        m["observed_tick"], m["mainnet_tick"] = t, mainnet_tick
+        self._event(t, kind, tok, **extra, nft_id=nft_id, mainnet_tick=mainnet_tick)
+        return {"seq": m["seq"]}
+
     def _op_anchor(self, env, who, a, amount, t):
         """The issuer records a frozen art manifest's root hash (AUD-009)."""
         if who != self.issuer:
@@ -506,9 +590,9 @@ class AssetLedger:
         out = []
         for seq in tok.events:
             e = self.events[seq - 1]
-            if e["kind"] == "MINT":
+            if e["kind"] in ("MINT", "MIRROR_BIND"):
                 out.append((e["tick"], None, bytes.fromhex(e["to"])))
-            elif e["kind"] in ("SALE", "TRANSFER"):
+            elif e["kind"] in ("SALE", "TRANSFER", "MIRROR"):
                 out.append((e["tick"], bytes.fromhex(e["from"]), bytes.fromhex(e["to"])))
         return out
 
@@ -526,7 +610,8 @@ class AssetLedger:
                 "best_bid": {"price": str(bid.price), "bidder": bid.who.hex(), "tick": str(bid.tick)} if bid else None,
                 "bids": len(self.bids.get(fid, [])), "sale_pending": fid in self.crossed,
                 "last_sale": {"price": str(last["price"]), "tick": str(last["tick"])} if last else None,
-                "transfers": sum(1 for s in tok.events if self.events[s - 1]["kind"] in ("SALE", "TRANSFER"))}
+                "transfers": sum(1 for s in tok.events if self.events[s - 1]["kind"] in ("SALE", "TRANSFER", "MIRROR")),
+                **({"mirror": dict(tok.mirror)} if tok.mirror else {})}
 
     def book_doc(self, fid: bytes) -> dict:
         ask = self.asks.get(fid)
@@ -546,6 +631,15 @@ class AssetLedger:
                 "median_price": prices[len(prices) // 2] if prices else None,
                 "min_price": prices[0] if prices else None, "max_price": prices[-1] if prices else None,
                 "escrow": sum(o.price for v in self.bids.values() for o in v)}
+
+
+def _mirror_name(nft_id: int) -> str:
+    """A mirrored token's 7-character name: QB + the QBAY NFT id in base 36."""
+    digits, n = "", nft_id
+    while n:
+        n, r = divmod(n, 36)
+        digits = BASE36[r] + digits
+    return "QB" + digits.rjust(5, "0")
 
 
 def _public_event(e: dict) -> dict:
@@ -577,6 +671,8 @@ def check(ledger: AssetLedger, balances: dict) -> list[str]:
         seen.add(tok.name)
         if tok.shares != 1:
             out.append(f"{tok.name} has {tok.shares} shares")
+        if tok.manager == QBAY and (tok.mirror is None or fid in ledger.asks or fid in ledger.bids):
+            out.append(f"mirrored {tok.name} has in-game orders or no mirror state")
     for fid in ledger.crossed:
         ask, bid = ledger.asks.get(fid), ledger.best_bid(fid)
         if ask is None or bid is None or bid.price < ask.price:
@@ -783,7 +879,8 @@ class SimFighterNFTs(FighterNFTs):
             return None
         hist = [{"tick": str(t), "from": f.hex() if f else None, "to": to.hex()} for t, f, to in self.ledger.ownership(fid)]
         return {**{k: doc[k] for k in ("issuer", "name", "founding", "owner", "possessor", "serial", "creator",
-                                       "manager", "ask", "best_bid", "last_sale")}, "history": hist}
+                                       "manager", "ask", "best_bid", "last_sale")}, "history": hist,
+                **({"mirror": doc["mirror"], "qbay": doc["metadata"].get("qbay")} if "mirror" in doc else {})}
 
 
 def label_fighter_id(issuer: bytes, label: str) -> bytes:
@@ -792,10 +889,13 @@ def label_fighter_id(issuer: bytes, label: str) -> bytes:
 
 
 def make_backend(name: str, world=None, chain=None, **kw) -> FighterNFTs:
-    """The configured backend (`nft_backend: sim | qubic`)."""
+    """The configured backend (`nft_backend: sim | qubic | qbay-mirror`)."""
     if name == "sim":
         return SimFighterNFTs(world, chain, **kw)
+    if name == "qbay-mirror":
+        from .nft_qbay import QbayMirrorNFTs
+        return QbayMirrorNFTs(world, **kw)
     if name == "qubic":
         from .nft_qubic import QubicFighterNFTs
         return QubicFighterNFTs(**kw)
-    raise ValueError(f"unknown nft backend {name!r} (sim | qubic)")
+    raise ValueError(f"unknown nft backend {name!r} (sim | qubic | qbay-mirror)")
