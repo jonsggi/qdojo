@@ -3,7 +3,7 @@
 
 Reads one qdojo.combat.observation.v1 object on stdin and prints one
 qdojo.combat.plan.v1 object. Run it against an NPC under the public arena's
-rules (candidate 3, the default of `qdojo combat train`):
+rules (V3, combat-v1-candidate-3, the default of `qdojo combat train`):
 
     uv run qdojo combat train --npc jabber-v1 --planner "python3 examples/combat/planner_minimal.py"
 
