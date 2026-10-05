@@ -27,19 +27,17 @@
 | **Round** | Six beats from two sealed plans, resolved in one go. A fight has at most three |
 | **Fight** | Up to three rounds; HP and resources carry between rounds |
 | **Series** | One, best-of-three or best-of-five fights (duels). Each fight starts fresh |
-| **HP** | Health, 0 to 100. Never resets between rounds. Zero is a knockout |
-| **Stamina** | Pays for moves, 0 to 60. `RECOVER` and the break refill it |
-| **Break recovery** | +10 stamina between rounds, capped at 60 |
+| **HP** | Health, 0 to 120 (100 under candidate 1). Never resets between rounds. Zero is a knockout |
+| **Stamina** | Pays for moves, 0 to 48 (60 under candidate 1). `RECOVER` and the break refill it |
+| **Break recovery** | +10 stamina between rounds, up to the stamina cap |
 | **Exhausted** | What an unaffordable move becomes: pays nothing, deals nothing, takes damage as an open target, recovers 6 |
 | **Opening** | Earned by ducking a jab or throw, or by landing a clean jab (candidate 3: or by a feint that baits a block or duck). +4 damage (8 in candidates 2 and 3) on the very next beat if it lands; otherwise it expires |
 | **Guard break** | Candidate 3: the opening a baited feint earns (opening = 2). On the next beat a jab, kick or last stand goes through a block |
-| **LAST STAND** | Candidate 3, action 7: a strike worth +1 damage per HP its fighter trails, up to +16. Blocked; a kick out-trades it |
-| **FEINT** | Candidate 3, action 8: a cheap bluff. Against a block or duck it earns a guard break; any strike catches it |
+| **LAST STAND** | Candidate 3, action 7, cost 8: a strike that deals 8 to everything but a block (12 to a recover) plus 1 per HP its fighter trails, up to +16. Level or ahead it gets no bonus but keeps its base damage. Blocked; a kick out-trades it while the gap is small; never powered |
+| **FEINT** | Candidate 3, action 8, cost 2: a bluff that deals nothing. Against a block or duck it earns a guard break; against a recover it earns nothing; any strike catches it for a glancing hit; never powered |
 | **Guard / guard streak** | Consecutive blocks. Each costs 3 more stamina than the last, up to 3 in a row |
 | **Strain** | The 6 extra stamina a blocker pays when it blocks a kick. Never HP |
-| **Power strike** | Once per fight: a marked `JAB`, `KICK` or `THROW` deals +4 for +4 cost. Spent even if it misses |
-| **Last stand** | Candidate 3 only (proposal): `LAST_STAND` (id 7), a strike that deals +1 per HP its fighter trails, at most +16. A block stops it, a kick out-trades it while the gap is small, and it never carries the power strike. Replays show it as LAST STAND +N with a red reactor glow |
-| **Feint** | Candidate 3 only (proposal; the rule is still being tuned): `FEINT` (id 8), a cheap fake-out that baits a block, duck or recover and loses to any real attack. Replays say BAITED! when the trace says it worked and WHIFF when it was punished |
+| **Power strike** | Once per fight: a marked `JAB`, `KICK` or `THROW` deals +12 (+4 under candidate 1) for +4 cost. Spent even if it misses |
 | **KO / DOUBLE_KO** | One fighter at zero HP / both on the same beat (a draw) |
 | **HP / HP_TIE** | Result after round 3: higher HP wins / equal HP draws |
 | **Unexecuted** | Actions revealed after a knockout. Shown, never counted as play |
@@ -52,7 +50,7 @@
 | **Reveal** | Sending the salt and plan after the commit window closes; the contract checks them against the commitment |
 | **Salt** | 32 random secret bytes that make a commitment unguessable. Never reused |
 | **Tick** | The chain's clock. All deadlines are ticks. A countdown on the site is time left to act, never health |
-| **Commit / reveal window** | 24 ticks to commit, then 12 to reveal (candidate timing profile) |
+| **Commit / reveal window** | Ticks to commit, then to reveal, from the manifest's timing profile (the public arena, profile `demo-c3`: 9 and 8; the specification's candidate profile: 24 and 12) |
 | **Timeout / forfeit** | Missing a commit or reveal deadline loses the whole contest to a compliant opponent. Shown as TIMEOUT, never as a knockout |
 | **Double fault** | Both sides missed a deadline: no winner, stakes returned, a fault for each, no rating change |
 | **Void** | The contract could not run (service gap): stakes returned, no fault, no rating change |
@@ -95,5 +93,5 @@
 | **HASH_MATCH_ONLY / UNVERIFIED / FAILED** | Only hashes could be checked / nothing could be checked / something did not match |
 | **SAMPLE** | A recorded sample of arena data, shown while the arena is offline (no live export found) |
 | **DEVNET / TESTNET** | The header badge naming the network the arena runs on, from the export's `deployment.kind`: a devnet is a simulated Qubic chain run by the house, the testnet is Qubic's test network; on both, QU has no monetary value. No badge means Qubic mainnet |
-| **RULES V1 / V2** | How the site names `combat-v1-candidate-1` and `combat-v1-candidate-2`; the exact id and digest are on the RULES screen |
+| **RULES V1 / V2 / V3** | How the site names `combat-v1-candidate-1`, `-2` and `-3`; the public arena runs V3. Replays show LAST STAND +N and BAITED! / WHIFF for the V3 moves. The exact id and digest are on the RULES screen |
 | **STALE** | The live export has not been rewritten for over 5 minutes; the exporter may be down |

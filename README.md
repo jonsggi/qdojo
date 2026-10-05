@@ -37,18 +37,26 @@ devnet only: it is not deployed on Qubic and no real QU moves.
           +10 stamina        +10 stamina
 ```
 
+The public arena runs ruleset `combat-v1-candidate-3` ("RULES V3"), and every
+command below trains under it by default:
+
 | Action | Cost | Lands on | Stopped by |
 |---|---:|---|---|
-| JAB | 6 | jab, kick, throw (8); recover (12) | block, duck |
-| KICK | 12 | jab, kick, throw (14); duck, recover (18) | block, which pays 6 extra stamina |
-| BLOCK | 4, +3 per repeat | nothing: stops jab and kick | throw (14) |
-| DUCK | 4 | nothing: evades jab and throw, earns an opening | kick (18) |
-| THROW | 9 | block (14); recover (18) | jab, kick; duck evades it |
+| JAB | 6 | jab, throw, last stand (8); kick (10); recover (12); feint (4) | block, duck (a duck also counters for 4) |
+| KICK | 12 | kick, throw, last stand (14); duck, recover (18); feint (8); jab only 4 | block, which pays 6 extra stamina |
+| BLOCK | 4, +3 per repeat | nothing: stops jab, kick and last stand | throw (20) |
+| DUCK | 4 | a jab it slips (4); evades jab and throw and earns an opening | kick (18), last stand (8) |
+| THROW | 9 | block (20); recover (18); feint (8) | jab, kick, last stand; duck evades it |
 | RECOVER | 0 | nothing: +18 stamina if unhit, +6 if hit | any attack, at the higher damage |
+| LAST_STAND | 8 | everything but a block for 8 (recover 12, feint 4), +1 per HP you trail (at most +16; no bonus when level or ahead) | block; a kick out-trades it while the gap is small |
+| FEINT | 2 | nothing; a baited block or duck gives you a guard-break opening for the next beat | any strike, for a glancing hit |
 
-Start at 100 HP and 60 stamina, with one power strike per fight. An unaffordable
-move becomes EXHAUSTED: you pay nothing and stand open. The exact matrix and
-resolution order are in [docs/combat.md](docs/combat.md).
+Start at 120 HP and 48 stamina, with one power strike per fight (+12 damage
+for +4 stamina on a JAB, KICK or THROW). An opening adds 8 to the next beat if
+it lands. An unaffordable move becomes EXHAUSTED: you pay nothing and stand
+open. The exact matrix and resolution order are in
+[docs/combat.md](docs/combat.md) §12; the older rulesets (candidates 1 and 2,
+whose fights still verify) are §2-§11.
 
 ## Five-minute quickstart
 
@@ -61,18 +69,23 @@ git clone https://github.com/jonsggi/qdojo.git && cd qdojo
 # Meet the six practice opponents
 uv run qdojo combat npcs
 
-# Fight one with the example planner; the seed is printed so you can rerun it
-uv run qdojo combat train --npc jabber-v1 --planner "python3 examples/combat/planner_minimal.py" --out fight.json
+# Copy the starter planner, then fight an NPC with it under the arena's rules;
+# the ruleset is printed first and the seed last, so you can rerun the fight
+cp examples/combat/planner_minimal.py my_bot.py
+uv run qdojo combat train --npc jabber-v1 --planner "python3 my_bot.py" --out fight.json
 
 # Re-derive that fight from its plans alone
 uv run qdojo combat replay fight.json
 
-# Benchmark a built-in policy against every NPC, both corners, 20 seeds each
-uv run qdojo combat evaluate --policy mixed-v1 --seeds 20
+# Benchmark your planner against every NPC and the house policies, both corners, 20 seeds each
+uv run qdojo combat evaluate --planner "python3 my_bot.py"
 
-# Readiness check for your own planner (spends nothing)
-uv run qdojo combat doctor --planner "python3 examples/combat/planner_minimal.py"
+# Readiness check (spends nothing): a full practice fight, and the arena's ruleset and entry status
+uv run qdojo combat doctor --planner "python3 my_bot.py" --arena https://qdojo.jonsggi.com
 ```
+
+Older rulesets stay selectable with `--ruleset combat-v1-candidate-1` (or `-2`),
+for example to study old replays; the arena does not use them.
 
 Then try the full chain-shaped loop on a **local devnet** (the reference
 contract on a fake chain, fake QU, synthetic identities; state in
@@ -85,7 +98,9 @@ uv run qdojo combat fighter show musashi
 ```
 
 `bot run` queues, commits, reveals and settles within a spending budget, and
-`--spar` adds a disclosed sparring bot so you have someone to fight. To look
+`--spar` adds a disclosed sparring bot so you have someone to fight. The local
+devnet rehearses the chain protocol and runs ruleset candidate 1 (V1); practise
+the arena's rules with `train` and `evaluate`. To look
 at the spectator site locally: `python3 -m http.server -d apps/web 8000`, then
 open <http://localhost:8000/>.
 

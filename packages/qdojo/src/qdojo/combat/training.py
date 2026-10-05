@@ -228,7 +228,9 @@ def explain(replay: dict, slot: str, rules: Ruleset | None = None) -> list[str]:
             if me["actual_hp_lost"]:
                 how = f"took {me['actual_hp_lost']} from their {them['effective']}"
                 if them["bonus_damage"]:
-                    how += f" ({them['base_damage']} base + {them['bonus_damage']} opening/power)"
+                    extra = [f"{them[k]} {label}" for k, label in (("opening_bonus", "opening"), ("power_bonus", "power"),
+                                                                  ("stand_bonus", "last stand")) if them.get(k)]
+                    how += f" ({them['base_damage']} base + {' + '.join(extra)})"
                 parts.append(how)
             if "RECOVERY_PUNISHED" in reasons:
                 parts.append("your recovery was hit, so it restored only "

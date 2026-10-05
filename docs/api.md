@@ -136,8 +136,9 @@ with a separate 64 KiB cap and secret filtering. No wallet/signing authority
 is passed to a planner. Owner can run a plain script or model-backed planner.
 
 A plan must also be legal for the fighter's round-start state, which the
-contract checks at reveal (engine.validate_plan): six submitted actions and a
-power_slot of -1 or a JAB/KICK/THROW, and a power_slot only while
+contract checks at reveal (engine.validate_plan): six actions submitted under
+the fight's ruleset (`ruleset_digest`; candidate 3 adds LAST_STAND and FEINT,
+which candidates 1 and 2 reject) and a power_slot of -1 or a JAB/KICK/THROW, and a power_slot only while
 self.power_available is true. The power strike is spent even if the powered
 attack misses, so a plan that sets power_slot after power_available became
 false is rejected at reveal with BAD_PLAN, and the fighter forfeits. The
@@ -401,8 +402,24 @@ uv run qdojo combat npcs
 uv run qdojo combat train --npc jabber-v1 --planner "python3 examples/combat/planner_minimal.py"
 uv run qdojo combat train --npc kicker-v1 --seed <hex32> --out fight.json
 uv run qdojo combat replay fight.json
+uv run qdojo combat replay https://qdojo.jonsggi.com/data/combat/v1/fights/<id>/replay.json
+uv run qdojo combat evaluate --planner "python3 my_bot.py"
+uv run qdojo combat evaluate --planner "python3 my_bot_v1.py" --planner "python3 my_bot.py" --suite train
 uv run qdojo combat evaluate --policy scout-v1 --pool roster --seeds 200
+uv run qdojo combat train --npc jabber-v1 --ruleset combat-v1-candidate-1   # a historical ruleset
 ```
+
+Ruleset selection: `train`, `evaluate` and `doctor` default to the public
+arena's ruleset (`combat-v1-candidate-3`) and print `ruleset <version>
+<digest prefix>` before any result; `--ruleset` selects a historical one.
+`replay` uses the ruleset the replay names (any packaged one), so old fights
+keep verifying. `evaluate --planner` (repeatable) runs planner commands with
+the same limits and fallback as `train` over paired, side-swapped seeds of
+`--suite` against `--pool` (default `builder`: the NPCs, the house bots'
+policies and, under candidate 3, `stander` and `feinter`), reports per-opponent
+W/D/L, score and fallback rounds (JSON: `qdojo.combat.evaluation.v1`), adds a
+paired comparison when given two or more planners, and exits 1 if any round
+fell back.
 
 Devnet (fake QU):
 
@@ -422,7 +439,7 @@ uv run qdojo combat fighter authorize musashi <name>
 uv run qdojo combat withdraw --as musashi
 uv run qdojo combat devnet status
 uv run qdojo combat devnet export --out apps/web/data/combat/v1
-uv run qdojo combat doctor --planner "python3 my_bot.py"
+uv run qdojo combat doctor --planner "python3 my_bot.py" --arena https://qdojo.jonsggi.com
 ```
 
 Read model and API (§3.2), and entering the public demo arena (simulated
@@ -445,12 +462,12 @@ Devnet state lives in `~/.qdojo/combat/devnet`, bot state in
 another devnet directory. `qdojo combat live` runs the public demo arena
 ([operations.md](operations.md) §8).
 
-> **Known issue (2026-09-25):** `bot run --planner "…"` forfeits its first
-> fight on the devnet: the CLI advances ticks without waiting for the planner
-> subprocess (planned in the background), so the commit window closes before
-> the plan arrives, and the default budget then stops the bot after one fault.
-> `bot run --npc <name>` with an in-process policy works. The live arena is
-> unaffected because it advances ticks on a wall clock.
+`bot run --planner "…"` on the devnet holds the tick while the planner
+decides (up to `--budget-ms`); the 2026-09-25 forfeit is fixed (rechecked
+2026-10-03: 300 ticks with the starter planner, record `D 2`, no forfeit).
+The local devnet runs ruleset candidate 1; `train`, `evaluate` and `doctor`
+default to the public arena's (`rules.PUBLIC_ARENA`, candidate 3) and print
+the ruleset before any result.
 
 The riddle game, its `./dojo` launcher and its commands were removed on
 2026-09-28; they live at git tag `riddle-v0-final`.

@@ -112,7 +112,8 @@
       const r = await fetchSoon(API_BASE + 'status');
       const j = r.ok ? await r.json() : null;
       D.api = !!(j && j.schema === 'qdojo.combat.api.status.v1' && j.network_id === D.manifest.network_id);
-    } catch (e) { D.api = false; }
+      D.apiStatus = D.api ? j : null;
+    } catch (e) { D.api = false; D.apiStatus = null; }
   }
   function apiJson(rel) {
     if (!D.api) return Promise.reject(new Error('read API unavailable'));
@@ -1180,14 +1181,17 @@
 
   // ---- JOIN / HOW TO BUILD A BOT -----------------------------------------------------
 
-  const OBS_EXAMPLE = '{\n  "schema": "qdojo.combat.observation.v1",\n  "mode": "ranked",\n  "fight_id": "42",\n  "round_index": 1,\n  "self_slot": "A",\n  "self":     {"fighter_id": "...", "hp": 72, "stamina": 40, "opening": 0, "guard_streak": 0, "power_available": true},\n  "opponent": {"fighter_id": "...", "hp": 64, "stamina": 26, "opening": 1, "guard_streak": 0, "power_available": true},\n  "deadlines": {"commit_last_tick": "1234", "reveal_first_tick": "1235", "reveal_last_tick": "1246"},\n  "prior_rounds": [ ...accepted plans and executed traces of this fight... ],\n  "history_manifest": {"opponent_fight_ids": [], "as_of_tick": "1210"},\n  "decision_budget_ms": 1500\n}';
-  const PLAN_EXAMPLE = '{"schema": "qdojo.combat.plan.v1", "actions": ["JAB", "DUCK", "KICK", "RECOVER", "BLOCK", "THROW"], "power_slot": 2}';
+  const OBS_EXAMPLE = '{\n  "schema": "qdojo.combat.observation.v1",\n  "mode": "ranked",\n  "fight_id": "42",\n  "round_index": 1,\n  "self_slot": "A",\n  "ruleset_digest": "cf19b7cfee8ccbdd2a3bbf31132f8327eab63a5341ca7528d682353c32c01bf4",\n  "self":     {"fighter_id": "...", "hp": 72, "stamina": 40, "opening": 0, "guard_streak": 0, "power_available": true},\n  "opponent": {"fighter_id": "...", "hp": 64, "stamina": 26, "opening": 1, "guard_streak": 0, "power_available": true},\n  "deadlines": {"commit_last_tick": "1234", "reveal_first_tick": "1235", "reveal_last_tick": "1246"},\n  "prior_rounds": [ ...accepted plans and executed traces of this fight... ],\n  "history_manifest": {"opponent_fight_ids": [], "as_of_tick": "1210"},\n  "decision_budget_ms": 1500\n}';
+  const PLAN_EXAMPLE = '{"schema": "qdojo.combat.plan.v1", "actions": ["FEINT", "THROW", "JAB", "RECOVER", "BLOCK", "LAST_STAND"], "power_slot": 1}';
+  // The public quickstart: every command trains under the arena's ruleset
+  // (the CLI's default is the public arena's, combat-v1-candidate-3).
   const COMMANDS = [
     ['uv run qdojo combat npcs', 'the disclosed practice opponents'],
-    ['uv run qdojo combat train --npc jabber-v1 --planner "python3 examples/combat/planner_minimal.py"', 'one free local fight; prints its seed so you can rerun it'],
-    ['uv run qdojo combat evaluate --policy mixed-v1 --seeds 20', 'side-swapped benchmark over many seeds'],
-    ['uv run qdojo combat replay fight.json', 're-derive a recorded fight from its plans'],
-    ['uv run qdojo combat doctor --planner "python3 my_bot.py"', 'non-spending readiness check'],
+    ['uv run qdojo combat train --npc jabber-v1 --planner "python3 my_bot.py" --out fight.json', 'one free local fight under the arena\'s rules; prints the ruleset first and the seed so you can rerun it'],
+    ['uv run qdojo combat replay fight.json', 're-derive a recorded fight from its plans (also an arena replay.json file or URL)'],
+    ['uv run qdojo combat evaluate --planner "python3 my_bot.py"', 'your planner against every NPC and the house policies, sides swapped over 20 seeds each; counts any fallback'],
+    ['uv run qdojo combat evaluate --planner "python3 old_bot.py" --planner "python3 my_bot.py"', 'compare two versions on identical seeds'],
+    ['uv run qdojo combat doctor --planner "python3 my_bot.py" --arena https://qdojo.jonsggi.com', 'non-spending readiness check: a full practice fight, the arena\'s ruleset and whether entry is open'],
     ['uv run qdojo combat devnet status', 'your own local devnet: a private simulated chain on your machine'],
     ['uv run qdojo combat bot run --fighter alice --planner "python3 my_bot.py"', 'queue, commit and reveal on your local devnet within a budget'],
   ];
@@ -1198,7 +1202,8 @@
       '<li><i class="t-ico t-ico-fight" aria-hidden="true"></i><b>FEEL THE RULES</b><span>Fight the NPCs yourself in the browser. <a href="#practice">PRACTICE &#9654;</a></span></li>' +
       '<li><i class="t-ico t-ico-plan" aria-hidden="true"></i><b>WRITE A PLANNER</b><span>Any program: one JSON observation in, one JSON plan of six moves out.</span></li>' +
       '<li><i class="t-ico t-ico-seal" aria-hidden="true"></i><b>TRAIN LOCALLY</b><span>Run it against every NPC with <code>qdojo combat train</code>. Free, offline.</span></li>' +
-      '<li><i class="t-ico t-ico-plan" aria-hidden="true"></i><b>ENTER THE ARENA</b><span>When the operator opens it: <code>qdojo combat join</code> registers a fighter in the arena and runs your bot from your machine against the house bots (guide §8).</span></li></ol>' +
+      '<li><i class="t-ico t-ico-plan" aria-hidden="true"></i><b>ENTER THE ARENA</b><span>When entry is open (see below): <code>qdojo combat join</code> registers a fighter in the arena and runs your bot from your machine against the house bots (guide §8).</span></li></ol>' +
+      '<section class="panel panel-yellow entry-panel" id="entry-status"><h3>ENTRY ON THIS ARENA: CHECKING&hellip;</h3></section>' +
       '<p class="guide-cta join-cta"><a class="btn" href="https://github.com/jonsggi/qdojo/blob/main/docs/build-a-bot.md">THE BOT BUILDER\'S GUIDE</a> <a class="btn btn-cyan" href="llms.txt">BRIEF YOUR CODING AGENT</a></p>' +
       '<section class="panel panel-cyan"><h3>THE NETWORK' + (net().badge ? ': ' + net().badge : '') + '</h3><p>' + esc(net().join) + ' ' +
       'Building, practicing and benchmarking a bot are free and offline.' + (D.sample ? ' The fights on this site are a recorded sample while the arena is offline.' : '') + ' ' +
@@ -1210,19 +1215,53 @@
       'Diagnostics go to stderr. Default budget 1500 ms; the chain deadline is authoritative and a slow planner gets no extra time.</p>' +
       '<h4>STDIN: qdojo.combat.observation.v1 (abridged)</h4><pre class="code">' + esc(OBS_EXAMPLE) + '</pre>' +
       '<h4>STDOUT: qdojo.combat.plan.v1</h4><pre class="code">' + esc(PLAN_EXAMPLE) + '</pre>' +
-      '<ul class="plain rules-list"><li>Exactly six actions from JAB, KICK, BLOCK, DUCK, THROW, RECOVER; <b>power_slot</b> is -1 or the index of a JAB, KICK or THROW, once per fight.</li>' +
+      '<ul class="plain rules-list"><li>Exactly six actions from ' + R.submitted_action_ids.map(i => NAMES[i]).join(', ') + ' (the ' + esc(rulesLabel(R.semantic_version)) + ' moves; the observation\'s <b>ruleset_digest</b> names the rules, see <a href="#rules">RULES</a>); <b>power_slot</b> is -1 or the index of a JAB, KICK or THROW, once per fight' + (R.submitted_action_ids.includes(ID.LAST_STAND) ? ' (never LAST_STAND or FEINT)' : '') + '.</li>' +
       '<li>Exactly these keys. Unknown fields, wrong case, floats, extra output, a nonzero exit, more than 4096 bytes or a timeout are rejected.</li>' +
       '<li>IDs, ticks and QU are decimal strings; HP, stamina and indexes are integers.</li>' +
       '<li>The planner never sees a key, a salt or the opponent\'s live plan, and holds no signing authority. If it fails mid-fight the bot falls back to six RECOVERs.</li></ul></section>' +
-      '<section class="panel"><h3>3. A COMPLETE BOT, NO DEPENDENCIES</h3><p>examples/combat/planner_minimal.py from the repository: counts what the opponent did earlier in this fight and answers it. ' +
+      '<section class="panel"><h3>3. A COMPLETE BOT, NO DEPENDENCIES</h3><p>examples/combat/planner_minimal.py from the repository: counts what the opponent did earlier in this fight and answers it, feints into blockers, makes a LAST STAND when behind, and refuses rulesets it does not know. Save it as my_bot.py. ' +
       '<a href="combat/planner_minimal.py" download>DOWNLOAD</a></p><pre class="code" id="planner-src">Loading&hellip;</pre></section>' +
       '<section class="panel"><h3>4. THE COMMANDS</h3><div class="tscroll"><table><tbody>' +
       COMMANDS.map(([c, what]) => '<tr><td class="mono wrap">' + esc(c) + '</td><td class="wraptd">' + esc(what) + '</td></tr>').join('') + '</tbody></table></div>' +
       '<p class="tiny muted">Practice and evaluation need no wallet. Keep spending decisions (a separate scheduler) apart from plan selection; never put a seed or API key on a command line.</p></section>' +
       '<section class="panel panel-cyan"><h3>HAVE A CODING AGENT?</h3><p>Point it at <a href="llms.txt">llms.txt</a>: the rules summary, this contract, the commands and where the data lives, written for agents.</p></section>');
+    paintEntry(tok);
     const src = await fetch('combat/planner_minimal.py', { cache: 'no-cache' }).then(r => (r.ok ? r.text() : null)).catch(() => null);
     if (tok !== viewToken) return;
     $('#planner-src').textContent = src || 'Not available here: see examples/combat/planner_minimal.py in the repository.';
+  }
+
+  /* AUD-027: whether this deployment takes outside fighters, from what it
+   * reports (logic.js entryStatus), with the next step either way. The join
+   * endpoint is asked only when the API says join_enabled, so a closed arena
+   * costs no 404. */
+  async function paintEntry(tok) {
+    let join = null;
+    const st = D.api ? D.apiStatus : null;
+    if (st && st.join_enabled) {
+      join = await fetchSoon(API_BASE + 'join').then(async r => ({ status: r.status, doc: await r.json().catch(() => null) })).catch(() => null);
+    }
+    if (tok !== viewToken) return;
+    const box = $('#entry-status');
+    if (!box) return;
+    const e = L.entryStatus({ sample: D.sample, live: !!D.manifest, join, status: st, deployment: D.deployment, manifestDigest: D.manifest && D.manifest.ruleset_digest });
+    const origin = location.origin && /^https?:/.test(location.origin) ? location.origin : 'https://qdojo.jonsggi.com';
+    const timing = Object.values((D.manifest || {}).timing_profiles || {})[0];
+    const local = '<ol class="plain entry-next">' +
+      '<li>Practise by hand in the browser: <a href="#practice">PRACTICE &#9654;</a></li>' +
+      '<li>Train and benchmark the starter locally, under this arena\'s rules: <code>uv run qdojo combat evaluate --planner "python3 my_bot.py"</code></li>' +
+      '<li>Check readiness against this arena: <code>uv run qdojo combat doctor --planner "python3 my_bot.py" --arena ' + esc(origin) + '</code></li></ol>';
+    const label = { OPEN: 'OPEN', FULL: 'FULL', CLOSED: 'CLOSED', UNKNOWN: 'NOT REPORTED', OFFLINE: 'ARENA OFFLINE' }[e.state];
+    box.className = 'panel entry-panel entry-' + e.state.toLowerCase() + ' ' + (e.state === 'OPEN' ? 'panel-green' : 'panel-yellow');
+    box.innerHTML = '<h3>ENTRY ON THIS ARENA: ' + label + '</h3><p>' + esc(e.detail) + '</p>' +
+      (e.state === 'OPEN' ? '<p>Register a fighter and run your bot from your machine:</p><pre class="code">' +
+        esc('uv run qdojo combat join --arena ' + origin + ' --name <name> --planner "python3 my_bot.py"') + '</pre>' +
+        '<p class="tiny">' + (e.grant != null ? 'A new outside fighter gets ' + esc(numberFmt(e.grant)) + ' ' + esc(CUR()) + ' once. ' : '') +
+        (timing ? 'Each round: commit within ' + esc(timing.commit_ticks) + ' ticks, reveal within ' + esc(timing.reveal_ticks) + ' (a tick is about ' + esc((D.deployment || {}).tick_seconds || 1.5) + ' s). ' : '') +
+        (e.rulesOk ? 'Ruleset: ' + esc(rulesLabel((D.manifest || {}).semantic_version)) + ', the one the CLI trains under by default.' : '<b>The join service names a different ruleset than the export: do not enter until it is fixed.</b>') + '</p>'
+        : '<p><b>NEXT:</b> everything up to entry works now, free and offline:</p>' + local +
+          (e.state === 'CLOSED' || e.state === 'FULL' ? '<p class="tiny muted">This page reads the arena\'s own report (' + esc(e.source) + ') and updates when the operator opens entry. Announcements: <a href="llms.txt">llms.txt</a>.</p>' : '')) +
+      '<p class="tiny muted">Source: ' + esc(e.source || 'none') + '.</p>';
   }
 
   // ---- HELP --------------------------------------------------------------------------
@@ -1233,8 +1272,8 @@
     ['OPENING', 'Earned by ducking a jab or throw, or by landing a clean jab. +' + R.opening_damage + ' damage on the very next beat if that beat lands; otherwise it expires.'],
     ['GUARD', 'Consecutive BLOCKs. Each one costs ' + R.block_streak_cost + ' more stamina than the last (up to ' + R.limits.guard_streak + ' in a row). Blocking a KICK also costs strain stamina, never HP.'],
     ['POWER', 'One per fight: mark a JAB, KICK or THROW for +' + R.power_damage + ' damage at +' + R.power_cost + ' cost. Spent even if it misses.'],
-    ...(R.submitted_action_ids.includes(ID.LAST_STAND) ? [['LAST STAND', 'A strike that hits harder the further you trail, +' + ((R.last_stand || {}).per_hp_behind || 1) + ' damage per HP behind (at most +' + ((R.last_stand || {}).cap || 16) + '), so it is worth nothing while you lead. A BLOCK stops it and a KICK out-trades it while the gap is small. It never carries POWER. Replays show the bonus as LAST STAND +N and the reactor burns brighter with it.']] : []),
-    ...(R.submitted_action_ids.includes(ID.FEINT) ? [['FEINT', 'A cheap fake-out strike. It baits a BLOCK, DUCK or RECOVER (BAITED! in replays) and loses to any real attack (WHIFF; the attacker READ IT). It never carries POWER. Its exact effect is on the RULES screen.']] : []),
+    ...(R.submitted_action_ids.includes(ID.LAST_STAND) ? [['LAST STAND', 'A strike that hits harder the further you trail, +' + ((R.last_stand || {}).per_hp_behind || 1) + ' damage per HP behind (at most +' + ((R.last_stand || {}).cap || 16) + '). While you are level or ahead it gets no bonus and is just a costlier jab. A BLOCK stops it and a KICK out-trades it while the gap is small. It never carries POWER. Replays show the bonus as LAST STAND +N and the reactor burns brighter with it.']] : []),
+    ...(R.submitted_action_ids.includes(ID.FEINT) ? [['FEINT', 'A cheap fake-out that deals nothing. If the opponent BLOCKs or DUCKs it is BAITED!: your next JAB, KICK or LAST STAND goes through a block and gets the opening bonus. It earns nothing against a RECOVER, and any real strike catches it for a glancing hit (WHIFF; the attacker READ IT). It never carries POWER. Its exact effect is on the RULES screen.']] : []),
     ['ROUND / BEAT', R.rounds + ' rounds of ' + R.beats_per_round + ' beats. Both plans for a round are sealed, then both resolve beat by beat, simultaneously.'],
     ['COMMIT / REVEAL', 'Each round a bot first commits a hash of its plan and a secret salt, then reveals both. Nobody can change a plan after seeing the other one.'],
     ['TICK', 'The chain\'s clock. Deadlines are ticks. A countdown on this site is time left to act, never health.'],
@@ -1250,7 +1289,7 @@
     ['QU WON / NET', 'QU a fighter won (stake or prize gained after rake) and its net after stakes and entry fees lost, over ranked, duels and cups.'],
     ['SAMPLE', 'A recorded sample of arena data, shown while the arena is offline.'],
     ['DEVNET / TESTNET', 'The network the arena runs on, shown as a badge in the header. A devnet is a simulated Qubic chain run by the house; the testnet is Qubic\'s public test network. On both, QU has no monetary value. No badge means Qubic mainnet.'],
-    ['RULES V2', 'The ruleset every replay uses. The exact version and digest are on the RULES screen.'],
+    ['RULES V1 / V2 / V3', 'The ruleset a replay uses: V3 is combat-v1-candidate-3, which the arena runs now; V1 and V2 are older rulesets whose fights still verify under them. The exact version and digest are on the RULES screen.'],
     ['STALE', 'The live data has not been rewritten for over ' + Math.round(L.STALE_MS / 60000) + ' minutes: the arena may be down, and what you see may be old.'],
   ];
   function viewHelp() {
