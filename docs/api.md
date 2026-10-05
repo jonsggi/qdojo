@@ -321,6 +321,7 @@ ended). Lists are newest first; `page` starts at 1, `per_page` defaults to
 | `GET /api/v1/search?q=` | Fighters by name or ID prefix, a fight by number, owners by ID prefix |
 | `GET /api/v1/market?fighter=&page=` | Every sale of the simulated market (the export keeps 50), newest first: `market.json` sale shape |
 | `GET /api/v1/economics` | The latest `economics.json` body |
+| `GET /api/v1/community` | Aggregate builder participation for the beta ([beta.md](beta.md) §7): fighters by origin, active outside builders per arena day and week, finished fights by pairing (house/outside), bot runs, week-2 return. Counts only, from public chain and arena data |
 | `GET /api/v1/titles` | The `titles.json` body, from the read model's own replay |
 | `GET /api/v1/titles/lineal?holder=&page=&per_page=` | Every lineal reign (titles.json keeps 100), newest first |
 | `GET /api/v1/nfts?owner=&for_sale=1&sort=serial\|price\|last_sale&page=` | Every fighter NFT (`nfts.json` token shape), with collection `stats` |
@@ -329,6 +330,17 @@ ended). Lists are newest first; `page` starts at 1, `per_page` defaults to
 `origin` is `house` (run by the operator: demo bots and NPCs) or `outside`
 (registered and run by an outside builder, [build-a-bot.md](build-a-bot.md)
 §8). The static export carries the same field on each fighter.
+
+`community` counts identities, not people: an outside builder is the key
+that registered an outside fighter (one fighter per key), and *active* means
+that key's bot sent an included transaction in that arena day (57,600 ticks
+at 1.5 s; arena days stop while the arena is down). A running bot is not a
+human visit. A *bot run* starts with a key's first transaction and again
+after 1,200 ticks without one, usually a restart after a planner change.
+Outside fighters named `test-...` are the operator's smoke tests: reported as
+`fighters.operator_tests` and counted with the house. The read model keeps
+per-key transaction counts in 600-tick buckets (`activity`) and run starts
+(`bot_runs`) for this; the API publishes neither table.
 
 Errors are `{"schema": "qdojo.combat.api.error.v1", "error": {"status",
 "code", "message"}}` with the HTTP status: 400 `bad_id`/`bad_query`, 404

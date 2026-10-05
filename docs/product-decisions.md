@@ -3,7 +3,7 @@
 > **Purpose:** the decisions behind combat, what changed from the riddle plan, and the open values that block paid launch. \
 > **Audience:** the owner; reviewers; anyone proposing a product change. \
 > **Status:** reference (decision register, written 2026-09-21). It records decisions, not implemented functionality; for what runs, see the [roadmap](roadmap.md). \
-> **Last reviewed:** 2026-09-26 (demo arena economics)
+> **Last reviewed:** 2026-10-03 (next milestone: independent builder beta)
 
 The [previous riddle product decisions](https://github.com/jonsggi/qdojo/blob/riddle-v0-final/docs/archive/riddle-v0/docs/product-decisions.md) are archived at tag `riddle-v0-final`.
 
@@ -141,3 +141,31 @@ The measurements, before and after, are in the
 **Still open:** real Qubic execution costs. The break-even stake scales
 linearly with the per-fight cost, so the production tiers wait for a measured
 cost report (AUD-018).
+
+## Next milestone: independent builder beta (2026-10-03)
+
+Proposed after the [2026-09-30 product review](../audits/reports/2026-09-30-product-review.md)
+(AUD-039); it takes effect when the owner runs the beta. Plan: [beta.md](beta.md);
+method: [validation-protocol.md](validation-protocol.md).
+
+- **Audience:** independent bot builders, with free practice as their
+  introduction. Spectators and collectors are not the target of this cycle.
+- **Scope:** a free cohort of ten on the devnet arena, measuring
+  build → compete → study → revise: first arena fight (time, help needed,
+  drop-offs), second submissions, week-2 return, explained improvements,
+  replay readability. Outside entry uses the existing builder-run path with
+  the [beta limits](beta.md#4-limits).
+- **Measured, not simulated:** participation comes from public chain and
+  arena data (`/api/v1/community`) and a pseudonymous cohort log. Simulated
+  market turnover, house P&L and devnet QU balances are never cited as
+  demand.
+- **Willingness to pay stays unvalidated** until it is researched separately;
+  free retention is not revenue evidence.
+- **Deferred this cycle:** market, royalty and collection expansions, paid
+  stakes, new moves or rules. **Continues:** contract and testnet work, the
+  QBAY mirror, fixes the cohort surfaces.
+- **Paid-launch dependencies, unchanged:** real execution and hosting costs
+  (AUD-018), player EV (AUD-019), licence (AUD-028), production art and
+  release terms (AUD-009, AUD-010), and model.md's hard gates.
+- **Decision rule:** the exit criteria in [beta.md](beta.md#11-success-metrics-and-exit-criteria)
+  decide between the testnet milestone and a second cohort.

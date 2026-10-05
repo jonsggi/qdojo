@@ -494,6 +494,46 @@ async function main() {
     }
     await must(!hits.length, 'no test-bench wording, got ' + hits.join(' | '));
   });
+  // ---- COMMUNITY panel on #economy (AUD-039): measured participation above the simulated economy ----
+  await step('economy-community', async (page, base) => {
+    await go(page, base, '#economy', '#community');
+    const t = await text(page, '#view');
+    await must(t.indexOf('COMMUNITY') < t.indexOf('SIMULATED ECONOMY BELOW') && t.indexOf('SIMULATED ECONOMY BELOW') < t.indexOf('THE HOUSE LEDGER'), 'community first, then the divider, then the simulated ledger');
+    await must(/Measured, not simulated/.test(t) && /OUTSIDE FIGHTERS/.test(t) && /read API/.test(t), 'the static fallback (no API in this run)');
+    await shot(page, 'economy-community');
+  }, { context: { viewport: { width: 1440, height: 900 } } });
+  const communityDoc = {
+    schema: 'qdojo.combat.api.community.v1', generated_tick: '172800',
+    basis: { tick: 172800, tick_seconds: 1.5, day_ticks: 57600, today: 3, run_gap_ticks: 1200 },
+    fighters: { house: 20, outside: 7 }, outside: { builders: 7, registered_by_day: [{ day: 1, fighters: 4 }, { day: 2, fighters: 3 }], transactions: 4210 },
+    active_builders: { today: 4, last_7_days: 6, ever: 7, by_day: [{ day: 0, builders: 0 }, { day: 1, builders: 4 }, { day: 2, builders: 6 }, { day: 3, builders: 4 }], by_week: [{ weeks_ago: 0, builders: 6 }] },
+    fights: { total: { house_vs_house: 9100, outside_vs_house: 640, outside_vs_outside: 35 }, today: { house_vs_house: 900, outside_vs_house: 210, outside_vs_outside: 12 }, last_7_days: { house_vs_house: 9100, outside_vs_house: 640, outside_vs_outside: 35 }, by_day: [] },
+    bot_runs: { total: 19, builders_with_two_or_more: 5, last_7_days: 19 },
+    retention: { week_2_active: { eligible: 0, retained: 0 }, week_2_new_run: { eligible: 0, retained: 0 } },
+  };
+  async function withMockApi(page) {
+    const manifest = readJson(path.join(SAMPLE, 'manifest.json'));
+    await page.route(/\/data\/combat\/v1\/(?!sample\/)/, r => r.continue({ url: r.request().url().replace('/data/combat/v1/', '/data/combat/v1/sample/') }));
+    await page.route(/\/api\/v1\//, r => {
+      const p = new URL(r.request().url()).pathname;
+      if (p.endsWith('/status')) return r.fulfill({ json: { schema: 'qdojo.combat.api.status.v1', network_id: manifest.network_id } });
+      if (p.endsWith('/community')) return r.fulfill({ json: communityDoc });
+      return r.fulfill({ status: 404, json: { schema: 'qdojo.combat.api.error.v1', error: { status: 404, code: 'not_found' } } });
+    });
+  }
+  for (const [name, w, h] of [['economy-community-api', 1440, 900], ['economy-community-api-390', 390, 844]]) {
+    await step(name, async (page, base) => {
+      await withMockApi(page);
+      await go(page, base, '#economy', '#community .cm-days');
+      const t = await text(page, '#community');
+      await must(/ACTIVE BUILDERS · 7 DAYS\s*6 today 4/.test(t) && /FIGHTS WITH A BUILDER · 7 DAYS\s*675 of 9,775/.test(t) && /BOT RUNS\s*19 5 restarted/.test(t) && /OUTSIDE FIGHTERS\s*7 of 27/.test(t), 'the API counts (got ' + t.slice(0, 300) + ')');
+      await must(!/No outside builders yet/.test(t), 'no empty-arena line when builders exist');
+      const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      await must(over <= 1, 'no sideways page scroll at ' + w + ' px (overflow ' + over + ' px)');
+      await page.locator('#community').screenshot({ path: path.join(SHOTS, name + '.png') });
+      await shot(page, name + '-page', false);
+    }, { context: { viewport: { width: w, height: h } } });
+  }
   await step('help', async (page, base) => { await go(page, base, '#help', '.help-kv'); await shot(page, 'help', false); });
   await step('join', async (page, base) => {
     await go(page, base, '#join', '#planner-src');

@@ -133,6 +133,8 @@ Have independent implementers build a simple bot using only the public docs/SDK.
 Record ambiguities and fix the specification. Model size is not a reason to
 leave ordering, flags or terminal outcomes implicit.
 
+The builder beta measures these with people: [validation-protocol.md](validation-protocol.md).
+
 Free NPC practice should teach a useful improvement within a short session:
 e.g. counter jabber-v1, then discover that the same plan loses to kicker-v1.
 This is a usability target to evaluate, not a promised retention result.

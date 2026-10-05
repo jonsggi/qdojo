@@ -26,7 +26,7 @@ for the record and does not describe the current system.
 `contracts/*/README.md`.
 
 **Operator.** [Architecture](architecture.md) → [operations](operations.md) §8 →
-[moving to testnet](testnet.md) →
+[builder beta](beta.md) → [moving to testnet](testnet.md) →
 [roadmap](roadmap.md) → [product decisions](product-decisions.md) →
 [audit findings](../audits/README.md).
 
@@ -62,6 +62,7 @@ for the record and does not describe the current system.
 | [research/qubic-nft-ecosystem-2026-09-30.md](research/qubic-nft-ecosystem-2026-09-30.md) | reference | How NFTs work on Qubic today (QBAY, QX, costs, testnet), with sources and a recommendation |
 | [proposals/licensing.md](proposals/licensing.md) | proposal | Licences for code, contract, art and NFT holders (AUD-028) |
 | [model.md](model.md) | normative | The acceptance gates for balance, cost and economics |
+| [validation-protocol.md](validation-protocol.md) | proposal | How the builder beta measures readability, building, revision and adaptation with people: hypotheses, tasks, thresholds |
 | [fixtures/commitment-v1.json](fixtures/commitment-v1.json) | reference | Frozen commitment test vector |
 | [reference/](reference/) | reference | `combat_v1.py` (independent arithmetic aid) and `check_docs.py` (this index's link and matrix check) |
 
@@ -71,6 +72,7 @@ for the record and does not describe the current system.
 |---|---|---|
 | [architecture.md](architecture.md) | reference | Components, fight lifecycle, real vs simulated, code map |
 | [operations.md](operations.md) | guide | Production runbook (not in effect) and the live devnet arena runbook |
+| [beta.md](beta.md) | proposal | The builder beta: cohort, entry policy and limits, operator checklist to enable entry, measurements, exit criteria |
 | [testnet.md](testnet.md) | guide | Checklist for moving the arena from the simulated chain to Qubic testnet, and what is still missing |
 
 ## Project

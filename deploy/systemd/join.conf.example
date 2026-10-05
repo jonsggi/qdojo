@@ -13,4 +13,5 @@
 #
 # join-limits.json overrides any field of qdojo.combat.join.Limits, for example:
 #   {"max_outside_fighters": 8, "grant_qu": 100000, "tx_per_day": 20000}
+# The builder beta's recommended values: deploy/systemd/join-limits.beta.json (docs/beta.md §4-5).
 # Then: systemctl --user daemon-reload && systemctl --user restart qdojo-combat-live qdojo-combat-api
