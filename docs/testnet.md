@@ -19,11 +19,11 @@ guess (`apps/web/combat/app.js`, `NETWORKS`).
 
 | Piece | Today | For testnet |
 |---|---|---|
-| Contract | `contracts/qubic/QDOJO.h`, Core's dialect: candidates 1, 2 and 3 as tables keyed by digest (the compiled manifest names candidate 3 and the demo-c3 economics), fighters bound to a real asset (issuer, name) by AdminBindAsset. Passes `qubic/contract-verify`, compiles in core-lite, replays every parity journal and the live arena's journal in Core's harness ([contracts/qubic/README.md](../contracts/qubic/README.md)) | Never ran on a ticking node. Release manifest, contract index, the NFT procedures and the fee reserve still open (§3.1) |
+| Contract | `contracts/qubic/QDOJO.h`, Core's dialect: candidates 1, 2 and 3 as tables keyed by digest (the compiled manifest names candidate 3 and the demo-c3 economics), fighters bound to a real asset (issuer, name) by AdminBindAsset or to a mirrored QBAY NFT by AdminMirrorOwner (104). Passes `qubic/contract-verify`, compiles in core-lite, replays every parity journal and the live arena's journal in Core's harness ([contracts/qubic/README.md](../contracts/qubic/README.md)) | Never ran on a ticking node. Release manifest, contract index, the NFT procedures and the fee reserve still open (§3.1) |
 | Qubic client | `packages/qdojo/src/qdojo/qubic/`: K12, FourQ, SchnorrQ, identities, transactions, the node TCP protocol (`node.py`: tick info, entity, broadcast, tick transactions, contract functions, owned assets), byte-identical to qubic-cli (`scripts/crosscheck-signer.py`) | Reusable as is |
 | Arena runtime | `qdojo combat live` drives the reference contract on `SimChain` (`combat/chainsim.py`): simulated latency, drops, fees and asset registry | **MISSING:** a chain adapter that sends `Dispatch` transactions to a Qubic node and reads confirmed state back (§3.6) |
 | Export, read API | Written from the reference contract's state and the devnet journal (`combat/export.py`, `combat/readmodel.py`) | **MISSING:** an exporter and read model fed from confirmed on-chain transactions and contract functions |
-| Fighter NFTs | `nft_backend: sim` (`combat/nft.py`, [nft.md](nft.md)); `qbay-mirror` (`combat/nft_qbay.py`, [nft.md](nft.md) §5.4) mirrors ownership read-only from a mainnet QBAY collection and runs today; `qubic` is a stub (`combat/nft_qubic.py`) that builds the real QX transactions and refuses to send | The plan: a mainnet QBAY collection with a testnet arena (§3.7); AdminMirrorOwner (104) in `QDOJO.h` |
+| Fighter NFTs | `nft_backend: sim` (`combat/nft.py`, [nft.md](nft.md)); `qbay-mirror` (`combat/nft_qbay.py`, [nft.md](nft.md) §5.4) mirrors ownership read-only from a mainnet QBAY collection and runs today; `qubic` is a stub (`combat/nft_qubic.py`) that builds the real QX transactions and refuses to send | The plan: a mainnet QBAY collection with a testnet arena (§3.7); AdminMirrorOwner (104) is in `QDOJO.h` and proved in Core's harness |
 | Site | Static nginx image; endpoints from `QDOJO_LIVE_DATA` / `QDOJO_LIVE_API`, public origin from `QDOJO_SITE_URL`; labels from the export | Ready (§3.9) |
 
 ## 2. Decisions before starting
@@ -77,6 +77,11 @@ Done on branch work/contract-c3 (details and outputs in
       fighter's issuer and asset name, and ownership is read from that asset
       ([protocol.md](protocol.md) §3). The interim issuer = fighter_id binding
       of opcode 100 stays only for simulated arenas.
+- [x] AdminMirrorOwner (opcode 104) for the qbay-mirror backend, in QDOJO.h
+      and the C++ port, replayed in Core's harness (2026-10-03).
+- [x] Contract and docs cannot drift silently: `make test` runs
+      `docs/reference/check_sync.py` (opcodes, event types, result codes, the
+      v1 ABI, rulesets, the compiled manifest, NFT ownership opcodes).
 - [x] The construction epoch in the local build is the pinned release's epoch,
       232 (`core_harness.py`, `CONSTRUCTION_EPOCH`), so a local TESTNET node
       constructs QDOJO at start.
@@ -242,9 +247,11 @@ What exists is the reference contract on `SimChain`. A testnet arena needs:
    mirrored BITE: Ocean Rebels (QBAY collection 17) onto eight fighters, then
    handled a simulated QubicBay sale and an RPC outage
    ([nft.md](nft.md) §5.4). It costs nothing and sends nothing.
-2. [ ] **`QDOJO.h` gets AdminMirrorOwner (104)**, re-proved in Core's harness
-   with a `mirror.journal`
-   ([contracts/qubic/README.md](../contracts/qubic/README.md#follow-up-adminmirrorowner-opcode-104-for-the-qbay-mirror-backend)).
+2. [x] **`QDOJO.h` has AdminMirrorOwner (104)** (2026-10-03), as does the C++
+   port, re-proved in Core's harness with `mirror.journal` (scripted, every
+   call's result code checked) and `mirror-arena.journal` (a qbay-mirror
+   arena on recorded mainnet answers)
+   ([contracts/qubic/README.md](../contracts/qubic/README.md#done-adminmirrorowner-opcode-104-for-the-qbay-mirror-backend)).
 3. [ ] **Our own collection**, prepared with [nft.md](nft.md) §5.5: art
    freeze, bare-CIDv1 IPFS pins, QubicBay's metadata shape, the 1,000-id
    mapping, size and CFB price, royalty ≤ 10% and the COMMERCIAL label. Then

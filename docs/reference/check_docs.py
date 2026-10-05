@@ -37,5 +37,16 @@ for name,text in (("combat-v1.json",combat[:s2]),("combat-v1-candidate-2.json",c
     assert all(type(v) is int and v>=0 for row in rules["damage"] for v in row)
     # Cross-check the normative Markdown matrix against the machine artifact.
     assert matrix_rows(text,rules["action_names"])==rules["damage"],"Markdown/artifact damage matrix mismatch: "+name
+# Candidate 1's §2 state table and §4 action table against the artifact
+# (the costs and initial values the prose tables state).
+c1=json.loads((ROOT/"docs/combat-v1.json").read_text())
+for field in ("hp","stamina","opening","guard_streak","power_available"):
+    m=re.search(r"^\| "+field+r" \| (\d+) \|",combat[:s2],re.M)
+    assert m and int(m.group(1))==c1["initial"][field],"combat.md §2 initial "+field+" differs from combat-v1.json"
+for i,name in enumerate(c1["action_names"]):
+    m=re.search(r"^\| (?:internal )?"+str(i)+r" \| "+name+r" \| (\d+)",combat[:s2],re.M)
+    assert m and int(m.group(1))==c1["base_costs"][i],"combat.md §4 cost of "+name+" differs from combat-v1.json"
+m=re.search(r"\| 2 \| BLOCK \| (\d+) \+ (\d+)\*guard_streak",combat[:s2])
+assert m and (int(m.group(1)),int(m.group(2)))==(c1["base_costs"][2],c1["block_streak_cost"]),"combat.md §4 BLOCK cost"
 assert not errors,"Broken active links:\n"+"\n".join(errors)
-print("Active document links passed:",len(paths),"files; candidate 1, 2 and 3 matrices passed.")
+print("Active document links passed:",len(paths),"files; candidate 1, 2 and 3 matrices and the candidate-1 state and cost tables passed.")

@@ -104,7 +104,9 @@ def replay(manifest: Manifest, head: dict, records: list) -> CombatContract:
         elif k == "fail":
             (failing.add if rec["on"] else failing.discard)(bytes.fromhex(rec["who"]))
         elif k == "call":
-            contract.call(bytes.fromhex(rec["who"]), bytes.fromhex(rec["frame"]), rec["amount"], rec["t"])
+            r = contract.call(bytes.fromhex(rec["who"]), bytes.fromhex(rec["frame"]), rec["amount"], rec["t"])
+            if "code" in rec and int(r.code) != rec["code"]:     # optional: the recorded result code
+                raise StoreError(f"call at tick {rec['t']}: result {r.code.name}, recorded {rec['code']}")
         elif k == "end":
             contract.end_tick(rec["t"])
             contract.begin_tick(rec["t"] + 1)

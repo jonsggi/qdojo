@@ -92,6 +92,7 @@ constexpr uint32 QDOJO_PAIR_STARTS_PER_EPOCH = 2;
 constexpr uint64 QDOJO_PAIR_REMATCH_TICKS = 120;
 
 // Result codes (docs/protocol.md section 6). HOST_ERROR is not a protocol code.
+// sync:begin result-codes (docs/reference/check_sync.py compares the marked tables)
 constexpr uint8 QDOJO_OK = 0;
 constexpr uint8 QDOJO_DUPLICATE = 1;
 constexpr uint8 QDOJO_BAD_FRAME = 2;
@@ -123,8 +124,10 @@ constexpr uint8 QDOJO_TERMINAL = 27;
 constexpr uint8 QDOJO_SERVICE_VOID = 28;
 constexpr uint8 QDOJO_TRANSFER_FAILED = 29;
 constexpr uint8 QDOJO_HOST_ERROR = 255;
+// sync:end result-codes
 
 // Opcodes
+// sync:begin opcodes
 constexpr uint16 QDOJO_OP_REGISTER_FIGHTER = 1;
 constexpr uint16 QDOJO_OP_SET_OPERATOR = 2;
 constexpr uint16 QDOJO_OP_QUEUE_ENTER = 3;
@@ -143,8 +146,11 @@ constexpr uint16 QDOJO_OP_ADMIN_REGISTER_ASSET = 100;
 constexpr uint16 QDOJO_OP_ADMIN_CREATE_CUP = 101;
 constexpr uint16 QDOJO_OP_ADMIN_RETIRE_RULESET = 102;
 constexpr uint16 QDOJO_OP_ADMIN_BIND_ASSET = 103;
+constexpr uint16 QDOJO_OP_ADMIN_MIRROR_OWNER = 104;
+// sync:end opcodes
 
 // Event types (contract.py EVENT_TYPES)
+// sync:begin event-types
 constexpr uint16 QDOJO_EV_SERVICE_GAP = 1;
 constexpr uint16 QDOJO_EV_FIGHTER_REGISTERED = 2;
 constexpr uint16 QDOJO_EV_OPERATOR_SET = 3;
@@ -174,6 +180,8 @@ constexpr uint16 QDOJO_EV_REFUND_CREDIT = 26;
 constexpr uint16 QDOJO_EV_CUP_WITHDRAWN = 27;
 constexpr uint16 QDOJO_EV_CUP_CHECKED_IN = 28;
 constexpr uint16 QDOJO_EV_CUP_REPLAY_SCHEDULED = 29;
+constexpr uint16 QDOJO_EV_OWNER_MIRRORED = 30;
+// sync:end event-types
 
 // Enumerations
 constexpr uint8 QDOJO_L_IDLE = 0;
@@ -238,6 +246,65 @@ constexpr uint8 QDOJO_RS_C2 = 2;
 constexpr uint8 QDOJO_RS_C3 = 3;
 // The ruleset the compiled-in manifest names (loadDefaultManifest).
 constexpr uint8 QDOJO_MANIFEST_RULESET = QDOJO_RS_C3;
+
+// ---- the compiled-in manifest (loadDefaultManifest) ----------------------------
+// TEST PROFILE: the economics of devnet.PROFILES["demo-c3"] (the live arena) and
+// the synthetic test identities of the committed journals (combat/test_contract.py
+// ADMIN, HOUSE, DEV, SHARE; network_id 0xd0 x 32), never release values.
+// docs/reference/check_sync.py compares this block with the demo-c3 profile and
+// with what contracts/qubic/README.md, docs/testnet.md and docs/protocol.md state.
+// sync:begin compiled-manifest
+constexpr uint32 QDOJO_DM_TIMING_ID = 1;
+constexpr uint16 QDOJO_DM_COMMIT_TICKS = 9;
+constexpr uint16 QDOJO_DM_REVEAL_TICKS = 8;
+constexpr uint32 QDOJO_DM_FEES = 2;                 // fee profiles 1 and 2, tiers 1 and 2
+constexpr uint16 QDOJO_DM_FEE_1_RAKE_BPS = 500;
+constexpr uint16 QDOJO_DM_FEE_2_RAKE_BPS = 1000;
+constexpr uint16 QDOJO_DM_HOUSE_BPS = 6000;
+constexpr uint16 QDOJO_DM_DEV_BPS = 1000;
+constexpr uint16 QDOJO_DM_SHARE_BPS = 3000;
+constexpr sint64 QDOJO_DM_TIER_1_STAKE = 5000;
+constexpr sint64 QDOJO_DM_TIER_2_STAKE = 20000;
+constexpr sint64 QDOJO_DM_GENESIS_EPOCH = 1;
+constexpr sint64 QDOJO_DM_TICKS_PER_EPOCH = 2400;
+constexpr sint64 QDOJO_DM_SEASON_START_EPOCH = 1;
+constexpr sint64 QDOJO_DM_SEASON_EPOCHS = 4;
+constexpr sint64 QDOJO_DM_SEASON_CLOSEOUT_TICKS = 300;
+constexpr uint32 QDOJO_DM_MAX_FIGHTERS = 1024;
+constexpr uint32 QDOJO_DM_MAX_ACCOUNTS = 2048;
+constexpr uint32 QDOJO_DM_MAX_OFFERS = 64;
+constexpr uint32 QDOJO_DM_MAX_FIGHTS = 16;
+constexpr uint32 QDOJO_DM_MAX_CUPS = 4;
+constexpr uint32 QDOJO_DM_MAX_CUP_ENTRANTS = 16;
+constexpr uint32 QDOJO_DM_EVENT_RING = 2048;
+constexpr uint32 QDOJO_DM_MATCH_INTERVAL = 4;
+constexpr uint64 QDOJO_DM_OFFER_LIFETIME_LO = 40;
+constexpr uint64 QDOJO_DM_OFFER_LIFETIME_HI = 1200;
+constexpr uint64 QDOJO_DM_COOLDOWN_TICKS = 240;
+constexpr uint32 QDOJO_DM_FAULTS_PER_EPOCH = 3;
+constexpr uint32 QDOJO_DM_PAIR_STARTS_PER_EPOCH = 3;
+constexpr uint64 QDOJO_DM_PAIR_REMATCH_TICKS = 60;
+constexpr uint64 QDOJO_DM_NETWORK_0 = 0xd0d0d0d0d0d0d0d0ULL;
+constexpr uint64 QDOJO_DM_NETWORK_1 = 0xd0d0d0d0d0d0d0d0ULL;
+constexpr uint64 QDOJO_DM_NETWORK_2 = 0xd0d0d0d0d0d0d0d0ULL;
+constexpr uint64 QDOJO_DM_NETWORK_3 = 0xd0d0d0d0d0d0d0d0ULL;
+constexpr uint64 QDOJO_DM_ADMIN_0 = 0x012fe519b42f69e5ULL;
+constexpr uint64 QDOJO_DM_ADMIN_1 = 0x8e842cbf92770eceULL;
+constexpr uint64 QDOJO_DM_ADMIN_2 = 0x7261f994e78c6b9eULL;
+constexpr uint64 QDOJO_DM_ADMIN_3 = 0x1f22bba056878139ULL;
+constexpr uint64 QDOJO_DM_HOUSE_0 = 0x4e9c8feedeb2fc1aULL;
+constexpr uint64 QDOJO_DM_HOUSE_1 = 0x43ba12519e9c4835ULL;
+constexpr uint64 QDOJO_DM_HOUSE_2 = 0xb0c6e36824626962ULL;
+constexpr uint64 QDOJO_DM_HOUSE_3 = 0xfa1e4aa6aafca645ULL;
+constexpr uint64 QDOJO_DM_DEV_0 = 0x4c3beb15ecc0b84eULL;
+constexpr uint64 QDOJO_DM_DEV_1 = 0xc00fd4a3d672919dULL;
+constexpr uint64 QDOJO_DM_DEV_2 = 0x37897f8070728769ULL;
+constexpr uint64 QDOJO_DM_DEV_3 = 0xf93e0e05d6e58816ULL;
+constexpr uint64 QDOJO_DM_SHARE_0 = 0xfd881c815fefcd1eULL;
+constexpr uint64 QDOJO_DM_SHARE_1 = 0xc4b92cca7ff61183ULL;
+constexpr uint64 QDOJO_DM_SHARE_2 = 0x3b4caa1e7b03042aULL;
+constexpr uint64 QDOJO_DM_SHARE_3 = 0x48eb438782b99763ULL;
+// sync:end compiled-manifest
 constexpr uint8 QDOJO_ROUNDS = 3;
 constexpr uint8 QDOJO_BEATS_PER_ROUND = 6;
 constexpr uint8 QDOJO_LIMIT_GUARD_STREAK = 3;
@@ -309,6 +376,10 @@ constexpr uint8 QDOJO_MAGIC_3 = 0x31;
 // ("QDOJOF", little-endian; codec.LEGACY_ASSET_NAME). AdminBindAsset (103)
 // names the real asset.
 constexpr uint64 QDOJO_LEGACY_ASSET_NAME = 0x464f4a4f4451ULL;
+
+// AdminMirrorOwner (104): the only accepted source contract, QBAY (contract
+// index 12; codec.MIRROR_SOURCES).
+constexpr uint32 QDOJO_MIRROR_SOURCE_QBAY = 12;
 
 // ---- event-body ASCII strings (contract.py _event_body tag 2) ------------------
 constexpr uint8 QDOJO_STR_OPEN = 1;  // OPEN
@@ -488,8 +559,14 @@ struct QDOJO : public ContractBase
         uint32 registryVersion;
         uint8 houseNpc;
         uint8 used;
+        uint8 mirrored;             // AdminMirrorOwner (104): the NFT lives on another network
         id issuer;                  // the fighter's one-unit Qubic asset: issuer...
         uint64 assetName;           // ...and name (first character in the low byte)
+        // For a mirrored entry, issuer is the source contract's identity (its
+        // index, little-endian) and assetName the source NFT id; the owner is
+        // the one the bridge last set (NULL_ID: unavailable).
+        uint64 mirrorSeq;
+        id mirrorOwner;
     };
 
     struct Account
@@ -1518,13 +1595,24 @@ struct QDOJO : public ContractBase
     // AdminRegisterAsset, issuer = fighter_id and name QDOJO_LEGACY_ASSET_NAME).
     // Every managing contract counts: QDOJO-managed and QX-managed shares alike.
     // No registry entry, no record, several owners or a NULL_ID owner mean
-    // "unavailable"; the contract never guesses.
+    // "unavailable"; the contract never guesses. A fighter bound by
+    // AdminMirrorOwner (104) has no asset on this chain: its owner is the one
+    // the bridge last set (contract.py _owner), NULL_ID meaning "unavailable".
     static bit ownerOf(const StateData& s, Ctx& c, const id& fid, id& out)
     {
         c.own_a = assetIndex(s, c, fid);
         if (c.own_a < 0)
         {
             return false;
+        }
+        if (s.assets.get(c.own_a).mirrored)
+        {
+            if (isZero(s.assets.get(c.own_a).mirrorOwner))
+            {
+                return false;
+            }
+            out = s.assets.get(c.own_a).mirrorOwner;
+            return true;
         }
         c.own_asset.issuer = s.assets.get(c.own_a).issuer;
         c.own_asset.assetName = s.assets.get(c.own_a).assetName;
@@ -1920,6 +2008,8 @@ struct QDOJO : public ContractBase
 
     // =========================================================== combat-v1 engine (combat_core.h)
     // The ruleset tables, keyed by digest. rs is StateData::ruleset.
+    // sync:begin ruleset-functions (check_sync.py compiles this region natively and
+    // compares every table with docs/combat-v1*.json)
     static uint8 rulesetOf(const id& digest)
     {
         if (digest == id(QDOJO_C1_DIGEST_0, QDOJO_C1_DIGEST_1, QDOJO_C1_DIGEST_2, QDOJO_C1_DIGEST_3))
@@ -2092,6 +2182,7 @@ struct QDOJO : public ContractBase
             return 0;
         }
     }
+    // sync:end ruleset-functions
 
     // Full cost of an intended action from the pre-beat guard streak (step 1).
     static uint16 actionCost(uint8 rs, uint8 intended, uint8 guardStreak, bit power)
@@ -3941,6 +4032,7 @@ struct QDOJO : public ContractBase
     }
 
     // =========================================================== frames (codec.py decode_frame)
+    // sync:begin body-lengths
     static sint32 bodyLen(uint16 op)
     {
         switch (op)
@@ -3963,9 +4055,11 @@ struct QDOJO : public ContractBase
         case QDOJO_OP_ADMIN_CREATE_CUP: return 32 + 4 + 4 + 8 + 8 + 1 + 1 + 2 + 2 + 2 + 2;
         case QDOJO_OP_ADMIN_RETIRE_RULESET: return 32;
         case QDOJO_OP_ADMIN_BIND_ASSET: return 32 + 4 + 1 + 32 + 8;
+        case QDOJO_OP_ADMIN_MIRROR_OWNER: return 32 + 4 + 1 + 4 + 8 + 32 + 8;
         default: return -1;
         }
     }
+    // sync:end body-lengths
 
     // Structural plan check at decode (codec.decode_plan + Plan.of): BAD_PLAN.
     // Action ids 0..5, 7 (LAST_STAND) and 8 (FEINT) under every ruleset
@@ -4148,8 +4242,18 @@ struct QDOJO : public ContractBase
         c.h_asset.houseNpc = c.h_npc;
         c.h_asset.issuer = issuer;
         c.h_asset.assetName = name;
+        c.h_asset.mirrored = 0;
+        c.h_asset.mirrorSeq = 0;
+        c.h_asset.mirrorOwner = NULL_ID;
         s.assets.set(c.h_a, c.h_asset);
         setOk(r, 0);
+    }
+
+    // contract.py _not_mirrored: 100 and 103 refuse a fighter bound by 104.
+    static bit isMirrored(const StateData& s, Ctx& c, const id& fid)
+    {
+        c.h_a = assetIndex(s, c, fid);
+        return c.h_a >= 0 && s.assets.get(c.h_a).mirrored;
     }
 
     static void opAdminRegisterAsset(StateData& s, Ctx& c, const id& inv, const Array<uint8, 512>& fr, sint64 amount,
@@ -4171,6 +4275,11 @@ struct QDOJO : public ContractBase
         if (c.h_npc > 1)
         {
             setRej(r, QDOJO_BAD_BODY);
+            return;
+        }
+        if (isMirrored(s, c, c.h_fid))
+        {
+            setRej(r, QDOJO_BAD_STATE);
             return;
         }
         bindAsset(s, c, c.h_fid, QDOJO_LEGACY_ASSET_NAME, r);
@@ -4210,6 +4319,11 @@ struct QDOJO : public ContractBase
             setRej(r, QDOJO_BAD_BODY);
             return;
         }
+        if (isMirrored(s, c, c.h_fid))
+        {
+            setRej(r, QDOJO_BAD_STATE);
+            return;
+        }
         bindAsset(s, c, c.h_issuer, c.h_name, r);
         if (!accepted(r))
         {
@@ -4222,6 +4336,80 @@ struct QDOJO : public ContractBase
         bId(c, c.h_issuer);
         bU64(c, c.h_name);
         emit(s, c, QDOJO_EV_ASSET_REGISTERED);
+        setOk(r, 0);
+    }
+
+    // AdminMirrorOwner (104), contract.py _op_admin_mirror_owner: a fighter
+    // whose NFT lives on another network (a mainnet QBAY NFT). The first call
+    // binds the fighter to (source contract, source id); every call sets the
+    // owner, in strictly increasing mirror_seq order. A zero owner means the
+    // NFT is gone: ownership is then unavailable.
+    static void opAdminMirrorOwner(StateData& s, Ctx& c, const id& inv, const Array<uint8, 512>& fr, sint64 amount,
+        Res& r)
+    {
+        if (amount)
+        {
+            setRej(r, QDOJO_BAD_AMOUNT);
+            return;
+        }
+        c.h_fid = rdId(fr, c);
+        c.h_version = uint32(rdU(fr, c, 4));
+        c.h_npc = uint8(rdU(fr, c, 1));
+        c.h_src = uint32(rdU(fr, c, 4));
+        c.h_sid = rdU(fr, c, 8);
+        c.h_mowner = rdId(fr, c);
+        c.h_mseq = rdU(fr, c, 8);
+        if (inv != s.m.admin)
+        {
+            setRej(r, QDOJO_NOT_OWNER);
+            return;
+        }
+        if (c.h_npc > 1 || c.h_src != QDOJO_MIRROR_SOURCE_QBAY || c.h_mseq == 0)
+        {
+            setRej(r, QDOJO_BAD_BODY);
+            return;
+        }
+        c.h_issuer = id(c.h_src, 0, 0, 0);   // the source contract's identity
+        c.h_a = assetIndex(s, c, c.h_fid);
+        if (c.h_a >= 0 && s.assets.get(c.h_a).mirrored)
+        {
+            if (s.assets.get(c.h_a).registryVersion != c.h_version || s.assets.get(c.h_a).houseNpc != c.h_npc
+                || s.assets.get(c.h_a).issuer != c.h_issuer || s.assets.get(c.h_a).assetName != c.h_sid)
+            {
+                setRej(r, QDOJO_BAD_STATE);
+                return;
+            }
+            if (c.h_mseq <= s.assets.get(c.h_a).mirrorSeq)
+            {
+                setRej(r, QDOJO_STALE);
+                return;
+            }
+            c.h_asset = s.assets.get(c.h_a);
+        }
+        else
+        {
+            if (c.h_a >= 0)
+            {
+                setRej(r, QDOJO_BAD_STATE);   // bound to an asset on this chain (100/103)
+                return;
+            }
+            bindAsset(s, c, c.h_issuer, c.h_sid, r);
+            if (!accepted(r))
+            {
+                return;
+            }
+            c.h_asset.mirrored = 1;           // bindAsset left the entry in h_asset and its index in h_a
+        }
+        c.h_asset.mirrorOwner = c.h_mowner;
+        c.h_asset.mirrorSeq = c.h_mseq;
+        s.assets.set(c.h_a, c.h_asset);
+        bReset(c);
+        bId(c, c.h_fid);
+        bU64(c, c.h_src);
+        bU64(c, c.h_sid);
+        bId(c, c.h_mowner);
+        bU64(c, c.h_mseq);
+        emit(s, c, QDOJO_EV_OWNER_MIRRORED);
         setOk(r, 0);
     }
 
@@ -5471,6 +5659,9 @@ struct QDOJO : public ContractBase
         case QDOJO_OP_ADMIN_BIND_ASSET:
             opAdminBindAsset(s, c, inv, fr, amount, r);
             break;
+        case QDOJO_OP_ADMIN_MIRROR_OWNER:
+            opAdminMirrorOwner(s, c, inv, fr, amount, r);
+            break;
         case QDOJO_OP_ADMIN_CREATE_CUP:
             opAdminCreateCup(s, c, inv, fr, amount, t, r);
             break;
@@ -5860,55 +6051,55 @@ struct QDOJO : public ContractBase
     static void loadDefaultManifest(StateData& s, Ctx& c, const id& self, uint64 constructionTick)
     {
         setMemory(s.m, 0);
-        s.m.networkId = id(0xd0d0d0d0d0d0d0d0ULL, 0xd0d0d0d0d0d0d0d0ULL, 0xd0d0d0d0d0d0d0d0ULL, 0xd0d0d0d0d0d0d0d0ULL);
+        s.m.networkId = id(QDOJO_DM_NETWORK_0, QDOJO_DM_NETWORK_1, QDOJO_DM_NETWORK_2, QDOJO_DM_NETWORK_3);
         s.m.contractId = self;
-        s.m.admin = id(0x012fe519b42f69e5ULL, 0x8e842cbf92770eceULL, 0x7261f994e78c6b9eULL, 0x1f22bba056878139ULL);
+        s.m.admin = id(QDOJO_DM_ADMIN_0, QDOJO_DM_ADMIN_1, QDOJO_DM_ADMIN_2, QDOJO_DM_ADMIN_3);
         s.m.rulesetDigest = rulesetDigestOf(QDOJO_MANIFEST_RULESET);
         setMemory(c.in_tp, 0);
-        c.in_tp.profileId = 1;
-        c.in_tp.commitTicks = 9;
-        c.in_tp.revealTicks = 8;
+        c.in_tp.profileId = QDOJO_DM_TIMING_ID;
+        c.in_tp.commitTicks = QDOJO_DM_COMMIT_TICKS;
+        c.in_tp.revealTicks = QDOJO_DM_REVEAL_TICKS;
         c.in_tp.used = 1;
         s.m.timing.set(0, c.in_tp);
-        for (c.in_i = 0; c.in_i < 2; c.in_i++)
+        for (c.in_i = 0; c.in_i < QDOJO_DM_FEES; c.in_i++)
         {
             setMemory(c.in_fp, 0);
             c.in_fp.profileId = c.in_i + 1;
-            c.in_fp.rakeBps = c.in_i == 0 ? 500 : 1000;
-            c.in_fp.houseBps = 6000;
-            c.in_fp.devBps = 1000;
-            c.in_fp.shareBps = 3000;
-            c.in_fp.house = id(0x4e9c8feedeb2fc1aULL, 0x43ba12519e9c4835ULL, 0xb0c6e36824626962ULL, 0xfa1e4aa6aafca645ULL);
-            c.in_fp.dev = id(0x4c3beb15ecc0b84eULL, 0xc00fd4a3d672919dULL, 0x37897f8070728769ULL, 0xf93e0e05d6e58816ULL);
-            c.in_fp.share = id(0xfd881c815fefcd1eULL, 0xc4b92cca7ff61183ULL, 0x3b4caa1e7b03042aULL, 0x48eb438782b99763ULL);
+            c.in_fp.rakeBps = c.in_i == 0 ? QDOJO_DM_FEE_1_RAKE_BPS : QDOJO_DM_FEE_2_RAKE_BPS;
+            c.in_fp.houseBps = QDOJO_DM_HOUSE_BPS;
+            c.in_fp.devBps = QDOJO_DM_DEV_BPS;
+            c.in_fp.shareBps = QDOJO_DM_SHARE_BPS;
+            c.in_fp.house = id(QDOJO_DM_HOUSE_0, QDOJO_DM_HOUSE_1, QDOJO_DM_HOUSE_2, QDOJO_DM_HOUSE_3);
+            c.in_fp.dev = id(QDOJO_DM_DEV_0, QDOJO_DM_DEV_1, QDOJO_DM_DEV_2, QDOJO_DM_DEV_3);
+            c.in_fp.share = id(QDOJO_DM_SHARE_0, QDOJO_DM_SHARE_1, QDOJO_DM_SHARE_2, QDOJO_DM_SHARE_3);
             c.in_fp.used = 1;
             s.m.fees.set(c.in_i, c.in_fp);
             setMemory(c.in_tier, 0);
             c.in_tier.tierId = uint16(c.in_i + 1);
-            c.in_tier.stake = c.in_i == 0 ? 5000 : 20000;
+            c.in_tier.stake = c.in_i == 0 ? QDOJO_DM_TIER_1_STAKE : QDOJO_DM_TIER_2_STAKE;
             c.in_tier.used = 1;
             s.m.tiers.set(c.in_i, c.in_tier);
         }
         s.m.genesisTick = constructionTick;
-        s.m.genesisEpoch = 1;
-        s.m.ticksPerEpoch = 2400;
-        s.m.seasonStartEpoch = 1;
-        s.m.seasonEpochs = 4;
-        s.m.seasonCloseoutTicks = 300;
-        s.m.maxFighters = 1024;
-        s.m.maxAccounts = 2048;
-        s.m.maxOffers = 64;
-        s.m.maxFights = 16;
-        s.m.maxCups = 4;
-        s.m.maxCupEntrants = 16;
-        s.m.eventRing = 2048;
-        s.m.matchInterval = 4;
-        s.m.offerLifetimeLo = 40;
-        s.m.offerLifetimeHi = 1200;
-        s.m.cooldownTicks = 240;
-        s.m.faultsPerEpoch = 3;
-        s.m.pairStartsPerEpoch = 3;
-        s.m.pairRematchTicks = 60;
+        s.m.genesisEpoch = QDOJO_DM_GENESIS_EPOCH;
+        s.m.ticksPerEpoch = QDOJO_DM_TICKS_PER_EPOCH;
+        s.m.seasonStartEpoch = QDOJO_DM_SEASON_START_EPOCH;
+        s.m.seasonEpochs = QDOJO_DM_SEASON_EPOCHS;
+        s.m.seasonCloseoutTicks = QDOJO_DM_SEASON_CLOSEOUT_TICKS;
+        s.m.maxFighters = QDOJO_DM_MAX_FIGHTERS;
+        s.m.maxAccounts = QDOJO_DM_MAX_ACCOUNTS;
+        s.m.maxOffers = QDOJO_DM_MAX_OFFERS;
+        s.m.maxFights = QDOJO_DM_MAX_FIGHTS;
+        s.m.maxCups = QDOJO_DM_MAX_CUPS;
+        s.m.maxCupEntrants = QDOJO_DM_MAX_CUP_ENTRANTS;
+        s.m.eventRing = QDOJO_DM_EVENT_RING;
+        s.m.matchInterval = QDOJO_DM_MATCH_INTERVAL;
+        s.m.offerLifetimeLo = QDOJO_DM_OFFER_LIFETIME_LO;
+        s.m.offerLifetimeHi = QDOJO_DM_OFFER_LIFETIME_HI;
+        s.m.cooldownTicks = QDOJO_DM_COOLDOWN_TICKS;
+        s.m.faultsPerEpoch = QDOJO_DM_FAULTS_PER_EPOCH;
+        s.m.pairStartsPerEpoch = QDOJO_DM_PAIR_STARTS_PER_EPOCH;
+        s.m.pairRematchTicks = QDOJO_DM_PAIR_REMATCH_TICKS;
     }
 
     // combat_contract.h init(). initOk stays 0 for a manifest the compiled
@@ -6196,6 +6387,10 @@ struct QDOJO : public ContractBase
         id h_owner;
         id h_issuer;
         uint64 h_name;
+        uint32 h_src;                   // opAdminMirrorOwner
+        uint64 h_sid;
+        id h_mowner;
+        uint64 h_mseq;
         uint32 an_i;
         uint32 an_n;
         uint8 an_ch;

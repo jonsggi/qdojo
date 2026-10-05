@@ -176,6 +176,17 @@ latency, reordering and drops.
 in the export's deployment block. `sim` and `qbay-mirror` (§5.4) run; `qubic`
 is a stub.
 
+How each backend binds a fighter to its NFT in the contract registry
+([protocol.md](protocol.md) §3), and the code that sends the binding:
+
+<!-- sync:begin ownership-opcodes (docs/reference/check_sync.py: codec.Op, live.NFT_BACKENDS, the senders) -->
+| Backend (`nft_backend`) | Binding | Opcode | Sent by |
+|---|---|---:|---|
+| `sim`, `qubic` | AdminBindAsset: the token's issuer and asset name; ownership is the asset's owner record | 103 | `combat/live.py` |
+| `qbay-mirror` | AdminMirrorOwner: the QBAY NFT (source contract 12, NFT id) and its owner as the bridge last read it | 104 | `combat/live.py` |
+| — (simulated devnets, practice, old journals) | AdminRegisterAsset: the interim asset (issuer = fighter id, name `QDOJOF`) | 100 | `combat/devnet.py` |
+<!-- sync:end ownership-opcodes -->
+
 ### 5.1 Qubic facts used
 
 Checked on 2026-09-27 against the primary sources where stated. **Uncertain**
