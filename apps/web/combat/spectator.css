@@ -1,0 +1,63 @@
+/* QDOJO spectator views: replay, results, arena and title result cards.
+ * Loaded last. AUD-036 (stage first, technical detail folded, a reading face
+ * for explanations) and AUD-037 (spoiler-free viewing).
+ *
+ * A third face for reading: explanations, beat sentences, evidence and dense
+ * table text use the system sans, because paragraphs and tables in a pixel
+ * face are slow to read. Game labels, badges, numbers on the stage, buttons
+ * and titles keep Press Start 2P; sprites and the arcade look are unchanged.
+ */
+
+:root { --font-read: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+
+/* #view outranks the shell's ".panel p" and ".panel p.tiny" reading rules. */
+#view .beat-headline, #view .cap li, #view .cap p, #view .stage-help, #view table.beats td.reasons, #view table.beats td.note,
+#view .check .evidence, #view .verify-panel p, #view .plans-panel dd, #view .plans-panel p, #view .live-banner p,
+#view .result-panel p, #view .result-hold p, #view .arena-card p.tiny, #view .fold-panel p,
+#view #fighter-fights p.tiny, #view .feed-tick {
+  font-family: var(--font-read);
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: 0;
+}
+#view .beat-headline { font-size: 16px; line-height: 1.45; }
+#view .cap li, #view .cap p { font-size: 15px; line-height: 1.45; }
+#view table.beats td.reasons, #view table.beats td.note { font-size: 14px; line-height: 1.4; }
+#view .stage-help { font-size: 13px; }
+#view .check .evidence { font-size: 14px; line-height: 1.45; }
+/* Identifiers stay monospace: they are compared character by character. */
+#view .plans-panel dd.id, #view .plans-panel .id { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; }
+
+/* ---- AUD-036: the vs line under the title carries the pre-fight facts --- */
+.vsline { justify-content: center; margin-bottom: 12px; }
+.vsline .spoil-slot { margin-left: 4px; }
+body[data-section="results"] .screen-sub { margin-bottom: 10px; }
+
+/* Folded technical panels: one line until opened, same frame as a panel. */
+.fold-panel > details > summary { cursor: pointer; list-style: none; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.fold-panel > details > summary::-webkit-details-marker { display: none; }
+.fold-panel > details > summary .fold-h { font-family: var(--font-pixel); font-size: 11px; color: var(--cyan); }
+.fold-panel > details > summary .fold-h::before { content: '\25B6\00a0'; font-size: 9px; }
+.fold-panel > details[open] > summary .fold-h::before { content: '\25BC\00a0'; }
+.fold-panel > details > summary .tiny { font-family: var(--font-read); font-size: 14px; }
+.fold-panel > details[open] > summary { margin-bottom: 10px; }
+
+/* The title banner sits under the result now: a little tighter. */
+#result-slot .tf-hero { margin: 0 auto 16px; }
+
+/* ---- AUD-037: spoiler-free -------------------------------------------- */
+.rbadge-hidden { background: #2a3036; color: var(--white); border-color: #6b7580; }
+.chip-sm { font-size: 8px; padding: 3px 7px; min-height: 0; }
+.spoil-slot { display: inline-flex; vertical-align: middle; }
+.sub-links .spoil-slot { margin-left: 14px; }
+.t-more .spoil-slot { margin-left: 10px; }
+.spoil-line { text-align: right; margin: 6px 0 10px; }
+.result-hold p { font-size: 16px; line-height: 1.5; }
+.beat-hold { margin: 0 0 8px; }
+.feed-reveal { display: inline-flex; align-items: center; gap: 8px; justify-self: end; }
+.result-held p { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+@media (max-width: 640px) {
+  .sub-links .spoil-slot { display: flex; margin: 10px 0 0; }
+  .spoil-line { text-align: left; }
+  #view .beat-headline { font-size: 15px; }
+}

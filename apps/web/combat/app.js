@@ -310,6 +310,59 @@
     return '<span class="rbadge rbadge-' + lab.kind + '" title="' + esc(lab.text) + '">' + esc(lab.short) + '</span>';
   }
 
+  // ---- spoiler-free viewing (AUD-037) ---------------------------------------------
+  // A viewer's own choice, kept in this browser only: with SPOILERS HIDDEN a
+  // finished fight's winner, final HP, title change, beat table and verdict
+  // badges stay out of the page (not merely out of sight) until the replay
+  // reaches its end or the viewer reveals that fight. Fights revealed so far
+  // are remembered (the last 300), so a reload or the results list does not
+  // hide a fight already watched. A #fight/<id>/spoilerfree link hides that
+  // one replay without changing the visitor's setting. Display only: the
+  // replay, its checks and its result are the same either way.
+  const SPOIL_KEY = 'qdojo.spoilers', SEEN_KEY = 'qdojo.spoilers.seen', SEEN_MAX = 300;
+  let spoilForce = false;
+  let revealHook = null;   // the open replay's reveal, so SHOW SPOILERS does not restart it
+  const spoilFree = () => spoilForce || store.get(SPOIL_KEY) === 'hide';
+  function seenFights() {
+    try { const a = JSON.parse(store.get(SEEN_KEY) || '[]'); return new Set(Array.isArray(a) ? a.map(String) : []); } catch (e) { return new Set(); }
+  }
+  function markSeen(id) {
+    const ids = Array.from(seenFights()).filter(x => x !== String(id));
+    ids.push(String(id));
+    store.set(SEEN_KEY, JSON.stringify(ids.slice(-SEEN_MAX)));
+  }
+  // True when this finished fight's outcome must stay off the page.
+  const spoilHidden = id => spoilFree() && !seenFights().has(String(id));
+  function spoilToggle() {
+    const on = spoilFree();
+    return '<button type="button" class="chip spoil-toggle" data-spoil-toggle aria-pressed="' + on + '" title="Hide winners, final HP and title changes until you have watched a fight (remembered in this browser)">' +
+      (on ? 'SPOILERS: HIDDEN' : 'SPOILERS: SHOWN') + '</button>';
+  }
+  const hiddenBadge = '<span class="rbadge rbadge-hidden" title="Result hidden (spoiler-free)">?</span>';
+  const revealBtn = id => '<button type="button" class="chip chip-sm reveal-one" data-reveal-fight="' + esc(id) + '" aria-label="Show the result of fight #' + esc(id) + '">SHOW</button>';
+  function paintSpoil() {
+    const on = spoilFree();
+    $$('[data-spoil-toggle], #btn-spoil').forEach(b => { b.textContent = on ? 'SPOILERS: HIDDEN' : 'SPOILERS: SHOWN'; b.setAttribute('aria-pressed', String(on)); });
+  }
+  function wireSpoilers() {
+    document.addEventListener('click', e => {
+      const t = e.target.closest('[data-spoil-toggle], #btn-spoil');
+      if (t) {
+        const hide = !spoilFree();
+        store.set(SPOIL_KEY, hide ? 'hide' : 'show');
+        spoilForce = false;
+        paintSpoil();
+        // Showing spoilers on an open replay reveals it in place; anything
+        // else repaints the view with the new setting.
+        if (!hide && revealHook) revealHook(); else render(false);
+        return;
+      }
+      const r = e.target.closest('[data-reveal-fight]');
+      if (r) { markSeen(r.dataset.revealFight); render(false); }
+    });
+    paintSpoil();
+  }
+
   // ---- belts and title belts (display only; competition.md §1 and §7) ------------
 
   // The rank ladder is published per fighter (belt, belt_rank, belt_stripes,
@@ -590,13 +643,14 @@
     const show = () => {
       const s = list[i % list.length];
       const out = summaryOutcome(s);
+      const held = s.phase === 'DONE' && spoilHidden(s.fight_id);
       box.innerHTML = '<a class="attract-card" href="#fight/' + esc(s.fight_id) + '">' +
-        '<span class="attract-kicker">' + (s.phase === 'DONE' ? 'RESULT' : '<b class="live-dot">LIVE</b>') + ' &middot; FIGHT #' + esc(s.fight_id) + ' &middot; ' + esc(String(s.mode || '').toUpperCase()) + (s.title_fight ? ' ' + titleTag({ title: true }) : '') + '</span>' +
+        '<span class="attract-kicker">' + (held ? 'REPLAY' : s.phase === 'DONE' ? 'RESULT' : '<b class="live-dot">LIVE</b>') + ' &middot; FIGHT #' + esc(s.fight_id) + ' &middot; ' + esc(String(s.mode || '').toUpperCase()) + (s.title_fight ? ' ' + titleTag({ title: true }) : '') + '</span>' +
         '<span class="attract-arena"><canvas class="stage-bg" aria-hidden="true"></canvas><span class="stage-name" aria-hidden="true"></span>' +
         '<span class="attract-vs">' + standee(s.fighters.A.fighter_id) + '<span class="vs vs-fire">VS</span>' + standee(s.fighters.B.fighter_id) + '</span></span>' +
         '<span class="attract-names">' + esc(short(s.fighters.A.fighter_id)) + ' &middot; ' + esc(short(s.fighters.B.fighter_id)) + '</span>' +
-        miniBars(stateAB(s)) +
-        '<span class="attract-state">' + (s.phase === 'DONE' ? resultBadge(out) + ' ' + esc(L.outcomeLabel(out).text) : 'ROUND ' + (s.round_index + 1) + '/' + R.rounds + ' &middot; ' + phaseBadge(s)) + '</span></a>' +
+        (held ? '' : miniBars(stateAB(s))) +
+        '<span class="attract-state">' + (held ? 'RESULT HIDDEN &middot; WATCH THE REPLAY' : s.phase === 'DONE' ? resultBadge(out) + ' ' + esc(L.outcomeLabel(out).text) : 'ROUND ' + (s.round_index + 1) + '/' + R.rounds + ' &middot; ' + phaseBadge(s)) + '</span></a>' +
         '<p class="attract-nav"><button class="chip" data-att="-1" aria-label="Previous fight">&#9664;</button> ' + ((i % list.length) + 1) + '/' + list.length + ' <button class="chip" data-att="1" aria-label="Next fight">&#9654;</button></p>';
       // The fight's own stage behind a VS splash, at a low frame rate.
       if (STAGES) $('.stage-name', box).textContent = STAGES.mount($('.stage-bg', box), { seed: s.fight_id, fps: 8, scale: 2 }).stage.name.toUpperCase();
@@ -631,11 +685,17 @@
     const cards = live.filter(x => x.s).map(({ s }) => '<section class="panel panel-cyan arena-card' + (titleOf(s, T).title ? ' arena-title' : '') + '" data-fight="' + esc(s.fight_id) + '">' +
       '<h3>FIGHT #' + esc(s.fight_id) + ' &middot; ' + esc(String(s.mode || '').toUpperCase()) + ' &middot; ROUND ' + (s.round_index + 1) + '/' + R.rounds + '</h3>' +
       (titleOf(s, T).title ? '<p class="tf-banner">' + titleBeltSvg('lineal', 'tbelt-sm') + titleTag(titleOf(s, T), true) + '</p>' : '') +
-      '<div class="arena-status"><p>' + phaseBadge(s) + '</p><p class="acted-row">' + actedHtml(s) + '</p></div>' +
       '<div class="arena-player"></div>' +
+      '<div class="arena-status"><p>' + phaseBadge(s) + '</p><p class="acted-row">' + actedHtml(s) + '</p></div>' +
       '<p class="tiny muted">HP and stamina are the confirmed state after the last resolved round; plans stay sealed until revealed. <a href="#fight/' + esc(s.fight_id) + '">FULL REPLAY AND VERIFICATION &#9654;</a></p></section>').join('');
     const resultCard = (s, label) => {
       const out = summaryOutcome(s);
+      if (spoilHidden(s.fight_id)) {
+        return '<section class="panel panel-yellow result-card result-held"><h3>' + label + ' &middot; FIGHT #' + esc(s.fight_id) + '</h3>' + (titleOf(s, T).title ? '<p class="tf-banner">' + titleTag({ title: true }) + '</p>' : '') +
+          '<div class="rc-vs">' + fighterLink(s.fighters.A.fighter_id, 'A ' + short(s.fighters.A.fighter_id)) + ' <span class="vs">VS</span> ' + fighterLink(s.fighters.B.fighter_id, 'B ' + short(s.fighters.B.fighter_id)) + '</div>' +
+          '<p>' + hiddenBadge + ' Result hidden ' + revealBtn(s.fight_id) + '</p>' +
+          '<p><a class="btn btn-sm" href="#fight/' + esc(s.fight_id) + '">WATCH &#9654;</a></p></section>';
+      }
       return '<section class="panel panel-yellow result-card"><h3>' + label + ' &middot; FIGHT #' + esc(s.fight_id) + '</h3>' + (titleOf(s, T).title ? '<p class="tf-banner">' + titleTag(titleOf(s, T)) + '</p>' : '') +
         '<div class="rc-vs">' + fighterLink(s.fighters.A.fighter_id, 'A ' + short(s.fighters.A.fighter_id)) + ' <span class="vs">VS</span> ' + fighterLink(s.fighters.B.fighter_id, 'B ' + short(s.fighters.B.fighter_id)) + '</div>' +
         '<p>' + resultBadge(out) + ' ' + esc(L.outcomeLabel(out).text) + '</p>' + miniBars(stateAB(s)) +
@@ -649,6 +709,7 @@
         ' This page checks again every ' + (POLL_MS / 1000) + ' s. Meanwhile: <a href="#practice">free practice</a>.</p></section>') +
       finished.filter(Boolean).map(s => resultCard(s, 'FINISHED')).join('') +
       chainPanel() +
+      (recent.length || finished.filter(Boolean).length ? '<p class="sub-links spoil-line"><span class="spoil-slot">' + spoilToggle() + '</span></p>' : '') +
       (recent.length ? '<h3 class="sub-h">LATEST RESULTS</h3><div class="cols">' + recent.map(s => resultCard(s, 'RESULT')).join('') + '</div>' : ''));
     // The wait for the next matching counts down between polls (V-22): the
     // snapshot's wall time plus the published tick length estimate the tick.
@@ -872,17 +933,17 @@
   }
 
   // Replay header: which series or cup pairing a fight belongs to.
-  async function seriesLink(fightId, mode) {
+  async function seriesLink(fightId, mode, noScore) {
     if (mode === 'duel') {
       const d = (await loadDuels()).find(x => (x.fights || []).includes(String(fightId)));
-      if (d) return '<a class="pill" href="#duel/' + esc(d.contest_id) + '">DUEL #' + esc(d.contest_id) + ' &middot; ' + esc(d.format) + ' ' + duelScore(d) + ' &#9654;</a>';
+      if (d) return '<a class="pill" href="#duel/' + esc(d.contest_id) + '">DUEL #' + esc(d.contest_id) + ' &middot; ' + esc(d.format) + (noScore ? '' : ' ' + duelScore(d)) + ' &#9654;</a>';
     }
     if (mode === 'cup') {
       for (const c of await loadCups()) {
         const p = (c.pairings || []).find(x => (x.fights || []).includes(String(fightId)));
         if (p) {
           const w = p.series ? seriesWins(p.a, p.b, p.series.wins_a, p.series.wins_b) : null;
-          return '<a class="pill" href="#cup/' + esc(c.cup_id) + '">CUP #' + esc(c.cup_id) + ' &middot; PAIRING ' + esc(p.pairing_id) + (w && p.a && p.b ? ' ' + esc(w[p.a]) + '&ndash;' + esc(w[p.b]) : '') + ' &#9654;</a>';
+          return '<a class="pill" href="#cup/' + esc(c.cup_id) + '">CUP #' + esc(c.cup_id) + ' &middot; PAIRING ' + esc(p.pairing_id) + (w && p.a && p.b && !noScore ? ' ' + esc(w[p.a]) + '&ndash;' + esc(w[p.b]) : '') + ' &#9654;</a>';
         }
       }
     }
@@ -1013,6 +1074,7 @@
       const tf = titleOf(s, T);
       const out = summaryOutcome(s), w = out.outcome ? out.outcome.winner : null;
       const A_ = s.fighters.A.fighter_id, B_ = s.fighters.B.fighter_id;
+      if (spoilHidden(s.fight_id)) return feedRowHidden(s, tf);
       const line = w === 'A' || w === 'B'
         ? fighterLink(w === 'A' ? A_ : B_) + ' <span class="beat">BEAT</span> ' + fighterLink(w === 'A' ? B_ : A_)
         : fighterLink(A_) + ' <span class="beat">&middot;</span> ' + fighterLink(B_);
@@ -1025,10 +1087,20 @@
     const pager = pagerHtml(n => '#results/' + n, r.page, r.pages);
     setView(screen('RESULTS', esc(r.total) + ' FINISHED &middot; ' + esc(active.length) + ' LIVE &middot; SNAPSHOT TICK ' + esc(index.generated_tick)) +
       liveNowPanel(active, T) +
-      '<p class="sub-links"><a href="#duels">DUELS &#9654;</a> &middot; <a href="#cups">CUPS &#9654;</a> &middot; <a href="#season">SEASON &#9654;</a></p>' +
+      '<p class="sub-links"><a href="#duels">DUELS &#9654;</a> &middot; <a href="#cups">CUPS &#9654;</a> &middot; <a href="#season">SEASON &#9654;</a><span class="spoil-slot">' + spoilToggle() + '</span></p>' +
       '<section class="panel"><h3>HISTORY' + (r.pages > 1 ? ' &middot; PAGE ' + esc(r.page) + ' OF ' + esc(r.pages) : '') + '</h3>' + pager +
       (feed ? '<ol class="feed">' + feed + '</ol>' : '<p class="muted">No finished fight yet.</p>') + pager +
       (!r.full && (missing || r.listed >= 200) ? '<p class="tiny muted">The export keeps the most recent fights only' + (missing ? '; ' + missing + ' listed file(s) were not available' : '') + '.</p>' : '') + '</section>');
+  }
+
+  // A finished fight in the list with its outcome withheld (AUD-037): the
+  // pairing, mode and tick stay; SHOW reveals this one row.
+  function feedRowHidden(s, tf) {
+    return '<li class="feed-row feed-held' + (tf.title ? ' feed-title' : '') + '"><a class="feed-id" href="#fight/' + esc(s.fight_id) + '">#' + esc(s.fight_id) + '</a>' +
+      '<span class="feed-mode">' + esc(String(s.mode || '').toUpperCase()) + '</span>' +
+      '<span class="feed-line">' + (tf.title ? titleTag({ title: true }) + ' ' : '') + fighterLink(s.fighters.A.fighter_id) + ' <span class="beat">VS</span> ' + fighterLink(s.fighters.B.fighter_id) + '</span>' + '<span class="feed-reveal">' + hiddenBadge + ' ' + revealBtn(s.fight_id) + '</span>' +
+      '<span class="feed-tick tiny muted">TICK ' + esc(s.result && s.result.tick) + '</span>' +
+      '<a class="btn btn-sm" href="#fight/' + esc(s.fight_id) + '">WATCH</a></li>';
   }
 
   // Running fights up front as versus chips; fights whose deadline passed and
@@ -1281,6 +1353,9 @@
         '<span class="pop" aria-hidden="true"></span><span class="fx-spark" aria-hidden="true"></span><span class="fx-word" aria-hidden="true"></span><span class="win-plate" aria-hidden="true">WINNER</span></div>' +
         '<div class="side-now"></div></div>';
     };
+    // Spoiler-free (AUD-037): the beat table, the frame count and the title
+    // finale stay out of the page until the last frame or a reveal.
+    let held = !!opts.spoilerFree;
     const rows = frames.map((f, i) => {
       const cls = 'fr fr-' + f.kind;
       if (f.kind === 'beat') {
@@ -1299,12 +1374,15 @@
       if (f.kind === 'forfeit') text = L.outcomeLabel(opts.replay).text;
       return '<tr class="' + cls + '" data-i="' + i + '" tabindex="-1"><td>' + (f.round + 1) + '</td><td></td><td colspan="7" class="note">' + esc(text) + '</td></tr>';
     }).join('');
+    const beatTable = '<summary>BEAT TABLE (' + frames.filter(f => f.kind === 'beat').length + ' executed beats)</summary>' +
+      '<div class="tscroll"><table class="beats"><thead><tr><th>RND</th><th>BEAT</th><th>' + esc(names.A) + '</th><th class="num">HP</th><th class="num">ST</th><th>' + esc(names.B) + '</th><th class="num">HP</th><th class="num">ST</th><th>WHAT HAPPENED</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+    const heldTable = '<summary>BEAT TABLE</summary><p class="tiny muted beat-hold">Spoiler-free: the beat table appears when the replay reaches its end or you reveal the result.</p>';
     root.innerHTML =
       '<div class="stage arcade' + (opts.compact ? ' stage-compact' : '') + '"><canvas class="stage-bg" aria-hidden="true"></canvas>' + corner('A') +
       '<div class="center"><span class="ko-emblem" aria-hidden="true">KO</span><div class="clock" aria-hidden="true"><b class="clock-n"></b><small class="clock-l"></small></div>' +
       '<div class="round-no"></div><div class="beat-no"></div><div class="center-note"></div></div>' + corner('B') +
       '<div class="announcer" aria-hidden="true"><span></span></div><div class="fx-flash" aria-hidden="true"></div>' +
-      (opts.finale ? '<div class="finale" aria-hidden="true">' + titleBeltSvg('lineal', 'tbelt-md') + '<b>' + esc(opts.finale) + '</b></div>' : '') + '</div>' +
+      (opts.finale ? '<div class="finale" aria-hidden="true">' + titleBeltSvg('lineal', 'tbelt-md') + '<b>' + (held ? '' : esc(opts.finale)) + '</b></div>' : '') + '</div>' +
       '<div class="controls" role="group" aria-label="Replay controls">' +
       '<button class="chip" data-act="first" title="First (Home)" aria-label="First frame">|&#9664;</button>' +
       '<button class="chip" data-act="prev" title="Previous beat (Left)" aria-label="Previous beat">&#9664;</button>' +
@@ -1316,8 +1394,7 @@
       '<p class="beat-headline" aria-live="polite"></p>' +
       '<p class="tiny muted stage-help">Keys: LEFT/RIGHT step, SPACE play/pause, HOME/END. Motion is decoration only: every number above comes from the independent replay.</p>' +
       '<div class="caption cols"><div class="cap cap-A"></div><div class="cap cap-B"></div></div>' +
-      '<details class="beat-details" open><summary>BEAT TABLE (' + frames.filter(f => f.kind === 'beat').length + ' executed beats)</summary>' +
-      '<div class="tscroll"><table class="beats"><thead><tr><th>RND</th><th>BEAT</th><th>' + esc(names.A) + '</th><th class="num">HP</th><th class="num">ST</th><th>' + esc(names.B) + '</th><th class="num">HP</th><th class="num">ST</th><th>WHAT HAPPENED</th></tr></thead><tbody>' + rows + '</tbody></table></div></details>';
+      '<details class="beat-details" open>' + (held ? heldTable : beatTable) + '</details>';
 
     root.classList.toggle('compact', !!opts.compact);
     // The replay keys (arrows, space, home/end) listen here, so the player can take focus.
@@ -1345,7 +1422,18 @@
     const clockN = $('.clock-n', root), clockL = $('.clock-l', root), koEmblem = $('.ko-emblem', root);
     const play = $('[data-act=play]', root);
     const msEl = $('.beat-ms', root), posEl = $('.pos', root);
-    const table = $('table.beats', root);
+    let table = $('table.beats', root);
+    function reveal() {
+      if (!held) return;
+      held = false;
+      $('.beat-details', root).innerHTML = beatTable;
+      table = $('table.beats', root);
+      $$('tr[data-i]', table).forEach(tr => { tr.tabIndex = 0; });
+      markScrollers(root);
+      const fb = $('.finale b', root);
+      if (fb) fb.textContent = opts.finale || '';
+      if (opts.onReveal) opts.onReveal();
+    }
 
     function stateOf(f) {
       if (f.a && f.b) return f;
@@ -1354,6 +1442,7 @@
 
     function render(animate) {
       const f = frames[idx];
+      if (held && idx === frames.length - 1) reveal();
       const st = stateOf(f);
       for (const s of ['A', 'B']) {
         const me = s === 'A' ? st.a : st.b, x = els[s];
@@ -1448,10 +1537,10 @@
           els[s].now.innerHTML = tag + '<div class="sum">HP ' + me.hp + ' &middot; ST ' + me.stamina + '</div>';
         }
       }
-      $$('tr.fr.on', table).forEach(r => r.classList.remove('on'));
-      const row = $('tr[data-i="' + idx + '"]', table);
+      const row = table ? $('tr[data-i="' + idx + '"]', table) : null;
+      if (table) $$('tr.fr.on', table).forEach(r => r.classList.remove('on'));
       if (row) { row.classList.add('on'); row.setAttribute('aria-current', 'true'); scrollRow(row); }
-      posEl.textContent = frameLabel(f) + ' (' + (idx + 1) + '/' + frames.length + ')';
+      posEl.textContent = frameLabel(f) + (held ? '' : ' (' + (idx + 1) + '/' + frames.length + ')');
       msEl.textContent = Math.round(BEAT_MS / speed) + ' MS/BEAT';
       if (animate) animateFrame(f);
     }
@@ -1623,14 +1712,15 @@
       else handled = false;
       if (handled) {
         e.preventDefault();
-        if (inTable) { const row = $('tr[data-i="' + idx + '"]', table); if (row) row.focus(); }
+        if (inTable && table) { const row = $('tr[data-i="' + idx + '"]', table); if (row) row.focus(); }
       }
     });
-    $$('tr[data-i]', table).forEach(tr => { tr.tabIndex = 0; });
+    if (table) $$('tr[data-i]', table).forEach(tr => { tr.tabIndex = 0; });
     seek(opts.startAt != null ? opts.startAt : 0, false);
     if (opts.autoplay && motion()) start();
-    else if (opts.autoplay) seek(frames.length - 1, false);
-    return { stop, seek, start, pause, get index() { return idx; }, frames };
+    // With motion off a replay opens on its result, unless that is a spoiler.
+    else if (opts.autoplay && !held) seek(frames.length - 1, false);
+    return { stop, seek, start, pause, reveal() { reveal(); render(false); }, get held() { return held; }, get index() { return idx; }, frames };
   }
 
   function stopPlayer() {
@@ -1664,41 +1754,77 @@
     if ((summary && summary.phase === 'DONE') || (!summary && replay)) D.done.add(String(id));
     const fighters = (replay || summary).fighters;
     const tf = titleOf(summary && summary.title_fight != null ? summary : replay && replay.title_fight != null ? replay : (summary || replay), T);
-    const titleHero = tf.title ? '<section class="tf-hero">' + titleBeltSvg('lineal', 'tbelt-lg') + '<div><b class="tf-hero-h">TITLE FIGHT</b><span>' + esc(TITLE_KINDS.lineal.name) + ' IS ON THE LINE</span>' +
-      (tf.champ ? '<span class="tf-hero-new">NEW CHAMPION: ' + esc(short(tf.champ)) + '</span>' : '') + '</div></section>' : '';
     const names = { A: 'A ' + short(fighters.A.fighter_id), B: 'B ' + short(fighters.B.fighter_id) };
     const live = summary && summary.phase !== 'DONE';
     const liveBanner = live
       ? '<section class="panel panel-yellow live-banner"><h3>LIVE FIGHT</h3><p>Authoritative state: round ' + (summary.round_index + 1) + ', phase <b>' + esc(summary.phase) + '</b>. ' +
         'Commit deadline tick ' + esc(summary.commit_last) + ', reveal deadline tick ' + esc(summary.reveal_last) + ' (snapshot tick ' + esc(summary.generated_tick) + ').</p>' +
         '<p>Committed: ' + esc((summary.committed || []).join(', ') || 'none') + ' &middot; revealed: ' + esc((summary.revealed || []).join(', ') || 'none') + '. Plans stay sealed until revealed.</p>' +
-        '<p class="muted">The replay below shows only completed rounds and trails the authoritative round. Deadlines are time, never health.</p></section>'
+        '<p class="muted">The replay above shows only completed rounds and trails the authoritative round. Deadlines are time, never health.</p></section>'
       : '';
-    const head = screen('FIGHT #' + id, esc(String((replay || summary).mode || '').toUpperCase()) + ' &middot; ' + esc(rulesLabel(R.semantic_version))) + titleHero;
-    const vs = '<div class="vsline">' + fighterLink(fighters.A.fighter_id, names.A) + ' <span class="vs">VS</span> ' + fighterLink(fighters.B.fighter_id, names.B) +
-      ' <span id="level-slot">' + (replay ? '<span class="level level-PENDING">VERIFYING&hellip;</span>' : '') + '</span> <span id="series-slot"></span></div>';
+    const head = screen('FIGHT #' + id, esc(String((replay || summary).mode || '').toUpperCase()) + ' &middot; ' + esc(rulesLabel(R.semantic_version)));
+    // AUD-036: the stage and its controls come first. The vs line carries what
+    // a viewer needs before watching (who, title fight, live, verification
+    // level); the result, title banner, checks and plans follow the replay.
+    const vsLine = () => '<div class="vsline">' + fighterLink(fighters.A.fighter_id, names.A) + ' <span class="vs">VS</span> ' + fighterLink(fighters.B.fighter_id, names.B) +
+      (tf.title ? ' ' + titleTag({ title: true }) : '') + (live ? ' <span class="rbadge rbadge-open">LIVE</span>' : '') +
+      ' <span id="level-slot">' + (replay ? '<span class="level level-PENDING">VERIFYING&hellip;</span>' : '') + '</span> <span id="series-slot"></span>' +
+      (replay && !live ? ' <span class="spoil-slot">' + spoilToggle() + '</span>' : '') + '</div>';
     if (!replay) {
-      setView(head + vs + liveBanner + '<section class="panel"><h3>NO ROUND COMPLETED YET</h3><p class="muted">Nothing is revealed for this fight at this snapshot, so there is nothing to replay.</p></section>');
+      setView(head + vsLine() + liveBanner + '<section class="panel"><h3>NO ROUND COMPLETED YET</h3><p class="muted">Nothing is revealed for this fight at this snapshot, so there is nothing to replay.</p></section>');
       return;
     }
     const derived = L.deriveReplay(R, replay);
     const frames = L.timeline(replay, derived);
     const lab = L.outcomeLabel(replay);
-    setView(head + vs + liveBanner +
-      '<section class="panel panel-cyan result-panel"><h3>RESULT</h3><p>' + resultBadge(replay) + ' ' + esc(lab.text) + '</p>' +
+    // A forfeit before any round has nothing to watch: hiding its result
+    // would invent suspense, so it is shown and the page says why (AUD-037).
+    const nothingToWatch = !derived.rounds.length;
+    let hide = !live && spoilHidden(id) && !nothingToWatch;
+    const resultHtml = () => '<section class="panel panel-cyan result-panel"><h3>RESULT</h3><p>' + resultBadge(replay) + ' ' + esc(lab.text) + '</p>' +
       (tf.champ ? '<p class="tf-result">' + titleTag(tf) + ' ' + fighterLink(tf.champ) + ' takes ' + esc(TITLE_KINDS.lineal.name) + '.</p>' : tf.title ? '<p class="tf-result">' + titleTag(tf) + ' The belt stays where it was.</p>' : '') +
-      (derived.error ? '<p class="neg">The engine refused this record: ' + esc(derived.error) + '</p>' : '') + '</section>' +
+      (derived.error ? '<p class="neg">The engine refused this record: ' + esc(derived.error) + '</p>' : '') +
+      (nothingToWatch && spoilFree() ? '<p class="tiny muted">Shown although spoilers are hidden: no round was played, so there is no fight to spoil.</p>' : '') + '</section>' +
+      (tf.title ? '<section class="tf-hero">' + titleBeltSvg('lineal', 'tbelt-lg') + '<div><b class="tf-hero-h">TITLE FIGHT</b><span>' + esc(TITLE_KINDS.lineal.name) + ' WAS ON THE LINE</span>' +
+        (tf.champ ? '<span class="tf-hero-new">NEW CHAMPION: ' + esc(short(tf.champ)) + '</span>' : '') + '</div></section>' : '');
+    // Honest about what kind of ending may come: never "a knockout awaits".
+    const heldHtml = () => '<section class="panel panel-cyan result-hold"><h3>RESULT HIDDEN</h3><p>Spoiler-free: the winner' + (tf.title ? ', the title outcome' : '') +
+      ' and the final state appear when the replay reaches its end. It may end in combat or on a missed deadline.</p>' +
+      '<p><button type="button" class="btn btn-sm" data-reveal-replay>REVEAL RESULT NOW</button></p></section>';
+    const plansHtml = () => (hide ? ((replay.rounds || []).length ? '<section class="panel fold-panel"><h3>REVEALED PLANS</h3><p class="tiny muted">Shown after the result: the plans give away how long the fight lasted.</p></section>' : '') : plansPanel(replay));
+    setView(head + vsLine() +
       '<section class="panel player-panel"><h3>REPLAY &middot; RE-DERIVED FROM REVEALED PLANS</h3><div id="player"></div></section>' +
-      '<section class="panel verify-panel" id="verify"><h3>VERIFICATION</h3><p class="muted">Recomputing digests and commitments&hellip;</p></section>' +
-      plansPanel(replay));
-    track(createPlayer($('#player'), { frames, ids: { A: fighters.A.fighter_id, B: fighters.B.fighter_id }, names, links: true, replay, stageSeed: id, autoplay: true, finale: tf.champ ? 'NEW CHAMPION!' : null }));
-    cornerBelts($('#player'), fighters);
-    seriesLink(id, replay.mode).then(html => { if (tok === viewToken && $('#series-slot')) $('#series-slot').innerHTML = html; }).catch(() => {});
+      liveBanner + '<div id="result-slot">' + (live ? '' : hide ? heldHtml() : resultHtml()) + '</div>' +
+      '<section class="panel verify-panel fold-panel"><details id="verify-fold"><summary><span class="fold-h">VERIFICATION</span> <span class="tiny muted">digests, commitments and the independent replay</span></summary><div id="verify"><p class="muted">Recomputing digests and commitments&hellip;</p></div></details></section>' +
+      '<div id="plans-slot">' + plansHtml() + '</div>');
+    let checked = null;
+    const paintVerify = () => { if (checked && $('#verify')) $('#verify').innerHTML = verifyHtml(checked, hide); };
+    const onReveal = () => {
+      if (!hide) return;
+      hide = false;
+      markSeen(id);
+      revealHook = null;
+      if ($('#result-slot')) $('#result-slot').innerHTML = resultHtml();
+      if ($('#plans-slot')) $('#plans-slot').innerHTML = plansHtml();
+      paintVerify();
+      cornerBelts($('#player'), fighters);
+      seriesLink(id, replay.mode).then(html => { if (tok === viewToken && $('#series-slot')) $('#series-slot').innerHTML = html; }).catch(() => {});
+      markScrollers($('#view'));
+    };
+    const player = track(createPlayer($('#player'), { frames, ids: { A: fighters.A.fighter_id, B: fighters.B.fighter_id }, names, links: true, replay, stageSeed: id, autoplay: true, finale: tf.champ ? 'NEW CHAMPION!' : null, spoilerFree: hide, onReveal }));
+    if (hide) {
+      revealHook = () => player.reveal();
+      $('[data-reveal-replay]').addEventListener('click', () => player.reveal());
+    } else cornerBelts($('#player'), fighters);
+    seriesLink(id, replay.mode, hide).then(html => { if (tok === viewToken && $('#series-slot')) $('#series-slot').innerHTML = html; }).catch(() => {});
     markScrollers($('#view'));
     const v = await L.verifyReplay(replay, { rules: R, manifest: D.manifest, sha256: SHA }).catch(e => ({ checks: [{ id: 'error', label: 'Verification', status: 'FAIL', evidence: e.message, details: [] }], level: 'FAILED' }));
     if (tok !== viewToken) return;
+    checked = v;
     $('#level-slot').innerHTML = levelBadge(v.level);
-    $('#verify').innerHTML = '<h3>VERIFICATION</h3>' + verifyHtml(v);
+    paintVerify();
+    // A check that did not pass is material: it opens itself.
+    if (v.level === 'FAILED' && $('#verify-fold')) $('#verify-fold').open = true;
   }
 
   // Each corner's current belt next to its name (the fighter files are cached).
@@ -1713,11 +1839,14 @@
     }
   }
 
-  function verifyHtml(v) {
+  // hide: spoiler-free (AUD-037); each check's status shows, its evidence
+  // (which names outcomes and rating changes) waits for the result.
+  function verifyHtml(v, hide) {
     return '<div class="level-row">' + levelBadge(v.level) + '<p>' + esc(L.LEVELS[v.level] || '') + '</p></div>' +
+      (hide ? '<p class="tiny muted">Spoiler-free: the evidence for each check names the outcome, so it appears with the result.</p>' : '') +
       '<ol class="checks">' + v.checks.map(c => '<li class="check check-' + esc(c.status.toLowerCase()) + '">' + statusBadge(c.status) + ' <b>' + esc(c.label) + '</b>' +
-        '<p class="evidence">' + esc(c.evidence) + '</p>' +
-        (c.details && c.details.length ? '<details><summary>' + c.details.length + ' DETAIL' + (c.details.length > 1 ? 'S' : '') + '</summary><ul class="details mono">' + c.details.map(d => '<li>' + esc(d) + '</li>').join('') + '</ul></details>' : '') +
+        (hide ? '' : '<p class="evidence">' + esc(c.evidence) + '</p>') +
+        (!hide && c.details && c.details.length ? '<details><summary>' + c.details.length + ' DETAIL' + (c.details.length > 1 ? 'S' : '') + '</summary><ul class="details mono">' + c.details.map(d => '<li>' + esc(d) + '</li>').join('') + '</ul></details>' : '') +
         '</li>').join('') + '</ol>' +
       '<p class="tiny muted">COMBAT_VERIFIED needs every check to PASS. UNAVAILABLE is never counted as a pass. SHA-256: ' + esc(SHA.engine || 'crypto.subtle') + '.</p>';
   }
@@ -1725,7 +1854,7 @@
   function plansPanel(replay) {
     if (!(replay.rounds || []).length) return '';
     const planText = p => p.actions.map((a, i) => (i === p.power_slot ? a + '&#9733;' : a)).join(' ');
-    return '<section class="panel"><h3>REVEALED PLANS</h3><p class="tiny muted">Public only after each reveal. The page replays from the committed plan bytes, not from this display copy.</p>' +
+    return '<section class="panel fold-panel plans-panel"><h3>REVEALED PLANS</h3><p class="tiny muted">Public only after each reveal. The page replays from the committed plan bytes, not from this display copy.</p>' +
       replay.rounds.map(r => '<details><summary>ROUND ' + (r.round_index + 1) + ' &middot; confirmed tick ' + esc(r.tick) + '</summary><dl class="kv">' +
         ['A', 'B'].map(s => '<dt>' + s + ' PLAN</dt><dd>' + planText(r.plans[s]) + ' <span class="id">(' + esc(r.plan_bytes[s]) + ')</span></dd>' +
           '<dt>' + s + ' SALT</dt><dd class="id wrap">' + esc(r.salts[s]) + '</dd><dt>' + s + ' COMMIT</dt><dd class="id wrap">' + esc(r.commitments[s]) + '</dd>').join('') +
@@ -1914,7 +2043,7 @@
       const done = !x.summary || x.summary.phase === 'DONE';
       const tick = x.summary && x.summary.result ? x.summary.result.tick : null;
       return '<tr><td class="num"><a href="#fight/' + esc(x.id) + '">#' + esc(x.id) + '</a></td><td>' + esc(String(src.mode || '').toUpperCase()) + '</td><td>' + side + '</td><td>' + fighterLink(opp) + '</td><td>' +
-        (done ? resultBadge(out) + ' ' + (w == null ? '<span class="muted">draw</span>' : w === side ? '<span class="pos">WON</span>' : '<span class="neg">LOST</span>') : '<span class="rbadge rbadge-open">LIVE</span>') +
+        (done && spoilHidden(x.id) ? hiddenBadge + ' ' + revealBtn(x.id) : done ? resultBadge(out) + ' ' + (w == null ? '<span class="muted">draw</span>' : w === side ? '<span class="pos">WON</span>' : '<span class="neg">LOST</span>') : '<span class="rbadge rbadge-open">LIVE</span>') +
         '</td><td class="num tiny muted">' + (tick ? esc(tick) : '') + '</td></tr>';
     }).join('');
     const pager = pagerHtml(n => '#fighter/' + hex + '/' + n, d.page, d.pages);
@@ -1941,7 +2070,7 @@
       '<section class="panel panel-cyan" id="scout">' + scoutHtml(hex, s, d) + '</section>' +
       '<section class="panel"><h3>OWNERSHIP (' + esc(net().badge ? net().badge + ' NFT' : 'NFT') + ')</h3>' + nftHistory(meta.asset) +
       (meta.asset ? '<p class="tiny muted">Issuer <span class="id">' + esc(String(meta.asset.issuer || '').slice(0, 8)) + '&hellip;</span> &middot; asset ' + esc(meta.asset.name || '?') + '. A transfer changes who owns the fighter, never its stats or record.</p>' : '') + '</section>' +
-      '<section class="panel" id="fighter-fights"><h3>' + listTitle + '</h3>' + pager +
+      '<section class="panel" id="fighter-fights"><h3>' + listTitle + '</h3>' + (spoilFree() ? '<p class="tiny muted">Spoiler-free: results of fights you have not watched are hidden. <span class="spoil-slot">' + spoilToggle() + '</span></p>' : '') + pager +
       '<div class="tscroll"><table><thead><tr><th class="num">FIGHT</th><th>MODE</th><th>SLOT</th><th>OPPONENT</th><th>RESULT</th><th class="num">TICK</th></tr></thead><tbody>' + fightRows + '</tbody></table></div>' + pager +
       (d.full ? '' : '<p class="tiny muted">The static export keeps recent fights only; the full history needs the read API.</p>') + '</section>');
     wireScoutAll(tok, hex, d);
@@ -2586,7 +2715,7 @@
       '</ol><p class="t-more"><a href="#guide">THE FULL GUIDE &#9654;</a></p></section>' +
       '<section class="t-champs"><h3 class="t-h">CHAMPIONS</h3><div id="t-champs" class="champs"><p class="muted">LOADING&hellip;</p></div><p class="t-more"><a href="#titles">TITLE HISTORY &#9654;</a></p></section>' +
       '<div class="t-cols"><section class="t-top"><h3 class="t-h">TOP FIGHTERS</h3><div id="t-podium" class="t-podium"><p class="muted">LOADING&hellip;</p></div><p class="t-more"><a href="#leaderboard">FULL RANKINGS &#9654;</a></p></section>' +
-      '<section class="t-latest"><h3 class="t-h">LATEST RESULTS</h3><ol id="t-latest" class="t-feed"><li class="muted">LOADING&hellip;</li></ol><p class="t-more"><a href="#results">ALL RESULTS &#9654;</a></p></section></div>';
+      '<section class="t-latest"><h3 class="t-h">LATEST RESULTS</h3><ol id="t-latest" class="t-feed"><li class="muted">LOADING&hellip;</li></ol><p class="t-more"><a href="#results">ALL RESULTS &#9654;</a> <span class="spoil-slot">' + spoilToggle() + '</span></p></section></div>';
     if (!D.manifest) { $('#t-podium').innerHTML = $('#t-latest').innerHTML = $('#t-champs').innerHTML = '<p class="muted">No data yet.</p>'; return; }
     loadTitles().then(T => {
       if (tok !== viewToken || !$('#t-champs')) return;
@@ -2605,6 +2734,7 @@
     $('#t-latest').innerHTML = latest.length ? latest.map(s => {
       const out = summaryOutcome(s), w = out.outcome ? out.outcome.winner : null;
       const a = s.fighters.A.fighter_id, b = s.fighters.B.fighter_id;
+      if (spoilHidden(s.fight_id)) return '<li><a href="#fight/' + esc(s.fight_id) + '">' + avatar(a, 'avatar-sm') + '<span class="t-w">' + esc(short(a)) + '</span> <span class="t-beat">VS</span> <span class="t-l">' + esc(short(b)) + '</span> ' + hiddenBadge + '</a></li>';
       const win = w === 'A' ? a : w === 'B' ? b : null, lose = w === 'A' ? b : w === 'B' ? a : null;
       return '<li><a href="#fight/' + esc(s.fight_id) + '">' +
         (win ? avatar(win, 'avatar-sm') + '<span class="t-w">' + esc(short(win)) + '</span> <span class="t-beat">BEAT</span> <span class="t-l">' + esc(short(lose)) + '</span>'
@@ -3043,6 +3173,8 @@
     const tok = ++viewToken;
     const y = window.scrollY;
     stopPlayer();
+    revealHook = null;
+    spoilForce = name === 'fight' && rest[1] === 'spoilerfree';
     paintNav(name);
     // A slow screen change shows a busy plate over the old view after 200 ms
     // instead of leaving it looking current (V-21). Polls never show it.
@@ -3119,6 +3251,7 @@
       if (box) box.focus(); else location.hash = '#fighters';
     });
     paintMotion();
+    wireSpoilers();
     await loadSource();
     paintSource();
     window.addEventListener('hashchange', route);
