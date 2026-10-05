@@ -60,6 +60,7 @@ for the record and does not describe the current system.
 | [competition.md](competition.md) | normative | Rating, belts, faults, seasons, duels, cups |
 | [nft.md](nft.md) | normative | Fighter NFTs: what owning one does, the market, the sim and Qubic backends, frozen art |
 | [research/qubic-nft-ecosystem-2026-09-30.md](research/qubic-nft-ecosystem-2026-09-30.md) | reference | How NFTs work on Qubic today (QBAY, QX, costs, testnet), with sources and a recommendation |
+| [research/2026-09-24-gameplay/round-1.md](research/2026-09-24-gameplay/round-1.md) | historical | Gameplay brainstorm round 1 (Opus via `claude -p`, no tools): alternative designs for contract-settled fights and fighter NFTs; exploratory, not adopted |
 | [proposals/licensing.md](proposals/licensing.md) | proposal | Licences for code, contract, art and NFT holders (AUD-028) |
 | [model.md](model.md) | normative | The acceptance gates for balance, cost and economics |
 | [validation-protocol.md](validation-protocol.md) | proposal | How the builder beta measures readability, building, revision and adaptation with people: hypotheses, tasks, thresholds |
