@@ -3128,7 +3128,10 @@
       return '<tr><td>TIER ' + esc(k) + '</td><td class="num">' + qu(t.stake) + '</td><td class="num">' + esc((t.rake_bps || 0) / 100) + '%</td><td class="num">' + qu(t.house_rake_per_fight) + '</td><td class="num"><b>' + esc(Math.round((t.break_even_win_share || 0) * 1000) / 10) + '%</b></td><td class="wraptd">' + ev + '</td></tr>';
     }).join('');
     const ev = e.events || {};
+    const community = await communityData();
+    if (tok !== viewToken) return;
     setView(screen('THE ECONOMY', 'WHERE THE ' + esc(CUR().toUpperCase()) + ' GOES &middot; SNAPSHOT TICK ' + esc(e.generated_tick)) +
+      communityPanel(community) +
       '<div class="kpis">' +
       '<div class="kpi ' + (pnl >= 0 ? 'kpi-pos' : 'kpi-neg') + '"><span>HOUSE P&amp;L</span><b>' + (pnl >= 0 ? '+' : '') + qu(pnl) + '</b></div>' +
       '<div class="kpi ' + (per >= 0 ? 'kpi-pos' : 'kpi-neg') + '"><span>PER FIGHT</span><b>' + (per >= 0 ? '+' : '') + esc(per.toFixed(1)) + '</b></div>' +
@@ -3143,6 +3146,48 @@
       '<ul class="plain rules-list"><li>Duel stakes by format: ' + Object.entries(ev.duel_stake_by_format || {}).map(([f, v]) => esc(f) + ' ' + qu(v)).join(', ') + '.</li>' +
       '<li>Cup entry ' + qu(ev.cup_entry_fee) + ', ' + esc((ev.cup_rake_bps || 0) / 100) + '% to the house; next cup sponsorship ' + qu(ev.next_cup_sponsorship) + '.</li>' +
       '<li>Market fee ' + esc((ev.market_fee_bps || 0) / 100) + '% of each sale.</li></ul></section>');
+  }
+
+  // ---- COMMUNITY: builder participation on the economy page (AUD-039, docs/beta.md §7) ----
+
+  /* Measured, never simulated: outside fighters, active builders, fights by
+   * pairing, bot runs and week-2 return, from the read API's /community
+   * (aggregate counts of public chain and arena data, docs/api.md §3.2).
+   * Without the API only the export's fighter origins are known. It sits
+   * above the economics and says that everything below it is simulated. */
+  async function communityData() {
+    if (D.api) { try { return await apiJson('community'); } catch (e) { /* static below */ } }
+    const meta = (D.deployment && D.deployment.fighters) || {};
+    const rows = Object.values(meta);
+    const builder = m => m && m.origin === 'outside' && !/^test-/i.test(m.name || '');   // test-...: the operator's smoke tests
+    return { static: true, fighters: { house: rows.filter(m => m && !builder(m)).length, outside: rows.filter(builder).length } };
+  }
+  function communityPanel(c) {
+    const f = (c && c.fighters) || {}, out = Number(f.outside || 0), all = out + Number(f.house || 0);
+    const kpi = (k, v, title) => '<div class="kpi"' + (title ? ' title="' + esc(title) + '"' : '') + '><span>' + k + '</span><b>' + v + '</b></div>';
+    let body;
+    if (!c || c.static) {
+      body = '<div class="kpis">' + kpi('OUTSIDE FIGHTERS', esc(out) + ' <i class="muted">of ' + esc(all) + '</i>') + '</div>' +
+        '<p class="tiny muted">Active builders, fights by pairing and returns come from the arena\'s read API, which is not answering right now.</p>';
+    } else {
+      const a = c.active_builders || {}, ft = c.fights || {}, wk = ft.last_7_days || {}, runs = c.bot_runs || {}, ret = ((c.retention || {}).week_2_active) || {};
+      const withOutside = Number(wk.outside_vs_house || 0) + Number(wk.outside_vs_outside || 0);
+      const wkAll = withOutside + Number(wk.house_vs_house || 0);
+      const days = a.by_day || [], maxB = Math.max(1, ...days.map(d => Number(d.builders || 0)));
+      body = '<div class="kpis">' +
+        kpi('OUTSIDE FIGHTERS', esc(out) + ' <i class="muted">of ' + esc(all) + '</i>') +
+        kpi('ACTIVE BUILDERS &middot; 7 DAYS', esc(a.last_7_days || 0) + ' <i class="muted">today ' + esc(a.today || 0) + '</i>', 'Builders whose bot sent at least one transaction; a running bot is not a visit') +
+        kpi('FIGHTS WITH A BUILDER &middot; 7 DAYS', esc(numberFmt(withOutside)) + ' <i class="muted">of ' + esc(numberFmt(wkAll)) + '</i>') +
+        kpi('BOT RUNS', esc(runs.total || 0) + ' <i class="muted">' + esc(runs.builders_with_two_or_more || 0) + ' restarted</i>', 'A new run starts when a bot sends again after ' + esc(numberFmt((c.basis || {}).run_gap_ticks || 1200)) + ' quiet ticks; usually a planner change') +
+        kpi('BACK IN WEEK 2', ret.eligible ? esc(ret.retained) + ' <i class="muted">of ' + esc(ret.eligible) + '</i>' : '&mdash;', 'Builders active again 7 to 13 arena days after their first day, of those who started at least 14 days ago') +
+        '</div>' +
+        (out ? '<div class="cm-days" aria-label="Active builders per arena day">' + days.map(d => '<span class="cm-day" title="Arena day ' + esc(d.day) + ': ' + esc(d.builders) + ' active"><i style="height:' + Math.round(100 * Number(d.builders || 0) / maxB) + '%"></i></span>').join('') + '</div><p class="tiny muted cm-axis">ACTIVE BUILDERS, LAST ' + esc(days.length) + ' ARENA DAYS</p>' : '');
+    }
+    const none = out === 0 ? '<p><b>No outside builders yet:</b> every fighter in this arena is a house bot. <a href="#join">How to enter your own bot</a></p>' : '';
+    const kind = D.deployment && NETWORKS[D.deployment.kind] ? D.deployment.kind : 'devnet';
+    return '<section class="panel panel-green cm-panel" id="community"><h3>COMMUNITY &middot; BUILDERS IN THIS ARENA</h3>' + none + body +
+      '<p class="tiny muted">Measured, not simulated: counts from public chain and arena data (registrations, transactions, finished fights). No names, addresses or visits are recorded. Builders are signing keys, not people.</p></section>' +
+      '<p class="cm-divider"><b>SIMULATED ECONOMY BELOW.</b> ' + (kind === 'mainnet' ? 'House bots' : 'House bots and ' + esc(CUR()) + ', which has no monetary value,') + ' produce most of this activity: it shows how the system behaves, not what players would pay.</p>';
   }
 
   // ---- FIGHTER NFTS: #collection, #nft/<fighter id> (docs/nft.md) ----------------------

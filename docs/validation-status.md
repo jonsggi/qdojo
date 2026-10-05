@@ -19,6 +19,11 @@ comparison with candidate 1 on the same seeds: [model.md §8](model.md#8-balance
 Report: [validation-report-candidate-3.md](validation-report-candidate-3.md);
 comparison: [model.md §9](model.md#9-candidate-3-last-stand-and-feint).
 
+**Human validation** (readability, independent builders, revision, adaptation):
+not measured yet. The protocol is fixed in
+[validation-protocol.md](validation-protocol.md) and runs with the
+[builder beta](beta.md); results will be added here as their own section.
+
 ## Mechanical correctness (hard gate): passed
 
 - Every hand vector in [combat.md](combat.md) §8, in Python, C++ and the

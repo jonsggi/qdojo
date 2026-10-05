@@ -98,11 +98,25 @@ CREATE INDEX IF NOT EXISTS nft_events_by_fighter ON nft_events(fighter_id, seq);
 CREATE TABLE IF NOT EXISTS lineal_reigns(
   seq INTEGER PRIMARY KEY, holder TEXT NOT NULL, from_fight INTEGER NOT NULL, to_fight INTEGER, doc TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS reigns_by_holder ON lineal_reigns(holder, seq);
+CREATE TABLE IF NOT EXISTS activity(
+  who TEXT NOT NULL, bucket INTEGER NOT NULL, calls INTEGER NOT NULL, first_tick INTEGER NOT NULL,
+  last_tick INTEGER NOT NULL, PRIMARY KEY(who, bucket)) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS activity_by_bucket ON activity(bucket);
+CREATE TABLE IF NOT EXISTS bot_runs(
+  who TEXT NOT NULL, seq INTEGER NOT NULL, start_tick INTEGER NOT NULL, PRIMARY KEY(who, seq)) WITHOUT ROWID;
 """
 TABLES = ("fighters", "fights", "fight_sides", "contests", "ratings", "cups", "seasons", "ownership", "sales",
-          "lineal_reigns", "nft_tokens", "nft_orders", "nft_events")
+          "lineal_reigns", "nft_tokens", "nft_orders", "nft_events", "activity", "bot_runs")
 TITLES_VERSION = 1       # fight summaries indexed before title flags existed get them once (Syncer)
 FINAL_CUP = ("COMPLETE", "CANCELLED", "ABORTED")
+# Participation (AUD-039): included transactions per sender identity, counted in
+# buckets of ACTIVITY_BUCKET ticks (15 minutes at 1.5 s per tick). A "bot run"
+# starts with a sender's first transaction and again whenever it sends after
+# RUN_GAP_TICKS without one: a running bot sends every few hundred ticks at most
+# (measured on the live arena, 2026-10-03: p99 gap 250-540 ticks, max 831), so
+# a longer silence means the bot was stopped or the builder restarted it.
+ACTIVITY_BUCKET = 600
+RUN_GAP_TICKS = 1200
 
 
 class ReadModelError(RuntimeError):
@@ -162,6 +176,10 @@ class Replica:
         self.failing: set[bytes] = set()
         self.records = 0
         self.nft = AssetLedger()              # the fighter NFT ledger, from the journal's "nft" records
+        # Public chain activity (who sent an included transaction, when): bucket -> who -> [calls, first, last]
+        self.activity: dict[int, dict[str, list[int]]] = {}
+        self.runs: dict[str, list[int]] = {}       # who -> start tick of each bot run
+        self.last_call: dict[str, int] = {}
 
     def _nft_env(self) -> Env:
         def lock_of(fid):
@@ -196,6 +214,7 @@ class Replica:
             who = bytes.fromhex(rec["who"])
             self.balances[who] = self.balances.get(who, 0) - rec["amount"]
             self.contract.call(who, bytes.fromhex(rec["frame"]), rec["amount"], self.tick)
+            self._note_call(rec["who"], self.tick)
         elif k == "end":
             self.contract.end_tick(self.tick)
             if self.nft.crossed:                     # as World.end: agreed NFT sales settle at END_TICK
@@ -225,6 +244,19 @@ class Replica:
         else:
             raise ReadModelError(f"unknown journal record {k!r}")
         self.records += 1
+
+
+    def _note_call(self, who: str, tick: int):
+        cell = self.activity.setdefault(tick // ACTIVITY_BUCKET, {}).get(who)
+        if cell is None:
+            self.activity[tick // ACTIVITY_BUCKET][who] = [1, tick, tick]
+        else:
+            cell[0] += 1
+            cell[2] = tick
+        last = self.last_call.get(who)
+        if last is None or tick - last >= RUN_GAP_TICKS:
+            self.runs.setdefault(who, []).append(tick)
+        self.last_call[who] = tick
 
 
 def manifest_for(devnet_dir: Path) -> Manifest:
@@ -317,9 +349,11 @@ class Syncer:
         self.max_cup = mx("SELECT MAX(cup_id) FROM cups")
         self.reigns = conn.execute("SELECT COUNT(*) FROM lineal_reigns").fetchone()[0]
         self.titles_json = None
+        self.max_bucket = mx("SELECT MAX(bucket) FROM activity")
+        self.run_counts = {r[0]: r[1] for r in conn.execute("SELECT who, COUNT(*) FROM bot_runs GROUP BY who")}
 
     def sync(self, c: CombatContract, deployment: dict, state: dict, rule=None, sales: list | None = None,
-             economics: dict | None = None, nft: AssetLedger | None = None):
+             economics: dict | None = None, nft: AssetLedger | None = None, replica: "Replica | None" = None):
         """One transaction: the database afterwards describes contract `c` at its tick.
         `rule` is the season qualification (the arena profile's), `sales` the
         simulated market's sales (the arena's market.json), `economics` the
@@ -369,6 +403,8 @@ class Syncer:
                                   int(x["fee"]), json.dumps(x)))
             if economics is not None:
                 set_meta(conn, "economics", economics)
+            if replica is not None:
+                self._activity(replica)
             for k, v in state.items():
                 set_meta(conn, k, v)
             set_meta(conn, "tick", c.tick)
@@ -380,6 +416,22 @@ class Syncer:
         self.max_fight = max([self.max_fight] + list(c.fights))
         self.max_contest = max([self.max_contest] + list(c.contests))
         self.max_cup = max([self.max_cup] + list(c.cups))
+
+    def _activity(self, rep: "Replica"):
+        """Activity buckets from the last stored one on (earlier ones are final:
+        a bucket only changes while the replica's tick is inside it), and new
+        bot runs (a run's start never changes). Both are pure functions of the
+        journal, so incremental equals rebuild."""
+        top = max(rep.activity, default=0)
+        for b in range(self.max_bucket, top + 1):
+            for who, (n, first, last) in (rep.activity.get(b) or {}).items():
+                self.conn.execute("INSERT OR REPLACE INTO activity VALUES(?,?,?,?,?)", (who, b, n, first, last))
+        self.max_bucket = max(self.max_bucket, top)
+        for who, starts in rep.runs.items():
+            have = self.run_counts.get(who, 0)
+            for seq in range(have, len(starts)):
+                self.conn.execute("INSERT OR REPLACE INTO bot_runs VALUES(?,?,?)", (who, seq, starts[seq]))
+            self.run_counts[who] = len(starts)
 
     def _titles(self, st: dict):
         """Title state: the public document (last reigns) in meta, every reign in lineal_reigns."""
@@ -689,7 +741,8 @@ class Follower:
                              {"journal_offset": self.offset, "journal_sig": self.tail_sig,
                               "journal_records": self.replica.records,
                               "synced_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
-                             rule=self.rule, sales=self.sales(), economics=self.economics(), nft=self.replica.nft)
+                             rule=self.rule, sales=self.sales(), economics=self.economics(), nft=self.replica.nft,
+                             replica=self.replica)
         self.db_offset = self.offset
         return True
 

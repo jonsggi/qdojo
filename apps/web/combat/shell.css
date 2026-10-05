@@ -1060,3 +1060,12 @@ body.route-busy .route-plate::after { content: ""; display: block; height: 4px; 
 .form-L, .cstat-void, .cstat-cancelled, .vstat-fail, .level-FAILED { background: #c8141b; }
 .duel-score .ds .tname .avatar-sm { display: none; }
 .feed-row .rbadge { justify-self: end; }
+
+/* COMMUNITY panel on the economy page (AUD-039): measured participation, set apart from the simulated economy. */
+.cm-panel .kpi b i { font-style: normal; font-size: 10px; }
+.cm-days { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 3px; align-items: end; height: 48px; margin: 4px 0 2px; }
+.cm-day { height: 100%; display: flex; align-items: flex-end; background: rgba(255, 255, 255, 0.05); }
+.cm-day i { display: block; width: 100%; min-height: 2px; background: var(--green); }
+.cm-axis { margin-top: 2px; }
+.cm-divider { border-top: 3px dashed #3b454c; padding-top: 12px; margin: 6px 0 18px; font-size: 11px; color: var(--steel); }
+.cm-divider b { color: var(--chrome); }

@@ -215,7 +215,9 @@ a public write path and choosing quotas are operator decisions:
    otherwise answers 403 `join_closed` to every non-GET under `/api/v1/`).
 
 [deploy/systemd/join.conf.example](../deploy/systemd/join.conf.example) has
-the drop-ins. Outside fighters are listed in `arena/outside.json` and stay
+the drop-ins. For the builder beta, the recommended limits are
+[deploy/systemd/join-limits.beta.json](../deploy/systemd/join-limits.beta.json)
+and the exact enable, verify and rollback steps are in [beta.md](beta.md) §5. Outside fighters are listed in `arena/outside.json` and stay
 labelled `outside` even after joining is switched off; their bots simply stop
 being able to send. No builder code runs on the host.
 

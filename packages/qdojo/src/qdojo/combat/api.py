@@ -31,6 +31,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
+from . import community
 from . import readmodel as rm
 from . import titles as T
 from .rating import belt_info
@@ -382,6 +383,10 @@ class Reader:
             raise ApiError(404, "not_found", "no economics published yet")
         return self.env("economics", doc)
 
+    def community(self) -> dict:
+        """Aggregate builder participation (community.py, docs/beta.md §7): counts only."""
+        return self.env("community", community.measure(self.c))
+
     def cups(self, q: dict) -> dict:
         return self._docs("cups", "SELECT COUNT(*) FROM cups",
                           "SELECT doc FROM cups ORDER BY cup_id DESC LIMIT ? OFFSET ?", q)
@@ -687,6 +692,8 @@ class Handler(BaseHTTPRequestHandler):
                 return r.nft(p[1]), LIVE_CACHE
         if head == "economics" and n == 1:
             return r.economics(), LIVE_CACHE
+        if head == "community" and n == 1:
+            return r.community(), LIVE_CACHE
         if head == "titles":
             if n == 1:
                 return r.titles(), LIVE_CACHE
