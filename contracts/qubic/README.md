@@ -177,6 +177,7 @@ since, and what was done about it.
   semantics.
 - **Queries.** These query functions are registered:
 
+  <!-- sync:begin abi (docs/reference/check_sync.py: REGISTER_USER_FUNCTION in QDOJO.h) -->
   | ID | Query | Returns |
   |---:|---|---|
   | 1 | `GetService` | |
@@ -189,6 +190,7 @@ since, and what was done about it.
   | 8 | `GetCup` | |
   | 9 | `GetStandings` | the current or previous season; 16 rows and 16 playoff ids |
   | 10 | `GetLedger` | balance, the sum of liabilities, faults |
+  <!-- sync:end abi -->
 
   `Dispatch` is user procedure 1. These IDs are the contract's own ABI and are
   frozen for v1; a new query takes the next free number. What the network
@@ -508,91 +510,57 @@ Other points:
   port uses the same bounded table, which is what is proven equal. The cost
   shows up in `Dispatch` time, not in correctness.
 
-## Follow-up: AdminMirrorOwner (opcode 104) for the qbay-mirror backend
+## Done: AdminMirrorOwner (opcode 104) for the qbay-mirror backend
 
-**Not implemented in `QDOJO.h` yet; this is the specification.** The Python
-reference (`combat/contract.py` `_op_admin_mirror_owner`, `_owner`) has it,
-with tests (`tests/combat/test_qbay_mirror.py`). [docs/nft.md](../../docs/nft.md)
-§5.4 explains the design and [protocol.md](../../docs/protocol.md) §3 the frame.
-Changing `QDOJO.h` means proving it again in Core's harness, so it is a
-separate step. Until it lands, **a qbay-mirror arena's journal cannot replay
-through `QDOJO.h` or `combat_contract.h`**: both answer 104 with BAD_OPCODE
-and the digests diverge. Sim arenas and every committed journal are unaffected.
+Ported on 2026-10-03 from the Python reference (`combat/contract.py`
+`_op_admin_mirror_owner`, `_owner`, `_not_mirrored`; tests in
+`tests/combat/test_qbay_mirror.py`) into `QDOJO.h` and the C++ port
+(`contracts/combat_contract/combat_contract.h`), as the earlier specification
+here laid out. [docs/nft.md](../../docs/nft.md) §5.4 explains the design and
+[protocol.md](../../docs/protocol.md) §3 the frame.
 
-What `QDOJO.h` needs:
+- **Constants.** `QDOJO_OP_ADMIN_MIRROR_OWNER = 104`, `QDOJO_EV_OWNER_MIRRORED
+  = 30`, `QDOJO_MIRROR_SOURCE_QBAY = 12` (the port: `OP_ADMIN_MIRROR_OWNER`,
+  `EV_OWNER_MIRRORED`, `MIRROR_SOURCE_QBAY`).
+- **State.** `RegistryAsset` gains `uint8 mirrored` (in the padding after
+  `used`), `uint64 mirrorSeq` and `id mirrorOwner`: 80 → 120 bytes per entry,
+  `sizeof(StateData)` 1,521,208 → 1,603,128. A mirrored entry's `issuer` is
+  the source contract's identity (index 12, little-endian) and `assetName` the
+  QBAY NFT id, so `bindAsset`'s existing (issuer, name) scan also refuses one
+  NFT backing two fighters.
+- **`ownerOf`.** A mirrored entry returns `mirrorOwner` and skips
+  `AssetOwnershipIterator`; NULL_ID is "unavailable". Every caller already went
+  through `ownerOf`.
+- **`opAdminMirrorOwner`** checks, in reference order: an amount
+  (BAD_AMOUNT); a non-admin (NOT_OWNER); `house_npc` > 1, a source other than
+  12 or `mirror_seq` 0 (BAD_BODY); an existing mirrored entry with another
+  (version, npc, source, id) (BAD_STATE) or a `mirror_seq` not above the
+  stored one (STALE); an entry bound by 100/103 (BAD_STATE); otherwise binds
+  through `bindAsset` (BAD_STATE, FULL). It stores owner and sequence and
+  emits OWNER_MIRRORED (fighter_id, source_contract, source_id, owner,
+  mirror_seq). Opcodes 100 and 103 refuse a mirrored entry with BAD_STATE.
+- **Scratch.** `Ctx` grows by `h_src`, `h_sid`, `h_mowner`, `h_mseq` and the
+  wider `h_asset`: 27,672 → 27,768 bytes; `END_TICK_locals` 29,208 → 29,304,
+  still 3,464 bytes under the 32,768-byte limit.
+- **Harness.** `test_qdojo_core.cpp`'s pre-scan binds no Core asset for a
+  104-bound fighter, so the `owner` records a qbay-mirror world still writes
+  move nothing (the contract reads `mirrorOwner`), and 100/103 on a mirrored
+  fighter bind nothing. A call record may carry the reference's result code
+  (`"code"`); `store.replay`, `test_contract.cpp` and `test_qdojo_core.cpp`
+  then check it call by call, because result codes are not in the event
+  digest.
 
-1. **Constants.**
-   - `QDOJO_OP_ADMIN_MIRROR_OWNER = 104`.
-   - `QDOJO_EV_OWNER_MIRRORED = 30`, the next event type after
-     `CUP_REPLAY_SCHEDULED` (29).
-   - `QDOJO_MIRROR_SOURCE_QBAY = 12`.
-2. **State.** `RegistryAsset` gains three fields:
-   - `uint8 mirrored`, which fits in the existing padding after `used`;
-   - `uint64 mirrorSeq`;
-   - `id mirrorOwner`.
+| Journal | Written by | Covers |
+|---|---|---|
+| `mirror.journal` (candidate 3) | `scripts/combat-contract-mirror.py` | 104 binding two fighters and both owners registering; a ranked fight in which one owner is mirrored to a new identity mid-fight (the snapshot owner is paid); the old owner refused (NOT_OWNER) and the new one registering (`auth_version` 2); repeated and lower `mirror_seq` (STALE); a zero owner (BAD_STATE on SetOperator and QueueEnter), then the owner restored (DUPLICATE); a stranger and a slot-holding non-admin (NOT_OWNER), source 1, seq 0 and npc 2 (BAD_BODY), an attached amount (BAD_AMOUNT), a second fighter on one NFT, a re-pointed, re-versioned or re-npc'd fighter, 100 and 103 on a mirrored fighter and 104 on a 103-bound one (BAD_STATE). Every call carries its reference result code |
+| `mirror-arena.journal` (candidate 3) | the same script | a real qbay-mirror arena (`live.Arena`, profile demo-c3, three bots) whose bridge reads the recorded mainnet answers of `tests/fixtures/qbay/mainnet.json` (no network): three fighters bound to BITE: Ocean Rebels NFTs, a QubicBay sale of NFT 5497 mirrored while the bots fight, NFT 5499 vanishing (zero owner, then BAD_STATE for its bot); 400 ticks, 128 calls, 5 AdminMirrorOwner |
 
-   That takes the entry from 80 to 120 bytes, adding 81,920 bytes over the
-   2,048 entries (`sizeof(StateData)` about 1,603,128). For a mirrored entry,
-   `issuer` holds the source contract's identity (index 12, little-endian,
-   in the first 8 bytes) and `assetName` holds the QBAY NFT id. The existing
-   (issuer, assetName) uniqueness scan in `bindAsset` then also enforces
-   "one NFT never backs two fighters".
-3. **`ownerOf`.** If the entry is `mirrored`, return `mirrorOwner` and
-   report "unavailable" when it is zero. Skip `AssetOwnershipIterator`
-   entirely. Every caller already goes through `ownerOf`, so registration,
-   authorisation, offer validity and cancel need no change.
-4. **`opAdminMirrorOwner`** reads the body in protocol order: `fighter_id`[32],
-   `registry_version` u32, `house_npc` u8, `source_contract` u32,
-   `source_id` u64, `owner`[32], `mirror_seq` u64 (89 bytes). Checks, in
-   reference order:
-   - `amount` ≠ 0 → BAD_AMOUNT;
-   - invocator ≠ admin → NOT_OWNER;
-   - `house_npc` > 1, `source_contract` ≠ 12 or `mirror_seq` = 0 → BAD_BODY;
-   - the fighter has an entry:
-     - not `mirrored`, or (version, npc, issuer, name) differ → BAD_STATE;
-     - `mirror_seq` ≤ stored → STALE;
-   - no entry: bind through `bindAsset` (BAD_STATE if another fighter holds
-     (source, id); FULL when the table is full) and set `mirrored` = 1.
-
-   Then store `mirrorOwner`, a zero owner meaning NULL, and `mirrorSeq`, and
-   emit OWNER_MIRRORED with five fields: fighter_id (bytes), source_contract
-   (u64 tag), source_id (u64 tag), owner (bytes, zero when gone) and
-   mirror_seq (u64 tag).
-5. **Opcodes 100 and 103** refuse a `mirrored` entry with BAD_STATE, before
-   `bindAsset`.
-6. **Dispatch.** Add `case QDOJO_OP_ADMIN_MIRROR_OWNER`. Admin-only like
-   100–103, so it uses the admin's account slot. The `Ctx` scratch grows by
-   about 52 bytes (`h_src`, `h_sid`, `h_mowner`, `h_mseq`), against the
-   ~3.5 KiB headroom of item 2 under "What remains".
-7. **The C++ lockstep port** (`contracts/combat_contract/combat_contract.h`)
-   needs the same opcode and `owner_of` branch, or lockstep fails on the
-   first 104.
-
-Harness journals and test changes:
-
-- **`owner` records of mirrored fighters.** A qbay-mirror journal still
-  writes `owner` records: the ledger keeps the world's owner table in step.
-  `test_qdojo_core.cpp`'s pre-scan maps `owner` records onto the asset a
-  100/103 frame binds. It must **skip `owner` records for fighters bound by
-  104**, because the contract reads `mirrorOwner` for them and no Core asset
-  exists. Otherwise the test tries to issue an asset nobody bound.
-- **`mirror.journal`** (candidate 3), a new committed journal from a
-  generator in the style of `scripts/combat-contract-scenarios.py`. It covers:
-  - 104 binding two fighters and both owners registering;
-  - a ranked fight in which one fighter's owner is mirrored to a new identity
-    mid-fight, with the reference digest proving the snapshot owner is paid;
-  - the old owner refused (NOT_OWNER), then the new owner registering
-    (`auth_version` + 1);
-  - a repeated or lower `mirror_seq` (STALE);
-  - a zero owner (BAD_STATE on SetOperator and QueueEnter);
-  - the rejections: a stranger (NOT_OWNER), source 1, seq 0 and npc 2
-    (BAD_BODY), an attached amount (BAD_AMOUNT), a second fighter on the same
-    NFT, a re-pointed fighter, and 100/103 on a mirrored fighter
-    (BAD_STATE);
-  - a journal from a real qbay-mirror arena (`scripts/combat-journal-from-devnet.py`
-    on a demo arena), once the above passes.
-- Add `mirror.journal` to the fixture glob only **after** both C++ files
-  implement 104, because `make contract-test` replays every journal there.
+Negative controls on the port (`test_contract_c3` on both journals): accepting
+an equal `mirror_seq` (STALE check `<` instead of `<=`) and dropping the
+mirrored check of opcode 100 both end at another digest; treating a zero
+mirrored owner as available keeps the digest but fails `mirror.journal`'s
+recorded result code at tick 309 (NOT_OWNER where the reference says
+BAD_STATE).
 
 ## Local testnet (core-lite, step 4)
 

@@ -3,7 +3,7 @@
 > **Purpose:** bytes, hashes, procedures, the fight state machine, deadlines and service-failure rules. \
 > **Audience:** contract and protocol reviewers; anyone writing a client or an independent verifier. \
 > **Status:** normative. Implemented by `combat/codec.py` and the reference contract `combat/contract.py`, ported to `contracts/combat_contract/` and `contracts/qubic/QDOJO.h`; the frozen [commitment fixture](fixtures/commitment-v1.json) reproduces. Nothing is deployed. This is not the riddle v0 wire format. \
-> **Last reviewed:** 2026-09-25 (header, status and links; rules text unchanged)
+> **Last reviewed:** 2026-10-03 (v1 ABI, numbered result-code and event-type tables, opcode 104 in both C++ ports; the tables are machine-checked by `docs/reference/check_sync.py`)
 
 ## Contents
 
@@ -34,8 +34,28 @@ remains the existing verified Qubic signer; the game commitment below is a
 separate SHA-256 operation.
 
 Use one contract user procedure Dispatch with fixed `Array<uint8,512>` input,
-and read-only query functions with bounded pages. Dispatch's numeric procedure
-ID is a deployment value, not legacy inputType 0x444F.
+and read-only query functions with bounded pages. The procedure and function
+IDs are the contract's own v1 ABI and are frozen (a new query takes the next
+free number); a transaction calling Dispatch carries input type 1, never the
+legacy inputType 0x444F. What the network assigns at registration is the
+contract index, which fixes the contract identity
+([contracts/qubic/README.md](../contracts/qubic/README.md)).
+
+<!-- sync:begin abi (docs/reference/check_sync.py: REGISTER_USER_* in QDOJO.h) -->
+| Kind | ID | Name | Input / output |
+|---|---:|---|---|
+| procedure | 1 | Dispatch | one 512-byte request frame (below); returns code, op, target, refunded |
+| function | 1 | GetService | service counters, event_seq and event digest |
+| function | 2 | GetAccount | one identity's credit and last nonce |
+| function | 3 | GetEvents | up to 64 retained events per page |
+| function | 4 | GetFighter | one fighter |
+| function | 5 | GetOffer | one offer |
+| function | 6 | GetFight | one fight |
+| function | 7 | GetContest | one contest |
+| function | 8 | GetCup | one cup |
+| function | 9 | GetStandings | the current or previous season: 16 rows, 16 playoff ids |
+| function | 10 | GetLedger | balance, the sum of liabilities, fault counters |
+<!-- sync:end abi -->
 
 Canonical request, all multibyte integers unsigned little-endian:
 
@@ -65,7 +85,11 @@ transfer once even if a platform callback also reports it.
 
 Direct authenticated transactions only for fighter actions in v1: invocator
 must equal originator and the bound owner/operator as appropriate. An arbitrary
-calling contract is not implicitly a delegated fighter operator.
+calling contract is not implicitly a delegated fighter operator. The reference
+contract and its ports check the invocator against the bound owner/operator
+only: they do not compare invocator and originator, and there is no
+NOT_DIRECT result code (open item 9 in
+[contracts/qubic/README.md](../contracts/qubic/README.md#what-remains)).
 
 ## 2. Hashes and fixed encodings
 
@@ -156,6 +180,7 @@ The fixture salt is public test data and MUST NOT be used for live play.
 The following opcodes and field order are normative. Every body begins with
 the fields listed, without host alignment. Extra body bytes reject.
 
+<!-- sync:begin opcodes (docs/reference/check_sync.py: codec.Op, codec.BODIES, both C++ ports) -->
 | Opcode | Operation | Body |
 |---:|---|---|
 | 1 | RegisterFighter | fighter_id[32], registry_version u32 |
@@ -177,6 +202,7 @@ the fields listed, without host alignment. Extra body bytes reject.
 | 102 | AdminRetireRuleset | ruleset_digest[32] |
 | 103 | AdminBindAsset | fighter_id[32], registry_version u32, house_npc u8, asset_issuer[32], asset_name u64 |
 | 104 | AdminMirrorOwner | fighter_id[32], registry_version u32, house_npc u8, source_contract u32, source_id u64, owner[32], mirror_seq u64 |
+<!-- sync:end opcodes -->
 
 Opcodes 100–104 are accepted only from the manifest's admin identity.
 AdminCreateCup attaches the sponsorship, which is reserved immediately and
@@ -355,13 +381,45 @@ cancel valid results, withdraw escrow or choose who deserves a refund.
 
 ## 6. Errors, replay and evidence
 
-Stable result codes:
-OK, DUPLICATE, BAD_FRAME, BAD_OPCODE, BAD_BODY, BAD_AMOUNT, UNKNOWN_FIGHTER,
-NOT_OWNER, NOT_OPERATOR, STALE_AUTH, FIGHTER_BUSY, COOLDOWN, FULL,
-NONCE_CONFLICT, STALE, NOT_FOUND, EXPIRED, ALREADY_MATCHED,
-INCOMPATIBLE, RULESET_RETIRED, WRONG_PHASE, LATE, ALREADY_COMMITTED,
-BAD_STATE, BAD_COMMITMENT, BAD_PLAN, ALREADY_REVEALED, TERMINAL,
-SERVICE_VOID, TRANSFER_FAILED.
+Stable result codes (`codec.Code`; the number is the `code` byte a call returns):
+
+<!-- sync:begin result-codes (docs/reference/check_sync.py: codec.Code, both C++ ports) -->
+| Code | Name |
+|---:|---|
+| 0 | OK |
+| 1 | DUPLICATE |
+| 2 | BAD_FRAME |
+| 3 | BAD_OPCODE |
+| 4 | BAD_BODY |
+| 5 | BAD_AMOUNT |
+| 6 | UNKNOWN_FIGHTER |
+| 7 | NOT_OWNER |
+| 8 | NOT_OPERATOR |
+| 9 | STALE_AUTH |
+| 10 | FIGHTER_BUSY |
+| 11 | COOLDOWN |
+| 12 | FULL |
+| 13 | NONCE_CONFLICT |
+| 14 | STALE |
+| 15 | NOT_FOUND |
+| 16 | EXPIRED |
+| 17 | ALREADY_MATCHED |
+| 18 | INCOMPATIBLE |
+| 19 | RULESET_RETIRED |
+| 20 | WRONG_PHASE |
+| 21 | LATE |
+| 22 | ALREADY_COMMITTED |
+| 23 | BAD_STATE |
+| 24 | BAD_COMMITMENT |
+| 25 | BAD_PLAN |
+| 26 | ALREADY_REVEALED |
+| 27 | TERMINAL |
+| 28 | SERVICE_VOID |
+| 29 | TRANSFER_FAILED |
+<!-- sync:end result-codes -->
+
+The C++ ports also define HOST_ERROR = 255 for a call the runtime can never
+produce (ticks running backwards); it is not a protocol code.
 
 An error must include operation/target/code and affected amount treatment.
 Do not return OK before state and credit changes are durable.
@@ -391,6 +449,41 @@ The chain starts from SHA256("qdojo/combat/event/genesis/v1\0"). Event type
 numbers, and each type's field list, are `EVENT_TYPES` and the `_emit` calls
 in `packages/qdojo/src/qdojo/combat/contract.py`. The parity journals under
 `packages/qdojo/tests/combat/fixtures/contract/` pin the resulting digests.
+
+<!-- sync:begin event-types (docs/reference/check_sync.py: contract.EVENT_TYPES, both C++ ports) -->
+| Type | Name |
+|---:|---|
+| 1 | SERVICE_GAP |
+| 2 | FIGHTER_REGISTERED |
+| 3 | OPERATOR_SET |
+| 4 | OFFER_OPEN |
+| 5 | OFFER_CLOSED |
+| 6 | MATCHED |
+| 7 | DUEL_ACCEPTED |
+| 8 | FIGHT_CREATED |
+| 9 | COMMITTED |
+| 10 | REVEALED |
+| 11 | ROUND_RESOLVED |
+| 12 | FIGHT_ENDED |
+| 13 | CONTEST_SETTLED |
+| 14 | RATING |
+| 15 | FAULT |
+| 16 | WITHDRAWN |
+| 17 | WITHDRAW_FAILED |
+| 18 | CUP_CREATED |
+| 19 | CUP_ENTRY |
+| 20 | CUP_BRACKET |
+| 21 | CUP_LEVEL |
+| 22 | CUP_PAIRING |
+| 23 | CUP_FINISHED |
+| 24 | ASSET_REGISTERED |
+| 25 | RULESET_RETIRED |
+| 26 | REFUND_CREDIT |
+| 27 | CUP_WITHDRAWN |
+| 28 | CUP_CHECKED_IN |
+| 29 | CUP_REPLAY_SCHEDULED |
+| 30 | OWNER_MIRRORED |
+<!-- sync:end event-types -->
 
 Retain a bounded event ring and current per-fighter/contest summaries. Export
 full history with raw confirmed transactions through redundant indexers. Chain
