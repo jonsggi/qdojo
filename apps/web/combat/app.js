@@ -2259,8 +2259,9 @@
     const s = practice;
     const npc = N.ROSTER.find(n => n.id === s.npc);
     const over = !!s.outcome;
-    // A shared link does not carry the sharer's name or look.
-    const aName = s.shared ? 'PLAYER' : myName(), aId = s.shared ? 'practice:player' : myId();
+    // A shared link does not carry the sharer's name or look (your own reloaded fight keeps yours).
+    const anon = s.shared && !s.shared.own;
+    const aName = anon ? 'PLAYER' : myName(), aId = anon ? 'practice:player' : myId();
     const me = s.state.a;
     const verdict = over ? (s.outcome.winner === 'A' ? 'YOU WIN' : s.outcome.winner === 'B' ? esc(npc.name) + ' WINS' : 'DRAW') : '';
     setView(screen(aName + ' VS ' + npc.name, over ? 'FIGHT OVER' : 'ROUND ' + (s.state.round_index + 1) + ' OF ' + R.rounds + ' &middot; WRITE YOUR SIX MOVES') +

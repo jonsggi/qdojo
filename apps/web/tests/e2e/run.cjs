@@ -218,6 +218,8 @@ async function main() {
     await must(await page.isHidden('#hud-stale'), 'no STALE badge on the sample');
     await must((await text(page, '#hud-net')) === 'DEVNET' && await page.isVisible('#hud-net'), 'the DEVNET network badge from deployment.kind');
     await must(/recorded sample: the arena is offline/i.test(await text(page, '#foot-net')), 'the offline-sample footer line');
+    await must(await page.getAttribute('#t-play', 'href') === '#practice' && await page.getAttribute('#t-watch', 'href') === '#arena', 'PLAY goes to practice, WATCH to the arena');
+    await must(/FOUR STEPS/.test(await text(page, '#t-path')), 'the first-session path');
     await shot(page, 'title', false);
   });
   await step('arena', async (page, base) => {
@@ -414,6 +416,56 @@ async function main() {
     await must(/REVEALED NPC PLANS/.test(await text(page, '#view')), 'the NPC plan revealed after the round');
     await page.waitForTimeout(600 * 3);
     await shot(page, 'practice');
+  });
+  // ---- practice: a whole fight, its debrief, and the share link in a fresh session ----
+  let shared = null;
+  await step('practice-debrief', async (page, base) => {
+    await go(page, base, '#practice', '#pr-coach');
+    await must(/RECORD/.test(await text(page, '#pr-ladder')), 'the practice record panel');
+    await page.click('[data-npc="jabber-v1"]');
+    await page.click('.select-adv summary');
+    await page.fill('#seed', 'cd'.repeat(32));
+    await page.click('#go');
+    await page.waitForSelector('#planner');
+    for (let r = 0; r < 3 && await page.$('#planner'); r++) {
+      await page.click('.slot[data-slot="0"]');
+      for (const k of ['4', '4', '4', '2', '4', '4']) await page.keyboard.press(k);
+      await page.click('#fight');
+      await page.waitForTimeout(300);
+    }
+    await page.waitForSelector('#debrief');
+    await must(/KEY BEATS/.test(await text(page, '#debrief')) && /TRY NEXT/.test(await text(page, '#debrief')), 'key beats and a tip in the debrief');
+    await must(/vs JABBER: (1W 0L|0W 1L|0W 0L 1D)/.test(await text(page, '#pr-result')), 'the fight recorded once: ' + await text(page, '#pr-result'));
+    await page.click('.db-seek');
+    await must(/^R\d B\d/.test(await text(page, '.controls .pos')), 'a key beat seeks the replay');
+    await page.waitForSelector('#share-link');
+    shared = { url: await page.getAttribute('#share-link', 'href'), verdict: await text(page, '.result-big'),
+      beats: await page.$$eval('tr.fr-beat', t => t.map(r => r.innerText.replace(/\s+/g, ' '))) };
+    await must(/\/p1\.1\.[0-9a-f]{16}\.[0-8n-]+\.[0-9a-f]{8}$/.test(shared.url), 'a p1 replay link: ' + shared.url);
+    await must(page.url().endsWith(shared.url.split('#')[1]), 'the address bar holds the replay link');
+    await page.reload(); await page.waitForSelector('#share-check');
+    await must(!(await page.$('#pr-result')), 'a reload does not record the fight again');
+    await shot(page, 'practice-result');
+  });
+  if (shared) await step('practice-share', async (page, base) => {
+    await page.goto(shared.url); await page.waitForSelector('#share-check');
+    await must(/matches/.test(await text(page, '#share-check')), 'the check value matches');
+    await must(await text(page, '.result-big') === shared.verdict, 'the same verdict');
+    const beats = await page.$$eval('tr.fr-beat', t => t.map(r => r.innerText.replace(/\s+/g, ' ')));
+    await must(JSON.stringify(beats) === JSON.stringify(shared.beats), 'the same executed beats (' + beats.length + ')');
+    await page.goto(shared.url.replace(/[0-9a-f]{8}$/, '00000000')); await page.waitForSelector('#share-check');
+    await must(/MISMATCH/.test(await text(page, '#share-check')), 'a tampered link shows MISMATCH');
+    await page.goto(shared.url.replace('/p1.', '/p7.')); await page.waitForSelector('#share-bad');
+    await must(/format/.test(await text(page, '#share-bad')), 'an unsupported link is refused with a reason');
+  });
+  await step('practice-no-storage', async (page, base) => {
+    await page.addInitScript(() => { Object.defineProperty(window, 'localStorage', { get() { throw new Error('blocked'); } }); });
+    await go(page, base, '#practice', '#pr-ladder');
+    await must(/not saving/.test(await text(page, '.pr-note')), 'a storage-blocked note');
+    await page.click('#go'); await page.waitForSelector('#planner');
+    for (const k of ['4', '4', '4', '2', '4', '4']) await page.keyboard.press(k);
+    await page.click('#fight');
+    await page.waitForSelector('tr.fr-beat', { state: 'attached' });
   });
   await step('rules', async (page, base) => {
     await go(page, base, '#rules', '#digest .vstat');

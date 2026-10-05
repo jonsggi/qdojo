@@ -92,10 +92,10 @@ backlog convention.
 | [AUD-029](issues/AUD-029-starter-planner-new-moves.md) | Open | P1 / outside onboarding | Make the starter planner compatible with every supported ruleset |
 | [AUD-030](issues/AUD-030-onboarding-ruleset-consistency.md) | Open | P1 / outside onboarding | Align onboarding commands and explanations with the arena rules |
 | [AUD-031](issues/AUD-031-custom-planner-benchmark.md) | Open | P1 / builder improvement | Benchmark a builder's own planner directly from the CLI |
-| [AUD-032](issues/AUD-032-fight-debrief.md) | Open (proposal) | P1 / learning | Turn fight results into an actionable debrief |
-| [AUD-033](issues/AUD-033-practice-progress.md) | Open (proposal) | P2 / repeat play | Give practice a saved record and a clear next challenge |
-| [AUD-034](issues/AUD-034-share-completed-practice-fight.md) | Open | P1 / public correctness | Make practice sharing preserve the completed fight |
-| [AUD-035](issues/AUD-035-first-session-onboarding.md) | Open (proposal) | P1 / activation | Make the first session lead clearly to playing and building |
+| [AUD-032](issues/AUD-032-fight-debrief.md) | Fixed (COMMIT); new-player check in AUD-038 | P1 / learning | Turn fight results into an actionable debrief |
+| [AUD-033](issues/AUD-033-practice-progress.md) | Fixed (COMMIT); first-win observation in AUD-038 | P2 / repeat play | Give practice a saved record and a clear next challenge |
+| [AUD-034](issues/AUD-034-share-completed-practice-fight.md) | Fixed (COMMIT) | P1 / public correctness | Make practice sharing preserve the completed fight |
+| [AUD-035](issues/AUD-035-first-session-onboarding.md) | Fixed (COMMIT) for title and practice entry; BUILD A BOT entry status with AUD-027, trial with AUD-039 | P1 / activation | Make the first session lead clearly to playing and building |
 | [AUD-036](issues/AUD-036-fight-layout-and-readability.md) | **Mitigated** 70bc1990: stage first, detail folded, reading face; phone move deck (practice-ux) and viewer study open | P2 / usability | Put fights and controls ahead of banners and technical detail |
 | [AUD-037](issues/AUD-037-spoiler-free-replays.md) | **Fixed** 70bc1990: spoiler-free mode on replays, results, title, arena and fighter lists | P2 / spectating | Offer spoiler-free replay viewing |
 | [AUD-038](issues/AUD-038-human-strategy-validation.md) | Open (research) | P1 / rules decisions | Validate strategic learning and replay readability with outside builders |
