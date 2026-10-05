@@ -19,7 +19,7 @@ from . import engine, evaluate as E, export, npcs, planner
 from .bot import Bot, Budget, planner_chooser, policy_chooser
 from .codec import Code, Op
 from .devnet import Devnet, result_text, roles
-from .rules import candidate_1
+from .rules import KNOWN, PUBLIC_ARENA, by_version, candidate_1
 from .sim import identity
 
 FORMATS = {"single": 0, "bo3": 1, "bo5": 2}
@@ -264,15 +264,20 @@ def cmd_doctor(a):
 
     def check(name, ok, detail, warn=False):
         checks.append({"check": name, "status": "PASS" if ok else ("WARN" if warn else "FAIL"), "detail": detail})
-    rules = candidate_1()
-    check("ruleset digest", True, f"{rules.semantic_version} {rules.digest.hex()}")
+    rules = by_version(a.ruleset)
+    check("ruleset", True, f"{rules.semantic_version} {rules.digest.hex()}"
+          + (" (the public arena's)" if a.ruleset == PUBLIC_ARENA else f" (the public arena runs {PUBLIC_ARENA})"),
+          warn=a.ruleset != PUBLIC_ARENA)
     try:
-        s = engine.new_fight(rules)
+        c1 = candidate_1()                     # a frozen vector: candidate 1, six JABs each
+        s = engine.new_fight(c1)
         from .types import Action, Plan
-        r = engine.resolve_round(rules, s, Plan.of([Action.JAB] * 6), Plan.of([Action.JAB] * 6))
+        r = engine.resolve_round(c1, s, Plan.of([Action.JAB] * 6), Plan.of([Action.JAB] * 6))
         check("engine self-test", r.end.a.hp == 52 and r.end.a.stamina == 46, "six JABs each: 52 HP, 46 stamina")
     except Exception as exc:
         check("engine self-test", False, str(exc))
+    if a.arena:
+        _doctor_arena(a.arena, rules, check)
     manifest = os.environ.get("QDOJO_COMBAT_MANIFEST")
     check("deployment manifest", bool(manifest), manifest or "none: no network, contract or procedure IDs; "
           "paid admission stays disabled and only the devnet is available", warn=True)
@@ -280,9 +285,12 @@ def cmd_doctor(a):
         obs = json.loads(json.dumps(_sample_observation(rules)))
         try:
             ran = planner.run(shlex.split(a.planner), obs, a.budget_ms)
-            check("planner health", True, f"{ran.elapsed_ms} ms, plan {ran.plan.to_json()}")
+            _, why = planner.legal_plan(rules, engine.new_fight(rules).a, ran.plan)
+            check("planner health", why is None, f"{ran.elapsed_ms} ms, plan {ran.plan.to_json()}"
+                  + (f": ILLEGAL under {rules.semantic_version}, {why}" if why else ""))
         except planner.PlannerError as exc:
             check("planner health", False, f"{exc.code}: {exc}")
+        check(*_doctor_fight(shlex.split(a.planner), a.budget_ms, rules))
     state = Path(a.state) if a.state else _home() / "bots"
     if state.exists():
         bad = [p for p in state.rglob("secret-plans.jsonl") if stat.S_IMODE(p.stat().st_mode) & 0o077]
@@ -297,6 +305,49 @@ def cmd_doctor(a):
             print(f"{c['status']:<4}  {c['check']}: {c['detail']}")
     if any(c["status"] == "FAIL" for c in checks):
         sys.exit(1)
+
+
+def _doctor_fight(command, budget_ms, rules):
+    """One complete practice fight against an opponent that uses every move
+    of the ruleset (candidate 3: LAST_STAND and FEINT), seed fixed."""
+    from .training import Contestant, run_fight
+    opp = "feinter" if len(rules.submitted) > 6 else "scout-v1"
+    you = Contestant("you", command=command, budget_ms=budget_ms)
+    them = Contestant(opp, policy=E.policy_by_name(opp, rules), policy_id=opp)
+    replay = run_fight(you, them, bytes(32), 1, rules)
+    errors = [d["error"] for d in you.diagnostics if d.get("error")]
+    adjusted = [d["adjusted"] for d in you.diagnostics if d.get("adjusted")]
+    detail = (f"a full fight vs {opp} ({len(replay['rounds'])} rounds, {replay['outcome']['result']}): "
+              + (f"{len(errors)} round(s) fell back ({', '.join(errors)})" if errors else "no fallback")
+              + (f", {len(adjusted)} plan(s) adjusted ({adjusted[0]})" if adjusted else ", every plan legal"))
+    return "planner fight", not errors and not adjusted, detail
+
+
+def _doctor_arena(url, rules, check):
+    """The arena's manifest ruleset against the one selected here, and whether it accepts outside fighters."""
+    from .join import Http, HttpError
+    base = url.rstrip("/")
+    try:
+        m = Http(base).get("/data/combat/v1/manifest.json")
+    except (HttpError, OSError, ValueError) as exc:
+        check("arena ruleset", False, f"{base}: no manifest ({exc})")
+        return
+    same = m.get("ruleset_digest") == rules.digest.hex()
+    check("arena ruleset", same, f"{base} runs {m.get('semantic_version')} {m.get('ruleset_digest')}"
+          + ("" if same else f"; you selected {rules.semantic_version}: train with --ruleset {m.get('semantic_version')}"
+             if m.get("semantic_version") in KNOWN else "; this checkout does not know it: update qdojo"))
+    try:
+        info = Http(base).get("/api/v1/join")
+        lim = info.get("limits") or {}
+        check("arena entry", True, f"open: {info.get('outside_fighters', '?')} of "
+              f"{lim.get('max_outside_fighters', '?')} outside fighters registered; "
+              f"`qdojo combat join --arena {base} --name NAME --planner CMD`")
+    except HttpError as exc:
+        code = getattr(exc, "code", None) or str(exc)
+        check("arena entry", False, f"closed ({code}): practise and benchmark locally until the operator opens it",
+              warn=True)
+    except (OSError, ValueError) as exc:
+        check("arena entry", False, f"unknown: {exc}", warn=True)
 
 
 def _sample_observation(rules):
@@ -381,7 +432,10 @@ def add_parsers(s):
     d.set_defaults(fn=cmd_bot_run)
 
     d = s.add_parser("doctor", help="non-spending readiness and configuration check")
-    d.add_argument("--planner")
+    d.add_argument("--planner", help="your planner command: one sample round and one full practice fight")
+    d.add_argument("--ruleset", default=PUBLIC_ARENA, choices=tuple(KNOWN),
+                   help="packaged ruleset to check under (default: %(default)s, the public arena's)")
+    d.add_argument("--arena", help="an arena URL: compare its manifest's ruleset and report whether entry is open")
     d.add_argument("--budget-ms", type=int, default=planner.DEFAULT_BUDGET_MS)
     d.add_argument("--state")
     d.add_argument("--json", action="store_true")

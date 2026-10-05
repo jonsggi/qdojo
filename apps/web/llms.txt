@@ -138,25 +138,36 @@ repeat one plan, and scouting shows it. The observation is at most 64 KiB.
 In local practice deadlines are null and opponent_history has no fights.
 
 A complete example: examples/combat/planner_minimal.py in the repository,
-also served at /combat/planner_minimal.py. Guide: docs/build-a-bot.md. Full
+also served at /combat/planner_minimal.py (identical). It reads
+ruleset_digest, knows V1-V3, uses FEINT into blockers and LAST_STAND when
+behind, and stops with a message under a ruleset it does not know. Guide: docs/build-a-bot.md. Full
 contract: docs/api.md section 1.
 
 ## Commands (from a checkout, with uv; none needs a wallet)
 
 ```sh
+cp examples/combat/planner_minimal.py my_bot.py
 uv run qdojo combat npcs
 uv run qdojo combat train --npc jabber-v1 --planner "python3 my_bot.py" --out fight.json
 uv run qdojo combat replay fight.json
-uv run qdojo combat evaluate --policy mixed-v1 --seeds 20
-uv run qdojo combat train --npc scout-v1 --ruleset combat-v1-candidate-2   # the live arena's rules
-uv run qdojo combat doctor --planner "python3 my_bot.py"
+uv run qdojo combat evaluate --planner "python3 my_bot.py"
+uv run qdojo combat evaluate --planner "python3 my_bot_v1.py" --planner "python3 my_bot.py" --suite train
+uv run qdojo combat doctor --planner "python3 my_bot.py" --arena https://qdojo.jonsggi.com
 ```
 
-train and evaluate default to candidate 1; pass --ruleset
-combat-v1-candidate-2 to practice the live arena's rules. train prints every beat, the seed (--seed reproduces a fight) and where your
-plan cost you. evaluate benchmarks built-in policies only; to benchmark your
-own planner over many seeds, loop over qdojo.combat.training.run_fight (an
-example is in docs/build-a-bot.md section 4).
+train, evaluate and doctor default to V3 (combat-v1-candidate-3), the live
+arena's rules, and print the ruleset first; --ruleset combat-v1-candidate-1
+or -2 selects a historical ruleset (old replays verify under their own).
+train prints every beat, the seed (--seed reproduces a fight) and where your
+plan cost you. evaluate --planner runs your planner (same limits and fallback
+as train) against every NPC, the house bots' policies and the LAST_STAND/FEINT
+scripts stander and feinter, 20 paired side-swapped seeds each; it reports
+W/D/L, score and fallback rounds per opponent, --json for machine output,
+and exits 1 if any round fell back. Give --planner twice to compare two
+versions on identical seeds. Tune on one --suite (e.g. train), report on
+another (default test). doctor --arena compares your ruleset with the
+arena's manifest and says whether outside entry is open (the site's #join
+page shows the same). replay also verifies an arena replay.json file or URL.
 
 Your own local devnet (the reference contract on a private simulated chain
 with its own QU and synthetic identities; state in ~/.qdojo/combat, or
@@ -169,9 +180,9 @@ uv run qdojo combat fighter show musashi
 uv run qdojo combat devnet status
 ```
 
-Known issue: bot run with --planner currently forfeits on the devnet (the CLI
-does not wait for the planner subprocess). Use --npc there; use train for
-your own planner.
+bot run works with --npc or --planner (the devnet holds the tick while your
+planner decides). The local devnet rehearses the chain protocol under the
+historical ruleset V1; practise V3 with train and evaluate.
 
 Rules for bots: keep spending decisions apart from plan selection. Never put
 a seed or an API key on a command line. Persist the exact plan and salt

@@ -819,6 +819,10 @@ class Arena:
         extra = {"mirror": {**(self.w.nft.source or {}), **self.mirror.status()}} if self.mirrored else {}
         return {**DEPLOYMENT, **extra, "profile": self.net.profile, "tick_seconds": tick_seconds,
                 "nft_backend": self.state["nft_backend"],
+                # Whether this arena drains an outside-builder inbox (--join-inbox): the
+                # export's answer to "can I enter here?"; the read API and the public
+                # proxy have switches of their own (operations.md §8), the site asks those first.
+                "outside_entry": self.inbox is not None,
                 "names": {f: v["name"] for f, v in fighters.items()}, "fighters": fighters,
                 "chain": {"latency_ticks": list(self.chain.latency), "drop_rate": self.chain.drop_rate,
                           "execution_reserve": self.chain.reserve, "fees_burned": self.chain.burned,

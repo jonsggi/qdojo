@@ -322,8 +322,21 @@ def pools(rules: Ruleset | None = None) -> dict[str, dict[str, npcs.Policy]]:
         held_out_styles["stander"] = pattern([J, Action.LAST_STAND, R, J, Action.LAST_STAND, B])
         held_out_styles["feinter"] = pattern([Action.FEINT, K, J, Action.FEINT, Action.LAST_STAND, R])
     fixed_style = {k: roster[k] for k in ("jabber-v1", "turtle-v1", "kicker-v1")} | held_out_styles
+    # The in-process policies the public demo arena's house bots run (its
+    # lineup also has LLM bots, which no local benchmark can reproduce).
+    house = {k: roster[k] for k in ("scout-v1", "mixed-v1", "kicker-v1", "jabber-v1")}
+    house.update({"reader-v1": ReaderPlanner(), "search-v1": SearchPlanner(),
+                  "script-vs-scout-v1": scripts["script-vs-scout-v1"],
+                  "script-vs-mixed-v1": scripts["script-vs-mixed-v1"], "repeat-last-winner": repeat_last_winner})
+    # A builder's default benchmark: every NPC, the house policies, and under
+    # candidate 3 a scripted user of each new move.
+    builder = {**roster, **house}
+    if len(rules.submitted) > 6:
+        builder.update({k: held_out_styles[k] for k in ("stander", "feinter")})
     return {
         "roster": roster,
+        "house": house,
+        "builder": builder,
         "baseline": {**roster, **spams, **cycles, **misc},
         "fixed-style": fixed_style,
         # Predictable but competent: fixed plans that beat the roster's generic play.
@@ -432,20 +445,76 @@ def _record(t: Tally, replay: dict, slot: str) -> float:
     return score
 
 
-def paired(x: npcs.Policy, y: npcs.Policy, seeds: int, suite: str, x_id="x", y_id="y",
-           rules: Ruleset | None = None, first_seed: int = 0) -> Tally:
-    """`seeds` paired trials; each plays twice with fighter slots swapped."""
+def eval_seed(suite: str, n: int) -> bytes:
+    """The fight seed of paired trial `n` in a seed suite (the same for every policy and planner)."""
+    return sha256(TAG_EVAL, suite.encode(), n.to_bytes(8, "little"))
+
+
+@dataclass
+class PlannerRecord:
+    """How an external planner command behaved over an evaluation. A round it
+    failed (timeout, crash, invalid output) was played with the fallback plan:
+    that fight's result is not the planner's play, and it is counted here."""
+    rounds: int = 0
+    fallback_rounds: int = 0
+    fights: int = 0
+    fights_with_fallback: int = 0
+    adjusted_rounds: int = 0
+    failures: dict = field(default_factory=dict)     # PlannerError code -> rounds
+    max_ms: int = 0
+    total_ms: int = 0
+    first_error: str | None = None
+
+    def add(self, diagnostics: list[dict]):
+        self.fights += 1
+        failed = False
+        for d in diagnostics:
+            self.rounds += 1
+            if d.get("error"):
+                failed = True
+                self.fallback_rounds += 1
+                self.failures[d["error"]] = self.failures.get(d["error"], 0) + 1
+                if self.first_error is None:
+                    tail = (d.get("stderr") or "").strip().splitlines()
+                    self.first_error = d["error"] + (": " + tail[-1][:300] if tail else "")
+            else:
+                self.max_ms = max(self.max_ms, d.get("elapsed_ms", 0))
+                self.total_ms += d.get("elapsed_ms", 0)
+            self.adjusted_rounds += bool(d.get("adjusted"))
+        self.fights_with_fallback += failed
+
+    def to_json(self) -> dict:
+        ok = self.rounds - self.fallback_rounds
+        return {"rounds": self.rounds, "fallback_rounds": self.fallback_rounds, "fights": self.fights,
+                "fights_with_fallback": self.fights_with_fallback, "adjusted_rounds": self.adjusted_rounds,
+                "failures": dict(sorted(self.failures.items())), "max_ms": self.max_ms,
+                "mean_ms": round(self.total_ms / ok, 1) if ok else None, "first_error": self.first_error}
+
+
+def paired(x: npcs.Policy | None, y: npcs.Policy, seeds: int, suite: str, x_id="x", y_id="y",
+           rules: Ruleset | None = None, first_seed: int = 0, x_command: list[str] | None = None,
+           budget_ms: int | None = None, record: PlannerRecord | None = None) -> Tally:
+    """`seeds` paired trials; each plays twice with fighter slots swapped.
+    With `x_command` the evaluated side is that planner process (run exactly as
+    `qdojo combat train` runs it, same limits and fallback), and its
+    diagnostics go into `record`."""
     rules = rules or candidate_1()
     t = Tally()
     for n in range(first_seed, first_seed + seeds):
-        seed = sha256(TAG_EVAL, suite.encode(), n.to_bytes(8, "little"))
+        seed = eval_seed(suite, n)
         pair_score = 0.0
         for names in (("P", "Q"), ("Q", "P")):
-            cx = Contestant(names[0], policy=x, policy_id=x_id)
+            if x_command is not None:
+                cx = Contestant(names[0], command=list(x_command),
+                                **({"budget_ms": budget_ms} if budget_ms is not None else {}))
+            else:
+                cx = Contestant(names[0], policy=x, policy_id=x_id)
             cy = Contestant(names[1], policy=y, policy_id=y_id)
             replay = run_fight(cx, cy, seed, n + 1, rules)
             slot = "A" if replay["fighters"]["A"]["name"] == names[0] else "B"
             pair_score += _record(t, replay, slot)
+            if record is not None and x_command is not None:
+                record.add(cx.diagnostics)
         t.scores.append(pair_score / 2)
     return t
 
@@ -491,6 +560,48 @@ def evaluate(policy: npcs.Policy, pool: dict[str, npcs.Policy], seeds: int, suit
         if progress:
             progress(f"{name}: score {rows[-1]['score']:.3f}")
     return rows
+
+
+def evaluate_planner(command: list[str], pool: dict[str, npcs.Policy], seeds: int, suite: str = "test",
+                     rules: Ruleset | None = None, budget_ms: int | None = None,
+                     progress: Callable[[str], None] | None = None) -> dict:
+    """A planner command against every opponent in `pool` on the evaluation
+    seeds of `suite`: per-opponent rows, the per-seed pair scores (for paired
+    comparisons) and the planner's failure record."""
+    rows, scores, record = [], {}, PlannerRecord()
+    for name, opp in pool.items():
+        before = record.fallback_rounds
+        t = paired(None, opp, seeds, f"{suite}/{name}", "planner", name, rules=rules, x_command=command,
+                   budget_ms=budget_ms, record=record)
+        row = summarize(name, t)
+        row["fallback_rounds"] = record.fallback_rounds - before
+        rows.append(row)
+        scores[name] = t.scores
+        if progress:
+            progress(f"{name}: score {row['score']:.3f} ({row['W']}/{row['D']}/{row['L']})"
+                     + (f", {row['fallback_rounds']} fallback rounds" if row["fallback_rounds"] else ""))
+    every = [x for name in pool for x in scores[name]]
+    total = {"opponent": "ALL", "fights": sum(r["fights"] for r in rows), "W": sum(r["W"] for r in rows),
+             "D": sum(r["D"] for r in rows), "L": sum(r["L"] for r in rows), "score": mean(every),
+             "lower95": bootstrap_lower(every), "fallback_rounds": record.fallback_rounds}
+    return {"command": command, "rows": rows, "total": total, "planner": record.to_json(), "pair_scores": scores}
+
+
+def compare(base: dict, other: dict) -> dict:
+    """Paired difference other-minus-base over identical seeds and opponents."""
+    diffs = [y - x for name in base["pair_scores"] for x, y in zip(base["pair_scores"][name], other["pair_scores"][name])]
+    return {"base": base["command"], "other": other["command"], "pairs": len(diffs),
+            "mean_difference": mean(diffs), "lower95": bootstrap_lower(diffs),
+            "upper95": -bootstrap_lower([-d for d in diffs])}
+
+
+def planner_markdown(title: str, result: dict) -> str:
+    head = ("| Opponent | Fights | W/D/L | Score | 95% LB | Fallback rounds |\n"
+            "|---|---:|---|---:|---:|---:|")
+    fmt = lambda r: (f"| {r['opponent']} | {r['fights']} | {r['W']}/{r['D']}/{r['L']} | {r['score']:.3f} | "  # noqa: E731
+                     f"{r['lower95']:.3f} | {r['fallback_rounds']} |")
+    body = [fmt(r) for r in result["rows"]] + [fmt({**result["total"], "opponent": "**ALL**"})]
+    return f"### {title}\n\n{head}\n" + "\n".join(body) + "\n"
 
 
 def ablation(full: npcs.Policy, ablated: npcs.Policy, pool: dict[str, npcs.Policy], seeds: int,

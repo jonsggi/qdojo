@@ -697,7 +697,11 @@ def cmd_join(a):
     try:
         info = http.get("/api/v1/join")
     except HttpError as e:
-        raise SystemExit(f"qdojo: this arena does not accept outside fighters ({e})") from None
+        raise SystemExit(f"qdojo: entry is closed on {a.arena} ({e.code or e}); nothing was created.\n"
+                         f"Next: practise and benchmark locally (`qdojo combat train`, `qdojo combat evaluate "
+                         f"--planner ...`); the site's BUILD A BOT page shows when entry opens.") from None
+    except (OSError, ValueError) as e:
+        raise SystemExit(f"qdojo: cannot reach {a.arena} ({e}); nothing was created") from None
     key = Path(a.key) if a.key else _home() / "join" / f"{a.name}.seed"
     subseed, pub = load_or_make_key(key)
     print(f"key {key} -> owner {pub.hex()} (simulated arena only: fake QU)")
@@ -710,6 +714,7 @@ def cmd_join(a):
             rules = by_digest(info["ruleset_digest"])
         except RulesetError:
             raise SystemExit("qdojo: the arena runs a ruleset this checkout does not know; update qdojo") from None
+    print(f"arena ruleset {rules.semantic_version} {rules.digest.hex()}")
     state = Path(a.state) if a.state else _home() / "join" / a.name
     client = RemoteClient(http, info, subseed, pub, fid, state)
     client.refresh()

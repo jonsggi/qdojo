@@ -902,7 +902,45 @@
     return res;
   }
 
+  // ---- outside-builder entry (AUD-027): can I enter this deployment? ----------
+
+  /* Whether this deployment accepts outside fighters, from what it reports:
+   * the read API's GET /api/v1/join (200 with limits, or 404 join_disabled /
+   * 403 join_closed), its /api/v1/status join_enabled, and the export's
+   * index.json deployment.outside_entry, in that order of authority. The
+   * site never guesses "open": anything it cannot read is UNKNOWN.
+   *   facts: { sample, live, join: {status, doc} | null, status: doc | null,
+   *            deployment: doc | null, manifestDigest }
+   * Returns { state: OPEN | FULL | CLOSED | UNKNOWN | OFFLINE, source, detail, ... }. */
+  function entryStatus(facts) {
+    const f = facts || {};
+    if (f.sample || !f.live) return { state: 'OFFLINE', source: 'export', detail: 'The arena is offline: this site shows a recorded sample, so there is no arena to enter right now.' };
+    const j = f.join;
+    if (j && j.status === 200 && j.doc && j.doc.enabled) {
+      const d = j.doc, lim = d.limits || {};
+      const n = Number(d.outside_fighters), max = Number(lim.max_outside_fighters);
+      const rulesOk = !d.ruleset_digest || !f.manifestDigest || d.ruleset_digest === f.manifestDigest;
+      const full = Number.isFinite(n) && Number.isFinite(max) && n >= max;
+      return {
+        state: full ? 'FULL' : 'OPEN', source: 'api/v1/join', outside: Number.isFinite(n) ? n : null, max: Number.isFinite(max) ? max : null,
+        grant: lim.grant_qu != null ? lim.grant_qu : null, rulesOk, ruleset: d.ruleset_digest || null,
+        detail: full ? 'Entry is configured, but every outside-fighter place is taken (' + n + ' of ' + max + ').'
+          : 'Entry is open: ' + (Number.isFinite(n) ? n : '?') + ' of ' + (Number.isFinite(max) ? max : '?') + ' outside-fighter places are taken.',
+      };
+    }
+    const code = j && j.doc && j.doc.error ? j.doc.error.code : null;
+    if (j && (code === 'join_disabled' || code === 'join_closed')) {
+      return { state: 'CLOSED', source: 'api/v1/join', code, detail: 'Entry is closed on this deployment (' + code + '): the operator has not opened it to outside builders.' };
+    }
+    if (f.status && f.status.join_enabled === false) return { state: 'CLOSED', source: 'api/v1/status', code: 'join_enabled=false', detail: 'Entry is closed on this deployment: the read API reports join_enabled=false.' };
+    const dep = f.deployment || {};
+    if (dep.outside_entry === false) return { state: 'CLOSED', source: 'index.json', code: 'outside_entry=false', detail: 'Entry is closed on this deployment: the arena does not accept outside fighters (deployment.outside_entry is false).' };
+    if (dep.outside_entry === true) return { state: 'UNKNOWN', source: 'index.json', detail: 'The arena accepts outside fighters, but the read API that takes registrations did not answer. Try again later, or run qdojo combat doctor --arena to check.' };
+    return { state: 'UNKNOWN', source: null, detail: 'This deployment does not report whether outside entry is open (no read API answered).' };
+  }
+
   return Object.freeze({
+    entryStatus,
     NAMES, ID, LEVELS,
     fromHex, toHex, concat, uLE, canonicalJson, rulesetDigest, chooseRuleset, defaultSha256,
     parseContext, roundStateBytes, commitmentPreimage,

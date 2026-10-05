@@ -251,6 +251,14 @@ Handling problems:
 - **Rules change.** A devnet's manifest profile and values are fixed when it
   is created; the marker refuses to reopen it under other rules. To change the
   rules, stop the unit, move the arena directory aside, and start fresh.
+  The onboarding moves with it, in the same commit as the switch:
+  `rules.PUBLIC_ARENA` (the default of `train`, `evaluate`, `doctor`), the
+  starter's `RULESETS` table in `examples/combat/planner_minimal.py` (copied to
+  `apps/web/combat/planner_minimal.py`), README, build-a-bot.md, api.md §6,
+  llms.txt and the site's guide, join and help copy. `make test` runs
+  `tests/combat/test_builder_journey.py`, which follows the published commands
+  against a local arena on `PUBLIC_ARENA`'s profile and fails while any of
+  these disagree.
 - **Slow restart.** The log's `restored … by full replay (skipped: …)` line
   says why no snapshot was used. After a code deploy that is expected once.
   A snapshot that fails to verify is never used; nothing needs repairing.
