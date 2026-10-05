@@ -1,6 +1,6 @@
 # AUD-032 — Turn fight results into an actionable debrief
 
-- **Status:** Fixed in COMMIT (implementation); the new-player criterion stays open under AUD-038
+- **Status:** Fixed in 1fbced09 (implementation); the new-player criterion stays open under AUD-038
 - **Priority:** P1 — learning and repeat play
 - **Type:** UX / feature
 - **Scope:** combat/logic.js, combat/app.js practice and replay results, combat/training.py explanations
@@ -29,7 +29,7 @@ generative explanation service is not required.
 - [ ] (recorded examples done; new players open) Validate with recorded examples and new players: can they identify a relevant
   mistake and name a change they intend to try?
 
-## Resolution (2026-10-03, COMMIT)
+## Resolution (2026-10-03, 1fbced09)
 
 `apps/web/combat/practice.js` `debrief()` builds the debrief from engine traces only. `app.js` renders it as the
 DEBRIEF panel under every finished practice fight, and as a folded panel labelled "SHOWS THE RESULT"

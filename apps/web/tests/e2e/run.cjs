@@ -534,6 +534,7 @@ async function main() {
     await must(!bad.length, 'no outcome in the DOM mid-replay, found ' + bad.join(', '));
     await must(await page.locator('.result-hold').count() === 1 && await page.locator('.result-panel').count() === 0, 'RESULT HIDDEN instead of the result panel');
     await must(await page.locator('table.beats').count() === 0 && await page.locator('.check .evidence').count() === 0, 'no beat table or check evidence before the end');
+    await must(await page.locator('#db-fold').count() === 0, 'no debrief before the end (it names the result)');
     await must(!/\(\d+\/\d+\)/.test(await text(page, '.controls .pos')), 'no frame total (it would give away the length)');
     await must(await page.getAttribute('[data-spoil-toggle]', 'aria-pressed') === 'true' && (await text(page, '#btn-spoil')) === 'SPOILERS: HIDDEN', 'the toggles say HIDDEN');
     await shot(page, 'spoiler-free-mid', false);
@@ -543,6 +544,7 @@ async function main() {
     await must((await text(page, '.result-panel')).includes(lab.text.replace(/\s+/g, ' ')), 'the revealed result is the outcome label');
     await must(await page.locator('table.beats tr[data-i]').count() > 0 && /END \(\d+\/\d+\)/.test(await text(page, '.controls .pos')), 'the beat table and frame count after the end');
     await must(await page.locator('.check .evidence').count() > 0, 'check evidence after the end');
+    await page.waitForSelector('#db-fold');
     // a watched fight stays revealed on reload
     await page.reload();
     await page.waitForSelector('.stage');

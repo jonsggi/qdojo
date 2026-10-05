@@ -1,6 +1,6 @@
 # AUD-035 — Make the first session lead clearly to playing and building
 
-- **Status:** Fixed in COMMIT for the title and practice entry; the BUILD A BOT content, outside-entry status and cohort trial stay with builder-journey (AUD-027/041) and AUD-039
+- **Status:** Fixed in 1fbced09 for the title and practice entry; the BUILD A BOT content, outside-entry status and cohort trial stay with builder-journey (AUD-027/041) and AUD-039
 - **Priority:** P1 — activation
 - **Type:** UX / onboarding
 - **Scope:** title screen, practice introduction, BUILD A BOT page and builder guide
@@ -29,7 +29,7 @@ for the next milestone, with manual practice as their introduction.
 - [ ] (needs a cohort, AUD-039) Try the published path with independent builders and record time to first
   completed arena fight, confusion and assistance required.
 
-## Resolution (2026-10-03, COMMIT)
+## Resolution (2026-10-03, 1fbced09)
 
 - **Title:** PRESS START (which went to the arena) is replaced by PLAY ▶ (`#practice`) and WATCH (`#arena`),
   with a line saying what each does. Below them is an optional NEW HERE? FOUR STEPS path: name a fighter,

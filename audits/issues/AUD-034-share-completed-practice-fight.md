@@ -1,6 +1,6 @@
 # AUD-034 — Make practice sharing preserve the completed fight
 
-- **Status:** Fixed in COMMIT
+- **Status:** Fixed in 1fbced09
 - **Priority:** P1 — public correctness and sharing
 - **Type:** Bug
 - **Scope:** combat/app.js renderPracticeFight/viewPractice, practice replay format and verifier
@@ -36,7 +36,7 @@ practice state from the opponent and seed.
   challenge rather than the completed replay.
 - [x] Cover a complete play → share → fresh-session replay flow in browser tests.
 
-## Resolution (2026-10-03, COMMIT)
+## Resolution (2026-10-03, 1fbced09)
 
 The format is in docs/npcs.md §5:
 

@@ -1,6 +1,6 @@
 # AUD-037 — Offer spoiler-free replay viewing
 
-- **Status:** Fixed in 70bc1990 (spoiler-free mode), with its e2e steps in the follow-up commit
+- **Status:** Fixed in 11059267 (spoiler-free mode), with its e2e steps in the follow-up commit
 - **Priority:** P2 — spectator experience
 - **Type:** Feature / UX
 - **Scope:** combat/app.js replay route, result/title banners and playback state

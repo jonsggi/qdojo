@@ -1,6 +1,6 @@
 # AUD-033 — Give practice a saved record and a clear next challenge
 
-- **Status:** Fixed in COMMIT; the first-win comprehension observation stays open under AUD-038
+- **Status:** Fixed in 1fbced09; the first-win comprehension observation stays open under AUD-038
 - **Priority:** P2 — repeat play
 - **Type:** Feature / UX
 - **Scope:** combat/app.js practice flow and local persistence
@@ -27,7 +27,7 @@ their progress across sessions.
 - [x] Verify persistence across reloads and confirm results are recorded only once.
 - [ ] (needs a study, AUD-038) Observe whether a new player understands what to attempt after their first win.
 
-## Resolution (2026-10-03, COMMIT)
+## Resolution (2026-10-03, 1fbced09)
 
 - **Storage:** `localStorage` key `qdojo.practice.v1` holds W/L/D and the best result per NPC under each
   ruleset version, plus the first-session steps. Every access is in try/catch.
