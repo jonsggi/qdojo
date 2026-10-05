@@ -89,9 +89,9 @@ backlog convention.
 
 | ID | Status | Priority / gate | Issue |
 |---|---|---|---|
-| [AUD-029](issues/AUD-029-starter-planner-new-moves.md) | Open | P1 / outside onboarding | Make the starter planner compatible with every supported ruleset |
-| [AUD-030](issues/AUD-030-onboarding-ruleset-consistency.md) | Open | P1 / outside onboarding | Align onboarding commands and explanations with the arena rules |
-| [AUD-031](issues/AUD-031-custom-planner-benchmark.md) | Open | P1 / builder improvement | Benchmark a builder's own planner directly from the CLI |
+| [AUD-029](issues/AUD-029-starter-planner-new-moves.md) | **Fixed** d1d5ff5b: ruleset-aware starter, both copies identical and tested | P1 / outside onboarding | Make the starter planner compatible with every supported ruleset |
+| [AUD-030](issues/AUD-030-onboarding-ruleset-consistency.md) | **Fixed** d1d5ff5b, 7a0837c3: V3 default, docs aligned, release checklist (operations.md §7) | P1 / outside onboarding | Align onboarding commands and explanations with the arena rules |
+| [AUD-031](issues/AUD-031-custom-planner-benchmark.md) | **Fixed** d1d5ff5b: `evaluate --planner`, paired comparisons, fallback accounting | P1 / builder improvement | Benchmark a builder's own planner directly from the CLI |
 | [AUD-032](issues/AUD-032-fight-debrief.md) | Fixed (1fbced09); new-player check in AUD-038 | P1 / learning | Turn fight results into an actionable debrief |
 | [AUD-033](issues/AUD-033-practice-progress.md) | Fixed (1fbced09); first-win observation in AUD-038 | P2 / repeat play | Give practice a saved record and a clear next challenge |
 | [AUD-034](issues/AUD-034-share-completed-practice-fight.md) | Fixed (1fbced09) | P1 / public correctness | Make practice sharing preserve the completed fight |
@@ -101,7 +101,7 @@ backlog convention.
 | [AUD-038](issues/AUD-038-human-strategy-validation.md) | Open (research) | P1 / rules decisions | Validate strategic learning and replay readability with outside builders |
 | [AUD-039](issues/AUD-039-builder-beta-and-commercial-evidence.md) | Open (proposal) | P1 / product validation | Run a small builder beta and separate engagement from simulated economics |
 | [AUD-040](issues/AUD-040-frontend-modules.md) | Open | P2 / maintainability | Split the frontend controller into modules with clear ownership |
-| [AUD-041](issues/AUD-041-builder-journey-acceptance.md) | Open | P1 / regression protection | Test the published builder journey against the active ruleset |
+| [AUD-041](issues/AUD-041-builder-journey-acceptance.md) | **Fixed**: builder-journey acceptance test in `make test`; `make release-check` | P1 / regression protection | Test the published builder journey against the active ruleset |
 
 Outside-entry enablement extends **AUD-027**, rather than creating a duplicate.
 Human strategy validation extends AUD-021's measured balance work. Real costs,

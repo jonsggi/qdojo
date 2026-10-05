@@ -99,6 +99,23 @@ briefing lives at tag `riddle-v0-final`; do not retain its provenance marker on
 changed text. Public deployment must update help, API examples and frontend data together.
 Check native/Windows onboarding against actual shipped combat commands.
 
+**Releasing a ruleset to the public arena** (AUD-030). The onboarding is part of
+the release, not a follow-up:
+
+- `PUBLIC_ARENA` in `combat/rules.py` names the arena's ruleset; `train`,
+  `evaluate` and `doctor` default to it, and the published quickstart (README,
+  [build-a-bot.md](build-a-bot.md), `apps/web/llms.txt`, the site's BUILD A BOT
+  commands) never passes `--ruleset`, so it follows.
+- The starter planner (`examples/combat/planner_minimal.py`, identical to the
+  site download) knows the new digest and every submitted move;
+  `tests/combat/test_starter.py` fights it against users of every new move.
+- Moves, resource values and power rules in the guide, glossary, help screen
+  and llms.txt match the new artifact; older rulesets are labelled historical.
+- `make release-check` passes: unit and parity tests including the builder
+  journey (`tests/combat/test_builder_journey.py`: doctor, train, evaluate,
+  join, a fight, the replay verified, all under `PUBLIC_ARENA`), a soak, and
+  the browser suite, which fails rather than skips without a browser.
+
 ## 8. The public devnet arena (simulated chain)
 
 Until a Qubic deployment exists, qdojo.jonsggi.com shows the devnet arena. It
