@@ -2,7 +2,7 @@
  *
  * Views, by hash: #arena (default), #title, #book, #results (#fights is an
  * alias), #leaderboard, #fight/<id>, #fighter/<hex>, #collection, #nft/<hex>, #practice,
- * #practice/<npc>/<seed>, #join, #rules, #help. The site polls the export
+ * #practice/<npc>/<seed>, #practice/<npc>/<seed>/<p1 replay> (docs/npcs.md §5), #join, #rules, #help. The site polls the export
  * every 30 s and repaints live views in place, without a reload.
  *
  * Full history comes from the read API (/api/v1/, docs/api.md §3.2) when it
@@ -630,7 +630,8 @@
       '<p class="title-sub">AUTONOMOUS BOTS &middot; SEALED PLANS &middot; THREE ROUNDS</p>' +
       '<p class="title-lore">After the Big Unplug, the last dojo on Earth is a scrapyard, and its sensei is a karaoke machine. <a href="#story">READ THE LEGEND &#9654;</a></p>' +
       '<div id="attract" class="attract-stage" aria-live="polite"><p class="muted">LOADING FIGHTS&hellip;</p></div>' +
-      '<p><a class="btn btn-start" href="#arena">PRESS START</a></p><p class="insert-coin blink">INSERT COIN</p>' +
+      '<p class="title-cta"><a class="btn btn-start" href="#practice" id="t-play">PLAY &#9654;</a> <a class="btn btn-start btn-cyan" href="#arena" id="t-watch">WATCH</a></p>' +
+      '<p class="title-cta-sub"><b>PLAY</b>: fight a bot yourself, free, in your browser. <b>WATCH</b>: the arena\'s bot-vs-bot fights.</p><p class="insert-coin blink">INSERT COIN</p>' + firstSessionHtml() +
       '<p class="title-links"><a href="#practice">FREE PRACTICE</a> &middot; <a href="#join">BUILD A BOT</a> &middot; <a href="#leaderboard">LEADERBOARD</a></p></section>');
     $('#view').insertAdjacentHTML('beforeend', '<div id="title-extras" class="title-extras"></div>');
     titleExtras(tok).catch(() => {});
@@ -1838,11 +1839,18 @@
       '<div id="plans-slot">' + plansHtml() + '</div>');
     let checked = null;
     const paintVerify = () => { if (checked && $('#verify')) $('#verify').innerHTML = verifyHtml(checked, hide); };
+    // The debrief names the result: a held replay adds it on reveal (AUD-037).
+    const addDebrief = () => {
+      if (tok !== viewToken || $('#db-fold') || !$('.player-panel')) return;
+      $('.player-panel').insertAdjacentHTML('afterend', replayDebrief(replay, derived, frames, names));
+      wireDebrief(player);
+    };
     const onReveal = () => {
       if (!hide) return;
       hide = false;
       markSeen(id);
       revealHook = null;
+      Promise.resolve().then(addDebrief);
       if ($('#result-slot')) $('#result-slot').innerHTML = resultHtml();
       if ($('#plans-slot')) $('#plans-slot').innerHTML = plansHtml();
       paintVerify();
@@ -1854,7 +1862,7 @@
     if (hide) {
       revealHook = () => player.reveal();
       $('[data-reveal-replay]').addEventListener('click', () => player.reveal());
-    } else cornerBelts($('#player'), fighters);
+    } else { cornerBelts($('#player'), fighters); addDebrief(); }
     seriesLink(id, replay.mode, hide).then(html => { if (tok === viewToken && $('#series-slot')) $('#series-slot').innerHTML = html; }).catch(() => {});
     markScrollers($('#view'));
     const v = await L.verifyReplay(replay, { rules: R, manifest: D.manifest, sha256: SHA }).catch(e => ({ checks: [{ id: 'error', label: 'Verification', status: 'FAIL', evidence: e.message, details: [] }], level: 'FAILED' }));
@@ -2161,6 +2169,7 @@
 
   function viewPractice(tok, parts) {
     const npcId = parts[0], seed = parts[1];
+    if (parts.length > 2) return viewSharedPractice(tok, npcId, seed, parts.slice(2).join('/'));
     if (npcId && seed && N.ROSTER.some(n => n.id === npcId) && HEX64.test(seed)) {
       if (!practice || practice.npc !== npcId || practice.seed !== seed) {
         practice = L.practiceStart(R, npcId, seed, 1);
@@ -2169,9 +2178,10 @@
       return renderPracticeFight();
     }
     practice = null;
-    let pick = N.ROSTER.some(n => n.id === npcId) ? npcId : (store.get('qdojo.combat.npc') || 'jabber-v1');
+    const ladderNext = PR.nextChallenge(loadProgress().p, R.semantic_version);
+    let pick = N.ROSTER.some(n => n.id === npcId) ? npcId : (store.get('qdojo.combat.npc') || (ladderNext ? ladderNext.npc : 'jabber-v1'));
     const pre = HEX64.test(seed || '') ? seed : L.randomSeed();
-    setView(screen('CHOOSE YOUR OPPONENT', 'FREE PRACTICE &middot; IN YOUR BROWSER &middot; NO WALLET &middot; NO RATING') +
+    setView(screen('CHOOSE YOUR OPPONENT', 'FREE PRACTICE &middot; IN YOUR BROWSER &middot; NO WALLET &middot; NO RATING') + coachHtml() +
       '<div class="select">' +
       '<div class="select-side select-you"><span class="select-tag tag-1p">1P</span>' +
       '<span class="avatar avatar-select" data-anim="idle" data-identity="' + esc(myId()) + '" id="my-avatar" aria-hidden="true">' + (A ? A.svg(myId(), 'sprite') : '') + '</span>' +
@@ -2179,9 +2189,9 @@
       '<p class="tiny muted">Type a name: the scrapyard bolts together a new robot for every name.</p></div>' +
       '<div class="select-grid" role="radiogroup" aria-label="Opponent">' +
       N.ROSTER.map(n => '<button class="npc-card' + (n.id === pick ? ' on' : '') + '" role="radio" aria-checked="' + (n.id === pick) + '" data-npc="' + esc(n.id) + '">' +
-        avatar('npc:' + n.id, 'avatar-lg') + '<b>' + esc(n.name) + '</b>' + stars(npcInfo(n.id).stars) + '</button>').join('') + '</div>' +
+        avatar('npc:' + n.id, 'avatar-lg') + '<b>' + esc(n.name) + '</b>' + stars(npcInfo(n.id).stars) + npcCardRec(n.id, ladderNext) + '</button>').join('') + '</div>' +
       '<div class="select-side select-them" id="them"></div></div>' +
-      '<div class="select-go"><button class="btn btn-start" id="go">FIGHT! &#9654;</button></div>' +
+      '<div class="select-go"><button class="btn btn-start" id="go">FIGHT! &#9654;</button></div>' + ladderHtml() +
       '<details class="select-adv"><summary>ADVANCED: REPLAY SEED</summary><p class="tiny">The NPC\'s private randomness comes from this 32-byte seed. The same seed and the same moves replay the same fight, so a fight can be shared as a link.</p>' +
       '<div class="seed-row"><input id="seed" class="mono" size="66" maxlength="64" spellcheck="false" aria-label="Practice seed, 64 hex digits" value="' + esc(pre) + '"><button class="btn btn-sm" id="new-seed">NEW SEED</button></div>' +
       '<p id="seed-err" class="neg tiny" role="alert"></p></details>' +
@@ -2203,12 +2213,14 @@
     $('#my-name').addEventListener('input', e => {
       const v = e.target.value.replace(/[^\w .-]/g, '').toUpperCase();
       store.set('qdojo.combat.myname', v || 'CHALLENGER');
+      markStep('named');
       const av = $('#my-avatar');
       av.dataset.identity = myId();
       av.innerHTML = A ? A.svg(myId(), 'sprite') : '';
       if (ANIM) { av.removeAttribute('data-anim'); av.setAttribute('data-anim', 'idle'); ANIM.mount(av.parentElement); }
     });
     $('#new-seed').addEventListener('click', () => { $('#seed').value = L.randomSeed(); });
+    wireLadder();
     $('#go').addEventListener('click', () => {
       const s = $('#seed').value.trim().toLowerCase();
       if (!HEX64.test(s)) { $('.select-adv').open = true; $('#seed-err').textContent = 'A seed is exactly 64 hex digits.'; return; }
@@ -2246,21 +2258,20 @@
     stopPlayer();
     const s = practice;
     const npc = N.ROSTER.find(n => n.id === s.npc);
-    const link = location.href.split('#')[0] + '#practice/' + s.npc + '/' + s.seed;
     const over = !!s.outcome;
+    // A shared link does not carry the sharer's name or look (your own reloaded fight keeps yours).
+    const anon = s.shared && !s.shared.own;
+    const aName = anon ? 'PLAYER' : myName(), aId = anon ? 'practice:player' : myId();
     const me = s.state.a;
     const verdict = over ? (s.outcome.winner === 'A' ? 'YOU WIN' : s.outcome.winner === 'B' ? esc(npc.name) + ' WINS' : 'DRAW') : '';
-    setView(screen(myName() + ' VS ' + npc.name, over ? 'FIGHT OVER' : 'ROUND ' + (s.state.round_index + 1) + ' OF ' + R.rounds + ' &middot; WRITE YOUR SIX MOVES') +
+    setView(screen(aName + ' VS ' + npc.name, over ? 'FIGHT OVER' : 'ROUND ' + (s.state.round_index + 1) + ' OF ' + R.rounds + ' &middot; WRITE YOUR SIX MOVES') +
       '<section class="panel player-panel practice-stage"><div id="player"></div></section>' +
-      (over ? '<section class="panel panel-yellow result-screen"><h3>RESULT</h3><p class="result-big ' + (s.outcome.winner === 'A' ? 'res-win' : s.outcome.winner === 'B' ? 'res-lose' : 'res-draw') + '">' + verdict + '</p>' +
-        '<p class="center">' + resultBadge({ outcome: s.outcome }) + ' ' + esc({ KO: 'by knockout.', DOUBLE_KO: 'double knockout.', HP: 'on remaining HP.', HP_TIE: 'equal HP after three rounds.' }[s.outcome.result] || '') + '</p>' +
-        '<p class="center result-actions"><button class="btn" id="rematch">REMATCH</button> <button class="btn btn-cyan" id="newfight">NEW FIGHT</button> <a class="btn" href="#practice">CHANGE OPPONENT</a></p></section>' : planner(me, npc)) +
-      roundRecap(s) +
-      '<details class="panel practice-meta"><summary>SHARE / REPLAY THIS FIGHT</summary><dl class="kv"><dt>SEED</dt><dd class="id wrap">' + esc(s.seed) + '</dd>' +
-      '<dt>LINK</dt><dd><a class="wrap" href="' + esc(link) + '">' + esc(link) + '</a></dd>' +
-      '<dt>RECORD</dt><dd>policy ' + esc(s.npc) + ', fight number ' + s.fight + ', ruleset ' + esc(s.rules_version) + '. Local achievement only: no QU, no rating.</dd></dl></details>');
+      (over ? practiceResultHtml(s, npc, verdict) : planner(me, npc)) +
+      (over ? debriefHtml(PR.debrief(s.rounds, s.outcome, { rules: R, mySide: 'A', names: { A: aName, B: npc.name } }), { A: aName, B: npc.name }, { frameOf: frameFinder(practiceFrames(s)), mySide: 'A' }) : '') +
+      roundRecap(s) + sharePanelHtml(s));
     const frames = practiceFrames(s);
-    const player = track(createPlayer($('#player'), { frames, ids: { A: myId(), B: 'npc:' + s.npc }, names: { A: myName(), B: npc.name }, links: false, replay: {}, stageSeed: 'practice:' + s.npc, mySide: 'A', autoplay: false }));
+    const player = track(createPlayer($('#player'), { frames, ids: { A: aId, B: 'npc:' + s.npc }, names: { A: aName, B: npc.name }, links: false, replay: {}, stageSeed: 'practice:' + s.npc, mySide: 'A', autoplay: false }));
+    if (over) wirePracticeResult(s, player);
     const details = $('#player .beat-details');
     if (details) details.open = false;
     // The move deck sits right under the stage and its headline, so writing
@@ -2273,8 +2284,14 @@
       if (motion()) player.start(); else player.seek(frames.length - 1, false);
     } else player.seek(frames.length - 1, false);
     if (over) {
-      $('#rematch').addEventListener('click', () => { practice = L.practiceStart(R, s.npc, s.seed, 1); resetDraft(); renderPracticeFight(); });
-      $('#newfight').addEventListener('click', () => { location.hash = '#practice/' + s.npc + '/' + L.randomSeed(); });
+      if (!s.shared) {
+        $('#rematch').addEventListener('click', () => {
+          practice = L.practiceStart(R, s.npc, s.seed, 1); resetDraft();
+          try { history.replaceState(null, '', '#practice/' + s.npc + '/' + s.seed); } catch (e) { /* the view still resets */ }
+          renderPracticeFight();
+        });
+        $('#newfight').addEventListener('click', () => { location.hash = '#practice/' + s.npc + '/' + L.randomSeed(); });
+      }
     } else wirePlanner();
   }
 
@@ -2311,7 +2328,7 @@
     const tile = a => '<button class="act-btn mv-' + NAMES[a].toLowerCase() + '" data-a="' + a + '" title="' + esc(moveName(NAMES[a]) + ': ' + (moveOf(NAMES[a]).deck || purposeText(NAMES[a]))) + '">' +
       '<span class="key">' + esc(keyOf(a)) + '</span><b>' + esc(deckLabel(a)) + '</b><span class="cost">' + cost(a) + ' ST</span>' +
       (a === ID.LAST_STAND ? '<span class="stand-now' + (bonus ? '' : ' off') + '" title="Bonus if it lands now: +1 per HP you trail">+' + bonus + '</span>' : '') + '</button>';
-    return '<section class="panel panel-green planner" id="planner"><h3>ROUND ' + (practice.state.round_index + 1) + ' &middot; YOUR MOVES</h3>' +
+    return '<section class="panel panel-green planner" id="planner"><h3>ROUND ' + (practice.state.round_index + 1) + ' &middot; YOUR MOVES</h3>' + firstFightTip(npc) +
       '<p class="planner-status"><span>HP <b>' + me.hp + '</b></span><span>STAMINA <b>' + me.stamina + '</b></span><span>POWER <b>' + (me.power_available ? 'READY' : 'SPENT') + '</b></span>' + (me.opening ? '<span class="pos">OPENING</span>' : '') +
       '<span class="sealed">' + esc(npc.name) + '\'S PLAN: <b>SEALED</b></span></p>' +
       '<div class="slots" role="listbox" aria-label="Your plan">' + [0, 1, 2, 3, 4, 5].map(i => '<div class="slot" role="option" data-slot="' + i + '" tabindex="0"><span class="slot-no">BEAT ' + (i + 1) + '</span><span class="slot-act"></span><span class="slot-st"></span><button class="slot-pw" data-pw="' + i + '" title="Power strike on this beat (+' + R.power_cost + ' cost, +' + R.power_damage + ' damage if it lands)">&#9733; POWER</button></div>').join('') + '</div>' +
@@ -2365,6 +2382,8 @@
         const before = practiceFrames(practice).length;
         L.practicePlay(R, practice, { actions: draft.actions.slice(), power_slot: draft.power_slot });
         resetDraft();
+        if (practice.outcome && !practice.shared) practice.recorded = PR.recordResult(loadProgress().p, practice, fightKey(practice));
+        if (practice.recorded && practice.recorded.added) saveProgress();
         renderPracticeFight(Math.max(0, before - (practice.rounds.length > 1 ? 0 : 1)));
       } catch (e) { $('#plan-err').textContent = e.message; }
     };
@@ -2394,6 +2413,291 @@
     paintDraft();
     const first = $('.slot', root);
     if (first && document.activeElement === document.body) first.focus({ preventScroll: true });
+  }
+
+  // ---- PRACTICE extras: debrief, local record, shared replays, first session ----------
+  // AUD-032 to AUD-035. The logic is combat/practice.js (pure, tested in Node);
+  // this section only renders it and keeps the record in localStorage.
+
+  const PR = window.QDojoPractice;
+  // A shared fight under another ruleset swaps R while it is on screen; render() swaps back.
+  let R_SAVED = null, R_SHARED = null;
+  const PROGRESS_KEY = 'qdojo.practice.v1';
+  const progress = { p: null, damaged: false, storage: true };
+  // Every storage access is guarded: a blocked or full store leaves an
+  // in-memory record for this tab and a note saying so.
+  function loadProgress() {
+    if (progress.p) return progress;
+    let raw = null;
+    try {
+      localStorage.setItem('qdojo.probe', '1');
+      localStorage.removeItem('qdojo.probe');
+      raw = localStorage.getItem(PROGRESS_KEY);
+    } catch (e) { progress.storage = false; }
+    const r = PR.parseProgress(raw);
+    progress.p = r.p;
+    progress.damaged = r.damaged;
+    return progress;
+  }
+  function saveProgress() {
+    if (!progress.storage) return;
+    try { localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress.p)); progress.damaged = false; } catch (e) { progress.storage = false; }
+  }
+  function resetProgress() {
+    progress.p = PR.emptyProgress();
+    progress.damaged = false;
+    try { localStorage.removeItem(PROGRESS_KEY); } catch (e) { /* nothing stored */ }
+  }
+  function markStep(k) {
+    const g = loadProgress();
+    if (g.p.steps[k]) return;
+    g.p.steps[k] = true;
+    saveProgress();
+  }
+  const npcName = id => (N.ROSTER.find(n => n.id === id) || { name: id }).name;
+  const recOf = (npc, rv) => ((loadProgress().p.rules[rv || R.semantic_version] || {})[npc]) || null;
+  const recText = r => (r ? r.w + 'W ' + r.l + 'L' + (r.d ? ' ' + r.d + 'D' : '') : '');
+  function storageNote() {
+    const g = loadProgress();
+    if (!g.storage) return '<p class="tiny neg pr-note">This browser is not saving practice records (storage is blocked). Everything still works; results last until you close the tab.</p>';
+    if (g.damaged) return '<p class="tiny neg pr-note">The saved practice record could not be read (damaged, or from an older version of the site). It is ignored; your next result starts a fresh record. RESET clears it now.</p>';
+    return '';
+  }
+
+  // The ruleset digest, once per ruleset object; links carry its first 16 hex digits.
+  const digests = new WeakMap();
+  async function digestOf(rules) {
+    if (!digests.has(rules)) digests.set(rules, await L.rulesetDigest(rules, SHA));
+    return digests.get(rules);
+  }
+  const fightKey = s => [s.npc, s.seed, s.fight, s.rules_version, s.rounds.map(r => PR.planCode(r.plans.A)).join('-')].join('.');
+  const baseUrl = () => location.href.split('#')[0];
+
+  /* The ladder and the record under the active ruleset, for the select screen. */
+  function ladderHtml() {
+    const g = loadProgress(), rv = R.semantic_version, next = PR.nextChallenge(g.p, rv);
+    const done = PR.laddersDone(g.p, rv);
+    const other = PR.otherRulesets(g.p, rv);
+    return '<section class="panel pr-ladder" id="pr-ladder"><h3>YOUR PRACTICE RECORD</h3>' +
+      '<p class="tiny muted">Local to this browser, ' + esc(rulesLabel(rv)) + '. Practice achievements only: separate from ranked ratings, no QU.</p>' +
+      '<ol class="pr-steps">' + PR.LADDER.map((x, i) => {
+        const r = recOf(x.npc), on = next && next.npc === x.npc, won = done.includes(x.npc);
+        return '<li class="pr-step' + (won ? ' won' : '') + (on ? ' next' : '') + '"><span class="pr-no">' + (won ? '&#10003;' : i + 1) + '</span>' +
+          '<b>' + esc(x.step) + '</b><span class="pr-vs">vs ' + esc(npcName(x.npc)) + '</span>' +
+          '<span class="pr-rec">' + (r ? esc(recText(r)) + (r.best ? ' &middot; BEST ' + esc(r.best.label) : '') : 'not fought') + '</span>' +
+          (on ? '<span class="pr-next-tag">NEXT</span>' : '') + '</li>';
+      }).join('') + '</ol>' +
+      (next ? '<p class="pr-next"><button class="btn btn-sm" id="pr-next" data-npc="' + esc(next.npc) + '">NEXT CHALLENGE: ' + esc(npcName(next.npc)) + ' &#9654;</button> <span class="tiny">' + esc(next.goal) + '</span></p>'
+        : '<p class="pr-next pos">LADDER CLEAR under ' + esc(rulesLabel(rv)) + '. Beat SCOUT on new seeds, or <a href="#join">build a bot</a> that does it for you.</p>') +
+      (other.length ? '<p class="tiny muted">Also kept, not combined: ' + other.map(o => o.fights + ' fight' + (o.fights > 1 ? 's' : '') + ' under ' + esc(rulesLabel(o.rules))).join(', ') + '.</p>' : '') +
+      storageNote() +
+      '<p class="tiny"><button class="btn btn-sm btn-cyan" id="pr-reset">RESET RECORD</button></p></section>';
+  }
+
+  /* Shown on the select screen before the first fight: the guided path. */
+  function coachHtml() {
+    const g = loadProgress();
+    if (g.p.steps.fought) return '';
+    return '<section class="panel panel-green pr-coach" id="pr-coach"><h3>FIRST FIGHT: FOUR STEPS</h3><ol class="pr-coach-steps">' +
+      '<li><b>NAME YOUR FIGHTER</b>: each name builds a new robot.</li>' +
+      '<li><b>JABBER</b> is picked: its moves are disclosed under SCOUTING REPORT.</li>' +
+      '<li><b>FIGHT</b>: six moves a round. A DUCK slips under a JAB.</li>' +
+      '<li><b>READ THE DEBRIEF</b>: it names the beat that mattered.</li></ol>' +
+      '<p class="tiny muted">Returning? Pick any opponent; this box goes away after your first fight.</p></section>';
+  }
+
+  function wireLadder() {
+    const nx = $('#pr-next');
+    if (nx) nx.addEventListener('click', () => { store.set('qdojo.combat.npc', nx.dataset.npc); location.hash = '#practice/' + nx.dataset.npc + '/' + L.randomSeed(); });
+    const rs = $('#pr-reset');
+    if (rs) rs.addEventListener('click', () => {
+      let ok = true;
+      try { ok = window.confirm('Reset your local practice record? This cannot be undone.'); } catch (e) { ok = true; }
+      if (!ok) return;
+      resetProgress();
+      route();
+    });
+  }
+
+  // Following BUILD from the guided path, a result or the ladder completes its step.
+  document.addEventListener('click', e => {
+    if (e.target.closest && e.target.closest('a[href="#join"]') && e.target.closest('#t-path, .result-screen, #pr-ladder')) markStep('build');
+  });
+
+  /* A one-line coach tip above the move deck, during the first fight only. */
+  function firstFightTip(npc) {
+    const g = loadProgress();
+    if (g.p.steps.fought || practice.shared) return '';
+    const fixed = /^[A-Z_]+(,[A-Z_]+){5}/.test(npc.behavior);
+    return '<p class="pr-tip" id="pr-tip"><b>COACH</b> ' + (fixed
+      ? esc(npc.name) + ' plays ' + esc(npc.behavior.replace(/,/g, ', ').replace(/_/g, ' ')) + '. A DUCK slips under a JAB and counters; anything lands on a RECOVER.'
+      : 'Each move beats some and loses to others. Mix them, and keep an eye on stamina.') + '</p>';
+  }
+
+  /* A finished own fight: its replay link goes into the share panel and the
+   * address bar, so a reload or a copied URL shows this fight, not round 1. */
+  async function prepareShare(s) {
+    if (s.shared || !s.outcome || s.shareTail) { paintShare(s); return; }
+    const code = await PR.shareCode(s, await digestOf(R), SHA).catch(() => null);
+    if (!code || practice !== s) return;
+    s.shareTail = code;
+    try { history.replaceState(null, '', '#practice/' + s.npc + '/' + s.seed + '/' + code); } catch (e) { /* the link in the panel still works */ }
+    paintShare(s);
+  }
+
+  function wirePracticeResult(s, player) {
+    wireDebrief(player);
+    const nx = $('#pr-next-fight');
+    if (nx) nx.addEventListener('click', () => { store.set('qdojo.combat.npc', nx.dataset.npc); location.hash = '#practice/' + nx.dataset.npc + '/' + L.randomSeed(); });
+    prepareShare(s).catch(() => {});
+  }
+
+  /* The record line on an opponent card of the select screen. */
+  function npcCardRec(id, next) {
+    const r = recOf(id), won = r && r.w > 0;
+    return '<span class="npc-rec">' + (next && next.npc === id ? '<i class="pr-next-tag">NEXT</i>' : won ? '<i class="npc-won" title="Beaten">&#10003;</i>' : '') + (r ? esc(recText(r)) : '') + '</span>';
+  }
+
+  function paintShare(s) {
+    const box = $('#share-replay');
+    if (!box || !s.shareTail) return;
+    const url = baseUrl() + '#practice/' + s.npc + '/' + s.seed + '/' + s.shareTail;
+    box.innerHTML = '<a class="wrap" id="share-link" href="' + esc(url) + '">' + esc(url) + '</a> <button class="btn btn-sm" id="share-copy">COPY</button> <span id="share-copied" class="tiny pos" role="status"></span>';
+    $('#share-copy').addEventListener('click', () => {
+      const done = t => { const c = $('#share-copied'); if (c) c.textContent = t; };
+      try { navigator.clipboard.writeText(url).then(() => done('COPIED'), () => done('Select the link and copy it.')); } catch (e) { done('Select the link and copy it.'); }
+    });
+  }
+
+  /* The debrief panel. d from PR.debrief; frameOf(round, beat) -> player frame index. */
+  function debriefHtml(d, names, opts) {
+    const o = opts || {};
+    if (!d.played) {
+      return '<section class="panel debrief" id="debrief"><h3>DEBRIEF</h3><p>' + (d.forfeit ? esc(d.forfeit) + ' ' : '') + 'No beat was played, so there is no combat lesson in this fight.</p></section>';
+    }
+    const sign = n => (n > 0 ? '<b class="pos">+' + n + '</b>' : n < 0 ? '<b class="neg">' + n + '</b>' : '<b>0</b>');
+    const seq = p => p.actions.map((a, i) => moveName(NAMES[a]) + (i === p.power_slot ? '&#9733;' : '')).join(' &middot; ');
+    const key = d.key.map(k => '<li><button class="chip db-seek" data-seek="' + o.frameOf(k.round, k.beat) + '" aria-label="Show round ' + (k.round + 1) + ' beat ' + (k.beat + 1) + ' in the replay">R' + (k.round + 1) + ' B' + (k.beat + 1) + '</button> ' +
+      (o.mySide ? sign(k.swing) + ' ' : '') + esc(k.headline) + (k.finish ? ' <span class="db-fin">FINISH</span>' : '') + '</li>').join('');
+    const hab = (d.habits || []).map(h => {
+      if (!h.total) return '';
+      const top = h.top.slice(0, 3).map(t => moveName(NAMES[t.action]) + ' ' + t.n).join(', ');
+      const slots = h.slots.length ? ' Same move every round on ' + h.slots.map(x => 'beat ' + (x.beat + 1) + ' (' + moveName(NAMES[x.action]) + ')').join(', ') + '.' : '';
+      return '<li><b>' + esc(h.name) + '</b>: ' + esc(top) + ' over ' + h.total + ' played beats.' + esc(slots) + '</li>';
+    }).join('');
+    const b = d.better;
+    return '<section class="panel panel-cyan debrief" id="debrief"><h3>DEBRIEF</h3>' +
+      '<p class="tiny muted">Counted from this fight\'s engine traces: ' + d.played + ' played beat' + (d.played > 1 ? 's' : '') + ' in ' + d.rounds + ' round' + (d.rounds > 1 ? 's' : '') + '.' +
+      (d.forfeit ? ' ' + esc(d.forfeit) + ' The unplayed rounds hold no lesson and nothing below comes from them.' : '') + ' The full beat table is in the replay above.</p>' +
+      (key ? '<h4>KEY BEATS</h4><ol class="db-key">' + key + '</ol>' : '') +
+      (d.causes.length ? '<h4>WHAT DECIDED IT</h4><ul class="db-causes">' + d.causes.map(c => '<li>' + esc(c.text) + '</li>').join('') + '</ul>' : '') +
+      (hab ? '<h4>' + (o.mySide ? 'OPPONENT HABITS' : 'HABITS') + '</h4><ul class="db-habits">' + hab + '</ul>' : '') +
+      (b ? '<h4>HINDSIGHT &middot; ROUND ' + (b.round + 1) + '</h4><p class="db-better">Against the plan ' + esc(names[o.mySide === 'A' ? 'B' : 'A']) + ' had already sealed for round ' + (b.round + 1) + ' (' + seq(b.oppPlan) + '), the plan <b>' + seq(b.plan) + '</b> ' +
+        'would have dealt ' + b.dealt + ' and taken ' + b.taken + (b.ko ? ', a knockout,' : '') + ' in that round; you dealt ' + b.actualDealt + ' and took ' + b.actualTaken + '. ' +
+        '<span class="muted">Hindsight, worked out by the engine. Exact for that round only: an NPC never sees your plan, but it plans later rounds from what you did, so they would have changed.</span></p>' : '') +
+      (d.tip ? '<h4>TRY NEXT</h4><p class="db-tip">' + esc(d.tip.text) + '</p>' : '') +
+      (d.practice ? '<h4>PRACTICE IT</h4><p>Against ' + esc(npcName(d.practice.npc)) + ': ' + esc(d.practice.why) + '. <a class="btn btn-sm" href="#practice/' + esc(d.practice.npc) + '">PRACTICE vs ' + esc(npcName(d.practice.npc)) + ' &#9654;</a></p>' : '') +
+      '</section>';
+  }
+
+  function frameFinder(frames) {
+    return (round, beat) => Math.max(0, frames.findIndex(f => f.kind === 'beat' && f.round === round && f.beat === beat));
+  }
+  function wireDebrief(player) {
+    const box = $('#debrief');
+    if (!box || !player) return;
+    box.addEventListener('click', e => {
+      const b = e.target.closest('[data-seek]');
+      if (!b) return;
+      player.pause();
+      player.seek(Number(b.dataset.seek), false);
+      const stage = $('#player');
+      if (stage) stage.scrollIntoView({ block: 'start', behavior: motion() ? 'smooth' : 'auto' });
+      markStep('debrief');
+    });
+  }
+
+  /* The debrief under an arena replay: neutral, folded (it names the result). */
+  function replayDebrief(replay, derived, frames, names) {
+    if (!PR || derived.error) return '';
+    let d;
+    try { d = PR.debrief(derived.rounds, derived.outcome, { rules: R, mySide: null, names, forfeit: L.isForfeit(replay) ? L.outcomeLabel(replay).text : null }); } catch (e) { return ''; }
+    return '<details class="panel db-fold" id="db-fold"><summary>DEBRIEF: KEY BEATS AND HABITS (SHOWS THE RESULT)</summary>' + debriefHtml(d, names, { frameOf: frameFinder(frames), mySide: null }).replace(/^<section class="panel[^"]*"/, '<section class="db-inner"') + '</details>';
+  }
+
+  /* #practice/<npc>/<seed>/<p1...>: a shared, finished fight, re-derived. */
+  async function viewSharedPractice(tok, npcId, seed, tail) {
+    const parsed = PR.parseShare(npcId, seed, tail);
+    const refuse = why => setView(screen('SHARED FIGHT', 'PRACTICE REPLAY') + '<section class="panel panel-red share-bad" id="share-bad"><h3>THIS LINK CANNOT BE REPLAYED</h3><p>' + esc(why) + '</p>' +
+      (N.ROSTER.some(n => n.id === npcId) && HEX64.test(seed || '') ? '<p><a class="btn" href="#practice/' + esc(npcId) + '/' + esc(seed) + '">PLAY THIS OPPONENT AND SEED</a> <a class="btn btn-cyan" href="#practice">PRACTICE</a></p>' : '<p><a class="btn" href="#practice">PRACTICE</a></p>') + '</section>');
+    if (!parsed.ok) return refuse(parsed.error);
+    // Own fight already on screen (the address bar was just updated): keep it.
+    if (practice && practice.shareTail === tail && practice.npc === npcId && practice.seed === seed) return renderPracticeFight();
+    const list = window.QDojoRulesets || [R];
+    const rulesets = await Promise.all(list.map(async rules => ({ rules, digest: await digestOf(rules) })));
+    const rep = await PR.replayShare(parsed, rulesets, SHA);
+    if (tok !== viewToken) return;
+    if (!rep.ok) return refuse(rep.error);
+    practice = rep.s;
+    practice.shared = { match: rep.match, check: rep.check, claimed: parsed.check, rules: rep.rules, active: R.semantic_version, own: loadProgress().p.seen.includes(fightKey(rep.s)) };
+    practice.shareTail = tail;
+    resetDraft();
+    // Played under another ruleset: shown under its own, never reinterpreted.
+    if (rep.rules !== R) { R_SAVED = R; R = rep.rules; R_SHARED = rep.rules; }
+    renderPracticeFight(0);
+  }
+
+  /* The result block of a finished practice fight: verdict, record, actions. */
+  function practiceResultHtml(s, npc, verdict) {
+    const sh = s.shared, rec = s.recorded;
+    const g = loadProgress(), next = PR.nextChallenge(g.p, s.rules_version);
+    const head = sh
+      ? '<p class="share-check ' + (sh.match ? 'share-ok' : 'share-bad') + '" id="share-check">' + (sh.match
+        ? (sh.own ? 'YOUR FIGHT, REPLAYED FROM ITS LINK' : 'SHARED FIGHT') + ' &middot; re-derived in your browser from the plans in the link; the check value <b>' + esc(sh.check) + '</b> matches.'
+        : '<b>MISMATCH:</b> the link says check ' + esc(sh.claimed) + ', but these plans give ' + esc(sh.check) + ' here. The link was altered or made by different software. Below is what the plans actually produce.') +
+        (sh.rules.semantic_version !== sh.active ? ' Played under ' + esc(rulesLabel(sh.rules.semantic_version)) + '; shown under those rules, not the current ' + esc(rulesLabel(sh.active)) + '.' : '') + '</p>'
+      : '';
+    const recLine = !sh && rec ? '<p class="center pr-result" id="pr-result">vs ' + esc(npc.name) + ': <b>' + esc(recText(rec.rec)) + '</b>' + (rec.rec.best ? ' &middot; BEST ' + esc(rec.rec.best.label) : '') +
+      (rec.added && rec.improved && (rec.rec.w + rec.rec.l + rec.rec.d) > 1 ? ' &middot; <span class="pos">NEW BEST</span>' : '') +
+      (rec.milestone ? '<br><span class="pr-milestone">&#9733; MILESTONE: ' + esc(rec.milestone.step) + '</span>' : '') + '</p>' : '';
+    const nextBtn = !sh && next && next.npc !== s.npc ? ' <button class="btn btn-start" id="pr-next-fight" data-npc="' + esc(next.npc) + '">NEXT CHALLENGE: ' + esc(npcName(next.npc)) + ' &#9654;</button>' : '';
+    const actions = sh
+      ? '<p class="center result-actions"><a class="btn btn-start" href="#practice/' + esc(s.npc) + '/' + esc(s.seed) + '">PLAY THIS CHALLENGE</a> <a class="btn" href="#practice">PRACTICE</a> <a class="btn btn-cyan" href="#join">BUILD YOUR OWN BOT &#9654;</a></p>'
+      : '<p class="center result-actions">' + nextBtn + ' <button class="btn" id="rematch">REMATCH</button> <button class="btn btn-cyan" id="newfight">NEW FIGHT</button> <a class="btn" href="#practice">CHANGE OPPONENT</a></p>' +
+        '<p class="center pr-build"><a class="btn btn-sm btn-cyan" href="#join" id="pr-build">BUILD YOUR OWN BOT &#9654;</a> <span class="tiny">Teach a program what you just learned; it trains offline against the same NPCs.</span></p>';
+    return '<section class="panel panel-yellow result-screen"><h3>RESULT</h3>' + head + '<p class="result-big ' + (s.outcome.winner === 'A' ? 'res-win' : s.outcome.winner === 'B' ? 'res-lose' : 'res-draw') + '">' + verdict + '</p>' +
+      '<p class="center">' + resultBadge({ outcome: s.outcome }) + ' ' + esc({ KO: 'by knockout.', DOUBLE_KO: 'double knockout.', HP: 'on remaining HP.', HP_TIE: 'equal HP after three rounds.' }[s.outcome.result] || '') + '</p>' +
+      recLine + actions + storageNote() + '</section>';
+  }
+
+  function sharePanelHtml(s) {
+    const challenge = baseUrl() + '#practice/' + s.npc + '/' + s.seed;
+    return '<details class="panel practice-meta"' + (s.outcome ? ' open' : '') + '><summary>SHARE / REPLAY THIS FIGHT</summary><dl class="kv">' +
+      (s.outcome ? '<dt>REPLAY</dt><dd><div id="share-replay">' + (s.shareTail ? '' : '<span class="muted">Preparing&hellip;</span>') + '</div><div class="tiny muted share-what">This exact fight: ' + (s.shared ? 'the' : 'your') + ' plans for every round. Whoever opens it watches the same beats, re-derived by their own browser.</div></dd>' : '') +
+      '<dt>CHALLENGE</dt><dd><a class="wrap" href="' + esc(challenge) + '">' + esc(challenge) + '</a><div class="tiny muted share-what">A new fight against the same opponent and seed' + (s.outcome ? ', not this replay' : '') + '.</div></dd>' +
+      '<dt>SEED</dt><dd class="id wrap">' + esc(s.seed) + '</dd>' +
+      '<dt>RECORD</dt><dd>policy ' + esc(s.npc) + ', fight number ' + s.fight + ', ruleset ' + esc(s.rules_version) + '. Local achievement only: no QU, no rating.</dd></dl></details>';
+  }
+
+  /* The title screen's guided path; a returning player sees the next challenge. */
+  function firstSessionHtml() {
+    const g = loadProgress(), st = g.p.steps;
+    const named = !!store.get('qdojo.combat.myname');
+    const steps = [
+      [named, 'NAME A FIGHTER', '#practice'],
+      [!!st.fought, 'FIRST FIGHT vs JABBER', '#practice/jabber-v1'],
+      [!!st.debrief || !!st.fought, 'READ YOUR DEBRIEF', '#practice'],
+      [!!st.build, 'BUILD YOUR BOT', '#join'],
+    ];
+    const next = PR.nextChallenge(g.p, R.semantic_version);
+    if (st.fought && st.build) {
+      return '<section class="t-path t-path-back" id="t-path"><b class="t-path-h">WELCOME BACK</b> ' + (next
+        ? '<a class="btn btn-sm" href="#practice/' + esc(next.npc) + '">NEXT CHALLENGE: ' + esc(npcName(next.npc)) + ' &#9654;</a> <span class="tiny">' + esc(next.step) + '</span>'
+        : '<span class="tiny">Practice ladder clear. </span><a class="btn btn-sm" href="#join">BUILD A BOT &#9654;</a>') + '</section>';
+    }
+    return '<section class="t-path" id="t-path"><b class="t-path-h">NEW HERE? FOUR STEPS, ABOUT FIVE MINUTES</b><ol class="t-path-steps">' +
+      steps.map(([done, label, href], i) => '<li class="' + (done ? 'done' : '') + '"><a href="' + href + '"><span class="t-path-no">' + (done ? '&#10003;' : i + 1) + '</span>' + label + '</a></li>').join('') + '</ol>' +
+      '<p class="tiny muted">Optional: skip it any time with the menu above. Practice is free, in your browser, no wallet.</p></section>';
   }
 
   // ---- RULES -------------------------------------------------------------------------
@@ -3208,6 +3512,8 @@
   }
 
   async function render(navigated) {
+    // Leaving (or re-entering) a shared practice fight played under another ruleset.
+    if (R_SAVED) { if (R === R_SHARED) R = R_SAVED; R_SAVED = R_SHARED = null; }
     const [name, ...rest] = currentRoute();
     const tok = ++viewToken;
     const y = window.scrollY;

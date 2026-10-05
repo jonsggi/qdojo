@@ -1,0 +1,67 @@
+/* Practice extras (AUD-032 to AUD-035): title path, coach, ladder, debrief,
+ * shared replays. Loaded after shell.css; uses its palette variables. */
+
+/* ---- title: PLAY / WATCH and the guided path ---- */
+.title-cta { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; margin: 18px 0 6px; }
+.title-cta .btn-start { margin: 0; min-width: 150px; }
+.title-cta-sub { font-family: var(--font-text); font-size: 14px; color: var(--steel, #9aa6b2); margin: 6px auto 0; max-width: 560px; }
+.t-path { margin: 18px auto 0; max-width: 760px; padding: 12px 14px; border: 2px dashed var(--hazard, #f2c230); background: var(--panel-glass); text-align: left; }
+.t-path-h { display: block; font-size: 10px; color: var(--hazard, #f2c230); margin-bottom: 8px; }
+.t-path-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.t-path-steps a { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 6px 8px; font-size: 9px; line-height: 1.5; color: var(--chrome, #e8edf2); border: 2px solid var(--gun, #4b5563); text-decoration: none; }
+.t-path-steps a:hover, .t-path-steps a:focus-visible { border-color: var(--hazard, #f2c230); }
+.t-path-steps .done a { border-color: var(--green); color: var(--green); }
+.t-path-no { flex: none; display: inline-grid; place-items: center; width: 22px; height: 22px; background: var(--hazard, #f2c230); color: #111; font-size: 10px; }
+.t-path-steps .done .t-path-no { background: var(--green); }
+.t-path-back { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; justify-content: center; text-align: center; }
+.t-path-back .t-path-h { margin: 0; }
+
+/* ---- select screen: coach and ladder ---- */
+.pr-coach { padding-bottom: 8px; }
+.pr-coach ol { margin: 4px 0 2px; padding-left: 22px; font-family: var(--font-text); font-size: 14px; line-height: 1.35; columns: 2 320px; column-gap: 28px; }
+.pr-coach li { break-inside: avoid; margin-bottom: 3px; }
+.pr-coach b { color: var(--hazard, #f2c230); font-family: inherit; }
+.npc-rec { display: block; min-height: 14px; font-size: 8px; color: var(--steel, #9aa6b2); }
+.npc-won { font-style: normal; color: var(--green); margin-right: 4px; }
+.pr-next-tag { display: inline-block; font-style: normal; font-size: 8px; padding: 2px 4px; margin-right: 4px; background: var(--hazard, #f2c230); color: #111; }
+.pr-steps { list-style: none; margin: 8px 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+.pr-step { display: grid; grid-template-columns: 26px 1fr; column-gap: 8px; align-items: center; padding: 8px; border: 2px solid var(--gun, #4b5563); font-size: 9px; }
+.pr-step > :not(.pr-no) { grid-column: 2; }
+.pr-step .pr-no { grid-row: span 4; display: inline-grid; place-items: center; width: 24px; height: 24px; background: var(--gun, #4b5563); color: var(--chrome, #e8edf2); }
+.pr-step.won { border-color: var(--green); }
+.pr-step.won .pr-no { background: var(--green); color: #111; }
+.pr-step.next { border-color: var(--hazard, #f2c230); box-shadow: 3px 3px 0 var(--hazard, #f2c230); }
+.pr-vs, .pr-rec { font-family: var(--font-text); font-size: 13px; color: var(--steel, #9aa6b2); }
+.pr-step .pr-next-tag { justify-self: start; }
+.pr-next { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.pr-note { margin: 6px 0; }
+
+/* ---- fight: coach tip, result, record ---- */
+.pr-tip { margin: 4px 0 8px; padding: 6px 8px; border-left: 4px solid var(--hazard, #f2c230); font-family: var(--font-text); font-size: 14px; line-height: 1.45; }
+.pr-tip b { font-family: var(--font-pixel, inherit); font-size: 9px; color: var(--hazard, #f2c230); margin-right: 6px; }
+.pr-result { font-size: 10px; line-height: 1.8; }
+.pr-milestone { color: var(--hazard, #f2c230); }
+.pr-build { margin-top: 10px; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px; }
+.share-check { padding: 8px 10px; font-family: var(--font-text); font-size: 14px; line-height: 1.45; border: 2px solid; }
+.share-check.share-ok { border-color: var(--green); }
+.share-check.share-bad { border-color: var(--warn, #e0342b); color: #ffd5d2; }
+.share-what { margin-top: 2px; }
+#share-replay { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+#share-replay a, .practice-meta a.wrap { overflow-wrap: anywhere; word-break: break-all; min-width: 0; }
+
+/* ---- debrief ---- */
+.debrief h4 { margin: 14px 0 6px; font-size: 9px; color: var(--hazard, #f2c230); }
+.debrief ol, .debrief ul { margin: 0; padding-left: 20px; font-family: var(--font-text); font-size: 15px; line-height: 1.5; }
+.debrief li { margin: 4px 0; }
+.db-key { list-style: none; padding-left: 0 !important; }
+.db-key .chip { min-height: 32px; margin-right: 6px; cursor: pointer; font-size: 8px; }
+.db-fin { font-size: 8px; padding: 1px 4px; background: var(--warn, #e0342b); color: #fff; }
+.db-better, .db-tip { font-family: var(--font-text); font-size: 15px; line-height: 1.5; margin: 0; }
+.db-tip { padding: 8px 10px; border: 2px solid var(--hazard, #f2c230); }
+.db-fold > summary { cursor: pointer; font-size: 9px; color: var(--steel, #9aa6b2); padding: 4px 0; }
+.db-inner { padding-top: 6px; }
+
+@media (max-width: 720px) {
+  .t-path-steps { grid-template-columns: 1fr 1fr; }
+  .title-cta .btn-start { min-width: 0; flex: 1 1 130px; }
+}

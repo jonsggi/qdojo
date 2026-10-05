@@ -1,6 +1,6 @@
 # AUD-036 — Put fights and controls ahead of banners and technical detail
 
-- **Status:** Mitigated in 70bc1990 (replay, arena and title cards lead with the stage; technical detail folded; reading face). Remaining: the phone move deck in practice (practice-ux track, AUD-032/035) and the new-viewer comparison (beta study, AUD-038/039).
+- **Status:** Mitigated in 11059267 (replay, arena and title cards lead with the stage; technical detail folded; reading face). Remaining: the phone move deck in practice (practice-ux track, AUD-032/035) and the new-viewer comparison (beta study, AUD-038/039).
 - **Priority:** P2 — spectator and mobile usability
 - **Type:** UX / accessibility
 - **Scope:** combat/app.js, combat/combat.css, combat/shell.css, shared typography
