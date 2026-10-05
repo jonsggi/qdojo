@@ -96,8 +96,8 @@ backlog convention.
 | [AUD-033](issues/AUD-033-practice-progress.md) | Open (proposal) | P2 / repeat play | Give practice a saved record and a clear next challenge |
 | [AUD-034](issues/AUD-034-share-completed-practice-fight.md) | Open | P1 / public correctness | Make practice sharing preserve the completed fight |
 | [AUD-035](issues/AUD-035-first-session-onboarding.md) | Open (proposal) | P1 / activation | Make the first session lead clearly to playing and building |
-| [AUD-036](issues/AUD-036-fight-layout-and-readability.md) | Open (design) | P2 / usability | Put fights and controls ahead of banners and technical detail |
-| [AUD-037](issues/AUD-037-spoiler-free-replays.md) | Open (proposal) | P2 / spectating | Offer spoiler-free replay viewing |
+| [AUD-036](issues/AUD-036-fight-layout-and-readability.md) | **Mitigated** 70bc1990: stage first, detail folded, reading face; phone move deck (practice-ux) and viewer study open | P2 / usability | Put fights and controls ahead of banners and technical detail |
+| [AUD-037](issues/AUD-037-spoiler-free-replays.md) | **Fixed** 70bc1990: spoiler-free mode on replays, results, title, arena and fighter lists | P2 / spectating | Offer spoiler-free replay viewing |
 | [AUD-038](issues/AUD-038-human-strategy-validation.md) | Open (research) | P1 / rules decisions | Validate strategic learning and replay readability with outside builders |
 | [AUD-039](issues/AUD-039-builder-beta-and-commercial-evidence.md) | Open (proposal) | P1 / product validation | Run a small builder beta and separate engagement from simulated economics |
 | [AUD-040](issues/AUD-040-frontend-modules.md) | Open | P2 / maintainability | Split the frontend controller into modules with clear ownership |

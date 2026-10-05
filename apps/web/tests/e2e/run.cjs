@@ -455,6 +455,92 @@ async function main() {
     await must(new URL(page.url()).pathname === '/' && page.url().endsWith('#rules'), 'combat.html redirects to / and keeps the hash');
   });
 
+  // ---- spoiler-free viewing (AUD-037): outcomes stay out of the DOM -----------
+  // The setting is set once per context (a reload keeps what the page stored).
+  const spoilerCtx = extra => Object.assign({ viewport: { width: 390, height: 844 } }, extra || {});
+  const spoilerInit = page => page.addInitScript(() => { try { if (!sessionStorage.getItem('e2e-spoil')) { localStorage.setItem('qdojo.spoilers', 'hide'); sessionStorage.setItem('e2e-spoil', '1'); } } catch (e) { /* storage blocked */ } });
+  const outcomeLeak = async (page, labels) => {
+    const html = await page.evaluate(() => { const c = document.documentElement.cloneNode(true); c.querySelectorAll('script').forEach(n => n.remove()); return c.outerHTML; });
+    const bad = [];
+    if (/NEW CHAMPION/.test(html)) bad.push('NEW CHAMPION');
+    if (/rbadge-(ko|hp|draw|timeout)\b/.test(html)) bad.push('an outcome badge');
+    if (/class="beat">BEAT</.test(html)) bad.push('an X BEAT Y line');
+    for (const t of labels) if (html.includes(t.replace(/&/g, '&amp;'))) bad.push('"' + t + '"');
+    return bad;
+  };
+  const labelOf = async (page, id) => page.evaluate(async id => {
+    const rp = await (await fetch('data/combat/v1/sample/fights/' + id + '/replay.json')).json();
+    return { text: window.QDojoCombatLogic.outcomeLabel(rp).text, rounds: rp.rounds.length };
+  }, id);
+  if (facts.settledRanked) await step('spoiler-free', async (page, base) => {
+    const id = String(facts.settledRanked.fight_id);
+    await spoilerInit(page);
+    await go(page, base, '#fight/' + id, '.stage');
+    await expectVerified(page);
+    const lab = await labelOf(page, id);
+    let bad = await outcomeLeak(page, [lab.text]);
+    await must(!bad.length, 'no outcome in the DOM mid-replay, found ' + bad.join(', '));
+    await must(await page.locator('.result-hold').count() === 1 && await page.locator('.result-panel').count() === 0, 'RESULT HIDDEN instead of the result panel');
+    await must(await page.locator('table.beats').count() === 0 && await page.locator('.check .evidence').count() === 0, 'no beat table or check evidence before the end');
+    await must(!/\(\d+\/\d+\)/.test(await text(page, '.controls .pos')), 'no frame total (it would give away the length)');
+    await must(await page.getAttribute('[data-spoil-toggle]', 'aria-pressed') === 'true' && (await text(page, '#btn-spoil')) === 'SPOILERS: HIDDEN', 'the toggles say HIDDEN');
+    await shot(page, 'spoiler-free-mid', false);
+    // the last frame reveals the same, independently checked result
+    await page.click('[data-act=last]');
+    await page.waitForSelector('.result-panel');
+    await must((await text(page, '.result-panel')).includes(lab.text.replace(/\s+/g, ' ')), 'the revealed result is the outcome label');
+    await must(await page.locator('table.beats tr[data-i]').count() > 0 && /END \(\d+\/\d+\)/.test(await text(page, '.controls .pos')), 'the beat table and frame count after the end');
+    await must(await page.locator('.check .evidence').count() > 0, 'check evidence after the end');
+    // a watched fight stays revealed on reload
+    await page.reload();
+    await page.waitForSelector('.stage');
+    await must(await page.locator('.result-panel').count() === 1, 'a watched fight is not hidden again');
+    // results: unwatched rows held, SHOW reveals one, the toggle restores all
+    await go(page, base, '#results', '.feed-row');
+    const rows = await page.evaluate(id => Array.from(document.querySelectorAll('.feed-row')).map(li => ({ id: li.querySelector('.feed-id').textContent.slice(1), held: li.classList.contains('feed-held'), leak: /rbadge-(ko|hp|draw|timeout)\b|class="beat">BEAT</.test(li.outerHTML) })), id);
+    const unseen = rows.filter(r => r.id !== id);
+    await must(unseen.length > 0 && unseen.every(r => r.held && !r.leak), 'every unwatched results row held, no outcome in it');
+    await must(rows.filter(r => r.id === id).every(r => !r.held), 'the watched fight shows its result in the list');
+    const held = unseen.length;
+    await page.click('.feed-held .reveal-one');
+    await page.waitForFunction(n => document.querySelectorAll('.feed-held').length === n - 1, held);
+    await page.click('.spoil-slot [data-spoil-toggle]');
+    await page.waitForFunction(() => !document.querySelector('.feed-held'));
+    await must((await text(page, '#btn-spoil')) === 'SPOILERS: SHOWN', 'the footer chip follows the toggle');
+    // title and arena cards hide finished results too
+    await page.click('#btn-spoil');
+    await go(page, base, '#title', '#t-latest li a');
+    const titleBadges = await page.locator('#t-latest .rbadge-hidden').count();
+    await must(titleBadges > 0, 'held results on the title screen');
+    await go(page, base, '#arena', '.sim-panel');
+    await page.waitForTimeout(600);
+    const arenaLeaks = await page.locator('.result-card:not(.result-held) .rbadge').count();
+    const seenIds = await page.evaluate(() => JSON.parse(localStorage.getItem('qdojo.spoilers.seen') || '[]'));
+    await must(arenaLeaks <= seenIds.length, 'arena result cards held except watched fights');
+    return 'held ' + held + ' results rows; title ' + titleBadges + ' held';
+  }, { context: spoilerCtx() });
+  if (facts.settledRanked) await step('spoiler-free-reduced-motion', async (page, base) => {
+    await spoilerInit(page);
+    await go(page, base, '#fight/' + facts.settledRanked.fight_id, '.stage');
+    await must(!/END/.test(await text(page, '.controls .pos')), 'reduced motion opens at the start, not on the result, when spoilers are hidden');
+    await must(await page.locator('.result-panel').count() === 0, 'no result panel');
+    await page.click('[data-reveal-replay]');
+    await page.waitForSelector('.result-panel');
+    await must(await page.locator('table.beats').count() === 1, 'REVEAL RESULT NOW shows the beat table');
+  }, { context: spoilerCtx({ reducedMotion: 'reduce' }) });
+  if (facts.forfeit) await step('spoiler-free-forfeit', async (page, base) => {
+    await spoilerInit(page);
+    await go(page, base, '#fight/' + facts.forfeit.fight_id, '.stage');
+    const lab = await labelOf(page, facts.forfeit.fight_id);
+    if (!lab.rounds) {
+      await must(/TIMEOUT|FORFEIT|DOUBLE FAULT|VOID/.test(await text(page, '.result-panel')) && /nothing to spoil|no fight to spoil/i.test(await text(page, '.result-panel')), 'a forfeit before any round shows its result and says why');
+    } else {
+      await must(await page.locator('.result-panel').count() === 0, 'a forfeit after played rounds is held like any fight');
+      await page.click('[data-act=last]');
+      await must(/TIMEOUT/.test(await text(page, '.result-panel')), 'it reveals TIMEOUT at the end');
+    }
+  }, { context: spoilerCtx() });
+
   // ---- reduced motion: the same information, nothing moving ----
   if (facts.settledRanked) await step('reduced-motion', async (page, base) => {
     await go(page, base, '#fight/' + facts.settledRanked.fight_id, '.stage');
