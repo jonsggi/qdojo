@@ -1,6 +1,6 @@
 # AUD-041 — Test the published builder journey against the active ruleset
 
-- **Status:** Fixed in the AUD-041 commit: tests/combat/test_builder_journey.py (in `make test`) and `make release-check`
+- **Status:** Fixed in 0b84af43: tests/combat/test_builder_journey.py (in `make test`) and `make release-check`
 - **Priority:** P1 — regression protection for onboarding
 - **Type:** Integration / acceptance testing
 - **Scope:** tests/test_docs_commands.py, combat integration tests, apps/web/tests/e2e/run.cjs, release checks

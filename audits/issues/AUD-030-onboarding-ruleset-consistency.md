@@ -1,6 +1,6 @@
 # AUD-030 — Align onboarding commands and explanations with the arena rules
 
-- **Status:** Fixed in d1d5ff5b and 7a0837c3 (V3 default, docs), release checklist in docs/operations.md §7 (AUD-041 commit)
+- **Status:** Fixed in d1d5ff5b and 7a0837c3 (V3 default, docs), release checklist in docs/operations.md §7 (0b84af43)
 - **Priority:** P1 — before outside-builder onboarding
 - **Type:** Bug / documentation
 - **Scope:** combat/cli.py, README, builder/API guides, apps/web/llms.txt, website guide/join/help

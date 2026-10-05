@@ -149,15 +149,27 @@ def outcome_of(result: dict | None, slot: str) -> str | None:
     return "N"
 
 
-def code_version() -> str:
-    """Digest of the combat package's code and rulesets: a snapshot is only
-    reused by the exact code that wrote it."""
+def _hash_code() -> str:
     h = hashlib.sha256()
     here = Path(__file__).parent
     for p in sorted(list(here.glob("*.py")) + list((here / "rulesets").glob("*"))):
         if p.is_file():
             h.update(p.name.encode() + b"\0" + p.read_bytes())
     return h.hexdigest()
+
+
+# Taken at import, i.e. of the code this process runs. Hashing the files when a
+# snapshot is saved would stamp it with whatever is on disk by then: a process
+# stopped after a `git pull` would label its old-code replica with the new
+# code's digest, and the new process would load it (2026-10-05: every sync then
+# failed with "'Replica' object has no attribute 'activity'").
+_CODE_VERSION = _hash_code()
+
+
+def code_version() -> str:
+    """Digest of the combat package's code and rulesets as this process
+    imported them: a snapshot is only reused by the exact code that wrote it."""
+    return _CODE_VERSION
 
 
 # ---- the replica: the journal replayed into a private contract --------------
