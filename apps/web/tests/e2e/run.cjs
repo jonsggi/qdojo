@@ -17,7 +17,8 @@
  *
  * Environment: QDOJO_PLAYWRIGHT (path to a playwright package),
  * QDOJO_CHROMIUM (browser binary), QDOJO_E2E_TMP (temp dir root),
- * QDOJO_E2E_ONLY (comma-separated step names).
+ * QDOJO_E2E_ONLY (comma-separated step names), QDOJO_E2E_REQUIRED=1 (fail
+ * instead of skipping without a browser, and refuse QDOJO_E2E_ONLY; make release-check).
  */
 'use strict';
 const fs = require('node:fs');
@@ -152,10 +153,15 @@ function record(name, ok, detail) { results.push({ name, ok, detail }); console.
 
 async function main() {
   const found = findPlaywright(), chrome = findChromium();
+  const required = process.env.QDOJO_E2E_REQUIRED === '1';
   if (!found || !chrome) {
-    console.log('web-e2e SKIPPED: ' + (!found ? 'no Playwright package found (set QDOJO_PLAYWRIGHT or run `npx playwright --version` once)' : 'no cached Chromium under ~/.cache/ms-playwright (run `npx playwright install chromium`, or set QDOJO_CHROMIUM)') + '.');
+    const why = !found ? 'no Playwright package found (set QDOJO_PLAYWRIGHT or run `npx playwright --version` once)' : 'no cached Chromium under ~/.cache/ms-playwright (run `npx playwright install chromium`, or set QDOJO_CHROMIUM)';
+    // A release check must not pass on a machine that could not run the browser (AUD-041).
+    if (required) { console.log('web-e2e FAILED: QDOJO_E2E_REQUIRED=1 but ' + why + '.'); return 3; }
+    console.log('web-e2e SKIPPED: ' + why + '.');
     return 0;
   }
+  if (required && process.env.QDOJO_E2E_ONLY) { console.log('web-e2e FAILED: QDOJO_E2E_REQUIRED=1 runs every step; unset QDOJO_E2E_ONLY.'); return 3; }
   const only = process.env.QDOJO_E2E_ONLY ? new Set(process.env.QDOJO_E2E_ONLY.split(',')) : null;
   const want = n => !only || only.has(n);
   fs.mkdirSync(SHOTS, { recursive: true });

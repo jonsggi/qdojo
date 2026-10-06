@@ -121,6 +121,28 @@ def test_a_foreign_snapshot_is_ignored(tmp_path):
     assert fl2.offset == 0
 
 
+def test_a_snapshot_is_stamped_with_the_code_the_process_runs(tmp_path, monkeypatch):
+    """A process stopped after a `git pull` saves its snapshot with the new files
+    on disk; the stamp must still be its own code's, or the new process loads an
+    old-code replica (2026-10-05)."""
+    arena = _arena(tmp_path)
+    for _ in range(40):
+        arena.step()
+    arena.save()
+    db = tmp_path / "rm.sqlite"
+    fl = rm.Follower(arena.dir, db, log=lambda m: None)
+    fl.step()
+    monkeypatch.setattr(rm, "_hash_code", lambda: "the files on disk changed")
+    fl.save_snapshot()
+    import pickle
+    with open(db.with_suffix(".replica"), "rb") as f:
+        assert pickle.load(f)["code"] == rm._CODE_VERSION
+    # and a snapshot from other code is replayed from the start, not loaded
+    monkeypatch.setattr(rm, "_CODE_VERSION", "newer code")
+    fl.conn.close()
+    assert rm.Follower(arena.dir, db, log=lambda m: None).offset == 0
+
+
 def test_outcomes_from_each_side():
     assert rm.outcome_of({"kind": "COMBAT", "winner": "A"}, "A") == "W"
     assert rm.outcome_of({"kind": "COMBAT", "winner": None}, "B") == "D"

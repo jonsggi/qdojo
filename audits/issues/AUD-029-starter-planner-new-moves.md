@@ -1,6 +1,6 @@
 # AUD-029 — Make the starter planner compatible with every supported ruleset
 
-- **Status:** Open; reproduced again 2026-10-03 at 2eb5ef8b
+- **Status:** Fixed in d1d5ff5b (starter), 2a58d45a (wording); regression tests in tests/combat/test_starter.py
 - **Priority:** P1 — before outside-builder onboarding
 - **Type:** Bug
 - **Scope:** examples/combat/planner_minimal.py, apps/web/combat/planner_minimal.py, planner examples and tests
@@ -44,13 +44,13 @@ KeyErrors. Use full engine-produced observations for the regression fixtures.
 
 ## Acceptance criteria
 
-- [ ] Both advertised copies handle every submitted move in supported rulesets.
-- [ ] Resource projections and action choices use the observation's ruleset;
-  an unsupported digest produces a clear diagnostic.
-- [ ] Complete candidate-3 fights against opponents using both new moves finish
-  without planner errors or fallback; old supported rulesets still work.
-- [ ] Low stamina, spent power, and mixed prior-round histories are covered.
-- [ ] The download and repository example cannot silently diverge.
+- [x] Both advertised copies handle every submitted move in supported rulesets. *Evidence:* both copies know candidates 1-3 and answer LAST_STAND and FEINT; the 2026-10-03 reproduction now ends in a clear diagnostic (its hand-written observation has no ruleset_digest) instead of a KeyError.
+- [x] Resource projections and action choices use the observation's ruleset;
+  an unsupported digest produces a clear diagnostic. *Evidence:* stamina caps and move sets per ruleset come from `ruleset_digest`; an unknown digest exits 2 naming the known rulesets (`test_an_unsupported_ruleset_is_a_clear_diagnostic`).
+- [x] Complete candidate-3 fights against opponents using both new moves finish
+  without planner errors or fallback; old supported rulesets still work. *Evidence:* `test_complete_fights_never_fall_back_or_get_adjusted` (stander, feinter and three scripted new-move users, every supported ruleset) and the builder journey of AUD-041.
+- [x] Low stamina, spent power, and mixed prior-round histories are covered. *Evidence:* `test_low_stamina_spent_power_and_mixed_histories`.
+- [x] The download and repository example cannot silently diverge. *Evidence:* `test_the_download_is_the_repository_example` requires the two files to be identical; the AUD-041 journey runs both.
 
 ## Related work
 

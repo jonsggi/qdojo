@@ -1,4 +1,4 @@
-.PHONY: test lint sync hooks cpp-test contract-test contract-sync qubic-verify qubic-core-test qubic-core-syntax web-e2e test-all soak
+.PHONY: release-check test lint sync hooks cpp-test contract-test contract-sync qubic-verify qubic-core-test qubic-core-syntax web-e2e test-all soak
 test:
 	uv run pytest -q packages/qdojo/tests
 	node --test "apps/web/tests/*.test.cjs"
@@ -39,6 +39,11 @@ soak:
 	uv run python scripts/combat-soak.py --ticks $(SOAK_TICKS)
 # Everything this host can run: unit and parity tests, the browser suite, a soak.
 test-all: test web-e2e soak
+# Before a public release: like test-all, but the browser suite may not skip
+# (no browser is a failure, not a pass). The builder journey (AUD-041) runs in
+# `test` as tests/combat/test_builder_journey.py.
+release-check: test soak
+	QDOJO_E2E_REQUIRED=1 node apps/web/tests/e2e/run.cjs
 lint:
 	uv run python -m compileall -q packages/qdojo/src
 sync:
