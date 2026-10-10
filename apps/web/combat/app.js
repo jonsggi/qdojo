@@ -2264,8 +2264,9 @@
     const aName = anon ? 'PLAYER' : myName(), aId = anon ? 'practice:player' : myId();
     const me = s.state.a;
     const verdict = over ? (s.outcome.winner === 'A' ? 'YOU WIN' : s.outcome.winner === 'B' ? esc(npc.name) + ' WINS' : 'DRAW') : '';
+    // .planning: on a phone the arena stays pinned above the deck while you plan (shell.css, AUD-036).
     setView(screen(aName + ' VS ' + npc.name, over ? 'FIGHT OVER' : 'ROUND ' + (s.state.round_index + 1) + ' OF ' + R.rounds + ' &middot; WRITE YOUR SIX MOVES') +
-      '<section class="panel player-panel practice-stage"><div id="player"></div></section>' +
+      '<section class="panel player-panel practice-stage' + (over ? '' : ' planning') + '"><div id="player"></div></section>' +
       (over ? practiceResultHtml(s, npc, verdict) : planner(me, npc)) +
       (over ? debriefHtml(PR.debrief(s.rounds, s.outcome, { rules: R, mySide: 'A', names: { A: aName, B: npc.name } }), { A: aName, B: npc.name }, { frameOf: frameFinder(practiceFrames(s)), mySide: 'A' }) : '') +
       roundRecap(s) + sharePanelHtml(s));

@@ -8,8 +8,9 @@
  * or failed request other than the expected 404 for the live manifest (the
  * site then falls back to the SAMPLE export), or a missing key element. It
  * also re-runs a replay against a tampered temp copy of the export and
- * requires FAIL, checks reduced-motion parity and a 375 px phone width, and
- * saves screenshots to apps/web/tests/e2e/shots/ (gitignored).
+ * requires FAIL, checks reduced-motion parity, a 375 px phone width and the
+ * practice deck on 390 and 360 px phones (AUD-036), and saves screenshots to
+ * apps/web/tests/e2e/shots/ (gitignored).
  *
  * Needs the Playwright package and its Chromium; without them it prints why
  * and exits 0, so it never breaks a machine that cannot run a browser. It is
@@ -415,6 +416,7 @@ async function main() {
     await page.fill('#seed', 'ab'.repeat(32));
     await page.click('#go');
     await page.waitForSelector('#planner');
+    await must(await page.$eval('.practice-stage .stage', el => getComputedStyle(el).position) === 'relative', 'an unpinned arena on a desktop (only phones pin it, AUD-036)');
     for (const k of ['4', '1', '2', '6', '5', '1']) await page.keyboard.press(k);
     await page.click('#fight');
     await page.waitForSelector('tr.fr-beat', { state: 'attached' });   // the beat table is folded in practice
@@ -473,6 +475,92 @@ async function main() {
     await page.click('#fight');
     await page.waitForSelector('tr.fr-beat', { state: 'attached' });
   });
+
+  // ---- practice on a phone (AUD-036): the deck within reach, the fight in view ----
+  // While planning, the arena stays pinned at the top. Scrolled down to the
+  // deck, both HP bars, the six beats, every move, POWER, CLEAR and FIGHT are
+  // on the screen together, each is the topmost element at its centre
+  // (nothing covers another) and no control overlaps an HP bar. One deck, no
+  // sideways scroll; the page holds still while the round plays; checked
+  // again mid-round and for round 2. 360 x 740 runs with reduced motion, and
+  // a candidate-3 page checks the eight-move deck.
+  const deckView = page => page.evaluate(() => {
+    const vw = innerWidth, vh = innerHeight, bad = [];
+    const label = el => el.id || (el.dataset.a != null ? 'move ' + el.dataset.a : el.dataset.pw != null ? 'POWER ' + el.dataset.pw : el.dataset.slot != null ? 'beat ' + el.dataset.slot : 'an HP bar');
+    const box = el => el.getBoundingClientRect();
+    const onScreen = b => b.top >= 0 && b.left >= 0 && b.bottom <= vh && b.right <= vw;
+    // The topmost element at the centre is the control itself (a disabled
+    // FIGHT lets the pointer through to its own row).
+    const onTop = el => { const b = box(el), h = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return !!h && (el.contains(h) || (el.disabled && el.parentElement.contains(h))); };
+    const meets = (p, q) => p.left < q.right && q.left < p.right && p.top < q.bottom && q.top < p.bottom;
+    const controls = [...document.querySelectorAll('#planner .slot, #planner .slot-pw, #planner .act-btn, #fight, #clear')];
+    const hp = [...document.querySelectorAll('.practice-stage .cbar-hp')];
+    for (const el of controls.concat(hp)) if (!onScreen(box(el))) bad.push(label(el) + ' off screen'); else if (!onTop(el)) bad.push(label(el) + ' covered');
+    for (const el of controls) if (hp.some(h => meets(box(el), box(h)))) bad.push(label(el) + ' on an HP bar');
+    return { bad, over: document.documentElement.scrollWidth - innerWidth, y: Math.round(scrollY), planners: document.querySelectorAll('#planner').length,
+      moves: document.querySelectorAll('.act-btn').length, fights: document.querySelectorAll('#fight').length, filled: document.querySelectorAll('#planner .slot.filled').length };
+  });
+  // Where a player who scrolls down to the deck stops: the FIGHT row at the bottom edge.
+  const toDeck = page => page.evaluate(() => { const f = document.querySelector('#fight').getBoundingClientRect(); window.scrollTo(0, Math.max(0, f.bottom + scrollY - innerHeight + 8)); });
+  // The same page under candidate 3 (eight moves): the manifest names that
+  // ruleset and its artifact is the embedded copy, so nothing 404s.
+  async function asCandidate3(page) {
+    const L = require(path.join(WEB, 'combat/logic.js'));
+    require(path.join(WEB, 'combat/ruleset.js'));
+    const rules = globalThis.QDojoRulesets.find(r => r.semantic_version === 'combat-v1-candidate-3');
+    const digest = await L.rulesetDigest(rules, L.defaultSha256());
+    const manifest = Object.assign(readJson(path.join(SAMPLE, 'manifest.json')), { ruleset_digest: digest, semantic_version: rules.semantic_version });
+    await page.route(/\/data\/combat\/v1\/sample\/manifest\.json$/, r => r.fulfill({ json: manifest }));
+    await page.route(new RegExp('/data/combat/v1/sample/rulesets/' + digest + '\\.json$'), r => r.fulfill({ json: { schema: 'qdojo.combat.ruleset.v1', semantic_version: rules.semantic_version, digest, rules } }));
+  }
+  for (const [name, w, h, extra] of [['practice-phone', 390, 844, {}], ['practice-phone-360', 360, 740, { reducedMotion: 'reduce' }], ['practice-phone-v3', 390, 844, { v3: true }]]) {
+    await step(name, async (page, base) => {
+      if (extra.v3) await asCandidate3(page);
+      await go(page, base, '#practice/jabber-v1/' + 'ab'.repeat(32), '#planner');
+      const moves = extra.v3 ? 8 : 6;
+      let v = await deckView(page);
+      await must(v.planners === 1 && v.moves === moves && v.fights === 1, 'one deck of ' + moves + ' moves and one FIGHT (got ' + v.planners + ' decks, ' + v.moves + ' moves, ' + v.fights + ' FIGHT)');
+      await must(v.over <= 0, 'no sideways scroll at ' + w + ' px (overflow ' + v.over + ' px)');
+      await must(await page.$eval('.practice-stage .stage', el => getComputedStyle(el).position) === 'sticky', 'the arena pinned while planning');
+      // scrolled down to the deck: everything needed to plan on one screen
+      await toDeck(page);
+      v = await deckView(page);
+      await must(!v.bad.length, 'the beats, the deck, POWER, CLEAR, FIGHT and both HP bars on one screen at ' + w + 'x' + h + ' (' + v.bad.join(', ') + ')');
+      await shot(page, name + '-plan', false);
+      // mid-round: taps fill beats in place, POWER goes on the JAB
+      for (const a of ['3', '0', '1']) await page.tap('#planner .act-btn[data-a="' + a + '"]');
+      await page.tap('#planner .slot[data-slot="1"] .slot-pw');
+      const mid = await deckView(page);
+      await must(mid.filled === 3 && mid.y === v.y && !mid.bad.length, 'three beats filled without moving the screen (' + mid.filled + ' filled, scroll ' + v.y + ' to ' + mid.y + (mid.bad.length ? '; ' + mid.bad.join(', ') : '') + ')');
+      await must(await page.getAttribute('#planner .slot[data-slot="1"] .slot-pw', 'aria-pressed') === 'true', 'POWER on the JAB');
+      await shot(page, name + '-mid', false);
+      // the round resolves and plays back; round 2 is planned the same way
+      for (const a of ['5', '4', '0']) await page.tap('#planner .act-btn[data-a="' + a + '"]');
+      await page.tap('#fight');
+      await page.waitForFunction(() => /ROUND 2/.test((document.querySelector('#planner h3') || {}).textContent || ''));
+      // FIGHT scrolls back up to the arena (smoothly with motion on): wait until it is there
+      await page.waitForFunction(() => { const p = document.querySelector('.practice-stage'); return Math.abs(p.getBoundingClientRect().top - parseFloat(getComputedStyle(p).scrollMarginTop)) < 2; });
+      await page.waitForFunction(() => new Promise(r => { const y = scrollY; requestAnimationFrame(() => requestAnimationFrame(() => r(scrollY === y))); }));
+      // The arena is taller during a beat. Stepped through frame by frame, the
+      // page holds still and the arena never covers its own controls.
+      const ys = new Set(), hidden = [];
+      const ctl = act => page.evaluate(a => document.querySelector('[data-act=' + a + ']').click(), act);
+      if ((await text(page, '[data-act=play]')) === 'PAUSE') await ctl('play');
+      await ctl('first');
+      for (let i = 0; i < 12; i++) {
+        const s = await page.evaluate(() => { const p = document.querySelector('[data-act=play]').getBoundingClientRect(), t = document.elementFromPoint(p.left + p.width / 2, p.top + p.height / 2); return { y: Math.round(scrollY), clear: !!t && !!t.closest('[data-act=play]'), pos: document.querySelector('.controls .pos').textContent }; });
+        ys.add(s.y); if (!s.clear) hidden.push(s.pos);
+        if (/BREAK|END/.test(s.pos)) break;
+        await ctl('next');
+      }
+      await must(ys.size === 1 && !hidden.length, 'the page holds still beat by beat and the arena never covers its controls (scroll ' + [...ys].join(', ') + (hidden.length ? '; covered at ' + hidden.join(', ') : '') + ')');
+      await toDeck(page);
+      v = await deckView(page);
+      await must(!v.bad.length && v.filled === 0, 'round 2 on one screen (' + v.bad.join(', ') + ')');
+      await must(v.over <= 0, 'no sideways scroll after the round (overflow ' + v.over + ' px)');
+      await shot(page, name + '-round2', false);
+    }, { context: Object.assign({ viewport: { width: w, height: h }, isMobile: true, hasTouch: true }, extra.reducedMotion ? { reducedMotion: extra.reducedMotion } : {}) });
+  }
   await step('rules', async (page, base) => {
     await go(page, base, '#rules', '#digest .vstat');
     await must((await text(page, '#digest .vstat')) === 'PASS', 'the ruleset digest PASSes');

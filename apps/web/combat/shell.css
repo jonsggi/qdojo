@@ -420,6 +420,19 @@ body.still .select-grid .npc-card.on { animation: none; }
 .planner-actions .btn-start { margin: 0; }
 @media (max-width: 700px) {
   .planner .slots, .planner .palette { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  /* AUD-036: the beats, the deck and FIGHT form one compact block that fits
+     under the pinned arena (below), with taller POWER and CLEAR targets. */
+  .planner .slots { gap: 6px; margin: 8px 0 6px; }
+  .planner .slot { min-height: 0; gap: 3px; padding: 5px 3px; }
+  .planner .slot-no, .planner .slot-st { line-height: 1.25; }
+  /* As tall as a filled move tag, so filling a beat never moves the deck. */
+  .planner .slot-act { min-height: 27px; }
+  .planner .slot-pw { min-height: 28px; padding: 4px 6px; }
+  .planner .palette { gap: 6px; margin-top: 0; }
+  .planner .palette .act-btn { padding: 7px 4px; gap: 3px; }
+  .planner-actions { gap: 10px; margin: 10px 0 4px; }
+  .planner-actions .btn-start { padding: 11px 22px; }
+  .planner-actions #clear { min-height: 40px; }
   .planner .palette.palette-7, .planner .palette.palette-8 { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
   .planner .palette-7 .act-btn, .planner .palette-8 .act-btn { padding: 12px 2px 8px; }
   .planner .palette-7 .act-btn b, .planner .palette-8 .act-btn b { font-size: 8px; }
@@ -450,6 +463,28 @@ body.still .select-grid .npc-card.on { animation: none; }
 .practice-stage { scroll-margin-top: calc(var(--hud-h) + 12px); }
 .practice-stage .stage-help { display: none; }
 .practice-stage .planner { margin: 14px 0; box-shadow: none; }
+/* Phones: the header scrolls away (combat.css), so after FIGHT the arena goes
+   to the top of the screen instead of under a header that is not there. */
+@media (max-width: 700px) {
+  .practice-stage { scroll-margin-top: 8px; }
+}
+/* Phones while planning (AUD-036): the arena stays pinned at the top of the
+   screen as you scroll down to your moves, so both fighters' HP, stamina,
+   POWER, OPENING and GUARD stay in view while you write the round, with the
+   beats, the deck and FIGHT together right under it. The deck scrolls under
+   the arena, never over it, and there is one deck, no floating copy. Only
+   where the arena and that block fit on one screen (360 x 740 is the smallest
+   size checked); a shorter screen keeps the plain scrolling page. */
+@media (max-width: 700px) and (min-height: 700px) {
+  .practice-stage.planning .stage.arcade { position: sticky; top: 0; z-index: 5; box-shadow: 0 0 0 2px var(--steel-2), 0 6px 0 rgba(0, 0, 0, .85); }
+  /* The arena is taller during a beat (its move strip fills). Scroll
+     anchoring never anchors to a pinned box, so it would move the page and
+     slide the arena over the replay controls; this page keeps its scroll
+     position instead and the content below simply follows the arena. */
+  html:has(.practice-stage.planning) { overflow-anchor: none; }
+  /* A control that takes keyboard focus scrolls clear of the pinned arena. */
+  .practice-stage.planning #player > :not(.stage) :is(button, select, summary, [tabindex]) { scroll-margin-top: 352px; }
+}
 
 /* ---- build a bot ---------------------------------------------------------- */
 .join-steps { margin: 6px 0 18px; }
