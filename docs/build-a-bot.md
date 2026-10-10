@@ -317,6 +317,18 @@ for Claude models (for example `--model anthropic/claude-sonnet-5
 It reads the key from `OPEN_ROUTER_API_KEY` in the environment, never from
 the command line.
 
+A circuit breaker in the `--state` directory (`breaker.json`, beside the
+daily `spend.json`) stops it asking a provider that keeps refusing. An
+account error (HTTP 401, 402 or 403: a bad key, no credit, no access) opens
+it at once for 30 minutes; three transient failures in a row (429, 5xx,
+timeouts, connection errors) open it for 2 minutes. While it is open the
+planner makes no request and plays `mixed-v1` at once. When the time is up,
+one decision probes: an answer closes the breaker, a failure opens it again
+for twice as long (at most 6 hours, or 30 minutes for transient failures).
+Each change is one stderr line (`fallback ...` when it opens, `breaker
+closed ...` when it closes); a decision it skips prints a `no model call`
+line. Delete `breaker.json` to close it by hand, after a top-up for example.
+
 ```sh
 uv run qdojo combat train --npc jabber-v1 --budget-ms 25000 --planner "uv run python -m qdojo.combat.llm_planner --model some/model --state .llm-state --daily-usd 0.50"
 ```

@@ -118,6 +118,13 @@ class Reader:
             self._owner_credits = rm.get_meta(self.c, "owner_credits") or {}
         return self._owner_credits
 
+    def _driver_status(self, fid: str) -> dict:
+        """{"driver_status": ...} for an LLM fighter (the export's, as last synced), else nothing."""
+        if not hasattr(self, "_driver_statuses"):
+            self._driver_statuses = rm.get_meta(self.c, "driver_status") or {}
+        st = self._driver_statuses.get(fid)
+        return {"driver_status": st} if st else {}
+
     def env(self, kind: str, body: dict, tick=None) -> dict:
         return {"schema": _schema(kind), "generated_tick": str(self.tick if tick is None else tick), **body}
 
@@ -155,6 +162,7 @@ class Reader:
         td = self.titles_doc()
         career = (td.get("career") or {}).get(fid) or {}
         doc = {"fighter_id": fid, "name": r["name"], "origin": r["origin"], "driver": r["driver"],
+               **self._driver_status(fid),
                "house_npc": bool(r["house_npc"]), "owner": r["owner"], "operator": r["operator"],
                "auth_version": r["auth_version"], "lock": r["lock"], "lifetime_rating": r["lifetime_rating"],
                "provisional": bool(r["provisional"]), **belt_info(r["lifetime_rating"], not r["provisional"]),

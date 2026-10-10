@@ -759,7 +759,7 @@
   function metaOf(hex, f) {
     const dep = (D.deployment && D.deployment.fighters && D.deployment.fighters[hex]) || {};
     return { name: (f && f.name) || dep.name || null, driver: (f && f.driver) || dep.driver || null, asset: (f && f.asset) || dep.asset || null,
-      origin: (f && f.origin) || dep.origin || API_ORIGIN[hex] || null };
+      origin: (f && f.origin) || dep.origin || API_ORIGIN[hex] || null, driver_status: (f && f.driver_status) || dep.driver_status || null };
   }
   /* Who runs a fighter (AUD-006, AUD-027): HOUSE fighters are run by the
    * operator (demo bots, NPCs); OUTSIDE fighters were registered by an outside
@@ -769,8 +769,12 @@
     if (origin === 'house') return '<span class="drv drv-house" title="Run by the arena operator: a house bot, not an independent entrant">HOUSE</span>';
     return '';
   }
-  function driverBadge(d) {
+  /* st is the export's driver_status: an LLM fighter whose model is offline
+   * shows that, and the fallback that plays, instead of the model's name. */
+  function driverBadge(d, st) {
     if (!d) return '';
+    const off = L.driverOffline(d, st);
+    if (off) return '<span class="drv drv-off" title="' + esc(off.text) + '">' + esc(off.label) + '</span>';
     if (/^llm:/.test(d)) return '<span class="drv drv-llm" title="An LLM chooses this fighter\'s plans">MODEL: ' + esc(d.slice(4)) + '</span>';
     if (d === 'planner') return '<span class="drv drv-planner" title="The owner\'s own planner program">PLANNER</span>';
     if (d === 'builder') return '<span class="drv drv-planner" title="The outside builder runs this bot on their own machine; its code never runs on the arena">BUILDER\'S OWN BOT</span>';
@@ -1031,7 +1035,7 @@
     };
     const card = (fid, owned) => {
       const f = fighters[fid] || {}, m = metaOf(fid, fighters[fid]), r = f.record || {};
-      return '<tr><td>' + fighterLink(fid) + ' ' + foundingBadge(m.asset) + '</td><td>' + driverBadge(m.driver) + '</td><td class="num"><b>' + esc(f.lifetime_rating == null ? '?' : f.lifetime_rating) + '</b></td>' +
+      return '<tr><td>' + fighterLink(fid) + ' ' + foundingBadge(m.asset) + '</td><td>' + driverBadge(m.driver, m.driver_status) + '</td><td class="num"><b>' + esc(f.lifetime_rating == null ? '?' : f.lifetime_rating) + '</b></td>' +
         '<td class="num">' + esc(r.W || 0) + '-' + esc(r.D || 0) + '-' + esc(r.L || 0) + '</td><td class="wraptd">' + (owned ? acq(fid) : left(fid)) + '</td></tr>';
     };
     const head = '<thead><tr><th>FIGHTER</th><th>DRIVER</th><th class="num">RATING</th><th class="num">W-D-L</th><th>HOW</th></tr></thead>';
@@ -2078,6 +2082,7 @@
     if (!d) return notFound('Fighter ' + short(hex) + ' is not in this export.');
     const f = d.f;
     const meta = metaOf(hex, f);
+    const offline = L.driverOffline(meta.driver, meta.driver_status);
     const s = L.fighterStats(hex, d.scout);
     const rec = f.record || {};
     const faults = Object.entries(f.faults_by_epoch || {});
@@ -2101,7 +2106,8 @@
     setView(screen('FIGHTER', '<span class="id wrap">' + esc(hex) + '</span>') +
       '<section class="panel panel-yellow fighter-panel"><h3>' + esc(meta.name ? meta.name.toUpperCase() : short(hex)) + (f.house_npc ? ' &middot; HOUSE NPC' : '') + '</h3>' +
       (A && A.bio ? '<p class="bio">' + esc(A.bio(hex)) + '</p>' : '') +
-      '<p class="badges">' + originBadge(meta.origin) + ' ' + driverBadge(meta.driver) + ' ' + foundingBadge(meta.asset) + (meta.asset ? ' <span class="drv drv-nft" title="' + esc('Fighter NFT' + (net().badge ? ' on the ' + net().short : '')) + '">NFT ' + esc(meta.asset.name || '') + '</span>' : '') + '</p>' +
+      '<p class="badges">' + originBadge(meta.origin) + ' ' + driverBadge(meta.driver, meta.driver_status) + ' ' + foundingBadge(meta.asset) + (meta.asset ? ' <span class="drv drv-nft" title="' + esc('Fighter NFT' + (net().badge ? ' on the ' + net().short : '')) + '">NFT ' + esc(meta.asset.name || '') + '</span>' : '') + '</p>' +
+      (offline ? '<p class="drv-note">' + esc(offline.text) + '</p>' : '') +
       fighterCard(hex, f, career) + '<details class="fdetails" open><summary>DETAILS</summary><div class="fprofile"><dl class="kv">' +
       '<dt>RATING</dt><dd><b class="big">' + esc(f.lifetime_rating) + '</b> ' + beltBadge(f) + ' <span class="muted">' + esc(beltText(f)) + '</span></dd>' +
       '<dt>RANKED</dt><dd>' + esc(rec.W || 0) + 'W ' + esc(rec.D || 0) + 'D ' + esc(rec.L || 0) + 'L &middot; forfeits ' + esc(rec.FW || 0) + ' won / ' + esc(rec.FL || 0) + ' lost <span class="muted">(contract record)</span></dd>' +
@@ -2933,7 +2939,7 @@
       '<dt>Is this real money?</dt><dd>' + esc(net().money) + '</dd>' +
       '<dt>Is anything random?</dt><dd>No damage rolls, no critical hits. Surprise comes only from sealed plans, and a bot may randomize its own choices.</dd>' +
       '<dt>Can the site fake a result?</dt><dd>Your browser recomputes every commitment and every beat from the revealed plans. A mismatch shows as FAILED.</dd>' +
-      '<dt>Who are these fighters?</dt><dd>Salvaged robots run by the house: scripted policies and a few LLM planners with daily budgets, one of them driven by Claude.</dd>' +
+      '<dt>Who are these fighters?</dt><dd>Salvaged robots run by the house: scripted policies and a few LLM planners with daily budgets, one of them driven by Claude. When a model is offline (out of credit, its budget spent for the day, its provider down), a scripted fallback policy plays for it, and its fighter page says MODEL OFFLINE and which policy plays.</dd>' +
       '<dt>Are the fighters NFTs?</dt><dd>Each fighter is an NFT on the arena\'s ' + esc(net().short) + ': its page shows who owns it and every transfer. Its pixel art comes from a deterministic generator.</dd>' +
       '</dl></section>' +
       '</div>');
@@ -3396,6 +3402,7 @@
         id: f.fighter_id, name: f.name || FIGHTER_NAMES[f.fighter_id] || short(f.fighter_id), rating: Number(f.lifetime_rating || 0),
         belt: f.provisional ? 'white' : (f.belt || 'white'), provisional: !!f.provisional, placement: f.placement_fights,
         W, D: D_, L: Lo, fights: W + D_ + Lo, origin: f.origin || 'house', driver: f.driver || '', kind: driverKind(f.driver),
+        offline: L.driverOffline(f.driver, metaOf(f.fighter_id, f).driver_status),
         lock: f.lock || 'IDLE', form: (f.form || []).map(x => x.mark), kit: t.archetype || '', finish: t.finish || '',
         forSale: !!(f.asset && f.asset.for_sale),
         badge: { belt: f.belt, belt_rank: f.belt_rank, belt_stripes: f.belt_stripes, dan: f.dan, provisional: !!f.provisional, placement_fights: f.placement_fights },
@@ -3470,7 +3477,7 @@
       '<span class="ff-body"><b class="ff-name">' + esc(f.name) + '</b>' +
       '<span class="ff-line">' + beltBadge(f.badge) + ' <b class="ff-rating">' + esc(f.rating) + '</b></span>' +
       '<span class="ff-line ff-rec">' + f.W + 'W ' + f.D + 'D ' + f.L + 'L' + (f.fights ? ' &middot; ' + Math.round(100 * f.W / f.fights) + '%' : '') + '</span>' +
-      '<span class="ff-line ff-meta">' + esc(DRIVER_LABEL[f.kind] || '') + ' &middot; ' + esc(f.kit) + '</span>' +
+      '<span class="ff-line ff-meta">' + (f.offline ? '<span><span class="ff-off" title="' + esc(f.offline.text) + '">' + esc(f.offline.short) + '</span> &middot; ' + esc(f.kit) + '</span>' : esc(DRIVER_LABEL[f.kind] || '') + ' &middot; ' + esc(f.kit)) + '</span>' +
       (f.form.length ? '<span class="ff-form">' + f.form.slice(0, 5).map(m => '<i class="form form-' + esc(m) + '">' + esc(m) + '</i>').join('') + '</span>' : '') +
       (f.lock !== 'IDLE' ? '<span class="ff-live">' + esc(f.lock) + '</span>' : '') + '</span></a>';
     function paint() {

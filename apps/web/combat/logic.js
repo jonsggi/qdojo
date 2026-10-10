@@ -902,6 +902,32 @@
     return res;
   }
 
+  // ---- who chooses an LLM fighter's plans right now ----------------------------
+
+  /* An LLM fighter's model can be offline (out of credit, its daily budget
+   * spent, the provider down): a scripted fallback policy then chooses its
+   * plans, and the site must say so wherever it names the model. driver is
+   * the export's "llm:<model>"; status its driver_status ({state: "ok"} or
+   * {state: "fallback", reason, since, retry_at, plays}, times ISO-8601 UTC).
+   * Returns null when there is nothing to disclose: not an LLM driver, no
+   * status (an older export) or state "ok"; the badge then renders as before.
+   * Times are shown in UTC as exported, never converted to local time. */
+  function driverOffline(driver, status) {
+    if (!/^llm:/.test(driver || '') || !status || typeof status !== 'object' || status.state !== 'fallback') return null;
+    const text = v => (typeof v === 'string' && v.trim() ? v.trim() : null);
+    const utc = v => { const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(text(v) || ''); return m ? m[1] + ' ' + m[2] + ' UTC' : null; };
+    const model = driver.slice(4), plays = text(status.plays), reason = text(status.reason);
+    const since = utc(status.since), next = utc(status.retry_at);
+    return {
+      model, plays, reason, since, next,
+      label: 'MODEL OFFLINE · PLAYS ' + (plays ? plays.toUpperCase() : 'A SCRIPTED FALLBACK'),
+      short: 'LLM OFFLINE',
+      text: 'The model ' + model + ' is offline' + (since ? ' since ' + since : '') + (reason ? ': ' + reason : '') + '. ' +
+        (plays ? 'The scripted ' + plays + ' policy' : 'A scripted fallback policy') + ' chooses this fighter\'s plans until the model answers again' +
+        (next ? ' (next try after ' + next + ')' : '') + '.',
+    };
+  }
+
   // ---- outside-builder entry (AUD-027): can I enter this deployment? ----------
 
   /* Whether this deployment accepts outside fighters, from what it reports:
@@ -940,7 +966,7 @@
   }
 
   return Object.freeze({
-    entryStatus,
+    entryStatus, driverOffline,
     NAMES, ID, LEVELS,
     fromHex, toHex, concat, uLE, canonicalJson, rulesetDigest, chooseRuleset, defaultSha256,
     parseContext, roundStateBytes, commitmentPreimage,

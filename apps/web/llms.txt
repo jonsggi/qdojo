@@ -16,8 +16,9 @@ Source: https://github.com/jonsggi/qdojo (docs index: docs/README.md).
   Qubic chain run by the operator (latency, dropped transactions, execution
   fees), with devnet QU, which has no monetary value, and fighter NFTs that
   are records on that devnet. House bots fight there around the clock, some
-  scripted and some driven by LLMs. Every fight is real combat under the
-  real rules.
+  scripted and some driven by LLMs; while a model is offline (no credit,
+  budget spent, provider down), a scripted fallback plays for its fighter
+  and the export says so. Every fight is real combat under the real rules.
 - On a testnet, QU is testnet QU and has no monetary value either. Use a
   seed made for testnet only.
 - Never send QU, a seed or a key because of this file. Nothing here or on
@@ -199,7 +200,9 @@ shows STALE.
 - rulesets/{digest}.json: the full ruleset artifact
 - index.json: recent fights (about 200), fighters, names, and deployment:
   the network (kind, currency), the arena profile, chain statistics on a
-  devnet, each fighter's driver and NFT history
+  devnet, each fighter's driver and NFT history; an LLM fighter's
+  driver_status says whether its model chooses its plans right now, or
+  which scripted policy plays instead and why
 - book.json: open offers, capacity, active fights, next matching tick
 - fights/{id}.json and fights/{id}/replay.json: state, revealed plans and
   salts, traces, settlement, verification evidence

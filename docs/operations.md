@@ -267,6 +267,18 @@ Handling problems:
 - **Stopping LLM spend.** LLM bots cap their spend per UTC day
   (`--daily-usd`) and fall back to a local policy. Removing their lineup
   entries and restarting stops all model calls.
+- **An LLM bot's model is offline** (its page says MODEL OFFLINE · PLAYS
+  MIXED-V1; `index.json` `deployment.fighters[id].driver_status` says why:
+  out of credit, budget spent, provider down, no key). Each LLM bot keeps a
+  circuit breaker in `~/.qdojo/combat/arena/llm/<label>/breaker.json`
+  ([build-a-bot.md](build-a-bot.md) §7). While it is open, or the day's
+  budget is spent, or the runner has no key, the arena plays mixed-v1 for
+  that bot in-process and starts no planner. The log has one line per change
+  (`planner fallback to mixed-v1: ... breaker open ...`, `planner breaker
+  closed: ...`, and once a day `daily model budget ... spent` or `no
+  OpenRouter key`), not one per round. After a top-up, deleting the bots'
+  `breaker.json` files makes them ask their models at the next decision
+  instead of at the next probe (at most 6 hours away); no restart is needed.
 - **Rules change.** A devnet's manifest profile and values are fixed when it
   is created; the marker refuses to reopen it under other rules. To change the
   rules, stop the unit, move the arena directory aside, and start fresh.
