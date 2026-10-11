@@ -1,6 +1,6 @@
 # AUD-022 — A ranked fight takes twice the target time
 
-- **Status:** Mitigated (timing wiring 67f10c1; demo timing 9/8 in profile `demo-c2`; the live arena runs it once the orchestrator starts a `demo-c2` arena)
+- **Status:** Fixed on the live arena: profile `demo-c3` (candidate 3) with timing 9/8; median ranked fight 38 ticks (~57 s), p95 41 ticks (~61.5 s) over 200 fights, measured 2026-10-10
 - **Priority:** P2 — spectator experience
 - **Type:** Timing
 - **Evidence:** 123 s per ranked fight against a 60 s median target; each round is about 42 s, mostly the fixed 24-tick commit window
@@ -26,3 +26,15 @@ ruleset and timing are fixed when it is created: switching means a fresh arena
 directory, not a change to the running one: `qdojo combat live --profile demo-c2`.
 
 **Source:** [2026-09-25 combat review](../reports/2026-09-25-simulation-audit.md).
+
+## Live measurement (2026-10-10)
+
+The live arena runs profile `demo-c3` (ruleset combat-v1-candidate-3) with
+timing profile 1 = commit 9 / reveal 8 ticks, as its manifest reports. Over the
+200 most recent finished ranked fights that ended in combat (fights 23266 to
+23591, from the read API's `/api/v1/fights/{id}/replay`): 3 rounds per fight
+(median), a round every 13 ticks (median gap between round resolutions), and a
+fight lasted about 38 ticks at the median (last round's tick minus the first,
+plus one round period for the first round's own windows) = **~57 s** at 1.5 s
+per tick, p95 41 ticks = ~61.5 s. That meets the 60 s median target. The
+estimate counts from the first commit window, not from matchmaking.

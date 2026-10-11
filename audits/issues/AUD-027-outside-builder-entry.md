@@ -1,6 +1,6 @@
 # AUD-027 — Outside builders cannot enter the arena
 
-- **Status:** Implementation mitigated in 7557e2a and cb5a22d; product milestone remains open. Built and tested locally; outside entry was disabled at the 2026-09-30 review.
+- **Status:** Implementation mitigated in 7557e2a and cb5a22d; entry policy published (docs/beta.md §3, linked from the site's BUILD A BOT page) and entry availability shown there (7a0837c3). Product milestone open: enabling the beta entry is the owner's call (docs/beta.md §5), then an independent builder's journey. Outside entry is still off on the live arena (rechecked 2026-10-10).
 - **Priority:** P1 — product
 - **Type:** Product
 - **Evidence:** Only operator-run bots fight in the arena; builders can practise only locally
@@ -31,16 +31,32 @@ The [2026-09-30 product review](../reports/2026-09-30-product-review.md)
 observed 20 house-run fighters and outside entry disabled. The registration
 implementation is delivered; that does not close the user-facing milestone.
 The live configuration has not been rechecked when this follow-up was written.
+*Rechecked 2026-10-10:* the live read API reports `join_enabled: false` and
+`GET /api/v1/join` answers 404 `join_disabled`; the site's BUILD A BOT page
+shows ENTRY ON THIS ARENA: CLOSED with the next steps.
 
-- [ ] Publish the beta entry policy, participant limits and eligibility for
+- [x] Publish the beta entry policy, participant limits and eligibility for
   events against house bots, with accurate house/outside disclosure.
+  *Evidence:* [docs/beta.md](../../docs/beta.md) §3 (who may enter; an eligibility
+  table for ranked, duels, cups, seasons and the market against house bots; fair
+  play from the house; disclosure) and §4 (limits, as shipped in
+  `deploy/systemd/join-limits.beta.json`); every fighter carries HOUSE or OUTSIDE in
+  the export, the API and the site. The BUILD A BOT page's entry panel links the
+  policy (ENTRY POLICY), checked by the browser suite's `join` step.
 - [ ] Configure and enable the intended free beta entry path using the documented
   operator switches; verify limits, useful rejection messages and recovery from
-  an interrupted registration on that deployment.
+  an interrupted registration on that deployment. *Needs the owner:* opening
+  entry is an operator decision; the switches and the verification script are in
+  docs/beta.md §5. The registration path itself is exercised end to end on a
+  local arena by `tests/combat/test_builder_journey.py` (AUD-041).
 - [ ] Have an independent builder follow the public instructions, register a
   fighter, complete a combat fight and open its verified replay.
-- [ ] Show the deployment's entry availability on the builder page, including
-  a useful next step when registration is closed.
+- [x] Show the deployment's entry availability on the builder page, including
+  a useful next step when registration is closed. *Evidence:* 7a0837c3: the BUILD
+  A BOT page's ENTRY ON THIS ARENA panel (OPEN / FULL / CLOSED / NOT REPORTED /
+  ARENA OFFLINE from the arena's own report, never guessing OPEN; logic.js
+  `entryStatus`, `tests/entry.test.cjs`) with the commands to practise, benchmark
+  and check readiness when entry is closed; live on 2026-10-05 it read CLOSED.
 - [ ] Record the deployment, date and completed outside-fighter journey before
   closing this product milestone.
 
