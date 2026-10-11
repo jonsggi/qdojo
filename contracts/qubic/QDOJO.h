@@ -4032,7 +4032,7 @@ struct QDOJO : public ContractBase
     }
 
     // =========================================================== frames (codec.py decode_frame)
-    // sync:begin body-lengths
+    // sync:begin body-lengths (check_sync.py: bodyLen, decodeFrame's body length for each opcode)
     static sint32 bodyLen(uint16 op)
     {
         switch (op)
@@ -5594,7 +5594,7 @@ struct QDOJO : public ContractBase
     }
 
     // Every handler except Withdraw (which needs a transfer, see Dispatch).
-    // sync:begin dispatch (check_sync.py: a case for every opcode but Withdraw, see withdraw-dispatch)
+    // sync:begin dispatch (check_sync.py: runHandler has a case for every opcode but Withdraw, see withdraw-dispatch)
     static void runHandler(StateData& s, Ctx& c, const id& inv, const Array<uint8, 512>& fr, uint16 op, sint64 amount,
         uint64 t, Res& r)
     {

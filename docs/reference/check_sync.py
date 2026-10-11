@@ -42,8 +42,13 @@ C++ is read with simple regexes over regions marked `// sync:begin NAME` ...
 `#if 0` blocks are removed from the whole file first, so a commented-out case,
 emit, registration or constant is not there, and neither is a marked region
 kept in a comment or an #if 0 block (the markers and QDOJO.h's ruleset
-comments are the only comments read). A number listed twice in any numbered
-table is an error. Each error names the file, the table and the value.
+comments are the only comments read). The body lengths and the dispatch
+cases are read from the function the contract calls (body_len and
+run_handler, bodyLen and runHandler in QDOJO.h), which the marked region
+must define, nothing else may define and the rest of the file must call; a
+renamed copy kept between the markers is not read. A number listed twice in
+any numbered table is an error. Each error names the file, the table and the
+value.
 """
 from __future__ import annotations
 
@@ -88,9 +93,11 @@ def flat(s: str) -> str:
 
 def code(s: str) -> str:
     """C++ without what the compiler skips: comments and `#if 0` blocks (up to their
-    #else, #elif or #endif). Other conditionals stay, every branch of them. The sync
-    markers are the only comments kept; one inside another comment or in an #if 0
-    block is removed with it."""
+    #else, their #elif other than #elif 0, or their #endif). The #if 0's own #else
+    becomes #if 1 and its #elif COND #if COND, so every #endif kept still closes an #if
+    (qdojo_tables compiles QDOJO.h's ruleset functions from this text). Other
+    conditionals stay, every branch of them. The sync markers are the only comments
+    kept; one inside another comment or in an #if 0 block is removed with it."""
     out, off = [], 0                                    # off: #if depth inside an #if 0
     s = re.sub(r"//[^\n]*|/\*.*?\*/", lambda m: m[0] if re.match(r"//\s*sync:(?:begin|end) ", m[0]) else " ", s,
                flags=re.S)
@@ -101,8 +108,9 @@ def code(s: str) -> str:
                 off += 1
             elif d and d.group(1) == "endif":
                 off -= 1
-            elif d and off == 1:                        # the #if 0's own #else or #elif
-                off = 0
+            elif d and off == 1 and (d.group(1), d.group(2).strip()) != ("elif", "0"):
+                off = 0                                 # the #if 0's own #else or #elif opens what follows
+                out.append("#if 1" if d.group(1) == "else" else "#if" + d.group(2))
         elif d and d.group(1) == "if" and d.group(2).strip() == "0":
             off = 1
         else:
@@ -126,6 +134,32 @@ def region(rel: str, name: str) -> str:
         fail(rel, f"no region marked 'sync:begin {name}' ... 'sync:end {name}'")
         return ""
     return m.group(1)
+
+
+def function(rel: str, name: str, fn: str) -> str:
+    """The function FN (`static` or `inline`, as both files define theirs), head to closing brace, from the marked
+    region NAME of the C++ file REL. FN must be the only function of that name in REL and must be called elsewhere
+    in it (a sync marker naming it is no call), so what is read is the function the contract runs; anything else in
+    the region, such as an old copy renamed and kept between the markers, is not read."""
+    src, body = (re.sub(r"//[^\n]*", "", s) for s in (cpp_code(rel), region(rel, name)))
+    head = r"\b(?:static|inline)\b[^;{}()=]*\b" + fn + r"\s*\("
+    m = re.search(head, body)
+    if not m:
+        if body:
+            fail(f"{rel} {name}", f"defines no {fn}, the function the contract calls")
+        return ""
+    end, depth = body.find("{", m.end()), 0
+    while 0 <= end < len(body):
+        depth += {"{": 1, "}": -1}.get(body[end], 0)
+        end += 1
+        if not depth:
+            break
+    fn_code = body[m.start():end if end > 0 else len(body)]
+    if len(re.findall(head, src)) > 1:
+        fail(f"{rel} {name}", f"{fn} is defined more than once (only the marked one is read)")
+    if not re.search(r"\b" + fn + r"\s*\(", src.replace(fn_code, "", 1)):
+        fail(f"{rel} {name}", f"{fn} is defined but never called")
+    return fn_code
 
 
 def table_rows(md: str) -> list[list[str]]:
@@ -197,15 +231,18 @@ def check_opcodes():
             fail(f"{PROTOCOL} opcodes table", f"opcode {num} {r[1]} body is {fields}, codec.BODIES says {widths[num]}")
     compare("opcode", ref, f"{PROTOCOL} opcodes table", numbered(f"{PROTOCOL} opcodes table", pairs), "codec.Op")
 
-    # Both C++ files: the numbers, the body lengths, a case in the dispatch switch for each.
+    # Both C++ files: the numbers, the body lengths, a case in the dispatch switch for each. The lengths and
+    # the cases are read from the functions the contract calls, which the marked regions must define: the
+    # frame decoder's body_len (bodyLen in QDOJO.h) and the dispatch switch run_handler (runHandler).
     # QDOJO.h dispatches Withdraw, which needs a transfer, from Dispatch (its withdraw-dispatch region);
-    # the same region calls runHandler, the switch, for every other opcode.
-    for rel, prefix in ((PORT, "OP_"), (QDOJO, "QDOJO_OP_")):
+    # the same region calls runHandler for every other opcode.
+    for rel, prefix, length_fn, switch_fn in ((PORT, "OP_", "body_len", "run_handler"),
+                                              (QDOJO, "QDOJO_OP_", "bodyLen", "runHandler")):
         got = numbered(f"{rel} opcodes", re.findall(r"\b" + prefix + r"([A-Z_]+)\s*=\s*(\d+)", region(rel, "opcodes")))
         compare("opcode", ref, f"{rel} opcodes", got, "codec.Op")
-        lens = {name: cpp_sum(expr) for name, expr in
-                re.findall(r"case\s+" + prefix + r"([A-Z_]+):\s*return\s+([\d\s+]+);", region(rel, "body-lengths"))}
-        cases = set(re.findall(r"\bcase\s+" + prefix + r"([A-Z_]+)\s*:", region(rel, "dispatch")))
+        lens = {name: cpp_sum(expr) for name, expr in re.findall(r"case\s+" + prefix + r"([A-Z_]+):\s*return\s+"
+                                                                 r"([\d\s+]+);", function(rel, "body-lengths", length_fn))}
+        cases = set(re.findall(r"\bcase\s+" + prefix + r"([A-Z_]+)\s*:", function(rel, "dispatch", switch_fn)))
         if rel == QDOJO:
             branch = region(rel, "withdraw-dispatch")
             if re.search(r"\bc\.fr_op\s*==\s*QDOJO_OP_WITHDRAW\b", branch):

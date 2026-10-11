@@ -5,14 +5,18 @@ and require the check to name exactly that drift, so a check that silently
 stops looking fails here. Every comparison has a row for each copy it reads;
 every numbered table has a row that repeats a number; an extra entry and a
 renamed entry have rows; every read of C++ code has a row in which a comment
-or an #if 0 block hides the code or shadows it with a stale value; and a
-marked C++ region kept in a comment or an #if 0 block above a live copy has
-rows (a marked live copy is read, an unmarked one is no marked region). The
-other guards for input the check cannot parse (an unexpected row or field, a
-table or statement not found, a stand-alone compile that fails) have none,
-nor do the checks of rules.KNOWN against rules.py and RULESET_FILES, which
-read no copy; ruleset.js, which node loads from disk, is compared with the
-JSON files by apps/web/tests/combat-app.test.cjs.
+or an #if 0 block hides the code or shadows it with a stale value; a marked
+C++ region kept in a comment or an #if 0 block above a live copy has rows (a
+marked live copy is read, an unmarked one is no marked region); a function
+the contract calls, read from its marked region, has rows in which it is
+renamed in the markers beside a live copy (below them, unmarked, or between
+them), defined twice or never called; and the compiled ruleset region has a
+row in which an #if 0 block's own #else holds the live code. The other guards
+for input the check cannot parse (an unexpected row or field, a table or
+statement not found, a stand-alone compile that fails) have none, nor do the
+checks of rules.KNOWN against rules.py and RULESET_FILES, which read no copy;
+ruleset.js, which node loads from disk, is compared with the JSON files by
+apps/web/tests/combat-app.test.cjs.
 """
 import importlib.util
 import re
@@ -61,10 +65,23 @@ def shadowed(rel, name, off, on, old, new, marked=False):
     return rel, m[0], off + m[0] + on + (m[0] if marked else m[1]).replace(old, new, 1)
 
 
+def renamed(rel, name, fn, old, new, inside=False):
+    """An edit that renames the function FN of the marked region NAME of REL to FN + "Old", markers kept, and adds
+    a live copy of FN in which OLD is NEW: below the end marker, or between the markers above the renamed copy if
+    INSIDE."""
+    m = re.search(r"([^\n]*sync:begin " + name + r"\b[^\n]*\n)(.*?\n)([^\n]*sync:end " + name + r"\n)",
+                  sync.text(rel), re.S)
+    assert fn + "(" in m[2] and old in m[2], (rel, old)
+    stale, live = m[2].replace(fn + "(", fn + "Old(", 1), m[2].replace(old, new, 1)
+    return rel, m[0], m[1] + live + stale + m[3] if inside else m[1] + stale + m[3] + live
+
+
 PORT_README, CONTRACT_PY = "contracts/combat_contract/README.md", "packages/qdojo/src/qdojo/combat/contract.py"
 PORT_REVEAL = "        case OP_REVEAL: return op_reveal(s, inv, r, amount, t);\n"
 QDOJO_REVEAL = "        case QDOJO_OP_REVEAL:\n            opReveal(s, c, inv, fr, amount, t, r);\n            break;\n"
 RUN_HANDLER = "runHandler(s, c, inv, fr, c.fr_op, amount, t, c.dp_r);"
+REVEAL_LEN = "OP_REVEAL: return 8 + 1 + 32 + 4 + 32 + 32 + 7;"
+HP_OF = "    static uint16 hpOf(uint8 rs)\n    {\n        return rs == QDOJO_RS_C1 ? 100 : 120;\n    }\n"
 MUTATIONS = [
     # 1. opcodes
     (sync.check_opcodes, (sync.PROTOCOL, "| 104 | AdminMirrorOwner |", "| 105 | AdminMirrorOwner |"),
@@ -127,6 +144,34 @@ MUTATIONS = [
     (sync.check_codes, shadowed(sync.QDOJO, "result-codes", "#if 0\n", "#endif\n", "QDOJO_TRANSFER_FAILED = 29",
                                 "QDOJO_TRANSFER_FAILED = 30", marked=True),
      "QDOJO.h result-codes: result code 29 TRANSFER_FAILED is missing"),
+    # the lengths and the cases are read from the function the contract calls, not from a renamed copy kept in the
+    # markers; it is the only function of its name, and it is called (a sync marker naming it is no call)
+    (sync.check_opcodes, renamed(sync.QDOJO, "dispatch", "runHandler", QDOJO_REVEAL, ""),
+     "QDOJO.h dispatch: defines no runHandler"),
+    (sync.check_opcodes, renamed(sync.QDOJO, "body-lengths", "bodyLen", REVEAL_LEN, "OP_REVEAL: return 1;"),
+     "QDOJO.h body-lengths: defines no bodyLen"),
+    (sync.check_opcodes, renamed(sync.PORT, "dispatch", "run_handler", PORT_REVEAL, ""),
+     "combat_contract.h dispatch: defines no run_handler"),
+    (sync.check_opcodes, renamed(sync.PORT, "body-lengths", "body_len", REVEAL_LEN, "OP_REVEAL: return 1;"),
+     "combat_contract.h body-lengths: defines no body_len"),
+    (sync.check_opcodes, renamed(sync.QDOJO, "dispatch", "runHandler", QDOJO_REVEAL, "", inside=True),
+     "QDOJO.h dispatch: opcode 8 REVEAL has no handler"),
+    (sync.check_opcodes, renamed(sync.PORT, "body-lengths", "body_len", REVEAL_LEN, REVEAL_LEN.replace("7;", "8;"),
+                                 inside=True),
+     "combat_contract.h body-lengths: opcode 8 REVEAL body is 117 bytes"),
+    (sync.check_opcodes, (sync.QDOJO, "    // sync:end dispatch\n",
+                          "    // sync:end dispatch\n    static void runHandler(uint32 op)\n    {\n    }\n"),
+     "QDOJO.h dispatch: runHandler is defined more than once"),
+    (sync.check_opcodes, (sync.QDOJO, "c.fr_want = bodyLen(c.fr_op);", "c.fr_want = bodyLength(c.fr_op);"),
+     "QDOJO.h body-lengths: bodyLen is defined but never called"),
+    (sync.check_opcodes, [(sync.QDOJO, "c.fr_want = bodyLen(c.fr_op);", "c.fr_want = 0; // bodyLen(c.fr_op);"),
+                          (sync.QDOJO, "check_sync.py: bodyLen,", "check_sync.py: bodyLen(),")],
+     "QDOJO.h body-lengths: bodyLen is defined but never called"),
+    (sync.check_opcodes, (sync.PORT, "Res r = run_handler(s, h, inv, fr, amount, t);",
+                          "Res r = run_handler_v2(s, h, inv, fr, amount, t);"),
+     "combat_contract.h dispatch: run_handler is defined but never called"),
+    (sync.check_opcodes, (sync.PORT, "int32_t want = body_len(op);", "int32_t want = body_length(op);"),
+     "combat_contract.h body-lengths: body_len is defined but never called"),
     (sync.check_opcodes, (sync.PORT, "FRAME_HEADER = 24;", "FRAME_HEADER = 25;"),
      "combat_contract.h: FRAME_HEADER is 25"),
     (sync.check_opcodes, (sync.PORT, "static constexpr uint32_t FRAME_HEADER = 24;",
@@ -225,6 +270,8 @@ MUTATIONS = [
     (sync.check_rulesets, (sync.QDOJO, "constexpr uint16 QDOJO_STAND_CAP = 16;",
                            "/*\nconstexpr uint16 QDOJO_STAND_CAP = 16;\n*/\nconstexpr uint16 QDOJO_STAND_CAP = 17;"),
      "QDOJO_STAND_PER_HP/QDOJO_STAND_CAP [1, 17]"),
+    (sync.check_rulesets, (sync.QDOJO, HP_OF, "#if 0\n" + HP_OF + "#else\n" + HP_OF.replace("120", "121") + "#endif\n"),
+     "table 2 (combat-v1-candidate-2): hp is 121"),
     (sync.check_rulesets, (sync.QDOJO, "QDOJO_POWER_COST = 4;", "QDOJO_POWER_COST = 5;"), "QDOJO_POWER_COST is 5"),
     (sync.check_rulesets, (sync.QDOJO, "constexpr uint16 QDOJO_POWER_COST = 4;",
                            "// QDOJO_POWER_COST = 4 in v1\nconstexpr uint16 QDOJO_POWER_COST = 5;"),
@@ -296,11 +343,14 @@ MUTATIONS = [
 
 
 def test_cpp_is_read_as_code():
-    """A commented-out line or an #if 0 block (to its #else) is not read; other conditionals are, in full. The
-    sync markers are the only comments kept, unless they are inside another comment or an #if 0 block."""
+    """A commented-out line or an #if 0 block (to its #else, or to an #elif other than #elif 0) is not read; other
+    conditionals are, in full. The #if 0's own #else or #elif opens an #if, so each #endif kept still closes one.
+    The sync markers are the only comments kept, unless they are inside another comment or an #if 0 block."""
     src = ("case A: // case B:\n/* case C:\n*/ case D:\n#if 0  // off\ncase E:\n#ifdef X\ncase F:\n#endif\n"
            "case G:\n#else\ncase H:\n#endif\n#if X\ncase I:\n#else\ncase J:\n#endif\n")
     assert re.findall(r"case (\w):", sync.code(src)) == ["A", "D", "H", "I", "J"]
+    src = "#if 0\nA\n#else\nB\n#endif\n#if 0\nC\n#elif X\nD\n#else\nE\n#endif\n#if 0\nF\n#elif 0\nG\n#else\nH\n#endif\n"
+    assert sync.code(src) == "#if 1\nB\n#endif\n#if X\nD\n#else\nE\n#endif\n#if 1\nH\n#endif\n"
     src = ("// sync:begin A\n/* old:\n// sync:begin B\n*/ // was: // sync:begin C\n#if 0\n// sync:begin D\n#endif\n"
            "x; // sync:end A\n")
     assert re.findall(r"sync:(?:begin|end) (\w)", sync.code(src)) == ["A", "A"]
@@ -309,5 +359,5 @@ def test_cpp_is_read_as_code():
 @pytest.mark.parametrize("check,edit,expect", MUTATIONS, ids=[f"{m[0].__name__}-{i}" for i, m in enumerate(MUTATIONS)])
 def test_drift_is_named(check, edit, expect):
     assert run(check) == [], f"{check.__name__} fails without any edit"
-    errors = run(check, [edit])
+    errors = run(check, edit if isinstance(edit, list) else [edit])
     assert any(expect in e for e in errors), f"expected '{expect}' in {errors}"

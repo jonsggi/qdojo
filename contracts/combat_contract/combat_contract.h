@@ -2079,7 +2079,7 @@ inline uint64_t le(const uint8_t* p, uint32_t width) {
     return v;
 }
 
-// sync:begin body-lengths
+// sync:begin body-lengths (check_sync.py: body_len, decode_frame's body length for each opcode)
 inline int32_t body_len(uint16_t op) {
     switch (op) {
         case OP_REGISTER_FIGHTER: return 32 + 4;
@@ -2876,7 +2876,7 @@ inline Res op_cup_check_in(State& s, Host& h, const Id& inv, Reader r, int64_t a
 
 #undef QD_TRY
 
-// sync:begin dispatch (check_sync.py: a case for every opcode)
+// sync:begin dispatch (check_sync.py: run_handler has a case for every opcode)
 inline Res run_handler(State& s, Host& h, const Id& inv, const Frame& fr, int64_t amount, uint64_t t) {
     Reader r{fr.body, 0};
     switch (fr.op) {
