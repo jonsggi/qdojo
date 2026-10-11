@@ -730,8 +730,9 @@ def serve(db: Path, export_dir: Path | None, host: str, port: int, origins=DEFAU
     follower, stop, thread = None, threading.Event(), None
     if devnet is not None:
         if rebuild:
-            for p in (Path(db), Path(str(db) + "-wal"), Path(str(db) + "-shm"), Path(db).with_suffix(".replica")):
-                p.unlink(missing_ok=True)
+            # A new database and replica snapshot, built aside (bounded memory)
+            # and swapped in; the follower then resumes from that snapshot.
+            rm.rebuild(devnet, db, export_dir, log=log)
         follower = rm.Follower(devnet, db, export_dir, log=log)
         if join is not None:
             join.attach(follower)            # chain reads for remote bots come from the followed replica
@@ -767,7 +768,8 @@ def add_parser(s):
     d.add_argument("--port", type=int, default=8790)
     d.add_argument("--cors-origin", action="append", help="allowed browser origin, repeatable "
                                                           f"(default {DEFAULT_ORIGINS[0]})")
-    d.add_argument("--rebuild", action="store_true", help="drop the database and its snapshot, rebuild on start")
+    d.add_argument("--rebuild", action="store_true",
+                   help="rebuild the database and its snapshot from the journal before serving")
     d.add_argument("--interval", type=float, default=1.0, help="seconds between journal polls")
     d.add_argument("--access-log", action="store_true")
     d.add_argument("--join-inbox", help="ENABLE outside-builder writes: the arena's inbox database "

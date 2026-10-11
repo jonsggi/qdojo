@@ -388,7 +388,9 @@ example `not_registered`, `bad_signature`, `stale` or `rate_limited`.
 play: `GET /api/v1/join` returns the network and contract IDs, tiers, input
 type and limits; `GET /api/v1/chain/state?fighter=&who=` your fighter's
 lock, balance, credit and nonce; `GET /api/v1/chain/fight/{id}?slot=A` the
-observation; `POST /api/v1/tx {"tx": "<hex>"}` submits and
+observation (it answers 404 once the arena's memory drops a finished fight,
+at the earliest an hour after its contest ended; `/api/v1/fights/{id}` keeps
+every fight); `POST /api/v1/tx {"tx": "<hex>"}` submits and
 `GET /api/v1/tx/{hash}` returns `new`, `pending`, `included` (with the
 contract's result) or `dropped`. `combat/join.py` is the reference.
 

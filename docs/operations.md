@@ -178,11 +178,14 @@ snapshots is always safe: the next start replays the journal and writes a new
 one. A new code version never loads an old snapshot (its fingerprint
 differs), so the first restart after a deploy is a full replay.
 `scripts/combat-restart-bench.py` measures both on a copy of the arena.
-The read API (`qdojo combat api`) follows the same journal with its own,
-never-compacted contract copy: it checks each `digest` checkpoint (a
-mismatch stops its sync with `replica diverged`, and it keeps serving the
-last good database), applies market payments (`xfer`), and replays with the
-manifest recorded in devnet.json. An API from before 2026-09-26 does not know
+The read API (`qdojo combat api`) follows the same journal with its own
+contract copy, compacted on the same ticks with the same retention as the
+arena's (it must be: a call naming a compacted record gets another answer).
+It checks each `digest` checkpoint (a mismatch stops its sync with `replica
+diverged`, and it keeps serving the last good database), applies market
+payments (`xfer`), and replays with the manifest recorded in devnet.json.
+What its copy compacts stays in memory until its database holds it, so the
+database keeps every fight. An API from before 2026-09-26 does not know
 these record kinds: deploy the API together with the arena.
 
 **Export checks (AUD-025).** Every tenth export is checked against the contract
@@ -208,14 +211,29 @@ The chain is `SimChain`: transactions land 1–3 ticks later, about 2% are
 dropped, execution fees burn a reserve the operator tops up, and fighter NFTs
 come from the simulated NFT ledger (`combat/nft.py`), with the market above.
 
-**Read model.** The API's first start replays the whole journal (measured
-2026-09-26: 199,182 records, 5,223 fights, about 4 min on this host, 95 MB
-RSS, a 27 MB database); until then `/api/v1/` answers 503 `not_ready` and
-the site uses the static export. Later starts resume from the snapshot. To
-rebuild from scratch, stop the unit and run `qdojo combat readmodel rebuild
---devnet … --db … --export …`, or start it once with `--rebuild`. When the
-arena directory is moved aside for a rules change, the API notices the new
-journal and re-indexes by itself.
+**Read model.** The API's replica compacts like the arena, so a replay of
+the journal costs the same per MB at any length: about 0.4 s of CPU per
+journal MB, and three to four times that in wall time while this host's load
+average is 6 (measured 2026-10-11 on copies of the live data: 203 s of CPU
+for 522 MB; before, the replica kept every record and a replay was
+quadratic, 90 minutes for 333 MB on 2026-10-06). The first start on new
+code replays the whole journal behind its database (534 MB: 227 s of CPU,
+15 minutes, under 120 MB RSS): meanwhile `/api/v1/` keeps serving that
+database and `/api/v1/status` says `caught_up: false`. It saves a snapshot
+(`readmodel.replica`, under 4 MB) as soon as it has caught up, and later
+starts resume from it; a snapshot is only used with a database at least as
+far along as the one it was saved with. A fresh database (the first start,
+a deleted `readmodel.sqlite`, a journal re-indexed after a rules change)
+answers 503 `not_ready` until its first sync, and the site uses the static
+export meanwhile; until that sync, and through a deploy that changes
+`readmodel.TITLES_VERSION`, the replica holds every compacted record in
+memory (263 MB RSS for 522 MB). To rebuild from scratch, stop the unit and
+run `qdojo combat readmodel rebuild --devnet … --db … --export …`, or start
+it once with `--rebuild`: both build a new database aside, syncing it every
+64 MB (94 MB RSS for 522 MB), swap it in and leave a snapshot to resume
+from. When the arena directory is moved aside for a rules change, the API
+notices the new journal and re-indexes by itself, under the new arena's
+manifest.
 
 **Outside builders (off by default).** [build-a-bot.md](build-a-bot.md) §8
 describes the builder's side. Three switches, all off today, because opening
@@ -281,6 +299,12 @@ Handling problems:
 - **Slow restart.** The log's `restored … by full replay (skipped: …)` line
   says why no snapshot was used. After a code deploy that is expected once.
   A snapshot that fails to verify is never used; nothing needs repairing.
+  The API says why in its `readmodel: snapshot is …; replaying from the
+  start` line (from other code, for another journal, synced to a database
+  further along than this one, missing rows this database has open). If its
+  log repeats `sync failed: … rebuild the read model`, the database has open
+  rows that the journal does not produce (a hand edit, a restore from another
+  arena): rebuild it (Read model, above).
 
 **Test the whole system:**
 

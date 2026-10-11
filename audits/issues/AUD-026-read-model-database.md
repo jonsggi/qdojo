@@ -17,7 +17,9 @@ Static files with retention cannot serve full-history stats, pagination, seasons
   per-mode record, rating change, season, cup, duel and ownership row. Evidence: `tests/combat/test_readmodel.py`
   (an incremental database with a mid-run restart from its snapshot equals a rebuild, table by table; torn lines;
   replaced journals). On a copy of the live journal (2026-09-26): 199,182 records, 5,223 fights, rebuild 4 min
-  (161 s CPU), 27 MB, 95 MB RSS.
+  (161 s CPU), 27 MB, 95 MB RSS. Since 2026-10-11 the replica compacts like the arena (keeping every record had
+  made a replay quadratic: 90 min for 333 MB): 522 MB replay in 203 s CPU, a 3.6 MB snapshot, and a first start
+  on new code behind a copy of the live database left every final row unchanged.
 - [x] A small read API for fighters, fights, seasons and search; the chain or contract stays the source of truth.
   `qdojo combat api` (`combat/api.py`, [api.md](../../docs/api.md) §3.2), which also serves the static export and
   replaces the `http.server` unit. Evidence: `tests/combat/test_api.py` (contract, pagination, errors, CORS, ETag,

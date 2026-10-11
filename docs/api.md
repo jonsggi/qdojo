@@ -287,8 +287,9 @@ The static export keeps the most recent 200 fights. The read API answers
 full-history questions from a SQLite read model (`combat/readmodel.py`)
 that indexes the arena's input journal: every fight, fighter, per-mode
 record, rating change, season, cup, duel and ownership record. It replays
-the journal into its own contract copy and never compacts it, so the arena
-pruning finished history from its own memory does not lose anything here.
+the journal into its own contract copy, compacted as the arena compacts its
+own, but that copy forgets a finished record only once the database holds it:
+the arena pruning finished history from its own memory loses nothing here.
 It uses the manifest the arena was created with (devnet.json), checks the
 arena's `digest` checkpoints as it crosses them, and re-executes the fighter
 NFT operations (`nft` records: mints, orders, sales, transfers), so tokens,
