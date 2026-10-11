@@ -142,7 +142,9 @@ Example: `#practice/jabber-v1/abab…ab/p1.1.cf19b7cfee8ccbdd.3331333-330135n.69
   unknown NPC, a bad seed, malformed rounds, illegal plans, rounds after a
   knockout, or an unfinished fight.
 - `#practice/<npc>/<seed>` stays the seeded challenge link: a new fight against
-  the same opponent and seed.
+  the same opponent and seed. Only your own fight there that is still open in
+  this tab, under the active ruleset, is picked up where you left it, also by
+  BACK or FORWARD from another screen.
 
 The local practice record (`localStorage` key `qdojo.practice.v1`) keeps wins,
 losses, draws and the best result per NPC under each ruleset version, kept apart
