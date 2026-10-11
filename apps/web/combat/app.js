@@ -770,16 +770,10 @@
     return '';
   }
   /* st is the export's driver_status: an LLM fighter whose model is offline
-   * shows that, and the fallback that plays, instead of the model's name. */
-  function driverBadge(d, st) {
-    if (!d) return '';
-    const off = L.driverOffline(d, st);
-    if (off) return '<span class="drv drv-off" title="' + esc(off.text) + '">' + esc(off.label) + '</span>';
-    if (/^llm:/.test(d)) return '<span class="drv drv-llm" title="An LLM chooses this fighter\'s plans">MODEL: ' + esc(d.slice(4)) + '</span>';
-    if (d === 'planner') return '<span class="drv drv-planner" title="The owner\'s own planner program">PLANNER</span>';
-    if (d === 'builder') return '<span class="drv drv-planner" title="The outside builder runs this bot on their own machine; its code never runs on the arena">BUILDER\'S OWN BOT</span>';
-    return '<span class="drv drv-policy" title="A disclosed policy chooses this fighter\'s plans">POLICY: ' + esc(d) + '</span>';
-  }
+   * shows that, and the fallback that plays, instead of the model's name.
+   * The HTML is built in logic.js (driverBadge, driverNote, rosterDriver),
+   * where node tests check it, with this page's esc(). */
+  function driverBadge(d, st) { return L.driverBadge(d, st, esc); }
   const foundingBadge = a => (a && a.founding ? '<span class="drv drv-founding" title="One of the founding fighters of this deployment">FOUNDING</span>' : '');
   function ownerLink(hex) {
     if (!HEX64.test(hex || '')) return '<span class="muted">none</span>';
@@ -2082,7 +2076,6 @@
     if (!d) return notFound('Fighter ' + short(hex) + ' is not in this export.');
     const f = d.f;
     const meta = metaOf(hex, f);
-    const offline = L.driverOffline(meta.driver, meta.driver_status);
     const s = L.fighterStats(hex, d.scout);
     const rec = f.record || {};
     const faults = Object.entries(f.faults_by_epoch || {});
@@ -2107,7 +2100,7 @@
       '<section class="panel panel-yellow fighter-panel"><h3>' + esc(meta.name ? meta.name.toUpperCase() : short(hex)) + (f.house_npc ? ' &middot; HOUSE NPC' : '') + '</h3>' +
       (A && A.bio ? '<p class="bio">' + esc(A.bio(hex)) + '</p>' : '') +
       '<p class="badges">' + originBadge(meta.origin) + ' ' + driverBadge(meta.driver, meta.driver_status) + ' ' + foundingBadge(meta.asset) + (meta.asset ? ' <span class="drv drv-nft" title="' + esc('Fighter NFT' + (net().badge ? ' on the ' + net().short : '')) + '">NFT ' + esc(meta.asset.name || '') + '</span>' : '') + '</p>' +
-      (offline ? '<p class="drv-note">' + esc(offline.text) + '</p>' : '') +
+      L.driverNote(meta.driver, meta.driver_status, esc) +
       fighterCard(hex, f, career) + '<details class="fdetails" open><summary>DETAILS</summary><div class="fprofile"><dl class="kv">' +
       '<dt>RATING</dt><dd><b class="big">' + esc(f.lifetime_rating) + '</b> ' + beltBadge(f) + ' <span class="muted">' + esc(beltText(f)) + '</span></dd>' +
       '<dt>RANKED</dt><dd>' + esc(rec.W || 0) + 'W ' + esc(rec.D || 0) + 'D ' + esc(rec.L || 0) + 'L &middot; forfeits ' + esc(rec.FW || 0) + ' won / ' + esc(rec.FL || 0) + ' lost <span class="muted">(contract record)</span></dd>' +
@@ -3388,8 +3381,7 @@
   // ---- FIGHTERS: search and filter the whole roster ----------------------------------
 
   const BELT_ORDER = ['white', 'yellow', 'orange', 'green', 'blue', 'purple', 'brown', 'black', 'red'];
-  const driverKind = d => (/^llm:/.test(d || '') ? 'llm' : d === 'planner' || d === 'builder' ? 'builder' : 'script');
-  const DRIVER_LABEL = { llm: 'LLM', script: 'SCRIPTED', builder: 'BUILDER BOT' };
+  const driverKind = L.driverKind, DRIVER_LABEL = L.DRIVER_LABEL;
 
   // Every fighter as one flat record the filters can read. The API has the
   // whole roster in one call; without it the export's fighter files serve.
@@ -3402,7 +3394,7 @@
         id: f.fighter_id, name: f.name || FIGHTER_NAMES[f.fighter_id] || short(f.fighter_id), rating: Number(f.lifetime_rating || 0),
         belt: f.provisional ? 'white' : (f.belt || 'white'), provisional: !!f.provisional, placement: f.placement_fights,
         W, D: D_, L: Lo, fights: W + D_ + Lo, origin: f.origin || 'house', driver: f.driver || '', kind: driverKind(f.driver),
-        offline: L.driverOffline(f.driver, metaOf(f.fighter_id, f).driver_status),
+        driverStatus: metaOf(f.fighter_id, f).driver_status,
         lock: f.lock || 'IDLE', form: (f.form || []).map(x => x.mark), kit: t.archetype || '', finish: t.finish || '',
         forSale: !!(f.asset && f.asset.for_sale),
         badge: { belt: f.belt, belt_rank: f.belt_rank, belt_stripes: f.belt_stripes, dan: f.dan, provisional: !!f.provisional, placement_fights: f.placement_fights },
@@ -3477,7 +3469,7 @@
       '<span class="ff-body"><b class="ff-name">' + esc(f.name) + '</b>' +
       '<span class="ff-line">' + beltBadge(f.badge) + ' <b class="ff-rating">' + esc(f.rating) + '</b></span>' +
       '<span class="ff-line ff-rec">' + f.W + 'W ' + f.D + 'D ' + f.L + 'L' + (f.fights ? ' &middot; ' + Math.round(100 * f.W / f.fights) + '%' : '') + '</span>' +
-      '<span class="ff-line ff-meta">' + (f.offline ? '<span><span class="ff-off" title="' + esc(f.offline.text) + '">' + esc(f.offline.short) + '</span> &middot; ' + esc(f.kit) + '</span>' : esc(DRIVER_LABEL[f.kind] || '') + ' &middot; ' + esc(f.kit)) + '</span>' +
+      '<span class="ff-line ff-meta">' + L.rosterDriver(f.driver, f.driverStatus, f.kit, esc) + '</span>' +
       (f.form.length ? '<span class="ff-form">' + f.form.slice(0, 5).map(m => '<i class="form form-' + esc(m) + '">' + esc(m) + '</i>').join('') + '</span>' : '') +
       (f.lock !== 'IDLE' ? '<span class="ff-live">' + esc(f.lock) + '</span>' : '') + '</span></a>';
     function paint() {

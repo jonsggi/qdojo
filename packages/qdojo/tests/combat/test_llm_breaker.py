@@ -59,16 +59,20 @@ def answer(plan=GOOD, cost=0.0001):
 
 class Provider:
     """A fake OpenRouter: each request takes the next scripted outcome (an
-    exception to raise, or a response body), or `always` when set."""
+    exception to raise, or a response body), or `always` when set. Its own
+    checks fail the test with pytest.fail, whose exception is no Exception:
+    the planner turns every Exception a request raises into a fallback, so
+    an AssertionError here would pass unseen."""
 
     def __init__(self):
         self.script, self.always, self.requests = [], None, 0
 
     def __call__(self, req, timeout=None):
-        assert req.full_url == L.URL and timeout and timeout <= 20
+        if req.full_url != L.URL or not timeout or timeout > 20:
+            pytest.fail(f"a request to {req.full_url} with timeout {timeout}")
         self.requests += 1
         if self.always is None and not self.script:
-            raise AssertionError("an unscripted request: no test may reach the network")
+            pytest.fail("an unscripted request: no test may reach the network")
         out = self.always if self.always is not None else self.script.pop(0)
         if isinstance(out, BaseException):
             raise out
@@ -92,6 +96,11 @@ def decide(state, clock, capsys, **kw):
 
 def fallback():
     return planner.plan_json(L.fallback_plan(_obs()))
+
+
+def closed(fails=0, since=None, answered=None):
+    """A closed breaker as read_breaker returns it."""
+    return {"state": "closed", "fails": fails, "since": since, "answered": answered}
 
 
 ARENA_LOGS = ("fallback", "adjusted", "breaker")       # what bot.planner_chooser logs
@@ -149,7 +158,7 @@ def test_after_the_backoff_one_probe_goes_out_and_an_answer_closes_the_breaker(t
     assert err[0] == ("breaker closed: the model answered again after 1 h 30 min "
                       "(offline since 08:12 UTC: provider out of credit (HTTP 402))")
     assert err[0].startswith(ARENA_LOGS) and provider.requests == 3
-    assert L.read_breaker(state, clock.t) == {"state": "closed", "fails": 0}
+    assert L.read_breaker(state, clock.t) == closed(answered=clock.t)
     assert L.status(state, 1.0, clock.t) == {"state": "ok"} and L.blocked(state, 1.0, clock.t) is None
 
 
@@ -195,7 +204,7 @@ def test_transient_failures_open_the_breaker_after_three_in_a_row(tmp_path, prov
         out, err = decide(state, clock, capsys)
         lines += [x for x in err if x.startswith("fallback")]
         assert L.status(state, 1.0, clock.t) == {"state": "ok"}       # a few failures are not an outage
-    assert L.read_breaker(state, clock.t) == {"state": "closed", "fails": 2}     # the answer reset the count
+    assert L.read_breaker(state, clock.t) == closed(2, since=T0, answered=T0)    # the answer reset the count
     assert lines == ["fallback to mixed-v1: provider error (HTTP 503): Service Unavailable",
                      "fallback to mixed-v1: provider timeout: TimeoutError: The read operation timed out",
                      "fallback to mixed-v1: provider unreachable: URLError: <urlopen error [Errno 111] "
@@ -237,15 +246,62 @@ def test_a_200_without_a_completion_is_classified_by_its_error_object(tmp_path, 
     assert err[0].startswith("fallback to mixed-v1: provider out of credit (HTTP 402): Insufficient credits; "
                              "breaker open")
     provider.script = [{"id": "x"}, b"not json"]
+    lines = []
     for _ in range(2):
-        decide(tmp_path / "t", Clock(T0), capsys)
-    assert L.read_breaker(tmp_path / "t", T0) == {"state": "closed", "fails": 2}
+        lines += decide(tmp_path / "t", Clock(T0), capsys)[1]
+    assert lines == ["fallback to mixed-v1: provider sent no completion",
+                     "fallback to mixed-v1: unreadable provider response: JSONDecodeError: Expecting value: "
+                     "line 1 column 1 (char 0)"]
+    assert provider.requests == 3 and not provider.script
+    assert L.read_breaker(tmp_path / "t", T0) == closed(2, since=T0)
 
 
-def test_offline_since_the_models_last_answer_not_since_the_first_refusal_seen(tmp_path, provider, capsys,
-                                                                               monkeypatch):
-    """A planner deployed into an outage that began long ago: the breaker is
-    new, but the model last answered when spend.json was last written."""
+def test_a_billed_reply_without_a_completion_counts_toward_the_daily_cap(tmp_path, provider, capsys):
+    """OpenRouter can bill a reply that carries no completion (an upstream
+    error after generation): its cost counts toward the day's cap all the
+    same, and it is no answer from the model."""
+    state, clock = tmp_path / "ken", Clock(T0)
+    provider.script = [answer(cost=0.05)]
+    decide(state, clock, capsys)
+    clock.t = T0 + 120
+    provider.script = [{"choices": [], "usage": {"cost": 0.4}},
+                       {"error": {"code": 502, "message": "upstream error after generation"}, "usage": {"cost": 0.6}}]
+    lines = []
+    for _ in range(2):
+        out, err = decide(state, clock, capsys)
+        assert out == fallback()
+        lines += err
+    assert lines == ["fallback to mixed-v1: provider sent no completion",
+                     "fallback to mixed-v1: provider error (HTTP 502): upstream error after generation"]
+    assert json.loads((state / "spend.json").read_text()) == pytest.approx({"2026-09-29": 1.05})
+    out, err = decide(state, clock, capsys)
+    assert out == fallback() and provider.requests == 3 and err == ["fallback to mixed-v1: daily cap $1.00 reached"]
+    assert L.read_breaker(state, clock.t) == closed(2, since=T0 + 120, answered=T0)     # the last real answer
+
+
+def test_offline_since_the_first_failure_with_the_last_answer_beside_it(tmp_path, provider, capsys):
+    """A fighter idle for two days meets a four-minute provider blip: the
+    outage is dated from its first failed request, not from the model's last
+    answer two days before, which is published beside it."""
+    state, clock = tmp_path / "ken", Clock(T0 - 2 * 86400)
+    provider.script = [answer()]
+    decide(state, clock, capsys)
+    provider.always = TimeoutError("The read operation timed out")
+    for i in range(3):                                   # three decisions, two minutes apart
+        clock.t = T0 + 120 * i
+        decide(state, clock, capsys)
+    assert L.status(state, 1.0, clock.t) == {
+        "state": "fallback", "reason": "provider timeout", "since": "2026-09-29T08:12:00Z",
+        "last_answer": "2026-09-27T08:12:00Z", "retry_at": "2026-09-29T08:18:00Z", "plays": "mixed-v1"}
+
+
+def test_a_state_directory_from_before_the_breaker_dates_the_last_answer_by_spend_json(tmp_path, provider, capsys,
+                                                                                         monkeypatch):
+    """A planner deployed into an outage that began long ago: its breaker is
+    new, so the outage is dated from the first refusal it sees, and the
+    model's last answer is spend.json's last write (the planner wrote it with
+    every reply before breaker.json kept the time). The breaker keeps that
+    time from then on, so a later write of spend.json does not move it."""
     state = tmp_path / "ken"
     state.mkdir()
     (state / "spend.json").write_text(json.dumps({"2026-09-28": 0.2705}))
@@ -255,15 +311,18 @@ def test_offline_since_the_models_last_answer_not_since_the_first_refusal_seen(t
     provider.script = [http_error(402)]
     decide(state, clock, capsys)
     assert L.status(state, 1.0, clock.t) == {
-        "state": "fallback", "reason": "provider out of credit (HTTP 402)", "since": "2026-09-28T13:26:00Z",
-        "retry_at": "2026-10-11T08:42:00Z", "plays": "mixed-v1"}
+        "state": "fallback", "reason": "provider out of credit (HTTP 402)", "since": "2026-10-11T08:12:00Z",
+        "last_answer": "2026-09-28T13:26:00Z", "retry_at": "2026-10-11T08:42:00Z", "plays": "mixed-v1"}
+    os.utime(state / "spend.json")
+    assert L.status(state, 1.0, clock.t)["last_answer"] == "2026-09-28T13:26:00Z"
     clock.t += L.AUTH_BACKOFF
     provider.script = [answer()]
     out, err = decide(state, clock, capsys)
-    assert err[0] == ("breaker closed: the model answered again after 12 d 19 h 16 min "
-                      "(offline since 2026-09-28 13:26 UTC: provider out of credit (HTTP 402))")
+    assert err[0] == ("breaker closed: the model answered again after 30 min "
+                      "(offline since 08:12 UTC: provider out of credit (HTTP 402))")
     monkeypatch.delenv("OPEN_ROUTER_API_KEY")
-    assert L.status(state, 1.0, clock.t)["since"] == L._iso((state / "spend.json").stat().st_mtime)
+    assert L.status(state, 1.0, clock.t) == {"state": "fallback", "reason": "no model API key configured",
+                                             "last_answer": L._iso(clock.t), "plays": "mixed-v1"}
 
 
 def test_the_daily_cap_asks_nobody(tmp_path, provider, capsys):
@@ -279,15 +338,74 @@ def test_a_broken_or_impossible_breaker_file_never_keeps_the_model_shut(tmp_path
     state = tmp_path / "s"
     state.mkdir()
     p = state / "breaker.json"
-    for text in ("{not json", "[]", '{"state": "half"}'):
+    for text in ("{not json", "[]", '{"state": "half"}', '{"fails": 1e400, "answered": "yesterday"}'):
         p.write_text(text)
-        assert L.read_breaker(state, T0) == {"state": "closed", "fails": 0}
+        assert L.read_breaker(state, T0) == closed()
     p.write_text(json.dumps({"state": "open", "kind": "auth", "reason": "provider out of credit (HTTP 402)",
                              "since": T0, "until": T0 + 30 * 86400, "backoff": 1800, "probe_until": 0}))
     assert L.read_breaker(state, T0)["until"] == T0                    # a clock set back, a hand edit: due now
     assert L.blocked(state, 1.0, T0) is None
     p.unlink()                                                          # deleting it closes it by hand
     assert L.status(state, 1.0, T0) == {"state": "ok"}
+
+
+def test_numbers_no_float_can_hold_never_stop_a_decision(tmp_path, provider, capsys):
+    """An integer too large for a float, NaN or Infinity in the planner's
+    files reads as the field's default: nothing the arena or the planner
+    does with them raises."""
+    state = tmp_path / "s"
+    state.mkdir()
+    huge = "1" + "0" * 400
+    (state / "breaker.json").write_text(f'{{"state": "open", "kind": "auth", "reason": "x", "since": NaN, "until": '
+                                        f'{huge}, "backoff": Infinity, "probe_until": -{huge}, "answered": {huge}}}')
+    (state / "spend.json").write_text(f'{{"2026-09-29": {huge}, "2026-09-28": NaN}}')
+    assert L.read_breaker(state, T0) == {"state": "open", "kind": "auth", "reason": "x", "since": T0, "until": 0.0,
+                                         "backoff": L.TRANSIENT_BACKOFF, "probe_until": 0.0, "answered": None}
+    assert L.blocked(state, 1.0, T0) is None                           # due: a probe may go out
+    assert L.status(state, 1.0, T0) == {"state": "fallback", "reason": "x", "since": "2026-09-29T08:12:00Z",
+                                        "plays": "mixed-v1"}
+    provider.script = [answer()]
+    decide(state, Clock(T0), capsys)
+    assert provider.requests == 1 and L.read_breaker(state, T0) == closed(answered=T0)
+
+
+def test_a_state_directory_that_cannot_be_written_still_plays_the_fallback(tmp_path, provider, capsys,
+                                                                            monkeypatch):
+    """A full disk or a read-only mount: the breaker cannot open, but no
+    decision fails (the arena would play six RECOVERs for a planner that
+    exits non-zero), each says why in its one log line, and no temporary
+    file is left behind."""
+    state, clock = tmp_path / "ken", Clock(T0)
+    provider.script = [http_error(402)]
+    decide(state, clock, capsys)                                        # opened while the disk had room
+    real = os.replace
+
+    def full(src, dst):
+        if str(dst).endswith("breaker.json"):
+            raise OSError(28, "No space left on device")
+        real(src, dst)
+    monkeypatch.setattr(L.os, "replace", full)
+    clock.t = T0 + L.AUTH_BACKOFF
+    provider.always = http_error(402)
+    out, err = decide(state, clock, capsys)                             # its probe claim and its failure: unsaved
+    assert out == fallback() and provider.requests == 2
+    unsaved = "breaker state not saved: OSError: [Errno 28] No space left on device"
+    assert err == [unsaved, f"fallback to mixed-v1: provider out of credit (HTTP 402): Payment Required; {unsaved}"]
+    assert all(x.startswith(ARENA_LOGS) for x in err)
+    for _ in range(2):                                                  # still due: every decision probes
+        out, err = decide(state, clock, capsys)
+        assert out == fallback() and len(err) == 2
+    assert provider.requests == 4 and not list(state.glob("*.tmp"))
+    assert L.read_breaker(state, clock.t)["until"] == T0 + L.AUTH_BACKOFF
+
+
+def test_a_state_path_that_is_no_directory_plays_the_fallback_without_a_request(tmp_path, provider, capsys):
+    """Nowhere to keep the day's spend: no paid request, and no crash."""
+    state = tmp_path / "ken"
+    state.write_text("not a directory")
+    out, err = decide(state, Clock(T0), capsys)
+    assert out == fallback() and provider.requests == 0
+    assert len(err) == 1 and err[0].startswith("fallback to mixed-v1: state directory unusable: FileExistsError: ")
 
 
 def test_the_breaker_lives_in_the_state_directory_across_processes(tmp_path, provider, capsys):
@@ -393,8 +511,11 @@ def test_the_arena_publishes_each_llm_fighters_status_through_the_export_and_the
               {"label": "QWEN-235", "llm": {"model": "qwen/qwen3-235b-a22b-2507"}},
               {"label": "tanuki", "policy": "reader-v1"}]
     arena = _arena(tmp_path, lineup)
-    (arena.dir / "llm" / "KEN.EXE").mkdir(parents=True)
-    L.Breaker(arena.dir / "llm" / "KEN.EXE", Clock(T0 - 600)).failure(L._http_error(402))
+    ken = arena.dir / "llm" / "KEN.EXE"
+    ken.mkdir(parents=True)
+    (ken / "spend.json").write_text(json.dumps({"2026-09-28": 0.2705}))      # its last answer, before the breaker
+    os.utime(ken / "spend.json", (T0 - 86400, T0 - 86400))
+    L.Breaker(ken, Clock(T0 - 600)).failure(L._http_error(402))
     claude = arena.dir / "llm" / "CLAUDE"
     claude.mkdir(parents=True)
     (claude / "spend.json").write_text(json.dumps({"2026-09-28": 0.2, "2026-09-29": 0.5031}))
@@ -404,7 +525,7 @@ def test_the_arena_publishes_each_llm_fighters_status_through_the_export_and_the
     assert by["KEN.EXE"]["driver"] == "llm:" + MODEL
     assert by["KEN.EXE"]["driver_status"] == {
         "state": "fallback", "reason": "provider out of credit (HTTP 402)", "since": "2026-09-29T08:02:00Z",
-        "retry_at": "2026-09-29T08:32:00Z", "plays": "mixed-v1"}
+        "last_answer": "2026-09-28T08:12:00Z", "retry_at": "2026-09-29T08:32:00Z", "plays": "mixed-v1"}
     assert by["CLAUDE"]["driver_status"] == {
         "state": "fallback", "reason": "daily budget spent ($0.50)", "since": "2026-09-29T08:02:00Z",
         "retry_at": "2026-09-30T00:00:00Z", "plays": "mixed-v1"}

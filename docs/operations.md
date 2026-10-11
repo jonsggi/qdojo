@@ -279,6 +279,20 @@ Handling problems:
   OpenRouter key`), not one per round. After a top-up, deleting the bots'
   `breaker.json` files makes them ask their models at the next decision
   instead of at the next probe (at most 6 hours away); no restart is needed.
+  A line ending `breaker state not saved: ...` means the bot's state
+  directory cannot be written (a full disk): the breaker cannot open, so
+  every decision asks the model again, until the directory is writable.
+- **Deploy order: the arena first, then the site.** The site (Dokploy, built
+  from the repository) and the arena (`~/src/qdojo-live`) ship separately.
+  When a change makes the site describe something only the newer arena
+  exports, such as `driver_status` (the help screen and llms.txt say an
+  offline model's fighter page says so), update `~/src/qdojo-live`, restart
+  `qdojo-combat-live` and `qdojo-combat-api`, check that `index.json`
+  carries the field, and only then release the site. An older site ignores a
+  field it does not know; a newer site in front of an older arena promises a
+  disclosure the export does not make. The API's first start on new code
+  replays the whole journal (a snapshot from other code is ignored), and
+  meanwhile the site reads `driver_status` from the static export.
 - **Rules change.** A devnet's manifest profile and values are fixed when it
   is created; the marker refuses to reopen it under other rules. To change the
   rules, stop the unit, move the arena directory aside, and start fresh.

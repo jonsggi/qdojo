@@ -334,15 +334,17 @@ ended). Lists are newest first; `page` starts at 1, `per_page` defaults to
 `driver` is `llm:<model>` for a house fighter an LLM plans for, `planner`,
 `builder` (an outside builder's own bot) or the name of a disclosed policy.
 An LLM fighter also carries `driver_status`: `{"state": "ok"}` while its model
-chooses its plans, or `{"state": "fallback", "reason", "since", "retry_at",
-"plays"}` while the model is offline (out of credit, its daily budget spent,
-its provider down, no key): why, since when (the model's last answer, else
-when the fallback began) and when the model is next asked (ISO-8601 UTC, each
-when known), and the scripted policy that plays meanwhile (`mixed-v1`). The
-arena computes it at each export from the planner's state
-([build-a-bot.md](build-a-bot.md) §7); the static export carries it in
-`index.json` (`deployment.fighters[id]`) and `fighters/{id}.json`. Other
-drivers, and exports from before 2026-10-10, have none.
+chooses its plans, or `{"state": "fallback", "reason", "since", "last_answer",
+"retry_at", "plays"}` while the model is offline (out of credit, its daily
+budget spent, its provider down, no key): why; since when (the first failed
+request of this outage, or when the day's budget ran out); when the model last
+answered (with an open breaker or no key); when the model is next asked (times
+ISO-8601 UTC, each only when known); and the scripted policy that plays
+meanwhile (`mixed-v1`). The arena computes it at each export from the
+planner's state ([build-a-bot.md](build-a-bot.md) §7); the static export
+carries it in `index.json` (`deployment.fighters[id]`) and
+`fighters/{id}.json`. Other drivers, and exports from before 2026-10-10, have
+none.
 
 `community` counts identities, not people: an outside builder is the key
 that registered an outside fighter (one fighter per key), and *active* means

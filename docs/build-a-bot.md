@@ -328,6 +328,11 @@ for twice as long (at most 6 hours, or 30 minutes for transient failures).
 Each change is one stderr line (`fallback ...` when it opens, `breaker
 closed ...` when it closes); a decision it skips prints a `no model call`
 line. Delete `breaker.json` to close it by hand, after a top-up for example.
+It also records when the model last answered and when the current run of
+failures began. A `--state` directory the planner cannot write (a full disk,
+a read-only mount) never stops a decision: the breaker then cannot open, each
+fallback line ends `breaker state not saved: ...`, and `mixed-v1` plays.
+Every billed reply counts toward the daily cap, one without a completion too.
 
 ```sh
 uv run qdojo combat train --npc jabber-v1 --budget-ms 25000 --planner "uv run python -m qdojo.combat.llm_planner --model some/model --state .llm-state --daily-usd 0.50"

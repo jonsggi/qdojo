@@ -23,16 +23,22 @@ failure opens it again for twice as long (at most 6 hours, or 30 minutes for
 transient failures). It logs changes, not rounds: the decision that opens it
 prints the usual "fallback ..." line, closing it prints "breaker closed ...",
 and a decision it skips prints a line the arena does not log. Deleting
-breaker.json closes it by hand (after a top-up, say). The arena reads the
-same files to publish each LLM fighter's status, and does not start this
-process at all while no model call could be made (live.py).
+breaker.json closes it by hand (after a top-up, say). It also keeps when the
+model last answered and when the current run of failures began. The arena
+reads the same files to publish each LLM fighter's status, and does not start
+this process at all while no model call could be made (live.py). The
+planner's own files never stop a decision: one it cannot read counts as
+empty, and one it cannot write (a full disk, a read-only mount) only means
+the breaker cannot open; the log line says so and the fallback plays.
 """
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
 import hashlib
 import json
+import math
 import os
 import sys
 import time
@@ -300,6 +306,19 @@ def _day(now: float) -> str:
     return dt.datetime.fromtimestamp(now, dt.timezone.utc).date().isoformat()
 
 
+def _number(v) -> float | None:
+    """A JSON number as a finite float, else None. The planner's files are
+    read through it, so a hand edit or a broken file (a string, true, NaN, an
+    integer too large for a float) never stops a decision."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return None
+    try:
+        v = float(v)
+    except OverflowError:
+        return None
+    return v if math.isfinite(v) else None
+
+
 class Spend:
     """USD spent per UTC day, from OpenRouter's usage accounting; the last 60 days are kept."""
 
@@ -321,15 +340,30 @@ def _spend_doc(path: Path) -> dict:
         doc = json.loads(path.read_text())
     except (OSError, ValueError):
         doc = {}
-    return {k: float(v) for k, v in doc.items() if isinstance(v, (int, float))} if isinstance(doc, dict) else {}
+    days = ((k, _number(v)) for k, v in doc.items()) if isinstance(doc, dict) else ()
+    return {k: v for k, v in days if v is not None}
 
 
 def _write_json(path: Path, doc: dict):
     """Atomically, through a temporary file of this process's own (two
-    decisions of one fighter can overlap)."""
+    decisions of one fighter can overlap). A write that fails (a full disk)
+    raises and leaves no temporary file behind."""
     tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-    tmp.write_text(json.dumps(doc))
-    os.replace(tmp, path)
+    try:
+        tmp.write_text(json.dumps(doc))
+        os.replace(tmp, path)
+    except OSError:
+        with contextlib.suppress(OSError):
+            tmp.unlink(missing_ok=True)
+        raise
+
+
+def _written(path: Path) -> float | None:
+    """When a file was last written, if it exists."""
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return None
 
 
 # ---- the provider circuit breaker --------------------------------------------
@@ -391,24 +425,38 @@ def _iso(t: float) -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
 
 
-def read_breaker(state: Path, now: float) -> dict:
-    """The breaker record in the state directory: {"state": "closed", "fails": n}
-    (n transient failures in a row) or {"state": "open", "kind", "reason",
-    "since" (the model's last answer, or when it opened), "until", "backoff",
-    "probe_until"}. Missing or unreadable is closed. An open breaker whose
-    times lie further ahead than any backoff could put them (a clock set back,
-    a hand edit) is due at once, so nothing can keep it shut for good."""
+def _past(v, now: float) -> float | None:
+    """A time from the breaker record, no later than now (a clock set back), or None."""
+    v = _number(v)
+    return None if v is None or v < 0 else min(v, now)
+
+
+def read_breaker(state: Path, now: float, legacy: float | None = None) -> dict:
+    """The breaker record in the state directory: {"state": "closed", "fails": n,
+    "since"} (n transient failures in a row, the first of them at `since`) or
+    {"state": "open", "kind", "reason", "since" (when this run of failures
+    began), "until", "backoff", "probe_until"}, each with "answered": when the
+    model last answered, or None. A record that has never said (none yet, or
+    one from before it kept the time) takes `legacy`. Missing or unreadable
+    is closed, and a value that is not a sane number reads as its default.
+    An open breaker whose times lie further ahead than any backoff could put
+    them (a clock set back, a hand edit) is due at once, so nothing can keep
+    it shut for good."""
     try:
         doc = json.loads((Path(state) / "breaker.json").read_text())
     except (OSError, ValueError):
         doc = None
-    if not isinstance(doc, dict) or doc.get("state") != "open":
-        fails = doc.get("fails") if isinstance(doc, dict) else 0
-        return {"state": "closed", "fails": fails if type(fails) is int and fails > 0 else 0}
+    doc = doc if isinstance(doc, dict) else {}
+    answered = _past(doc.get("answered"), now) if "answered" in doc else legacy
+    if doc.get("state") != "open":
+        fails = doc.get("fails")
+        fails = fails if type(fails) is int and fails > 0 else 0
+        return {"state": "closed", "fails": fails, "since": _past(doc.get("since"), now) if fails else None,
+                "answered": answered}
 
     def num(key, default=0.0):
-        v = doc.get(key)
-        return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else default
+        v = _number(doc.get(key))
+        return default if v is None else v
     until, probe = num("until"), num("probe_until")
     if until - now > AUTH_BACKOFF_MAX:
         until = now
@@ -416,8 +464,9 @@ def read_breaker(state: Path, now: float) -> dict:
         probe = 0.0
     kind = doc.get("kind") if doc.get("kind") in ("auth", "transient") else "transient"
     reason = doc.get("reason") if isinstance(doc.get("reason"), str) and doc.get("reason") else "provider failure"
-    return {"state": "open", "kind": kind, "reason": reason[:120], "since": min(num("since", now), now),
-            "until": until, "backoff": num("backoff", TRANSIENT_BACKOFF), "probe_until": probe}
+    since = _past(doc.get("since"), now)
+    return {"state": "open", "kind": kind, "reason": reason[:120], "since": now if since is None else since,
+            "until": until, "backoff": num("backoff", TRANSIENT_BACKOFF), "probe_until": probe, "answered": answered}
 
 
 class Breaker:
@@ -428,17 +477,27 @@ class Breaker:
     open: no request until `until`. Then the first process to come claims the
     probe (half-open) for its request's time; its answer closes the breaker,
     its failure opens it again for twice as long. Each update re-reads the
-    file, so overlapping processes lose little."""
+    file, so overlapping processes lose little. Saving is best effort: a
+    record that cannot be written only means the breaker cannot open, and
+    the log line says so."""
 
     def __init__(self, state: Path, clock=time.time):
         self.state, self.clock = Path(state), clock
         self.probing = False
+        # Before breaker.json kept the model's last answer, the last write of
+        # spend.json was it: read before this process writes spend.json itself.
+        self.legacy = _written(self.state / "spend.json")
 
     def read(self) -> dict:
-        return read_breaker(self.state, self.clock())
+        return read_breaker(self.state, self.clock(), self.legacy)
 
-    def _save(self, doc: dict):
-        _write_json(self.state / "breaker.json", doc)
+    def _save(self, doc: dict) -> str | None:
+        """None once the record is written, else why not, for the log line."""
+        try:
+            _write_json(self.state / "breaker.json", doc)
+        except OSError as exc:
+            return f"breaker state not saved: {type(exc).__name__}: {str(exc)[:120]}"
+        return None
 
     def admit(self, hold: float) -> str | None:
         """None if this process may ask the provider now (claiming the probe of
@@ -450,25 +509,27 @@ class Breaker:
             return f"breaker open until {_when(b['until'], now)}: {b['reason']}"
         if now < b["probe_until"]:
             return f"breaker open, another decision is probing: {b['reason']}"
-        self._save({**b, "probe_until": now + hold})
+        unsaved = self._save({**b, "probe_until": now + hold})
+        if unsaved:                         # the probe goes out unclaimed: another decision may probe too
+            print(unsaved, file=sys.stderr)
         self.probing = True
         return None
 
     def success(self) -> str | None:
-        """The provider answered. Returns the log line when that closed the breaker."""
+        """The provider answered: the breaker closes and keeps the time.
+        Returns the log line when that closed an open breaker, or when the
+        record could not be saved."""
         now, b = self.clock(), self.read()
-        if b["state"] == "closed" and not b["fails"]:
-            return None
-        self._save({"state": "closed", "fails": 0})
+        unsaved = self._save({"state": "closed", "fails": 0, "answered": now})
         self.probing = False
-        if b["state"] != "open":
-            return None
+        if unsaved or b["state"] != "open":
+            return unsaved
         return (f"breaker closed: the model answered again after {_span(now - b['since'])} "
                 f"(offline since {_when(b['since'], now)}: {b['reason']})")
 
     def failure(self, err: ProviderError) -> str:
         """A request failed. Returns the fallback reason, which says when the
-        breaker opened and until when."""
+        breaker opened and until when, or that it could not be saved."""
         now, b = self.clock(), self.read()
         first = {"auth": AUTH_BACKOFF, "transient": TRANSIENT_BACKOFF}[err.kind]
         most = {"auth": AUTH_BACKOFF_MAX, "transient": TRANSIENT_BACKOFF_MAX}[err.kind]
@@ -477,19 +538,22 @@ class Breaker:
                 return f"{err}; breaker already open"
             self.probing = False
             backoff = min(most, 2 * b["backoff"]) if b["kind"] == err.kind else first
-            self._save({**b, "kind": err.kind, "reason": err.reason, "until": now + backoff, "backoff": backoff,
-                        "probe_until": 0})
-            return f"probe failed, {err}; breaker open, no model calls until {_when(now + backoff, now)}"
-        fails = b["fails"] + 1
-        if err.kind == "auth" or fails >= TRIP_AFTER:
-            last = _last_answer(self.state)          # offline since the model last answered, when known
-            self._save({"state": "open", "kind": err.kind, "reason": err.reason,
-                        "since": min(now, last) if last is not None else now,
-                        "until": now + first, "backoff": first, "probe_until": 0})
-            return (f"{err}; {f'{fails} failures in a row, ' if err.kind != 'auth' else ''}breaker open, "
-                    f"no model calls until {_when(now + first, now)}")
-        self._save({"state": "closed", "fails": fails})
-        return str(err)
+            doc = {**b, "kind": err.kind, "reason": err.reason, "until": now + backoff, "backoff": backoff,
+                   "probe_until": 0}
+            told = f"probe failed, {err}; breaker open, no model calls until {_when(now + backoff, now)}"
+        else:
+            # Offline since the first failure of this run, not since the model's
+            # last answer: a fighter can sit idle for hours between the two.
+            fails, since = b["fails"] + 1, now if b["since"] is None else b["since"]
+            if err.kind == "auth" or fails >= TRIP_AFTER:
+                doc = {"state": "open", "kind": err.kind, "reason": err.reason, "since": since,
+                       "until": now + first, "backoff": first, "probe_until": 0, "answered": b["answered"]}
+                told = (f"{err}; {f'{fails} failures in a row, ' if err.kind != 'auth' else ''}breaker open, "
+                        f"no model calls until {_when(now + first, now)}")
+            else:
+                doc, told = {"state": "closed", "fails": fails, "since": since, "answered": b["answered"]}, str(err)
+        unsaved = self._save(doc)
+        return told if unsaved is None else f"{err}; {unsaved}"
 
 
 # ---- what the arena reads: this planner's status -------------------------------
@@ -499,18 +563,12 @@ def api_key(env=None) -> str | None:
     return env.get("OPEN_ROUTER_API_KEY") or env.get("OPENROUTER_API_KEY")
 
 
-def _last_answer(state: Path) -> float | None:
-    """When the model last answered: every answer adds its cost to spend.json."""
-    try:
-        return (Path(state) / "spend.json").stat().st_mtime
-    except OSError:
-        return None
-
-
 def _spent(state: Path, now: float) -> tuple[float, float | None]:
-    """USD spent on the UTC day of `now`, and when the model last answered."""
-    at = _last_answer(state)
-    usd = _spend_doc(Path(state) / "spend.json").get(_day(now), 0.0) if at is not None else 0.0
+    """USD spent on the UTC day of `now`, and when spend.json was last written
+    (once the day's cap is reached, nothing is spent, so: when it was reached)."""
+    path = Path(state) / "spend.json"
+    at = _written(path)
+    usd = _spend_doc(path).get(_day(now), 0.0) if at is not None else 0.0
     return usd, at
 
 
@@ -533,20 +591,20 @@ def blocked(state: Path, daily_usd: float, now: float | None = None, env=None) -
 def status(state: Path, daily_usd: float, now: float | None = None, env=None) -> dict:
     """What chooses this fighter's plans now, for the public export (index.json
     deployment.fighters[id].driver_status): {"state": "ok"} while the model is
-    asked, else {"state": "fallback", "reason", "since", "retry_at", "plays"}:
-    why, since when (the model's last answer, or when the breaker opened) and
-    when the model is next asked (ISO-8601 UTC, each when known), and the
-    policy that plays meanwhile."""
+    asked, else {"state": "fallback", "reason", "since", "last_answer",
+    "retry_at", "plays"}: why; since when (the first failure of this outage,
+    or when the day's budget ran out); when the model last answered (an open
+    breaker, no key); when it is next asked (times ISO-8601 UTC, each only
+    when known); and the policy that plays meanwhile."""
     now = time.time() if now is None else now
-    if not api_key(env):
-        last = _last_answer(state)
-        return {"state": "fallback", "reason": "no model API key configured",
-                **({"since": _iso(last)} if last is not None else {}), "plays": FALLBACK_POLICY}
-    b = read_breaker(state, now)
-    if b["state"] == "open":
-        return {"state": "fallback", "reason": b["reason"], "since": _iso(b["since"]),
-                **({"retry_at": _iso(b["until"])} if b["until"] > now else {}), "plays": FALLBACK_POLICY}
     usd, at = _spent(state, now)
+    b = read_breaker(state, now, legacy=at)
+    last = {"last_answer": _iso(b["answered"])} if b["answered"] is not None else {}
+    if not api_key(env):
+        return {"state": "fallback", "reason": "no model API key configured", **last, "plays": FALLBACK_POLICY}
+    if b["state"] == "open":
+        return {"state": "fallback", "reason": b["reason"], "since": _iso(b["since"]), **last,
+                **({"retry_at": _iso(b["until"])} if b["until"] > now else {}), "plays": FALLBACK_POLICY}
     if usd >= daily_usd:
         midnight = dt.datetime.fromisoformat(_day(now)).replace(tzinfo=dt.timezone.utc) + dt.timedelta(days=1)
         return {"state": "fallback", "reason": f"daily budget spent (${daily_usd:.2f})",
@@ -587,11 +645,11 @@ def request_body(model: str, obs: dict, prompt: Path = PROMPT, reasoning: str = 
 
 def ask(model: str, obs: dict, timeout: float, spend: "Spend", prompt: Path = PROMPT, reasoning: str = "low",
         max_tokens: int = 1200, breaker: "Breaker | None" = None) -> dict:
-    """One model call. Its cost is recorded even when the reply is unusable.
-    The plan is checked against this fighter's state before it is returned.
-    A request that gets no completion raises ProviderError; one that does
-    tells the breaker, if any (an unusable reply is the model's fault, not
-    the provider's)."""
+    """One model call. Its cost is recorded even when the reply is unusable,
+    or a billed reply carries no completion at all. The plan is checked
+    against this fighter's state before it is returned. A request that gets
+    no completion raises ProviderError; one that does tells the breaker, if
+    any (an unusable reply is the model's fault, not the provider's)."""
     key = api_key()
     if not key:
         raise planner.PlannerError("NOT_STARTED", "no OpenRouter key in the environment")
@@ -608,15 +666,18 @@ def ask(model: str, obs: dict, timeout: float, spend: "Spend", prompt: Path = PR
                 doc = json.loads(resp.read())
         except Exception as exc:            # whatever the request raised is the provider's failure
             raise provider_error(exc) from None
+        usage = doc.get("usage") if isinstance(doc, dict) else None
+        usage = usage if isinstance(usage, dict) else {}
+        cost = _number(usage.get("cost")) or 0.0
         if not isinstance(doc, dict) or not doc.get("choices"):
+            if cost > 0:                    # billed all the same: it counts toward the day's cap
+                spend.add(cost)
             raise _body_error(doc)
-        if breaker is not None:
-            closed = breaker.success()
-            if closed:
-                print(closed, file=sys.stderr)
-        usage = doc.get("usage") or {}
-        cost = float(usage.get("cost") or 0.0)
         spend.add(cost)
+        if breaker is not None:
+            said = breaker.success()
+            if said:
+                print(said, file=sys.stderr)
         cached = (usage.get("prompt_tokens_details") or {}).get("cached_tokens")
         choice = doc["choices"][0]
         print(f"{model}: ${cost:.5f} (today ${spend.today:.4f}); tokens in {usage.get('prompt_tokens')}"
@@ -650,20 +711,28 @@ def legal(obs: dict, plan) -> dict:
 
 def decide(obs: dict, model: str, state: Path, daily_usd: float = 1.0, timeout: float = 20.0, prompt: Path = PROMPT,
            reasoning: str = "low", max_tokens: int = 1200, clock=time.time) -> dict:
-    """One decision: the model's checked plan, or the fallback with the reason on stderr."""
-    state.mkdir(parents=True, exist_ok=True)
+    """One decision: the model's checked plan, or the fallback with the reason
+    on stderr. The planner's own files never stop it (module docstring)."""
+    try:
+        state.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:              # nowhere to keep the day's spend: no paid request
+        return _fallback(obs, f"state directory unusable: {type(exc).__name__}: {str(exc)[:120]}")
     spend, breaker = Spend(state, clock), Breaker(state, clock)
     if spend.today >= daily_usd:
         return _fallback(obs, f"daily cap ${daily_usd:.2f} reached")
-    shut = breaker.admit(timeout + PROBE_MARGIN)
-    if shut is not None:
-        return _fallback(obs, shut, quiet=True)
     try:
-        return ask(model, obs, timeout, spend, prompt_for(prompt, obs), reasoning, max_tokens, breaker)
+        shut = breaker.admit(timeout + PROBE_MARGIN)
+        if shut is None:
+            return ask(model, obs, timeout, spend, prompt_for(prompt, obs), reasoning, max_tokens, breaker)
     except ProviderError as exc:        # no completion: the breaker counts it
-        return _fallback(obs, breaker.failure(exc))
+        try:
+            why = breaker.failure(exc)
+        except Exception as bad:        # the breaker's own trouble never costs the fallback
+            why = f"{exc}; breaker not updated: {type(bad).__name__}: {str(bad)[:120]}"
+        return _fallback(obs, why)
     except Exception as exc:            # any other model or parse failure: play the local policy
         return _fallback(obs, f"{type(exc).__name__}: {str(exc)[:160]}")
+    return _fallback(obs, shut, quiet=True)
 
 
 def main():
