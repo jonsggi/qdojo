@@ -2876,6 +2876,7 @@ inline Res op_cup_check_in(State& s, Host& h, const Id& inv, Reader r, int64_t a
 
 #undef QD_TRY
 
+// sync:begin dispatch (check_sync.py: a case for every opcode)
 inline Res run_handler(State& s, Host& h, const Id& inv, const Frame& fr, int64_t amount, uint64_t t) {
     Reader r{fr.body, 0};
     switch (fr.op) {
@@ -2907,6 +2908,7 @@ inline Res run_handler(State& s, Host& h, const Id& inv, const Frame& fr, int64_
         default: return rej(BAD_OPCODE);
     }
 }
+// sync:end dispatch
 
 // protocol.md section 5: ensure_service(T). Returns false if ticks run backwards.
 inline bool ensure_service(State& s, uint64_t t) {

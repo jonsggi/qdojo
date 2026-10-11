@@ -11,9 +11,11 @@ is compared with it:
   1. opcodes      codec.Op + codec.BODIES  vs  docs/protocol.md §3 table, the
                   C++ port (contracts/combat_contract/combat_contract.h) and
                   contracts/qubic/QDOJO.h: numbers, names, field names and
-                  widths (the doc), body lengths (both C++ files), a handler
-                  wired for each opcode, the admin range in protocol.md;
-                  "Name (opcode N)" mentions anywhere in the active docs
+                  widths (the doc), body lengths (both C++ files), a case for
+                  each opcode in the dispatch switch (both C++ files; QDOJO.h
+                  dispatches Withdraw from Dispatch), the admin range in
+                  protocol.md; "Name (opcode N)" mentions and "admin opcodes
+                  N–M" ranges anywhere in the active docs
   2. event types  contract.EVENT_TYPES  vs  docs/protocol.md §6 table and both
                   C++ files (numbers, names, an emit site for each)
   3. result codes codec.Code  vs  docs/protocol.md §6 table and both C++ files
@@ -35,7 +37,8 @@ is compared with it:
 
 C++ is read with simple regexes over regions marked `// sync:begin NAME` ...
 `// sync:end NAME`; Markdown tables are marked `<!-- sync:begin NAME -->` ...
-`<!-- sync:end NAME -->`. Each error names the file, the table and the value.
+`<!-- sync:end NAME -->`. A number listed twice in any numbered table is an
+error. Each error names the file, the table and the value.
 """
 from __future__ import annotations
 
@@ -138,13 +141,13 @@ def check_opcodes():
     ref_len = {k: sum(w for _, w in v) for k, v in widths.items()}
 
     # protocol.md §3: | opcode | CamelName | body |
-    doc, rows = {}, table_rows(region(PROTOCOL, "opcodes"))
+    pairs, rows = [], table_rows(region(PROTOCOL, "opcodes"))
     for r in rows:
         if len(r) != 3 or not r[0].isdigit():
             fail(f"{PROTOCOL} opcodes table", f"unexpected row {r}")
             continue
         num = int(r[0])
-        doc[num] = snake(r[1])
+        pairs.append((snake(r[1]), r[0]))
         fields = []
         if r[2] != "empty":
             for part in (p.strip() for p in r[2].split(",")):
@@ -156,24 +159,27 @@ def check_opcodes():
                 fields.append((m.group(1), size))
         if num in widths and fields != widths[num]:
             fail(f"{PROTOCOL} opcodes table", f"opcode {num} {r[1]} body is {fields}, codec.BODIES says {widths[num]}")
-    compare("opcode", ref, f"{PROTOCOL} opcodes table", doc, "codec.Op")
+    compare("opcode", ref, f"{PROTOCOL} opcodes table", numbered(f"{PROTOCOL} opcodes table", pairs), "codec.Op")
 
-    # Both C++ files: the numbers, the body lengths, a handler for each.
+    # Both C++ files: the numbers, the body lengths, a case in the dispatch switch for each.
+    # QDOJO.h dispatches Withdraw, which needs a transfer, from Dispatch (its withdraw-dispatch region).
     for rel, prefix in ((PORT, "OP_"), (QDOJO, "QDOJO_OP_")):
         got = numbered(rel, re.findall(r"\b" + prefix + r"([A-Z_]+)\s*=\s*(\d+)", region(rel, "opcodes")))
         compare("opcode", ref, f"{rel} opcodes", got, "codec.Op")
         lens = {name: cpp_sum(expr) for name, expr in
                 re.findall(r"case\s+" + prefix + r"([A-Z_]+):\s*return\s+([\d\s+]+);", region(rel, "body-lengths"))}
-        src = text(rel)
+        cases = set(re.findall(r"\bcase\s+" + prefix + r"([A-Z_]+)\s*:", region(rel, "dispatch")))
+        if rel == QDOJO and re.search(r"\bc\.fr_op\s*==\s*QDOJO_OP_WITHDRAW\b", region(rel, "withdraw-dispatch")):
+            cases.add("WITHDRAW")
         for num, name in ref.items():
             if name not in lens:
                 fail(f"{rel} body-lengths", f"no body length for opcode {num} {name}")
             elif lens[name] != ref_len[num]:
                 fail(f"{rel} body-lengths", f"opcode {num} {name} body is {lens[name]} bytes, codec.BODIES says "
                                             f"{ref_len[num]}")
-            rest = src.replace(region(rel, "opcodes"), "").replace(region(rel, "body-lengths"), "")
-            if not re.search(r"\b" + prefix + name + r"\b", rest):
-                fail(rel, f"opcode {num} {name} has a body length but no handler (dispatch never names it)")
+            if name not in cases:
+                also = ", no Withdraw branch in Dispatch" if (rel, name) == (QDOJO, "WITHDRAW") else ""
+                fail(f"{rel} dispatch", f"opcode {num} {name} has no handler (no 'case {prefix}{name}:'{also})")
 
     # Frame constants.
     for rel, names in ((PORT, ("FRAME_LEN", "FRAME_HEADER", "FRAME_SENTINEL")),
@@ -195,11 +201,13 @@ def check_opcodes():
     if not m or (int(m.group(1)), int(m.group(2))) != (admin[0], admin[-1]):
         fail(f"{PROTOCOL} §3", f"states admin opcodes {m.groups() if m else 'nowhere'}, codec has {admin[0]}–{admin[-1]}")
 
-    # "AdminBindAsset (103)", "AdminMirrorOwner (opcode 104)", "opcode 104 AdminMirrorOwner" anywhere.
+    # "AdminBindAsset (103)", "AdminMirrorOwner (opcode 104)", "opcode 104 AdminMirrorOwner" and
+    # "admin opcodes 100–104" anywhere.
     camel = {"".join(w.capitalize() for w in name.split("_")): num for num, name in ref.items()}
     names = "|".join(sorted(camel, key=len, reverse=True))
     pat_a = re.compile(r"\b(" + names + r")\s*\((?:opcode\s*)?(\d{1,3})\)")
     pat_b = re.compile(r"\bopcode\s+(\d{1,3}),?\s*\(?`?(" + names + r")\b")
+    pat_admin = re.compile(r"\badmin opcodes (\d+)\s*[–-]\s*(\d+)", re.I)
     for rel in active_docs():
         body = flat(text(rel))
         for name, num in pat_a.findall(body):
@@ -208,6 +216,9 @@ def check_opcodes():
         for num, name in pat_b.findall(body):
             if int(num) != camel[name]:
                 fail(rel, f"says opcode {num} {name}; codec.Op has {name} = {camel[name]}")
+        for lo, hi in pat_admin.findall(body):
+            if (int(lo), int(hi)) != (admin[0], admin[-1]):
+                fail(rel, f"says admin opcodes {lo}–{hi}; codec has {admin[0]}–{admin[-1]}")
 
 
 def active_docs() -> list[str]:
@@ -221,13 +232,14 @@ def active_docs() -> list[str]:
 def check_events():
     from qdojo.combat import contract
     ref = {num: name for name, num in contract.EVENT_TYPES.items()}
-    doc = {}
+    pairs = []
     for r in table_rows(region(PROTOCOL, "event-types")):
         if len(r) < 2 or not r[0].isdigit():
             fail(f"{PROTOCOL} event-types table", f"unexpected row {r}")
             continue
-        doc[int(r[0])] = r[1].strip("`")
-    compare("event type", ref, f"{PROTOCOL} event-types table", doc, "contract.EVENT_TYPES")
+        pairs.append((r[1].strip("`"), r[0]))
+    compare("event type", ref, f"{PROTOCOL} event-types table", numbered(f"{PROTOCOL} event-types table", pairs),
+            "contract.EVENT_TYPES")
     py = text("packages/qdojo/src/qdojo/combat/contract.py")
     for rel, prefix, emit in ((PORT, "EV_", r"emit\(s,\s*EV_{}\b"), (QDOJO, "QDOJO_EV_", r"emit\(s,\s*c,\s*QDOJO_EV_{}\b")):
         got = numbered(rel, re.findall(r"\b" + prefix + r"([A-Z_]+)\s*=\s*(\d+)", region(rel, "event-types")))
@@ -246,13 +258,14 @@ def check_events():
 def check_codes():
     from qdojo.combat import codec
     ref = {int(c): c.name for c in codec.Code}
-    doc = {}
+    pairs = []
     for r in table_rows(region(PROTOCOL, "result-codes")):
         if len(r) < 2 or not r[0].isdigit():
             fail(f"{PROTOCOL} result-codes table", f"unexpected row {r}")
             continue
-        doc[int(r[0])] = r[1].strip("`")
-    compare("result code", ref, f"{PROTOCOL} result-codes table", doc, "codec.Code")
+        pairs.append((r[1].strip("`"), r[0]))
+    compare("result code", ref, f"{PROTOCOL} result-codes table", numbered(f"{PROTOCOL} result-codes table", pairs),
+            "codec.Code")
     for rel, pat in ((PORT, r"\b([A-Z_]+)\s*=\s*(\d+)"), (QDOJO, r"\bQDOJO_([A-Z_]+)\s*=\s*(\d+)")):
         got = numbered(rel, re.findall(pat, region(rel, "result-codes")))
         if got.pop(255, None) != "HOST_ERROR":
@@ -265,22 +278,22 @@ def check_codes():
 def check_abi():
     from qdojo.combat import join
     src = text(QDOJO)
-    procs = {int(n): name for name, n in re.findall(r"REGISTER_USER_PROCEDURE\((\w+),\s*(\d+)\)", src)}
-    funcs = {int(n): name for name, n in re.findall(r"REGISTER_USER_FUNCTION\((\w+),\s*(\d+)\)", src)}
+    procs = numbered(f"{QDOJO} REGISTER_USER_PROCEDURE", re.findall(r"REGISTER_USER_PROCEDURE\((\w+),\s*(\d+)\)", src))
+    funcs = numbered(f"{QDOJO} REGISTER_USER_FUNCTION", re.findall(r"REGISTER_USER_FUNCTION\((\w+),\s*(\d+)\)", src))
     if not procs or not funcs:
         fail(QDOJO, "no REGISTER_USER_PROCEDURE / REGISTER_USER_FUNCTION lines found")
-    doc_p, doc_f = {}, {}
+    pairs = {"procedure": [], "function": []}
     for r in table_rows(region(PROTOCOL, "abi")):
         if len(r) < 3 or not r[1].isdigit() or r[0] not in ("procedure", "function"):
             fail(f"{PROTOCOL} abi table", f"unexpected row {r}")
             continue
-        (doc_p if r[0] == "procedure" else doc_f)[int(r[1])] = r[2].strip("`")
-    compare("user procedure", procs, f"{PROTOCOL} abi table", doc_p, QDOJO)
-    compare("user function", funcs, f"{PROTOCOL} abi table", doc_f, QDOJO)
-    readme = {}
-    for r in table_rows(region(README, "abi")):
-        if r and r[0].isdigit():
-            readme[int(r[0])] = r[1].strip("`")
+        pairs[r[0]].append((r[2].strip("`"), r[1]))
+    compare("user procedure", procs, f"{PROTOCOL} abi table", numbered(f"{PROTOCOL} abi table", pairs["procedure"]),
+            QDOJO)
+    compare("user function", funcs, f"{PROTOCOL} abi table", numbered(f"{PROTOCOL} abi table", pairs["function"]),
+            QDOJO)
+    readme = numbered(f"{README} queries table",
+                      [(r[1].strip("`"), r[0]) for r in table_rows(region(README, "abi")) if r and r[0].isdigit()])
     compare("query function", funcs, f"{README} queries table", readme, QDOJO)
     m = re.search(r"`Dispatch` is user procedure (\d+)", flat(text(README)))
     if not m or procs.get(int(m.group(1))) != "Dispatch":

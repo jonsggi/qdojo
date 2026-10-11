@@ -5594,6 +5594,7 @@ struct QDOJO : public ContractBase
     }
 
     // Every handler except Withdraw (which needs a transfer, see Dispatch).
+    // sync:begin dispatch (check_sync.py: a case for every opcode but Withdraw, see withdraw-dispatch)
     static void runHandler(StateData& s, Ctx& c, const id& inv, const Array<uint8, 512>& fr, uint16 op, sint64 amount,
         uint64 t, Res& r)
     {
@@ -5673,6 +5674,7 @@ struct QDOJO : public ContractBase
             break;
         }
     }
+    // sync:end dispatch
 
     // protocol.md section 5: ensure_service(T). Returns false if ticks run backwards.
     static bit ensureService(StateData& s, Ctx& c, uint64 t)
@@ -5820,6 +5822,7 @@ struct QDOJO : public ContractBase
                 return;
             }
         }
+        // sync:begin withdraw-dispatch (check_sync.py: Withdraw's handler)
         if (c.fr_op == QDOJO_OP_WITHDRAW)
         {
             withdrawBegin(s, c, inv, amount, c.dp_r);
@@ -5833,6 +5836,7 @@ struct QDOJO : public ContractBase
         {
             runHandler(s, c, inv, fr, c.fr_op, amount, t, c.dp_r);
         }
+        // sync:end withdraw-dispatch
         dispatchFinish(s, c, inv, amount, out);
     }
 
