@@ -2,9 +2,24 @@
 
 test_in_sync runs the whole check. The mutation tests edit one copy in memory
 and require the check to name exactly that drift, so a check that silently
-stops looking fails here.
+stops looking fails here. Every comparison has a row for each copy it reads;
+every numbered table has a row that repeats a number; an extra entry and a
+renamed entry have rows; every read of C++ code has a row in which a comment
+or an #if 0 block hides the code or shadows it with a stale value; a marked
+C++ region kept in a comment or an #if 0 block above a live copy has rows (a
+marked live copy is read, an unmarked one is no marked region); a function
+the contract calls, read from its marked region, has rows in which it is
+renamed in the markers beside a live copy (below them, unmarked, or between
+them), defined twice or never called; and the compiled ruleset region has a
+row in which an #if 0 block's own #else holds the live code. The other guards
+for input the check cannot parse (an unexpected row or field, a table or
+statement not found, a stand-alone compile that fails) have none, nor do the
+checks of rules.KNOWN against rules.py and RULESET_FILES, which read no copy;
+ruleset.js, which node loads from disk, is compared with the JSON files by
+apps/web/tests/combat-app.test.cjs.
 """
 import importlib.util
+import re
 from pathlib import Path
 
 import pytest
@@ -41,7 +56,34 @@ def test_in_sync():
     assert sync.main() == 0, "\n".join(sync.errors)
 
 
+def shadowed(rel, name, off, on, old, new, marked=False):
+    """An edit that keeps the marked region NAME of REL, markers and all, between OFF and ON (a comment or an
+    #if 0 block) and puts a live copy below it in which OLD is NEW, with the markers if MARKED."""
+    m = re.search(r"[^\n]*sync:begin " + name + r"\b[^\n]*\n(.*?\n)[^\n]*sync:end " + name + r"\n", sync.text(rel),
+                  re.S)
+    assert old in m[1], (rel, old)
+    return rel, m[0], off + m[0] + on + (m[0] if marked else m[1]).replace(old, new, 1)
+
+
+def renamed(rel, name, fn, old, new, inside=False):
+    """An edit that renames the function FN of the marked region NAME of REL to FN + "Old", markers kept, and adds
+    a live copy of FN in which OLD is NEW: below the end marker, or between the markers above the renamed copy if
+    INSIDE."""
+    m = re.search(r"([^\n]*sync:begin " + name + r"\b[^\n]*\n)(.*?\n)([^\n]*sync:end " + name + r"\n)",
+                  sync.text(rel), re.S)
+    assert fn + "(" in m[2] and old in m[2], (rel, old)
+    stale, live = m[2].replace(fn + "(", fn + "Old(", 1), m[2].replace(old, new, 1)
+    return rel, m[0], m[1] + live + stale + m[3] if inside else m[1] + stale + m[3] + live
+
+
+PORT_README, CONTRACT_PY = "contracts/combat_contract/README.md", "packages/qdojo/src/qdojo/combat/contract.py"
+PORT_REVEAL = "        case OP_REVEAL: return op_reveal(s, inv, r, amount, t);\n"
+QDOJO_REVEAL = "        case QDOJO_OP_REVEAL:\n            opReveal(s, c, inv, fr, amount, t, r);\n            break;\n"
+RUN_HANDLER = "runHandler(s, c, inv, fr, c.fr_op, amount, t, c.dp_r);"
+REVEAL_LEN = "OP_REVEAL: return 8 + 1 + 32 + 4 + 32 + 32 + 7;"
+HP_OF = "    static uint16 hpOf(uint8 rs)\n    {\n        return rs == QDOJO_RS_C1 ? 100 : 120;\n    }\n"
 MUTATIONS = [
+    # 1. opcodes
     (sync.check_opcodes, (sync.PROTOCOL, "| 104 | AdminMirrorOwner |", "| 105 | AdminMirrorOwner |"),
      "opcode 104 ADMIN_MIRROR_OWNER is missing"),
     (sync.check_opcodes, (sync.PROTOCOL, "source_id u64, owner[32], mirror_seq u64 |", "source_id u64, owner[32] |"),
@@ -52,34 +94,270 @@ MUTATIONS = [
      "contracts/qubic/QDOJO.h opcodes: opcode 104 ADMIN_MIRROR_OWNER is missing"),
     (sync.check_opcodes, ("docs/nft.md", "**AdminMirrorOwner (opcode 104)**", "**AdminMirrorOwner (opcode 105)**"),
      "says AdminMirrorOwner (105)"),
+    (sync.check_opcodes, (sync.PROTOCOL, "| 4 | QueueCancel |",
+                          "| 4 | QueueCancelOld | offer_id u64 |\n| 4 | QueueCancel |"),
+     "opcodes table: number 4 appears twice (QUEUE_CANCEL_OLD, QUEUE_CANCEL)"),
+    (sync.check_opcodes, (sync.PROTOCOL, "| 104 | AdminMirrorOwner |",
+                          "| 105 | AdminFoo | empty |\n| 104 | AdminMirrorOwner |"),
+     "opcodes table: opcode 105 ADMIN_FOO is not in codec.Op"),
+    (sync.check_opcodes, (sync.PORT, "OP_ADMIN_MIRROR_OWNER = 104", "OP_ADMIN_MIRROR_OWNER = 105"),
+     "combat_contract.h opcodes: opcode 104 ADMIN_MIRROR_OWNER is missing"),
+    (sync.check_opcodes, (sync.PORT, "OP_ADMIN_MIRROR_OWNER = 104,",
+                          "OP_ADMIN_MIRROR_OWNER = 104, OP_ADMIN_FOO = 105,"),
+     "combat_contract.h opcodes: opcode 105 ADMIN_FOO is not in codec.Op"),
+    (sync.check_opcodes, (sync.PORT, "OP_REVEAL = 8,", "OP_REVEAL_OLD = 8, OP_REVEAL = 8,"),
+     "combat_contract.h opcodes: number 8 appears twice (REVEAL_OLD, REVEAL)"),
+    (sync.check_opcodes, (sync.QDOJO, "constexpr uint16 QDOJO_OP_REVEAL = 8;",
+                          "constexpr uint16 QDOJO_OP_REVEAL_OLD = 8;\nconstexpr uint16 QDOJO_OP_REVEAL = 8;"),
+     "QDOJO.h opcodes: number 8 appears twice (REVEAL_OLD, REVEAL)"),
+    (sync.check_opcodes, (sync.QDOJO, "case QDOJO_OP_ADMIN_MIRROR_OWNER: return 32 + 4 + 1 + 4 + 8 + 32 + 8;",
+                          "case QDOJO_OP_ADMIN_MIRROR_OWNER: return 32 + 4 + 1 + 4 + 8 + 32;"),
+     "QDOJO.h body-lengths: opcode 104 ADMIN_MIRROR_OWNER body is 81 bytes"),
+    (sync.check_opcodes, (sync.PORT, "        case OP_WITHDRAW: return 0;\n", ""),
+     "combat_contract.h body-lengths: no body length for opcode 10 WITHDRAW"),
+    (sync.check_opcodes, (sync.QDOJO, "        case QDOJO_OP_WITHDRAW: return 0;\n", ""),
+     "QDOJO.h body-lengths: no body length for opcode 10 WITHDRAW"),
+    (sync.check_opcodes, (sync.PORT, PORT_REVEAL, ""), "combat_contract.h dispatch: opcode 8 REVEAL has no handler"),
+    (sync.check_opcodes, (sync.QDOJO, QDOJO_REVEAL, ""), "QDOJO.h dispatch: opcode 8 REVEAL has no handler"),
+    (sync.check_opcodes, (sync.QDOJO, "if (c.fr_op == QDOJO_OP_WITHDRAW)", "if (c.fr_op == QDOJO_OP_CUP_WITHDRAW)"),
+     "QDOJO.h dispatch: opcode 10 WITHDRAW has no handler"),
+    (sync.check_opcodes, (sync.QDOJO, RUN_HANDLER, ""), "QDOJO.h withdraw-dispatch: Dispatch never calls runHandler"),
+    # a handler commented out or in #if 0 is no handler
+    (sync.check_opcodes, (sync.QDOJO, "        case QDOJO_OP_ADVANCE:\n            opAdvance(s, c, fr, amount, t, r);\n"
+                                      "            break;\n",
+                          "        // case QDOJO_OP_ADVANCE:\n        //     opAdvance(s, c, fr, amount, t, r);\n"
+                          "        //     break;\n"),
+     "QDOJO.h dispatch: opcode 9 ADVANCE has no handler"),
+    (sync.check_opcodes, (sync.PORT, "        case OP_ADVANCE: return op_advance(s, r, amount, t);\n",
+                          "#if 0\n        case OP_ADVANCE: return op_advance(s, r, amount, t);\n#endif\n"),
+     "combat_contract.h dispatch: opcode 9 ADVANCE has no handler"),
+    (sync.check_opcodes, (sync.QDOJO, "if (c.fr_op == QDOJO_OP_WITHDRAW)",
+                          "if (false /* c.fr_op == QDOJO_OP_WITHDRAW */)"),
+     "QDOJO.h dispatch: opcode 10 WITHDRAW has no handler"),
+    (sync.check_opcodes, (sync.QDOJO, RUN_HANDLER, "// " + RUN_HANDLER),
+     "QDOJO.h withdraw-dispatch: Dispatch never calls runHandler"),
+    # a marked region kept in a comment or an #if 0 block is no region: the live copy below it is read, if marked
+    (sync.check_opcodes, shadowed(sync.QDOJO, "dispatch", "    /* the old runHandler\n", "    */\n", QDOJO_REVEAL, ""),
+     "QDOJO.h: no region marked 'sync:begin dispatch'"),
+    (sync.check_opcodes, shadowed(sync.PORT, "dispatch", "#if 0\n", "#endif\n", PORT_REVEAL, "", marked=True),
+     "combat_contract.h dispatch: opcode 8 REVEAL has no handler"),
+    (sync.check_codes, shadowed(sync.QDOJO, "result-codes", "#if 0\n", "#endif\n", "QDOJO_TRANSFER_FAILED = 29",
+                                "QDOJO_TRANSFER_FAILED = 30", marked=True),
+     "QDOJO.h result-codes: result code 29 TRANSFER_FAILED is missing"),
+    # the lengths and the cases are read from the function the contract calls, not from a renamed copy kept in the
+    # markers; it is the only function of its name, and it is called (a sync marker naming it is no call)
+    (sync.check_opcodes, renamed(sync.QDOJO, "dispatch", "runHandler", QDOJO_REVEAL, ""),
+     "QDOJO.h dispatch: defines no runHandler"),
+    (sync.check_opcodes, renamed(sync.QDOJO, "body-lengths", "bodyLen", REVEAL_LEN, "OP_REVEAL: return 1;"),
+     "QDOJO.h body-lengths: defines no bodyLen"),
+    (sync.check_opcodes, renamed(sync.PORT, "dispatch", "run_handler", PORT_REVEAL, ""),
+     "combat_contract.h dispatch: defines no run_handler"),
+    (sync.check_opcodes, renamed(sync.PORT, "body-lengths", "body_len", REVEAL_LEN, "OP_REVEAL: return 1;"),
+     "combat_contract.h body-lengths: defines no body_len"),
+    (sync.check_opcodes, renamed(sync.QDOJO, "dispatch", "runHandler", QDOJO_REVEAL, "", inside=True),
+     "QDOJO.h dispatch: opcode 8 REVEAL has no handler"),
+    (sync.check_opcodes, renamed(sync.PORT, "body-lengths", "body_len", REVEAL_LEN, REVEAL_LEN.replace("7;", "8;"),
+                                 inside=True),
+     "combat_contract.h body-lengths: opcode 8 REVEAL body is 117 bytes"),
+    (sync.check_opcodes, (sync.QDOJO, "    // sync:end dispatch\n",
+                          "    // sync:end dispatch\n    static void runHandler(uint32 op)\n    {\n    }\n"),
+     "QDOJO.h dispatch: runHandler is defined more than once"),
+    (sync.check_opcodes, (sync.QDOJO, "c.fr_want = bodyLen(c.fr_op);", "c.fr_want = bodyLength(c.fr_op);"),
+     "QDOJO.h body-lengths: bodyLen is defined but never called"),
+    (sync.check_opcodes, [(sync.QDOJO, "c.fr_want = bodyLen(c.fr_op);", "c.fr_want = 0; // bodyLen(c.fr_op);"),
+                          (sync.QDOJO, "check_sync.py: bodyLen,", "check_sync.py: bodyLen(),")],
+     "QDOJO.h body-lengths: bodyLen is defined but never called"),
+    (sync.check_opcodes, (sync.PORT, "Res r = run_handler(s, h, inv, fr, amount, t);",
+                          "Res r = run_handler_v2(s, h, inv, fr, amount, t);"),
+     "combat_contract.h dispatch: run_handler is defined but never called"),
+    (sync.check_opcodes, (sync.PORT, "int32_t want = body_len(op);", "int32_t want = body_length(op);"),
+     "combat_contract.h body-lengths: body_len is defined but never called"),
+    (sync.check_opcodes, (sync.PORT, "FRAME_HEADER = 24;", "FRAME_HEADER = 25;"),
+     "combat_contract.h: FRAME_HEADER is 25"),
+    (sync.check_opcodes, (sync.PORT, "static constexpr uint32_t FRAME_HEADER = 24;",
+                          "// FRAME_HEADER = 24 in v1\nstatic constexpr uint32_t FRAME_HEADER = 25;"),
+     "combat_contract.h: FRAME_HEADER is 25"),
+    (sync.check_opcodes, (sync.QDOJO, "QDOJO_MAX_BODY = 487;", "QDOJO_MAX_BODY = 486;"),
+     "QDOJO.h: QDOJO_MAX_BODY is 486"),
+    (sync.check_opcodes, (sync.PROTOCOL, "body length, 0..487", "body length, 0..486"), "body length bound is 486"),
+    (sync.check_opcodes, (sync.PROTOCOL, "Opcodes 100–104 are accepted", "Opcodes 100–103 are accepted"),
+     "states admin opcodes ('100', '103')"),
+    (sync.check_opcodes, (PORT_README, "admin opcodes 100–104", "admin opcodes 100–102"),
+     "combat_contract/README.md: says admin opcodes 100–102"),
+    (sync.check_opcodes, ("docs/nft.md", "**AdminMirrorOwner (opcode 104)**", "**opcode 105 AdminMirrorOwner**"),
+     "says opcode 105 AdminMirrorOwner"),
+    # 2. event types
     (sync.check_events, (sync.QDOJO, "constexpr uint16 QDOJO_EV_OWNER_MIRRORED = 30;", ""),
      "event type 30 OWNER_MIRRORED is missing"),
     (sync.check_events, (sync.PORT, "emit(s, EV_OWNER_MIRRORED, b);", ""), "OWNER_MIRRORED is defined but never emitted"),
+    (sync.check_events, (sync.PROTOCOL, "| 30 | OWNER_MIRRORED |", "| 31 | OWNER_MIRRORED |"),
+     "event-types table: event type 30 OWNER_MIRRORED is missing"),
+    (sync.check_events, (sync.PROTOCOL, "| 14 | RATING |", "| 14 | RATED |\n| 14 | RATING |"),
+     "event-types table: number 14 appears twice (RATED, RATING)"),
+    (sync.check_events, (sync.PORT, "EV_RATING = 14,", "EV_RATED = 14, EV_RATING = 14,"),
+     "combat_contract.h event-types: number 14 appears twice (RATED, RATING)"),
+    (sync.check_events, (sync.QDOJO, "constexpr uint16 QDOJO_EV_RATING = 14;",
+                         "constexpr uint16 QDOJO_EV_RATED = 14;\nconstexpr uint16 QDOJO_EV_RATING = 14;"),
+     "QDOJO.h event-types: number 14 appears twice (RATED, RATING)"),
+    (sync.check_events, (sync.PORT, "EV_OWNER_MIRRORED = 30", "EV_OWNER_MIRRORED = 31"),
+     "combat_contract.h event-types: event type 30 OWNER_MIRRORED is missing"),
+    (sync.check_events, (sync.QDOJO, "emit(s, c, QDOJO_EV_OWNER_MIRRORED);", ""),
+     "QDOJO.h: event type 30 OWNER_MIRRORED is defined but never emitted"),
+    (sync.check_events, (sync.QDOJO, "emit(s, c, QDOJO_EV_OWNER_MIRRORED);", "// emit(s, c, QDOJO_EV_OWNER_MIRRORED);"),
+     "QDOJO.h: event type 30 OWNER_MIRRORED is defined but never emitted"),
+    (sync.check_events, (CONTRACT_PY, '_emit("OWNER_MIRRORED"', '_emit("OWNER_MIRROR"'),
+     "contract.py: event type 30 OWNER_MIRRORED is never emitted"),
+    # 3. result codes
     (sync.check_codes, (sync.PROTOCOL, "| 23 | BAD_STATE |", "| 23 | WRONG_STATE |"), "result code 23 is named WRONG_STATE"),
+    (sync.check_codes, (sync.PROTOCOL, "| 23 | BAD_STATE |", "| 23 | WRONG_STATE |\n| 23 | BAD_STATE |"),
+     "result-codes table: number 23 appears twice (WRONG_STATE, BAD_STATE)"),
+    (sync.check_codes, (sync.PORT, "BAD_STATE = 23,", "WRONG_STATE = 23, BAD_STATE = 23,"),
+     "combat_contract.h result-codes: number 23 appears twice (WRONG_STATE, BAD_STATE)"),
+    (sync.check_codes, (sync.QDOJO, "constexpr uint8 QDOJO_BAD_STATE = 23;",
+                        "constexpr uint8 QDOJO_WRONG_STATE = 23;\nconstexpr uint8 QDOJO_BAD_STATE = 23;"),
+     "QDOJO.h result-codes: number 23 appears twice (WRONG_STATE, BAD_STATE)"),
+    (sync.check_codes, (sync.PORT, "TRANSFER_FAILED = 29", "TRANSFER_FAILED = 30"),
+     "combat_contract.h result-codes: result code 29 TRANSFER_FAILED is missing"),
+    (sync.check_codes, (sync.QDOJO, "QDOJO_TRANSFER_FAILED = 29", "QDOJO_TRANSFER_FAILED = 30"),
+     "QDOJO.h result-codes: result code 29 TRANSFER_FAILED is missing"),
+    (sync.check_codes, (sync.PORT, "HOST_ERROR = 255", "HOST_ERROR = 254"),
+     "combat_contract.h result-codes: HOST_ERROR = 255 (not a protocol code) is missing"),
+    (sync.check_codes, (sync.QDOJO, "QDOJO_HOST_ERROR = 255", "QDOJO_HOST_ERROR = 254"),
+     "QDOJO.h result-codes: HOST_ERROR = 255 (not a protocol code) is missing"),
+    # 4. the v1 ABI
     (sync.check_abi, (sync.README, "`Dispatch` is user procedure 1", "`Dispatch` is user procedure 2"),
      "says Dispatch is user procedure 2"),
     (sync.check_abi, (sync.PROTOCOL, "| function | 10 | GetLedger |", "| function | 11 | GetLedger |"),
      "user function 10 GetLedger is missing"),
+    (sync.check_abi, (sync.PROTOCOL, "| procedure | 1 | Dispatch |", "| procedure | 2 | Dispatch |"),
+     "abi table: user procedure 1 Dispatch is missing"),
+    (sync.check_abi, (sync.PROTOCOL, "| procedure | 1 | Dispatch |",
+                      "| procedure | 1 | DispatchOld | x |\n| procedure | 1 | Dispatch |"),
+     "abi table: number 1 appears twice (DispatchOld, Dispatch)"),
+    (sync.check_abi, (sync.PROTOCOL, "| function | 3 | GetEvents |",
+                      "| function | 3 | GetEventsOld | x |\n| function | 3 | GetEvents |"),
+     "abi table: number 3 appears twice (GetEventsOld, GetEvents)"),
+    (sync.check_abi, (sync.README, "| 10 | `GetLedger` |", "| 11 | `GetLedger` |"),
+     "queries table: query function 10 GetLedger is missing"),
+    (sync.check_abi, (sync.README, "| 3 | `GetEvents` |", "| 3 | `GetEventsOld` | |\n  | 3 | `GetEvents` |"),
+     "queries table: number 3 appears twice (GetEventsOld, GetEvents)"),
+    (sync.check_abi, (sync.QDOJO, "REGISTER_USER_FUNCTION(GetEvents, 3);",
+                      "REGISTER_USER_FUNCTION(GetEventsOld, 3);\n        REGISTER_USER_FUNCTION(GetEvents, 3);"),
+     "REGISTER_USER_FUNCTION: number 3 appears twice (GetEventsOld, GetEvents)"),
+    (sync.check_abi, (sync.QDOJO, "REGISTER_USER_PROCEDURE(Dispatch, 1);",
+                      "REGISTER_USER_PROCEDURE(DispatchOld, 1);\n        REGISTER_USER_PROCEDURE(Dispatch, 1);"),
+     "REGISTER_USER_PROCEDURE: number 1 appears twice (DispatchOld, Dispatch)"),
+    (sync.check_abi, (sync.QDOJO, "REGISTER_USER_FUNCTION(GetLedger, 10);",
+                      "// REGISTER_USER_FUNCTION(GetLedger, 10);"),
+     "abi table: user function 10 GetLedger is not in contracts/qubic/QDOJO.h"),
+    (sync.check_abi, (sync.QDOJO, "REGISTER_USER_PROCEDURE(Dispatch, 1);", "REGISTER_USER_PROCEDURE(Dispatch, 2);"),
+     "INPUT_TYPE is 1, Dispatch is procedure 2"),
+    # 5. rulesets
     (sync.check_rulesets, (sync.QDOJO, "return rs == QDOJO_RS_C1 ? 8 : 10;", "return rs == QDOJO_RS_C1 ? 8 : 11;"),
      "table 2 (combat-v1-candidate-2): damage"),
     (sync.check_rulesets, (sync.CORE, "{6, 12, 4, 4, 9, 0, 0, 8, 2},", "{6, 12, 4, 4, 9, 0, 0, 9, 2},"),
      "CANDIDATE_3 differs from docs/combat-v1-candidate-3.json in: base_costs"),
+    (sync.check_rulesets, (sync.CORE, "{6, 12, 4, 4, 9, 0, 0, 8, 2},",
+                           "/* {6, 12, 4, 4, 9, 0, 0, 8, 2}, */ {6, 12, 4, 4, 9, 0, 0, 9, 2},"),
+     "CANDIDATE_3 differs from docs/combat-v1-candidate-3.json in: base_costs"),
     (sync.check_rulesets, (sync.LLMS, "digest 231607f8", "digest 231607f9"), "combat-v1-candidate-2: digest 231607f9"),
+    (sync.check_rulesets, ("docs/combat-v1-candidate-2.json", '"power_cost": 4,', '"power_cost": 5,'),
+     "docs/combat-v1-candidate-2.json: hashes to"),
+    (sync.check_rulesets, (sync.QDOJO, "return QDOJO_RS_C2;", "return QDOJO_RS_C1;"),
+     "rulesetOf(digest of table 2) is 1"),
+    (sync.check_rulesets, (sync.QDOJO, "QDOJO_STAND_CAP = 16;", "QDOJO_STAND_CAP = 17;"),
+     "QDOJO_STAND_PER_HP/QDOJO_STAND_CAP [1, 17]"),
+    (sync.check_rulesets, (sync.QDOJO, "constexpr uint16 QDOJO_STAND_CAP = 16;",
+                           "/*\nconstexpr uint16 QDOJO_STAND_CAP = 16;\n*/\nconstexpr uint16 QDOJO_STAND_CAP = 17;"),
+     "QDOJO_STAND_PER_HP/QDOJO_STAND_CAP [1, 17]"),
+    (sync.check_rulesets, (sync.QDOJO, HP_OF, "#if 0\n" + HP_OF + "#else\n" + HP_OF.replace("120", "121") + "#endif\n"),
+     "table 2 (combat-v1-candidate-2): hp is 121"),
+    (sync.check_rulesets, (sync.QDOJO, "QDOJO_POWER_COST = 4;", "QDOJO_POWER_COST = 5;"), "QDOJO_POWER_COST is 5"),
+    (sync.check_rulesets, (sync.QDOJO, "constexpr uint16 QDOJO_POWER_COST = 4;",
+                           "// QDOJO_POWER_COST = 4 in v1\nconstexpr uint16 QDOJO_POWER_COST = 5;"),
+     "QDOJO_POWER_COST is 5"),
+    (sync.check_rulesets, (sync.QDOJO, "QDOJO_MANIFEST_RULESET = QDOJO_RS_C3;",
+                           "QDOJO_MANIFEST_RULESET = QDOJO_RS_C2;"),
+     "QDOJO_RS_C2, devnet demo-c3 runs combat-v1-candidate-3"),
+    (sync.check_rulesets, (sync.QDOJO, "combat-v1-candidate-3  cf19b7cf...", "combat-v1-candidate-3  cf19b7ce..."),
+     "the ruleset comment for table 3"),
+    (sync.check_rulesets, ("docs/combat.md", "231607f823153747f4c922fd5976c1ac06622542cd5a39eab088874d886b8b74",
+                           "231607f823153747f4c922fd5976c1ac06622542cd5a39eab088874d886b8b75"),
+     "which is no packaged ruleset"),
+    (sync.check_rulesets, ("docs/combat.md", "231607f823153747f4c922fd5976c1ac06622542cd5a39eab088874d886b8b74",
+                           "231607f8…"), "the combat-v1-candidate-2 section does not name its digest"),
+    (sync.check_rulesets, ("docs/combat.md", "digest `cf19b7cf…`", "digest `cf19b7ce…`"),
+     "docs/combat.md status line: combat-v1-candidate-3: digest cf19b7ce…"),
+    # 6. the compiled-in manifest
     (sync.check_manifest, (sync.QDOJO, "QDOJO_DM_TIER_2_STAKE = 20000;", "QDOJO_DM_TIER_2_STAKE = 25000;"),
      "tier 2 stake 25000, demo-c3 has 20000"),
     (sync.check_manifest, (sync.LLMS, "commit window 9 ticks", "commit window 10 ticks"), "states ('10', '8')"),
     (sync.check_manifest, (sync.PROTOCOL, "64 waiting offers", "128 waiting offers"), "docs/protocol.md §7"),
+    (sync.check_manifest, (sync.QDOJO, "QDOJO_DM_COMMIT_TICKS = 9;", "QDOJO_DM_COMMIT_TICKS = 10;"), "timing 1: 10/8"),
+    (sync.check_manifest, (sync.QDOJO, "QDOJO_DM_FEES = 2;", "QDOJO_DM_FEES = 3;"), "3 fee profiles and tiers"),
+    (sync.check_manifest, (sync.QDOJO, "QDOJO_DM_FEE_2_RAKE_BPS = 1000;", "QDOJO_DM_FEE_2_RAKE_BPS = 900;"),
+     "fee profile 2 (rake, house, dev, share bps) (900,"),
+    (sync.check_manifest, (sync.QDOJO, "QDOJO_DM_COOLDOWN_TICKS = 240;", "QDOJO_DM_COOLDOWN_TICKS = 241;"),
+     "QDOJO_DM_COOLDOWN_TICKS is 241, devnet demo-c3 has 240"),
+    (sync.check_manifest, (sync.QDOJO, "QDOJO_DM_ADMIN_0 = 0x012fe519b42f69e5ULL;",
+                           "QDOJO_DM_ADMIN_0 = 0x012fe519b42f69e6ULL;"), "ADMIN identity"),
+    (sync.check_manifest, (sync.PORT, "CAP_FIGHTERS = 1024;", "CAP_FIGHTERS = 2048;"),
+     "combat_contract.h: CAP_FIGHTERS is 2048"),
+    (sync.check_manifest, (sync.QDOJO, "QDOJO_CAP_FIGHTERS = 1024;", "QDOJO_CAP_FIGHTERS = 2048;"),
+     "QDOJO.h: QDOJO_CAP_FIGHTERS is 2048"),
+    (sync.check_manifest, (sync.QDOJO, "constexpr uint32 QDOJO_CAP_FIGHTERS = 1024;",
+                           "// QDOJO_CAP_FIGHTERS = 1024 in v1\nconstexpr uint32 QDOJO_CAP_FIGHTERS = 2048;"),
+     "QDOJO.h: QDOJO_CAP_FIGHTERS is 2048"),
+    (sync.check_manifest, (sync.README, "timing 9/8, tiers", "timing 9/7, tiers"), "qubic/README.md: states ('9', '7'"),
+    (sync.check_manifest, ("docs/testnet.md", "(timing 9/8, tiers", "(timing 9/7, tiers"),
+     "testnet.md: states ('9', '7'"),
+    (sync.check_manifest, ("docs/combat.md", "(commit 9, reveal 8 ticks)", "(commit 9, reveal 7 ticks)"),
+     "combat.md: states ('9', '7')"),
+    # 7. NFT backends and ownership opcodes
     (sync.check_nft, (sync.NFT_MD, "| AdminMirrorOwner: the QBAY NFT", "| AdminBindAsset: the QBAY NFT"),
      "AdminBindAsset 104"),
     (sync.check_nft, (sync.NFT_MD, "`nft_backend: sim | qubic | qbay-mirror`", "`nft_backend: sim | qbay-mirror`"),
      "§5 lists backends"),
     (sync.check_nft, (sync.QDOJO, "QDOJO_MIRROR_SOURCE_QBAY = 12;", "QDOJO_MIRROR_SOURCE_QBAY = 13;"),
      "QDOJO_MIRROR_SOURCE_QBAY is 13"),
+    (sync.check_nft, (sync.QDOJO, "constexpr uint32 QDOJO_MIRROR_SOURCE_QBAY = 12;",
+                      "// QDOJO_MIRROR_SOURCE_QBAY = 12 in v1\nconstexpr uint32 QDOJO_MIRROR_SOURCE_QBAY = 13;"),
+     "QDOJO_MIRROR_SOURCE_QBAY is 13"),
+    (sync.check_nft, ("packages/qdojo/src/qdojo/combat/nft.py", 'if name == "qubic":', 'if name == "qubic-v2":'),
+     "nft.make_backend builds"),
+    (sync.check_nft, (sync.NFT_MD, "| `sim`, `qubic` |", "| `sim`, `qubik` |"),
+     "backend qubik is not in live.NFT_BACKENDS"),
+    (sync.check_nft, (sync.NFT_MD, "| `sim`, `qubic` |", "| `sim` |"), "covers backends ['qbay-mirror', 'sim']"),
+    (sync.check_nft, (sync.NFT_MD, "| 103 | `combat/live.py` |", "| 103 | `combat/lives.py` |"),
+     "sender lives.py is not a file"),
+    (sync.check_nft, (sync.NFT_MD, "| 100 | `combat/devnet.py` |", "| 100 | `combat/nft.py` |"),
+     "nft.py never sends Op.ADMIN_REGISTER_ASSET"),
+    (sync.check_nft, (sync.NFT_MD, "| — (simulated devnets, practice, old journals) | AdminRegisterAsset: the interim "
+                                   "asset (issuer = fighter id, name `QDOJOF`) | 100 | `combat/devnet.py` |\n", ""),
+     "does not list the ownership opcodes [100]"),
+    (sync.check_nft, (sync.PORT, "MIRROR_SOURCE_QBAY = 12;", "MIRROR_SOURCE_QBAY = 13;"),
+     "combat_contract.h: MIRROR_SOURCE_QBAY is 13"),
+    (sync.check_nft, (sync.PROTOCOL, "the only accepted source is 12 (QBAY)", "the only accepted source is 13 (QBAY)"),
+     "states mirror source 13"),
 ]
+
+
+def test_cpp_is_read_as_code():
+    """A commented-out line or an #if 0 block (to its #else, or to an #elif other than #elif 0) is not read; other
+    conditionals are, in full. The #if 0's own #else or #elif opens an #if, so each #endif kept still closes one.
+    The sync markers are the only comments kept, unless they are inside another comment or an #if 0 block."""
+    src = ("case A: // case B:\n/* case C:\n*/ case D:\n#if 0  // off\ncase E:\n#ifdef X\ncase F:\n#endif\n"
+           "case G:\n#else\ncase H:\n#endif\n#if X\ncase I:\n#else\ncase J:\n#endif\n")
+    assert re.findall(r"case (\w):", sync.code(src)) == ["A", "D", "H", "I", "J"]
+    src = "#if 0\nA\n#else\nB\n#endif\n#if 0\nC\n#elif X\nD\n#else\nE\n#endif\n#if 0\nF\n#elif 0\nG\n#else\nH\n#endif\n"
+    assert sync.code(src) == "#if 1\nB\n#endif\n#if X\nD\n#else\nE\n#endif\n#if 1\nH\n#endif\n"
+    src = ("// sync:begin A\n/* old:\n// sync:begin B\n*/ // was: // sync:begin C\n#if 0\n// sync:begin D\n#endif\n"
+           "x; // sync:end A\n")
+    assert re.findall(r"sync:(?:begin|end) (\w)", sync.code(src)) == ["A", "A"]
 
 
 @pytest.mark.parametrize("check,edit,expect", MUTATIONS, ids=[f"{m[0].__name__}-{i}" for i, m in enumerate(MUTATIONS)])
 def test_drift_is_named(check, edit, expect):
     assert run(check) == [], f"{check.__name__} fails without any edit"
-    errors = run(check, [edit])
+    errors = run(check, edit if isinstance(edit, list) else [edit])
     assert any(expect in e for e in errors), f"expected '{expect}' in {errors}"

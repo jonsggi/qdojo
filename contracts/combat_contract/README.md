@@ -32,7 +32,7 @@ The following reference code is ported, from `packages/qdojo/src/qdojo/combat/`:
   - faults and cooldown;
   - ratings and season stats;
   - cups (bracket, byes, check-in, postponement, replay, prize, aborts);
-  - admin opcodes 100–102;
+  - admin opcodes 100–104;
   - the event ring and append digest;
   - season standings.
 - `ledger.py`: the buckets, `split_purse` and the cup prize. Credits live in the account table.
@@ -51,7 +51,7 @@ than or equal to them, and `init` rejects a manifest that is not.
 |---|---:|---|
 | fighters | 1024 | Never evicted. The index is the stable fighter handle. |
 | accounts | 2048 | One entry per identity: the account slot (`contract.py self.accounts`: nonce and credit), bounded by the manifest's `max_accounts`. Slots are seeded with the admin and the fee recipients and are never released. |
-| registry assets | 2048 | Written by admin opcode 100. |
+| registry assets | 2048 | Written by admin opcodes 100, 103 and 104. |
 | open offers | 64 | 128 slots. Terminal offers are evicted, lowest id first. |
 | active fights | 16 | 32 slots. Terminal fights are evicted. |
 | contests | 16 active | 32 slots. Terminal, settled contests are evicted. |
@@ -59,15 +59,15 @@ than or equal to them, and `init` rejects a manifest that is not.
 | ranked pair history | 4096 | Open addressing. Stale entries are reused. |
 | event ring | 2048 | Bodies are kept up to 112 bytes. The largest canonical body, REVEALED, is 98 bytes. |
 
-`sizeof(State)` is **1,403,296 bytes (1370.4 KiB)**:
+`sizeof(State)` is **1,583,528 bytes (1546.4 KiB)**:
 
 | Table | Size |
 |---|---|
 | fighters | 1024 × 496 = 496 KiB |
 | events | 2048 × 168 = 336 KiB |
+| assets | 2048 × 128 = 256 KiB |
 | accounts | 2048 × 96 = 192 KiB |
 | pairs | 4096 × 40 = 160 KiB |
-| assets | 2048 × 40 = 80 KiB |
 | cups | 8 × 5832 = 46 KiB |
 | offers | 128 × 288 = 36 KiB |
 | contests | 32 × 472 = 15 KiB |
@@ -103,11 +103,16 @@ step the runner also asserts two things:
 | fuzz-c2 (candidate 2) | 1662 | 623 | 1000 | 707 | final digest identical |
 | fuzz-c3 (candidate 3) | 3350 | 1292 | 2000 | 1466 | final digest identical |
 | season-c3 (candidate 3) | 2111 | 596 | 1500 | 946 | final digest identical |
+| mirror (candidate 3) | 378 | 36 | 328 | 25 | final digest identical |
+| mirror-arena (candidate 3) | 546 | 128 | 400 | 137 | final digest identical |
 
 The port selects its ruleset at build time (`QDOJO_RULESET`, as in
 `combat_core.h`); `make contract-test` builds `test_contract_c1`, `_c2` and
 `_c3`, and each replays the journals of its ruleset and skips the others. The
-candidate-2/3 journals come from `scripts/combat-contract-journals.py`. The
+fuzz and season journals of candidates 2 and 3 come from
+`scripts/combat-contract-journals.py`. The mirror journals (opcode 104) come
+from `scripts/combat-contract-mirror.py`; every call in `mirror.journal` also
+carries the reference's result code, which the replay compares. The
 live arena's journal (candidate 3, 117,600 ticks, 92,132 calls), converted
 with `scripts/combat-journal-from-devnet.py`, also replays to its recorded
 digest (2026-09-30; not committed, ~100 MB).
@@ -124,7 +129,7 @@ reference-side dump. On every journal the port's trace equals the
 reference's line for line, so result codes, targets and refunds also agree.
 Result codes are not part of the digest.
 
-`scenarios.journal` (358 KB) is written by `scripts/combat-contract-scenarios.py`,
+`scenarios.journal` (400 KB) is written by `scripts/combat-contract-scenarios.py`,
 which `scripts/combat-sample-data.py` runs. It is a scripted run with a short
 timing profile (commit 4, reveal 3), 4 fight slots and 48 account slots, and
 salts from a seeded RNG, so regeneration is byte-identical. It covers:
@@ -152,7 +157,7 @@ different digest, so a port that ignores the header values fails. The port
 reads both values from the manifest (`Manifest::pair_starts_per_epoch`,
 `Manifest::pair_rematch_ticks`); the header supplies them.
 
-Together the journals emit all 29 event types. Two cup fuzz runs of 9,000
+Together the journals emit all 30 event types. Two cup fuzz runs of 9,000
 ticks each (16 MB, not committed) also replay with identical traces.
 
 Two paths cannot be reached, so no journal covers them:
@@ -169,9 +174,9 @@ Maximum work per entry point seen over these journals:
 | Entry point | SHA-256 blocks | Events | Fights advanced | Match comparisons | Owner queries | Transfers |
 |---|---:|---:|---:|---:|---:|---:|
 | dispatch | 24 | 2 | 0 | 0 | 2 | 1 |
-| end_tick | 45 | 8 | 4 | 10 | 6 | 0 |
+| end_tick | 45 | 16 | 4 | 15 | 6 | 0 |
 
-Linear lookups visit up to about 6,200 table slots per entry point, mostly the
+Linear lookups visit up to about 6,500 table slots per entry point, mostly the
 2048-slot account table. On chain these lookups belong in `HashMap`. The
 analytical worst case for END_TICK is 16 fights resolving and starting their
 next fight, plus 4 matches and 4 cup ticks. That comes to about 600 SHA-256
@@ -230,14 +235,18 @@ the parity journals, except the terminal-id answers.
    then benchmarked under the execution-fee model (up to about 600 blocks
    per worst-case tick).
 4. **State digest cost.** END_TICK writes `last_serviced` every tick, so
-   Core rehashes the whole state every tick. For a 1.37 MB state this is
+   Core rehashes the whole state every tick. For a 1.58 MB state this is
    probably the dominant recurring cost. Measure it, then consider:
    - smaller capacities, grown later with `EXPAND`;
    - trimming the event ring and the season bitmaps;
    - a heartbeat design that does not need to write state every tick.
 5. **Asset ownership.** Done for the binding: AdminBindAsset (opcode 103)
    carries (issuer, name); the port keeps it in the registry and the Qubic
-   contract reads ownership from that asset. The host interface stays
+   contract reads ownership from that asset. AdminMirrorOwner (opcode 104)
+   binds a fighter to a QBAY NFT instead (source contract 12, NFT id) and
+   sets its owner as the bridge last read it; for such a fighter `owner_of`
+   answers with that owner (zero: unavailable) without asking the host, and
+   opcodes 100 and 103 refuse it. The host interface stays
    `owner_of(fighter_id)`, as in the reference. Testing ownership against
    possession and managing-contract rights is part of the NFT procedures
    (contracts/qubic/README.md, "What remains", item 5).

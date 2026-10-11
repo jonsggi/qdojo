@@ -18,7 +18,7 @@ import time
 
 import pytest
 
-from qdojo.cli import main
+from qdojo.cli import build_parser, main
 from qdojo.combat import api, export, live, replaycheck
 from qdojo.combat import join as J
 from qdojo.combat import readmodel as rm
@@ -109,9 +109,7 @@ def test_the_published_commands_select_the_public_arena_ruleset():
     for where, text in (("llms.txt", quick), ("app.js COMMANDS", site)):
         assert "--ruleset" not in text, f"{where}: the quickstart must use the default ruleset"
     for cmd in ("train", "evaluate", "doctor"):
-        assert re.search(rf'"{cmd}".*?default=PUBLIC_ARENA|{cmd}.*?--ruleset", default=PUBLIC_ARENA',
-                         (ROOT / "packages/qdojo/src/qdojo/combat/cli.py").read_text()
-                         + (ROOT / "packages/qdojo/src/qdojo/combat/chain_cli.py").read_text(), re.S)
+        assert build_parser().parse_args(["combat", cmd]).ruleset == PUBLIC_ARENA, cmd
 
 
 @pytest.mark.parametrize("which", sorted(STARTERS))
@@ -121,8 +119,15 @@ def test_train_and_replay_with_each_starter_distribution(which, tmp_path, capsys
                            "--budget-ms", str(SLOW_HOST_MS), "--out", str(out))
     assert code == 0, err
     assert text.splitlines()[0].startswith(f"ruleset {PUBLIC_ARENA} "), "the ruleset comes first"
-    assert "fallback" not in (text + err).lower()
-    assert json.loads(out.read_text())["ruleset_digest"] == PUBLIC.digest.hex()
+    replay = json.loads(out.read_text())
+    assert replay["ruleset_digest"] == PUBLIC.digest.hex()
+    # the starter played; with --planner dropped the --as policy plays, and the two checks below pass vacuously
+    you = next(f for f in replay["fighters"].values() if f["name"] == "you")
+    assert you["kind"] == "planner", f"the starter did not play: {you}"
+    # a failed round still exits 0: the replay records it as FALLBACK_PLAN_USED
+    assert replay["fallbacks"] == [], text
+    # an adjusted plan is only printed: "round N: your plan was illegal and would forfeit on a chain; ..."
+    assert "your plan was illegal" not in text, text
     code, text, err = _cli(capsys, "combat", "replay", str(out))
     assert code == 0, err + text
 
