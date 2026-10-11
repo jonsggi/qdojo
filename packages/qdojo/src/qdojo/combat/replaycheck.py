@@ -19,6 +19,7 @@ from __future__ import annotations
 import http.client
 import json
 import threading
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -33,7 +34,7 @@ CONTEXT_LEN = 526            # docs/protocol.md §2: 254 bytes of terms + two 13
 _PARTICIPANT = 136
 TIMEOUTS = ("FORFEIT", "DOUBLE_FAULT", "VOID")     # results no plan re-derives (logic.js isForfeit)
 MAX_BYTES = 2 << 20          # a downloaded replay; a three-round fight is under 40 KB
-DEADLINE_S = 30.0            # the whole download: urlopen's timeout bounds each read, not the sum
+DEADLINE_S = 30.0            # the whole download: the socket timeout bounds each read, not the sum
 _MISSING = object()
 
 
@@ -47,21 +48,42 @@ def load(source: str) -> dict:
     return json.loads(Path(source).read_text(encoding="utf-8"))
 
 
+class _Redirect(urllib.request.HTTPRedirectHandler):
+    """Follows a redirect to http(s) without reading the redirect's body. The
+    stock handler reads all of it (fp.read()) before it follows, outside the
+    cap _download puts on the replay."""
+
+    def http_error_302(self, req, fp, code, msg, headers):
+        fp.close()                  # the stock handler's fp.read() then returns b""
+        return super().http_error_302(req, fp, code, msg, headers)
+
+    http_error_301 = http_error_303 = http_error_307 = http_error_308 = http_error_302
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not newurl.startswith(("http://", "https://")):         # the stock handler also follows ftp
+            raise urllib.error.HTTPError(newurl, code, f"{msg}, a redirect to a URL that is not http(s)",
+                                         headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_OPENER = urllib.request.build_opener(_Redirect)
+
+
 def _download(url: str) -> bytes:
     got: dict = {}
 
     def fetch():
         try:
             req = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "qdojo-cli"})
-            with urllib.request.urlopen(req, timeout=20) as r:      # noqa: S310 (scheme checked by load)
+            with _OPENER.open(req, timeout=20) as r:                # scheme checked by load and _Redirect
                 got["body"] = r.read(MAX_BYTES + 1)
         except http.client.HTTPException as exc:                    # a garbled or truncated response
             got["error"] = OSError(f"{type(exc).__name__}: {exc}")
         except Exception as exc:                                     # noqa: BLE001 (raised below)
             got["error"] = exc
 
-    # urlopen cannot be interrupted, so it runs in a daemon thread that is
-    # abandoned at the deadline; the command exits soon after.
+    # A blocking read cannot be interrupted, so the fetch runs in a daemon
+    # thread that is abandoned at the deadline; the command exits soon after.
     t = threading.Thread(target=fetch, name="replay-download", daemon=True)
     t.start()
     t.join(DEADLINE_S)
@@ -77,7 +99,10 @@ def _download(url: str) -> bytes:
 def is_arena(replay) -> bool:
     """Only local practice (train --out: mode "practice", no context bytes) takes
     the practice verifier. Every other document is checked as an arena replay,
-    where one without context bytes fails, as it does on the site."""
+    where one without context bytes fails, as it does on the site. The label
+    alone takes no arena record past those checks: the practice verifier
+    refuses every field only an arena replay has, and any fighter or context
+    that is not a practice one."""
     return not (isinstance(replay, dict) and replay.get("mode") == "practice" and "context_bytes" not in replay)
 
 

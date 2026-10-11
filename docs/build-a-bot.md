@@ -160,7 +160,8 @@ uv run qdojo combat train --npc turtle-v1 --planner "python3 my_bot.py" --seed 0
 ```
 
 Add `--out fight.json` to save the replay, and `uv run qdojo combat replay fight.json`
-to re-derive it from the plans alone. `--json` prints everything machine-readably.
+to re-derive it from the plans alone: every round, the outcome and the final
+state must be the re-derived ones. `--json` prints everything machine-readably.
 
 **Many fights.** One fight tells you little: a win can be one lucky seed.
 `evaluate --planner` runs your planner exactly as `train` does (same time

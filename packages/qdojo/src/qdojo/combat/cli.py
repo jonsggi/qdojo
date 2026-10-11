@@ -161,9 +161,9 @@ def cmd_replay(a):
     if outcome is not None:
         print(f"{kind} replay re-derived from its plans: {outcome['result']}, "
               f"winner {outcome['winner'] or 'none (draw)'}")
-    elif claimed is not None:
-        print(f"{kind} replay verified up to its end; the export records {claimed['result']}, "
-              f"winner {claimed['winner'] or 'none'}: decided by the protocol, not re-derived from the plans")
+    elif claimed is not None:              # the export's words, escaped like any other text from it
+        print(f"{kind} replay verified up to its end; the export records {_shown(claimed['result'])}, "
+              f"winner {_shown(claimed['winner'] or 'none')}: decided by the protocol, not re-derived from the plans")
     else:
         print(f"{kind} replay verified so far; the fight has no result yet")
 

