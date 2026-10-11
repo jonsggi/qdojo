@@ -211,6 +211,8 @@
     paintSource();
     const name = currentRoute()[0];
     if (['arena', 'title', 'book', 'results', 'leaderboard', 'titles', 'cups', 'cup', 'duels', 'duel', 'season', 'market', 'economy'].includes(name) || (name === 'fight' && D.tick !== before)) repaint();
+    // #join: only its entry panel follows the arena's report; the rest of the page stays put.
+    else if (name === 'join') await paintEntry(viewToken);
   }
 
   /* The network the arena runs on, from the export's own metadata
@@ -270,8 +272,7 @@
     fresh.title = fr.known ? 'Export written ' + new Date(D.wallMs).toString() : 'Export time unknown';
     // The sample is old by design; STALE is for a live export that stopped.
     $('#hud-stale').hidden = !(D.manifest && !D.sample && fr.stale);
-    $('#hud-rules').textContent = rulesLabel(R.semantic_version);
-    $('#hud-rules').title = 'Ruleset this page replays with: ' + (R.semantic_version || 'combat-v1');
+    paintRules();
     const n = net(), badge = $('#hud-net');
     badge.hidden = !(D.manifest && n.badge);
     badge.textContent = n.badge || '';
@@ -283,6 +284,12 @@
         ' &middot; refreshed every ' + (POLL_MS / 1000) + ' s' + (D.sample ? '' : D.api ? ' &middot; FULL HISTORY from the read API' : ' &middot; recent fights only (read API unavailable)') +
         ' &middot; Every replay is re-derived in your browser; rendering never changes a result.'
       : esc(D.error || 'No data. PRACTICE and RULES still work offline.');
+  }
+  // The HUD's RULES pill: with the source, and whenever a shared practice
+  // fight swaps its ruleset in or out (useSharedRules, render).
+  function paintRules() {
+    $('#hud-rules').textContent = rulesLabel(R.semantic_version);
+    $('#hud-rules').title = 'Ruleset this page replays with: ' + (R.semantic_version || 'combat-v1');
   }
 
   // ---- small renderers -----------------------------------------------------------
@@ -932,18 +939,21 @@
       '<p><a href="#duels">ALL DUELS &#9654;</a></p>');
   }
 
-  // Replay header: which series or cup pairing a fight belongs to.
+  // Replay header: which series or cup pairing a fight belongs to. Its score
+  // counts every fight of the series, so with spoilers hidden it waits until
+  // none of them is held (AUD-037); noScore holds it for this fight.
   async function seriesLink(fightId, mode, noScore) {
+    const held = fights => noScore || (fights || []).some(f => String(f) !== String(fightId) && spoilHidden(f));
     if (mode === 'duel') {
       const d = (await loadDuels()).find(x => (x.fights || []).includes(String(fightId)));
-      if (d) return '<a class="pill" href="#duel/' + esc(d.contest_id) + '">DUEL #' + esc(d.contest_id) + ' &middot; ' + esc(d.format) + (noScore ? '' : ' ' + duelScore(d)) + ' &#9654;</a>';
+      if (d) return '<a class="pill" href="#duel/' + esc(d.contest_id) + '">DUEL #' + esc(d.contest_id) + ' &middot; ' + esc(d.format) + (held(d.fights) ? '' : ' ' + duelScore(d)) + ' &#9654;</a>';
     }
     if (mode === 'cup') {
       for (const c of await loadCups()) {
         const p = (c.pairings || []).find(x => (x.fights || []).includes(String(fightId)));
         if (p) {
           const w = p.series ? seriesWins(p.a, p.b, p.series.wins_a, p.series.wins_b) : null;
-          return '<a class="pill" href="#cup/' + esc(c.cup_id) + '">CUP #' + esc(c.cup_id) + ' &middot; PAIRING ' + esc(p.pairing_id) + (w && p.a && p.b && !noScore ? ' ' + esc(w[p.a]) + '&ndash;' + esc(w[p.b]) : '') + ' &#9654;</a>';
+          return '<a class="pill" href="#cup/' + esc(c.cup_id) + '">CUP #' + esc(c.cup_id) + ' &middot; PAIRING ' + esc(p.pairing_id) + (w && p.a && p.b && !held(p.fights) ? ' ' + esc(w[p.a]) + '&ndash;' + esc(w[p.b]) : '') + ' &#9654;</a>';
         }
       }
     }
@@ -1420,12 +1430,14 @@
     const beatTable = '<summary>BEAT TABLE (' + frames.filter(f => f.kind === 'beat').length + ' executed beats)</summary>' +
       '<div class="tscroll"><table class="beats"><thead><tr><th>RND</th><th>BEAT</th><th>' + esc(names.A) + '</th><th class="num">HP</th><th class="num">ST</th><th>' + esc(names.B) + '</th><th class="num">HP</th><th class="num">ST</th><th>WHAT HAPPENED</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
     const heldTable = '<summary>BEAT TABLE</summary><p class="tiny muted beat-hold">Spoiler-free: the beat table appears when the replay reaches its end or you reveal the result.</p>';
+    // Only a fight where the belt changed hands has a finale: held, it is not in the page at all.
+    const finale = opts.finale ? '<div class="finale" aria-hidden="true">' + titleBeltSvg('lineal', 'tbelt-md') + '<b>' + esc(opts.finale) + '</b></div>' : '';
     root.innerHTML =
       '<div class="stage arcade' + (opts.compact ? ' stage-compact' : '') + '"><canvas class="stage-bg" aria-hidden="true"></canvas>' + corner('A') +
       '<div class="center"><span class="ko-emblem" aria-hidden="true">KO</span><div class="clock" aria-hidden="true"><b class="clock-n"></b><small class="clock-l"></small></div>' +
       '<div class="round-no"></div><div class="beat-no"></div><div class="center-note"></div></div>' + corner('B') +
       '<div class="announcer" aria-hidden="true"><span></span></div><div class="fx-flash" aria-hidden="true"></div>' +
-      (opts.finale ? '<div class="finale" aria-hidden="true">' + titleBeltSvg('lineal', 'tbelt-md') + '<b>' + (held ? '' : esc(opts.finale)) + '</b></div>' : '') + '</div>' +
+      (held ? '' : finale) + '</div>' +
       '<div class="controls" role="group" aria-label="Replay controls">' +
       '<button class="chip" data-act="first" title="First (Home)" aria-label="First frame">|&#9664;</button>' +
       '<button class="chip" data-act="prev" title="Previous beat (Left)" aria-label="Previous beat">&#9664;</button>' +
@@ -1473,8 +1485,10 @@
       table = $('table.beats', root);
       $$('tr[data-i]', table).forEach(tr => { tr.tabIndex = 0; });
       markScrollers(root);
-      const fb = $('.finale b', root);
-      if (fb) fb.textContent = opts.finale || '';
+      if (finale) {
+        stageEl.insertAdjacentHTML('beforeend', finale);
+        void $('.finale', root).offsetWidth;   // laid out hidden first, so it still fades in at the end
+      }
       if (opts.onReveal) opts.onReveal();
     }
 
@@ -2180,7 +2194,11 @@
     const npcId = parts[0], seed = parts[1];
     if (parts.length > 2) return viewSharedPractice(tok, npcId, seed, parts.slice(2).join('/'));
     if (npcId && seed && N.ROSTER.some(n => n.id === npcId) && HEX64.test(seed)) {
-      if (!practice || practice.npc !== npcId || practice.seed !== seed) {
+      // The seeded challenge link is a new fight. Only your own fight still
+      // open there under these rules is picked up again (back from another
+      // screen); a finished or shared one is replayed by its own link.
+      const resume = practice && !practice.shared && !practice.outcome && practice.npc === npcId && practice.seed === seed && practice.rules_version === R.semantic_version;
+      if (!resume) {
         practice = L.practiceStart(R, npcId, seed, 1);
         resetDraft();
       }
@@ -2322,7 +2340,7 @@
       // with motion off the round is already played out, so the deck at once.
       if (pinned && motion()) landed = showReplay(true);
       else if (pinned) landed = showDeck(false);
-      else $('.practice-stage').scrollIntoView({ block: 'start', behavior: motion() ? 'smooth' : 'auto' });
+      else { $('.practice-stage').scrollIntoView({ block: 'start', behavior: motion() ? 'smooth' : 'auto' }); landed = true; }
       if (motion()) player.start(); else player.seek(frames.length - 1, false);
     } else {
       player.seek(frames.length - 1, false);
@@ -2559,7 +2577,7 @@
         const before = practiceFrames(practice).length;
         L.practicePlay(R, practice, { actions: draft.actions.slice(), power_slot: draft.power_slot });
         resetDraft();
-        if (practice.outcome && !practice.shared) practice.recorded = PR.recordResult(loadProgress().p, practice, fightKey(practice));
+        if (practice.outcome && !practice.shared) practice.recorded = PR.recordResult(freshProgress().p, practice, fightKey(practice));
         if (practice.recorded && practice.recorded.added) saveProgress();
         renderPracticeFight(Math.max(0, before - (practice.rounds.length > 1 ? 0 : 1)));
       } catch (e) { $('#plan-err').textContent = e.message; }
@@ -2636,6 +2654,14 @@
     progress.damaged = r.damaged;
     return progress;
   }
+  // The record is shared by every tab of this site: a change starts from what
+  // is stored now, and a save in another tab drops this tab's copy, so two
+  // open tabs never undo each other's results, steps or RESET.
+  function freshProgress() {
+    if (progress.storage) progress.p = null;
+    return loadProgress();
+  }
+  window.addEventListener('storage', e => { if (progress.storage && (e.key === PROGRESS_KEY || e.key === null)) progress.p = null; });
   function saveProgress() {
     if (!progress.storage) return;
     try { localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress.p)); progress.damaged = false; } catch (e) { progress.storage = false; }
@@ -2646,7 +2672,7 @@
     try { localStorage.removeItem(PROGRESS_KEY); } catch (e) { /* nothing stored */ }
   }
   function markStep(k) {
-    const g = loadProgress();
+    const g = freshProgress();
     if (g.p.steps[k]) return;
     g.p.steps[k] = true;
     saveProgress();
@@ -2828,9 +2854,15 @@
     const refuse = why => setView(screen('SHARED FIGHT', 'PRACTICE REPLAY') + '<section class="panel panel-red share-bad" id="share-bad"><h3>THIS LINK CANNOT BE REPLAYED</h3><p>' + esc(why) + '</p>' +
       (N.ROSTER.some(n => n.id === npcId) && HEX64.test(seed || '') ? '<p><a class="btn" href="#practice/' + esc(npcId) + '/' + esc(seed) + '">PLAY THIS OPPONENT AND SEED</a> <a class="btn btn-cyan" href="#practice">PRACTICE</a></p>' : '<p><a class="btn" href="#practice">PRACTICE</a></p>') + '</section>');
     if (!parsed.ok) return refuse(parsed.error);
-    // Own fight already on screen (the address bar was just updated): keep it.
-    if (practice && practice.shareTail === tail && practice.npc === npcId && practice.seed === seed) return renderPracticeFight();
-    const list = window.QDojoRulesets || [R];
+    // Own fight already on screen (the address bar was just updated), or a
+    // shared one come back to (BACK): keep it, under the rules it was played under.
+    if (practice && practice.shareTail === tail && practice.npc === npcId && practice.seed === seed) {
+      if (practice.shared) useSharedRules(practice.shared.rules);
+      return renderPracticeFight();
+    }
+    // The active ruleset first: the export's own may be one this site does
+    // not embed, and a link the site wrote under it must replay here too.
+    const list = [R].concat((window.QDojoRulesets || []).filter(x => x !== R));
     const rulesets = await Promise.all(list.map(async rules => ({ rules, digest: await digestOf(rules) })));
     const rep = await PR.replayShare(parsed, rulesets, SHA);
     if (tok !== viewToken) return;
@@ -2839,9 +2871,14 @@
     practice.shared = { match: rep.match, check: rep.check, claimed: parsed.check, rules: rep.rules, active: R.semantic_version, own: loadProgress().p.seen.includes(fightKey(rep.s)) };
     practice.shareTail = tail;
     resetDraft();
-    // Played under another ruleset: shown under its own, never reinterpreted.
-    if (rep.rules !== R) { R_SAVED = R; R = rep.rules; R_SHARED = rep.rules; }
-    renderPracticeFight(0);
+    useSharedRules(rep.rules);
+    return renderPracticeFight(0);
+  }
+  // Played under another ruleset: shown under its own, never reinterpreted.
+  function useSharedRules(rules) {
+    if (rules === R) return;
+    R_SAVED = R; R = rules; R_SHARED = rules;
+    paintRules();
   }
 
   /* The result block of a finished practice fight: verdict, record, actions. */
@@ -3733,8 +3770,12 @@
 
   function currentRoute() {
     // A first visit lands on the title screen: it explains the game and shows a fight.
-    const h = decodeURIComponent(location.hash.replace(/^#/, '')) || 'title';
-    return h.split('/');
+    // A malformed escape (a cut or altered link) is read as typed, so the
+    // screen it names still answers: a refused share link, or a 404.
+    const raw = location.hash.replace(/^#/, '');
+    let h;
+    try { h = decodeURIComponent(raw); } catch (e) { h = raw; }
+    return (h || 'title').split('/');
   }
 
   // A poll repaints a live view in place. A finished fight's replay never
@@ -3755,18 +3796,23 @@
 
   async function render(navigated) {
     // Leaving (or re-entering) a shared practice fight played under another ruleset.
-    if (R_SAVED) { if (R === R_SHARED) R = R_SAVED; R_SAVED = R_SHARED = null; }
+    if (R_SAVED) { if (R === R_SHARED) R = R_SAVED; R_SAVED = R_SHARED = null; paintRules(); }
     const [name, ...rest] = currentRoute();
     const tok = ++viewToken;
     const y = window.scrollY;
     stopPlayer();
     revealHook = null;
     spoilForce = name === 'fight' && rest[1] === 'spoilerfree';
+    // The footer chip shows the setting in force on this screen, so a
+    // spoiler-free link reads HIDDEN there too and a click shows the result.
+    paintSpoil();
     paintNav(name);
     // A slow screen change shows a busy plate over the old view after 200 ms
     // instead of leaving it looking current (V-21). Polls never show it.
     const busy = navigated ? setTimeout(() => { if (tok === viewToken) setBusy(true); }, 200) : 0;
-    let landed = false;   // a practice round on a phone opens on its move deck (AUD-036)
+    // A practice view that put the page in place itself: a round on a phone
+    // opens on its move deck (AUD-036), a shared fight on its stage.
+    let landed = false;
     try {
       if (name === 'arena') await viewArena(tok);
       else if (name === 'title') await viewTitle(tok);
@@ -3791,7 +3837,7 @@
       else if (name === 'story') viewStory();
       else if (name === 'fight') await viewFight(tok, rest[0]);
       else if (name === 'fighter') await viewFighter(tok, rest[0], rest[1]);
-      else if (name === 'practice') landed = viewPractice(tok, rest) === true;
+      else if (name === 'practice') landed = (await viewPractice(tok, rest)) === true;
       else if (name === 'rules') await viewRules(tok);
       else viewLost(name);
     } catch (e) {

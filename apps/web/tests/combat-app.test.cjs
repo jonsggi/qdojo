@@ -240,6 +240,21 @@ test('explanations show the numbers (combat.md section 9)', () => {
   assert.match(hs.text, /Not proof/);
 });
 
+test('a powered move that became EXHAUSTED was never made, whatever the opponent did', () => {
+  const E = require('../combat/engine.js');
+  for (const rules of globalThis.QDojoRulesets) {
+    const f = E.newFight(rules).a, broke = Object.assign({}, f, { stamina: 1 });
+    for (const opp of [L.ID.BLOCK, L.ID.DUCK, L.ID.JAB]) {
+      const r = E.resolveBeat(rules, broke, f, L.ID.KICK, opp, true, false);
+      assert.equal(r.trace[0].effective, L.ID.EXHAUSTED);
+      assert.ok(r.trace[0].reasons.includes('POWER_WASTED'));
+      const text = L.explainSide(r.trace[0], r.trace[1], 'YOU', 'NPC', rules.opening_damage).join(' ');
+      assert.match(text, /Power spent with no damage: wasted\. .*the move was never made\./, rules.semantic_version + ' vs ' + L.NAMES[opp]);
+      assert.doesNotMatch(text, /was blocked|was ducked/, rules.semantic_version + ' vs ' + L.NAMES[opp]);
+    }
+  }
+});
+
 test('fighter stats count only executed play and agree with the ranked record', () => {
   for (const fid of index.fighters) {
     const f = readJson(path.join(SAMPLE, 'fighters', fid + '.json'));

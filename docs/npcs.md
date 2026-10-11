@@ -130,9 +130,10 @@ Example: `#practice/jabber-v1/abab…ab/p1.1.cf19b7cfee8ccbdd.3331333-330135n.69
 - Only the human's plans travel. The browser re-runs the disclosed NPC policy
   from the seed and fight number, resolves every round with the engine and
   derives the result; nothing in the link is trusted as HP or a verdict.
-- The ruleset prefix selects the embedded ruleset that hashes to it, and the
-  fight is shown under that ruleset, not the active one. A link that names no
-  embedded ruleset is refused.
+- The ruleset prefix selects the ruleset that hashes to it, the active one
+  (the export's own, which the site need not embed) or an embedded one, and the
+  fight is shown under that ruleset, never reinterpreted under the active one.
+  A link that names neither is refused.
 - `check` is the first 8 hex of SHA-256 over `qdojo/practice/v1\0` followed by the
   NPC id, seed, fight number, ruleset version, each executed beat
   (`effectiveA,effectiveB,hpA,hpB`) and the outcome. A different value is shown
@@ -145,7 +146,8 @@ Example: `#practice/jabber-v1/abab…ab/p1.1.cf19b7cfee8ccbdd.3331333-330135n.69
 
 The local practice record (`localStorage` key `qdojo.practice.v1`) keeps wins,
 losses, draws and the best result per NPC under each ruleset version, kept apart
-and never combined. It counts each fight once and records the first-session steps.
+and never combined. It counts each fight once and records the first-session steps,
+one record however many tabs of the site are open.
 It is a local achievement, separate from ranked ratings. Damaged or older data is
 ignored with a notice. When storage is blocked, the record lasts only for the tab.
 The recommended ladder runs JABBER, KICKER, TURTLE, RANDOM, MIXED, SCOUT.

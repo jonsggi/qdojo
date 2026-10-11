@@ -641,8 +641,9 @@
     if (t.recovered > 0) out.push('Recovered +' + t.recovered + ' stamina (now ' + t.after.stamina + ').');
     if (t.reasons.includes('OPENING_EXPIRED')) out.push('Opening expired unused.');
     if (t.reasons.includes('POWER_WASTED')) {
+      // An EXHAUSTED move was never made: the opponent's block or duck did not stop it.
       out.push('Power spent with no damage: wasted. The power bonus only adds to a strike that lands, and ' +
-        (o.effective === ID.BLOCK ? 'this one was blocked.' : o.effective === ID.DUCK ? 'this one was ducked.' : t.effective === ID.EXHAUSTED ? 'the move was never made.' : 'this one did not land.'));
+        (t.effective === ID.EXHAUSTED ? 'the move was never made.' : o.effective === ID.BLOCK ? 'this one was blocked.' : o.effective === ID.DUCK ? 'this one was ducked.' : 'this one did not land.'));
     }
     if (t.effective === ID.DUCK && t.computed_damage > 0) out.push('Countered the ' + oact + ' from the duck.');
     if (t.reasons.includes('FEINT_BAITED')) {
