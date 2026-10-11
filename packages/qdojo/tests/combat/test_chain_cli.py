@@ -55,7 +55,13 @@ def test_duel_and_cup_commands(home, capsys):
 def test_doctor_is_non_spending_and_honest(home, capsys):
     out = run(capsys, "combat", "doctor")
     assert "WARN  deployment manifest" in out and "paid admission stays disabled" in out
+    assert "PASS  ruleset: combat-v1-candidate-3" in out
     assert not (home / "devnet").exists()
+    # A historical ruleset is a warning (not what the public arena fights under), not a failure.
+    for version in ("combat-v1-candidate-1", "combat-v1-candidate-2"):
+        doc = json.loads(run(capsys, "combat", "doctor", "--ruleset", version, "--json"))
+        line = next(c for c in doc if c["check"] == "ruleset")
+        assert line["status"] == "WARN" and "the public arena runs combat-v1-candidate-3" in line["detail"], line
 
 
 def test_rejections_exit_nonzero(home, capsys):

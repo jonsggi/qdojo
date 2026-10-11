@@ -248,7 +248,12 @@ a public write path and choosing quotas are operator decisions:
    see fresh state);
 2. the API: the same `--join-inbox`, plus `--join-config` with a JSON file of
    `combat/join.py` `Limits` fields (outside-fighter cap, fake-QU grant,
-   attachment cap, per-key burst, rate and daily quota, global inbox size);
+   attachment cap, per-key burst, rate and daily quota, global inbox size,
+   and `operator_keys`: the public keys that may register `test-` names, the
+   operator's smoke tests; any other key gets 403 `name_reserved`). The API
+   records these limits in the inbox when it starts, and the arena issues
+   fighters by them (the cap and the fake-QU grant), so both apply the
+   values `GET /api/v1/join` publishes (without `operator_keys`);
 3. the public proxy: `QDOJO_JOIN_OPEN=1` in the Dokploy environment (nginx
    otherwise answers 403 `join_closed` to every non-GET under `/api/v1/`).
 
@@ -259,6 +264,17 @@ and the exact enable, verify and rollback steps are in [beta.md](beta.md) §5. O
 labelled `outside` even after joining is switched off; their bots simply stop
 being able to send. No builder code runs on the host.
 
+**Registrations** (on the arena host; `--inbox` defaults to
+`~/.qdojo/combat/arena/inbox.sqlite`): `qdojo combat registrations list`
+shows each one with its status. `qdojo combat registrations revoke NAME
+--reason TEXT` retires one, for an offensive or impersonating name or a
+place taken by someone filling the arena: its key's transactions are
+refused (403 `revoked`) and its queued ones dropped, and it no longer counts
+toward `max_outside_fighters` or the day's `registrations_per_day`, in the
+API and in the arena. Its address still counts toward
+`registrations_per_ip_day`. The fighter stays in the record, labelled
+outside; revoking does not rename it.
+
 **Client addresses** (for the per-IP write limit): nginx walks
 `X-Forwarded-For` from the right through its own proxies (private ranges)
 and Cloudflare's published edge ranges only, so entries a client writes
@@ -266,7 +282,13 @@ itself are never trusted; if the walk ends at a Cloudflare edge it uses
 `CF-Connecting-IP`. It overwrites `X-Real-Client-IP` for the API, which reads
 that header only from a peer in an exact trusted CIDR. Refresh the Cloudflare
 ranges in the Dockerfile from cloudflare.com/ips when they change. Per-IP
-limits are a courtesy; the per-key quotas are the real protection.
+limits are a courtesy; the per-key quotas are the real protection. The
+registration and chain-read limits count an IPv4 client per address and an
+IPv6 client per /64 network. The inbox keeps a registration's address (for
+IPv6 only the /64) for the 24 hours the registration limit looks back, and no
+longer: the arena erases older ones every tick and the API at every
+registration. Once entry is closed nothing erases them, so the rollback runs
+`qdojo combat registrations forget-addresses` ([beta.md](beta.md) §5, §8).
 
 **Operate:**
 

@@ -18,7 +18,7 @@ from ..hashing import sha256
 from . import npcs
 from .engine import resolve_beat, resolve_round
 from .rules import Ruleset, candidate_1
-from .training import Contestant, run_fight
+from .training import ILLEGAL_PLAN, Contestant, run_fight
 from .types import ATTACKS, NO_POWER, SUBMITTED, Action, FightState, Plan, submitted
 
 J, K, B, D, T, R = Action.JAB, Action.KICK, Action.BLOCK, Action.DUCK, Action.THROW, Action.RECOVER
@@ -453,8 +453,10 @@ def eval_seed(suite: str, n: int) -> bytes:
 @dataclass
 class PlannerRecord:
     """How an external planner command behaved over an evaluation. A round it
-    failed (timeout, crash, invalid output) was played with the fallback plan:
-    that fight's result is not the planner's play, and it is counted here."""
+    failed (timeout, crash, invalid output) or answered with an illegal plan
+    was played with the fallback plan: that fight's result is not the
+    planner's play, and it is counted here. A plan that only lost a spent
+    power slot kept its actions: an adjusted round, not a fallback."""
     rounds: int = 0
     fallback_rounds: int = 0
     fights: int = 0
@@ -476,11 +478,12 @@ class PlannerRecord:
                 self.failures[d["error"]] = self.failures.get(d["error"], 0) + 1
                 if self.first_error is None:
                     tail = (d.get("stderr") or "").strip().splitlines()
-                    self.first_error = d["error"] + (": " + tail[-1][:300] if tail else "")
+                    why = d.get("adjusted") if d["error"] == ILLEGAL_PLAN else (tail[-1][:300] if tail else "")
+                    self.first_error = d["error"] + (": " + why if why else "")
             else:
                 self.max_ms = max(self.max_ms, d.get("elapsed_ms", 0))
                 self.total_ms += d.get("elapsed_ms", 0)
-            self.adjusted_rounds += bool(d.get("adjusted"))
+                self.adjusted_rounds += bool(d.get("adjusted"))
         self.fights_with_fallback += failed
 
     def to_json(self) -> dict:

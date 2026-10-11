@@ -63,10 +63,15 @@ non-participants may also register. They count as outside builders in the
 aggregate measurements but not in the cohort log.
 
 **One fighter per key.** A key registers one fighter, for good. Names are 3–16
-letters, digits, `-` or `_`; names starting with `test-` are reserved for the
-operator's smoke tests and do not count as builders. Offensive or
-impersonating names are removed by the operator (the fighter stays in the
-record, renamed in the site's metadata).
+letters, digits, `-` or `_`; names starting with `test-` (any case) are
+reserved for the operator's smoke tests and do not count as builders: the
+join service registers one only for a key in its configuration's
+`operator_keys` (§5 step 2) and refuses anyone else with `name_reserved`.
+Offensive or impersonating names are removed by the operator (the fighter
+stays in the record, renamed in the site's metadata). The operator can also
+revoke a registration (`qdojo combat registrations revoke NAME`): its key
+can no longer send, and its place under `max_outside_fighters` is free
+again ([operations.md](operations.md) §8).
 
 **The builder runs the bot.** No builder code runs on the arena host. A bot
 that stops simply stops fighting; a missed reveal forfeits as on a real chain.
@@ -109,18 +114,19 @@ OUTSIDE; their bots simply can no longer send.
 
 Recommended values, in
 [deploy/systemd/join-limits.beta.json](../deploy/systemd/join-limits.beta.json)
-(every field of `combat/join.py` `Limits`; a test checks the file loads):
+(every quota of `combat/join.py` `Limits`; a test checks the file loads; the
+operator adds `operator_keys` when copying it, §5 step 2):
 
 | Limit | Default | Beta | Why |
 |---|---:|---:|---|
-| `max_outside_fighters` (all time) | 8 | **16** | 10 cohort + 2 pilot + room for a lost key or a non-participant. Each outside fighter adds ranked pairs; 36 fighters stay well inside what the arena handles today (20 fighters, ~2,000 fights a day) |
+| `max_outside_fighters` (all time; a revoked registration frees its place) | 8 | **16** | 10 cohort + 2 pilot + room for a lost key or a non-participant. Each outside fighter adds ranked pairs; 36 fighters stay well inside what the arena handles today (20 fighters, ~2,000 fights a day) |
 | `registrations_per_day` (global) | 10 | 10 | A whole cohort can register in one day; a script cannot fill the arena in one |
-| `registrations_per_ip_day` | 2 | 2 | A retry after a mistake, not a farm |
+| `registrations_per_ip_day` | 2 | 2 | A retry after a mistake, not a farm. An IPv6 client counts per /64 network (one subscriber's usual allocation), an IPv4 client per address |
 | `grant_qu` (once per key) | 100,000 | **1,000,000** | 200 straight losses at tier 1. Devnet QU has no value; running dry mid-beta would end someone's participation for a reason the study does not care about |
 | `max_amount` (per transaction) | 20,000 | 20,000 | Covers tier 2 ranked and cup entry; keeps one bad budget from staking everything at once |
 | `tx_burst` / `tx_per_second` | 20 / 1.0 | 20 / 1.0 | A bot sends a few transactions a minute; the live house bots' busiest one sends ~2,700 a day |
 | `tx_per_day` (per key) | 20,000 | 20,000 | Seven times a busy bot |
-| `reads_per_second` (per IP) | 20 | 20 | `join` reads chain state once per poll |
+| `reads_per_second` (per address; IPv6 per /64) | 20 | 20 | `join` reads chain state once per poll |
 | `max_pending` (all keys) | 400 | 400 | Bounds the inbox the arena drains each tick |
 | `tick_behind` / `tick_ahead` | 30 / 60 | 30 / 60 | Stale or future transactions are refused with `stale` |
 
@@ -157,10 +163,19 @@ curl -s https://qdojo.jonsggi.com/api/v1/status | jq '{tick: .generated_tick, jo
 jq -r .ruleset_digest ~/.qdojo/combat/arena/devnet.json     # cf19b7cf…: candidate 3
 ```
 
-**2. Limits file:**
+**2. Limits file**, with the smoke-test key of step 7 as the operator's
+(only `operator_keys` may register `test-` names, §3). On the machine the
+smoke test will run from, create that key and print its public key (this
+contacts no arena):
 
 ```sh
-cp ~/src/qdojo-live/deploy/systemd/join-limits.beta.json ~/.qdojo/combat/join-limits.json
+uv run qdojo combat join --name test-smoke1 --show-key   # key ~/.qdojo/combat/join/test-smoke1.seed -> owner <64 hex>
+```
+
+Then on the arena host, with that owner in place of `OWNER`:
+
+```sh
+jq --arg k OWNER '.operator_keys = [$k]' ~/src/qdojo-live/deploy/systemd/join-limits.beta.json > ~/.qdojo/combat/join-limits.json
 ```
 
 **3. Switch 1, the arena drains the inbox:**
@@ -237,13 +252,17 @@ AUD-027 closes only after an *independent* builder completes the same journey
 # Dokploy: QDOJO_JOIN_OPEN=0 (or remove it) and redeploy: writes get 403 join_closed at once
 rm ~/.config/systemd/user/qdojo-combat-live.service.d/join.conf ~/.config/systemd/user/qdojo-combat-api.service.d/join.conf
 systemctl --user daemon-reload && systemctl --user restart qdojo-combat-live qdojo-combat-api
+cd ~/src/qdojo-live && uv run qdojo combat registrations forget-addresses   # the last client addresses: nothing erases them once entry is closed
 ```
 
 Outside fighters stay in `arena/outside.json` and stay labelled OUTSIDE.
 
 **Watch during the beta:** `journalctl --user -u qdojo-combat-live | grep outside`
-(registrations issued and rejected), the API's CPU (`systemctl --user status
-qdojo-combat-api`), and `/api/v1/community` daily.
+(registrations issued and rejected), `uv run qdojo combat registrations list`
+(every registration and its status), the API's CPU (`systemctl --user status
+qdojo-combat-api`), and `/api/v1/community` daily. A name to remove, or a
+place taken by someone filling the arena: `uv run qdojo combat registrations
+revoke NAME --reason "..."`.
 
 ## 6. Free devnet QU
 
@@ -299,6 +318,18 @@ What participants are told before they start:
 - The arena measures participation only from the public chain: which key
   sent transactions when. The site has no analytics, cookies or visitor
   tracking for this.
+- Registering (`qdojo combat join`) stores, in the arena's join inbox on the
+  arena host: the fighter's name, its public key and fighter ID, when the
+  registration arrived, and its status. It also stores the address the
+  registration came from (an IPv6 address only as its /64 network) for 24
+  hours, for the per-address registration limit (§4) and nothing else, and
+  then erases it. Transactions are stored with their key, never with an
+  address.
+- The site's web server (the stock nginx image) logs every request the usual
+  way, with the visitor's address, the time and the requested URL (a running
+  bot's requests carry its public key), to the hosting platform's container
+  log, kept as long as that platform keeps logs. Neither the study nor the
+  arena's measurements read it.
 - Results are published as aggregates (counts, rates, distributions) and
   failed cases described without identifying anyone.
 

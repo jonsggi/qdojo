@@ -92,7 +92,10 @@ Columns of the cohort log, one row per participant:
 (`participant, cohort_phase, house_or_test, started_at, first_fight_at,
 assistance, dropped_at_step, drop_reason, approach, second_submission,
 returned_week_2, explained_improvement, clarity, counterplay, replay_desire`).
-House and test identities are logged with `house_or_test = y` and excluded.
+House and test identities are logged with `house_or_test = y` and excluded;
+every other row has `n` or a blank cell. A coded cell holds the code alone:
+the demonstration behind an `explained_improvement` is noted with the open
+feedback, not in the cell.
 
 ## 5. Instruments
 
@@ -114,7 +117,30 @@ tested in `packages/qdojo/tests/test_study.py`:
 - **Scoring** (`score`): answers as CSV `reviewer,item,causes`; prints the
   identified rate with its interval, the sorted reviewer scores, per-category
   and reduced-motion results, and the H1 gate.
-- **Cohort report** (`cohort`): the H2–H6 and H8 aggregates per phase.
+- **Cohort report** (`cohort`): the H2–H6 and H8 aggregates per phase,
+  everyone who started in the denominator (and in the count, when they meet
+  the measure) of every rate. H3 counts a first fight within the target only
+  without `hands_on` help; the count including it is printed beside it. H4
+  counts `explained_improvement = y`, not `partial`. The minutes to a first
+  fight are over everyone who started, a dropout counting as `over`. A value
+  the report would have to guess at stops it, and every such cell is named by
+  participant and column: a timestamp it cannot read (not `YYYY-MM-DDTHH:MM`,
+  such as a date without a time; a UTC offset on one side only; a first fight
+  before the start); an `assistance` other than `none`, `docs`, `hint` or
+  `hands_on` (a blank cell is `none`; case, spaces and hyphens do not
+  matter); a `house_or_test`, `second_submission` or `returned_week_2` other
+  than `y` or `n`, or an `explained_improvement` other than `y`, `partial` or
+  `n` (`yes`, `true` and `1` read as `y`, `no`, `false` and `0` as `n`, a
+  blank cell is `n`; case does not matter); a survey answer other than a
+  whole number from 1 to 5 (a blank cell is no answer). Phases are compared
+  without case or surrounding spaces. The log's header must name every
+  column of §4 (compared without case or surrounding spaces; a spreadsheet's
+  byte-order mark is ignored): a column it lacks, misspelt or kept in another
+  sheet, would read as blank in every row, so the report stops and names it,
+  with the columns it does not know. It stops too for a column named twice
+  and for a row with more cells than the header (a comma in a cell that is
+  not quoted). Columns of the team's own are listed as `unknown_columns` and
+  not read.
 - **Adaptation** (`adaptation`): H7 from the read model's per-fighter results
   against the switching bot.
 - **Arena participation** (`GET /api/v1/community`, [beta.md](beta.md) §7):

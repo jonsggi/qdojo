@@ -69,7 +69,12 @@ def main(argv=None) -> int:
         print(json.dumps(study.score_answers(key, sheets, study.read_csv(a.answers)), indent=1))
         return 0
     if a.cmd == "cohort":
-        print(json.dumps(study.cohort_report(study.read_csv(a.log)), indent=1))
+        try:
+            report = study.cohort_report(study.read_cohort_log(a.log))
+        except study.CohortLogError as exc:
+            print(f"beta-study: {a.log}: {exc}", file=sys.stderr)
+            return 2
+        print(json.dumps(report, indent=1))
         return 0
     if a.cmd == "adaptation":
         res = study.results_from_readmodel(a.db, a.fighter, a.opponent)

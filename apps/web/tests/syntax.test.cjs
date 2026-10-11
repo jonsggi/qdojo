@@ -116,6 +116,22 @@ test('security headers: every location with its own headers includes them, and t
   assert.match(headers, /script-src 'self' 'sha256-[^']+';/, 'no unsafe-inline scripts');
 });
 
+test('the COMMUNITY panel says which service erases a registration\'s address, and that the web server logs it too', () => {
+  // The join service erases a registration's address after 24 hours, but the site's nginx sets no
+  // access_log, so the stock image logs every request with the client's address (the real one, after
+  // the X-Forwarded-For walk), the registration and the bot's key-bearing reads included. The panel
+  // said "A registration's address is kept for 24 hours ... then erased", false for the deployment
+  // and against docs/beta.md §8.
+  const app = read('combat/app.js');
+  const panel = app.slice(app.indexOf('function communityPanel('), app.indexOf('// ---- FIGHTER NFTS'));
+  const conf = fs.readFileSync(path.join(ROOT, 'deploy/nginx/default.conf.template'), 'utf8');
+  assert.ok(panel.length > 0 && panel.length < 8000, 'communityPanel found');
+  assert.match(panel, /The join service keeps a registration\\'s address for 24 hours \(an IPv6 address only as its \/64\), for the per-address limit alone, then erases it\./);
+  assert.doesNotMatch(panel, /address is kept for/);
+  assert.doesNotMatch(conf, /access_log/, 'nginx logging changed: say what it keeps in the panel and in docs/beta.md §8');
+  assert.match(panel, /The site\\'s web server keeps its own log of every request, with the visitor\\'s address, for as long as the hosting platform keeps logs/);
+});
+
 test('the site ships its public files: 404 page, crawler files, manifest, icons and share card', () => {
   for (const f of ['404.html', 'robots.txt', 'sitemap.xml', 'site.webmanifest', 'favicon.svg', 'favicon-32.png', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png', 'share.png']) assert.ok(fs.existsSync(path.join(WEB, f)), f);
   const png = fs.readFileSync(path.join(WEB, 'share.png'));

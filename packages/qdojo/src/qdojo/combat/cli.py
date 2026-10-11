@@ -90,14 +90,14 @@ def cmd_train(a):
         for line in lines:
             print("  " + line)
     for d in you.diagnostics:
-        if d.get("adjusted"):
+        if d.get("adjusted"):           # an illegal plan (a fallback round) or a spent power slot dropped
             print(f"\nround {d['round_index'] + 1}: your plan was illegal and would forfeit on a chain; "
                   f"{d['adjusted']}")
-    for f in replay["fallbacks"]:
-        print(f"\nround {f['round_index'] + 1}: your planner failed ({f['cause']}); six RECOVERs were used")
-        tail = you.diagnostics[f["round_index"]]["stderr"].strip()
-        if tail:
-            print("  stderr: " + tail[-400:])
+        elif d.get("error"):
+            print(f"\nround {d['round_index'] + 1}: your planner failed ({d['error']}); six RECOVERs were used")
+            tail = d["stderr"].strip()
+            if tail:
+                print("  stderr: " + tail[-400:])
 
 
 def _print_fight(replay: dict, you: str):
@@ -204,7 +204,7 @@ def cmd_evaluate(a):
 def _evaluate_planners(a, rules, pool_name, pool):
     """`evaluate --planner CMD [--planner CMD2 ...]`: each command on the same
     seeds and opponents; with two or more, paired differences against the first.
-    Exits 1 if any round fell back because a planner failed."""
+    Exits 1 if any round fell back because a planner failed or answered an illegal plan."""
     seeds = a.seeds if a.seeds is not None else 20
     say = (lambda m: print(m, file=sys.stderr)) if not a.json else None
     head = (f"{ruleset_line(rules)}\npool {pool_name}: {len(pool)} opponents ({', '.join(pool)})\n"
@@ -236,7 +236,7 @@ def _evaluate_planners(a, rules, pool_name, pool):
                   f"{p['fallback_rounds']} fell back to six RECOVERs"
                   + (f" ({', '.join(f'{k} {v}' for k, v in p['failures'].items())}) in "
                      f"{p['fights_with_fallback']} of {p['fights']} fights" if p["fallback_rounds"] else "")
-                  + f"; {p['adjusted_rounds']} adjusted (spent power slot dropped or illegal plan replaced); "
+                  + f"; {p['adjusted_rounds']} adjusted (spent power slot dropped, actions kept); "
                   f"slowest {p['max_ms']} ms")
             if p["first_error"]:
                 print(f"first failure: {p['first_error']}")
