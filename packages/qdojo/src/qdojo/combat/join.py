@@ -635,6 +635,9 @@ class RemoteClient:
             r = self.http.get(f"/api/v1/tx/{receipt.tx_hash}")
         except (HttpError, OSError):
             return None
+        seen = self.state.get("tick")
+        if r["status"] in ("included", "dropped") and seen is not None and int(seen) <= int(r.get("target_tick") or 0):
+            return None              # the reads this bot acts on have not reached that tick yet
         if r["status"] == "included":
             x = r["result"]
             return CallResult(Code[x["code"]], x["op"], x["target"], x["refunded"], x["detail"], x["data"])

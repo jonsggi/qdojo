@@ -183,3 +183,30 @@ def test_join_is_off_unless_enabled(tmp_path):
         assert err(lambda: http.post("/api/v1/tx", {"tx": ""}))[0] == 405
     finally:
         srv.shutdown()
+
+
+def test_a_receipt_waits_until_the_reads_the_bot_acts_on_have_passed_its_tick(tmp_path):
+    """The inbox settles a transaction right after its tick; the chain reads a
+    remote bot acts on come from the API's follower, up to a second behind.
+    A receipt that resolved first made the bot act on a view without it: a
+    cup entry booked as withdrawn and sent again."""
+    row = {"hash": "a" * 60, "status": "included", "target_tick": 10,
+           "result": {"code": "OK", "op": int(Op.CUP_REGISTER), "target": 0, "refunded": 0, "detail": "",
+                      "data": {}}}
+
+    class Http:
+        def get(self, path):
+            assert path == f"/api/v1/tx/{row['hash']}"
+            return row
+    info = {"network_id": "00" * 32, "contract_id": "11" * 32}
+    client = J.RemoteClient(Http(), info, b"\0" * 32, b"\1" * 32, b"\2" * 32, tmp_path / "st", log=lambda m: None)
+    receipt = J.RemoteReceipt(row["hash"], 10)
+    client.state = {"tick": 10}                                    # the follower has not applied tick 10 yet
+    assert client.poll(receipt) is None
+    client.state = {"tick": 11}
+    assert client.poll(receipt).code == codec.Code.OK
+    row["status"] = "dropped"
+    client.state = {"tick": 9}
+    assert client.poll(receipt) is None
+    client.state = {"tick": 11}
+    assert client.poll(receipt) == "dropped"
