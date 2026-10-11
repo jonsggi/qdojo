@@ -2276,12 +2276,22 @@
     const details = $('#player .beat-details');
     if (details) details.open = false;
     // The move deck sits right under the stage and its headline, so writing
-    // a round and watching it happen use the same screen.
-    const deck = $('#planner'), head = $('#player .beat-headline');
-    if (deck && head) head.after(deck);
+    // a round and watching it happen use the same screen. Where the arena is
+    // pinned while you plan (phones, shell.css) the deck comes straight after
+    // it and the replay controls follow the deck, on screen and in tab order.
+    const deck = $('#planner'), stage = $('#player .stage'), head = $('#player .beat-headline');
+    const pinned = !!deck && getComputedStyle(stage).position === 'sticky';
+    if (deck && head) (pinned ? stage : head).after(deck);
+    // There the page opens on the deck, measured on the state you plan from
+    // (the last frame) before a new round plays back above it.
+    let landed = false;
+    if (pinned) {
+      player.seek(frames.length - 1, false);
+      landed = showDeck(playFrom != null && motion());
+    }
     if (playFrom != null) {
       player.seek(playFrom, false);
-      $('.practice-stage').scrollIntoView({ block: 'start', behavior: motion() ? 'smooth' : 'auto' });
+      if (!landed) $('.practice-stage').scrollIntoView({ block: 'start', behavior: motion() ? 'smooth' : 'auto' });
       if (motion()) player.start(); else player.seek(frames.length - 1, false);
     } else player.seek(frames.length - 1, false);
     if (over) {
@@ -2294,6 +2304,29 @@
         $('#newfight').addEventListener('click', () => { location.hash = '#practice/' + s.npc + '/' + L.randomSeed(); });
       }
     } else wirePlanner();
+    return landed;
+  }
+
+  /* Phones while planning (AUD-036): with the arena pinned at the top of the
+   * screen, scroll so the beats, the deck and FIGHT sit right under it. The
+   * round heading shows too when everything down to the coach tip fits; FIGHT
+   * is always on screen. Returns false, and leaves the page alone, wherever
+   * the arena is not pinned (desktops, short screens). */
+  function showDeck(smooth) {
+    const stage = $('.practice-stage.planning .stage'), h3 = $('#planner h3'), slots = $('#planner .slots'), act = $('#planner .planner-actions');
+    if (!stage || !h3 || !slots || !act || getComputedStyle(stage).position !== 'sticky') return false;
+    const y0 = window.scrollY, top = el => el.getBoundingClientRect().top + y0, bottom = el => el.getBoundingClientRect().bottom + y0;
+    const under = stage.offsetHeight + 14, room = window.innerHeight - 8;   // the arena, its shadow and a gap; the bottom edge
+    const tip = $('#pr-tip'), last = Math.max(bottom(act), tip ? bottom(tip) : 0);
+    const withHead = top(h3) - under, withBeats = top(slots) - under, withFight = bottom(act) - room;
+    const y = Math.max(0, Math.round(last - room <= withHead ? withHead : withFight <= withBeats ? withBeats : withFight));
+    window.scrollTo({ top: y, behavior: smooth ? 'smooth' : 'auto' });
+    // Web fonts that arrive later reflow the page: land again unless the player has scrolled.
+    if (!smooth && document.fonts && document.fonts.status === 'loading') {
+      const planner = $('#planner');
+      document.fonts.ready.then(() => { if ($('#planner') === planner && Math.abs(window.scrollY - y) < 2) showDeck(false); });
+    }
+    return true;
   }
 
   // Your stamina beat by beat if nothing hits you: the best case. A beat you
@@ -2402,14 +2435,22 @@
       if (e.target.tagName === 'INPUT') return;
       let handled = true;
       const byKey = deckIds().find(a => keyOf(a) === e.key);
+      const slot = e.target.closest('[data-slot]');
       if (byKey != null) setAction(byKey);
       else if (e.key === 'ArrowRight') { draft.sel = Math.min(5, draft.sel + 1); paintDraft(); }
       else if (e.key === 'ArrowLeft') { draft.sel = Math.max(0, draft.sel - 1); paintDraft(); }
+      // The beats are a listbox: HOME and END pick the first and last, SPACE the focused one.
+      else if (e.key === 'Home' || e.key === 'End') { draft.sel = e.key === 'Home' ? 0 : 5; paintDraft(); }
+      else if (e.key === ' ' && slot && !e.target.closest('button')) { draft.sel = Number(slot.dataset.slot); paintDraft(); }
       else if (e.key === 'Backspace' || e.key === 'Delete') { draft.actions[draft.sel] = null; if (draft.power_slot === draft.sel) draft.power_slot = -1; paintDraft(); }
       else if (e.key === 'p' || e.key === 'P') togglePower(draft.sel);
       else if (e.key === 'Enter' && !e.target.closest('button')) fight();
       else handled = false;
       if (handled) e.preventDefault();
+      // The deck sits inside the replay player for layout only. Its keys stay
+      // here, and so do SPACE and K (the player's play keys), so writing a
+      // round never moves the arena above it off the state you plan from.
+      if (handled || e.key === ' ' || e.key === 'k') e.stopPropagation();
     });
     paintDraft();
     const first = $('.slot', root);
@@ -3570,6 +3611,7 @@
     // A slow screen change shows a busy plate over the old view after 200 ms
     // instead of leaving it looking current (V-21). Polls never show it.
     const busy = navigated ? setTimeout(() => { if (tok === viewToken) setBusy(true); }, 200) : 0;
+    let landed = false;   // a practice round on a phone opens on its move deck (AUD-036)
     try {
       if (name === 'arena') await viewArena(tok);
       else if (name === 'title') await viewTitle(tok);
@@ -3594,7 +3636,7 @@
       else if (name === 'story') viewStory();
       else if (name === 'fight') await viewFight(tok, rest[0]);
       else if (name === 'fighter') await viewFighter(tok, rest[0], rest[1]);
-      else if (name === 'practice') viewPractice(tok, rest);
+      else if (name === 'practice') landed = viewPractice(tok, rest) === true;
       else if (name === 'rules') await viewRules(tok);
       else viewLost(name);
     } catch (e) {
@@ -3603,7 +3645,7 @@
     clearTimeout(busy);
     if (tok !== viewToken) return;
     setBusy(false);
-    if (navigated) window.scrollTo(0, 0);
+    if (navigated && !landed) window.scrollTo(0, 0);
     const playerRoot = name === 'fight' ? $('#view [data-player]') : null;
     if (navigated && playerRoot) playerRoot.focus({ preventScroll: true });
     else if (navigated && name !== 'practice' && !(name === 'fighters' && document.activeElement && document.activeElement.id === 'ff-q')) $('#view').focus({ preventScroll: true });

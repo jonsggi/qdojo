@@ -469,21 +469,29 @@ body.still .select-grid .npc-card.on { animation: none; }
   .practice-stage { scroll-margin-top: 8px; }
 }
 /* Phones while planning (AUD-036): the arena stays pinned at the top of the
-   screen as you scroll down to your moves, so both fighters' HP, stamina,
-   POWER, OPENING and GUARD stay in view while you write the round, with the
-   beats, the deck and FIGHT together right under it. The deck scrolls under
-   the arena, never over it, and there is one deck, no floating copy. Only
-   where the arena and that block fit on one screen (360 x 740 is the smallest
-   size checked); a shorter screen keeps the plain scrolling page. */
+   screen, so both fighters' HP, stamina, POWER, OPENING and GUARD stay in
+   view while you write the round. The planner comes straight after the arena
+   here, before the replay controls (app.js), and the page opens on it: the
+   beats, the deck and FIGHT right under the arena on arrival, after every
+   round and on a rematch (showDeck in app.js). The deck scrolls under the
+   arena, never over it, and there is one deck, no floating copy. Only where
+   the arena and that block fit on one screen (360 x 740 is the smallest size
+   checked); a shorter screen keeps the plain scrolling page. */
 @media (max-width: 700px) and (min-height: 700px) {
   .practice-stage.planning .stage.arcade { position: sticky; top: 0; z-index: 5; box-shadow: 0 0 0 2px var(--steel-2), 0 6px 0 rgba(0, 0, 0, .85); }
   /* The arena is taller during a beat (its move strip fills). Scroll
      anchoring never anchors to a pinned box, so it would move the page and
-     slide the arena over the replay controls; this page keeps its scroll
-     position instead and the content below simply follows the arena. */
+     slide the arena over the beats; this page keeps its scroll position
+     instead and the content below simply follows the arena. */
   html:has(.practice-stage.planning) { overflow-anchor: none; }
   /* A control that takes keyboard focus scrolls clear of the pinned arena. */
   .practice-stage.planning #player > :not(.stage) :is(button, select, summary, [tabindex]) { scroll-margin-top: 352px; }
+  /* The first fight's coach tip follows FIGHT, so the beats can sit right
+     under the arena with the tip below them where the screen has room. */
+  .practice-stage.planning .planner { display: flex; flex-direction: column; }
+  .practice-stage.planning .planner-status { margin: 0; }
+  .practice-stage.planning .pr-tip { order: 1; margin: 10px 0 0; padding: 4px 8px; font-size: 13px; line-height: 1.4; }
+  .practice-stage.planning .planner > p.tiny { order: 2; }
 }
 
 /* ---- build a bot ---------------------------------------------------------- */
