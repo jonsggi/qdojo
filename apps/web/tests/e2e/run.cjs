@@ -545,6 +545,12 @@ async function main() {
     await go(page, base, '#join', '#planner-src');
     await page.waitForFunction(() => !/^Loading/.test(document.querySelector('#planner-src').textContent));
     await must(/THE NETWORK: DEVNET/.test(await text(page, '#view')) && /no monetary value/i.test(await text(page, '#view')), 'the network statement');
+    // The entry panel says what the deployment reports (the sample export: no arena to
+    // enter) with the next steps, and links the published entry policy (AUD-027).
+    await page.waitForFunction(() => !/CHECKING/.test((document.querySelector('#entry-status h3') || {}).textContent || 'CHECKING'));
+    await must(/ENTRY ON THIS ARENA: ARENA OFFLINE/.test(await text(page, '#entry-status h3')), 'the sample export reports the arena offline, never OPEN');
+    await must(await page.locator('#entry-status .entry-next li').count() === 3, 'the offline panel lists the next steps');
+    await must(/docs\/beta\.md#3-entry-policy-and-eligibility$/.test(await page.getAttribute('#entry-status a[href*="beta.md"]', 'href')), 'the panel links the entry policy');
     await shot(page, 'join');
   });
   await step('redirect', async (page, base) => {

@@ -2,7 +2,7 @@
 
 > **Purpose:** audit findings, their status, and how to reproduce them. \
 > **Audience:** the owner; product, game, frontend, protocol and operations contributors. \
-> **Status:** reference. Combat findings AUD-011 to AUD-028 and product follow-ups AUD-029 to AUD-041 are below. Of the ten riddle-era findings, AUD-006 remains open, AUD-009 and AUD-010 are mitigated, and seven are retired with the riddle code. \
+> **Status:** reference. Combat findings AUD-011 to AUD-028 and product follow-ups AUD-029 to AUD-041 are below. Of the ten riddle-era findings, AUD-006 remains open for the paid launch, AUD-009 and AUD-010 are mitigated, and seven are retired with the riddle code. \
 > **Last reviewed:** 2026-10-03: recorded the 2026-09-30 product review and updated its related findings.
 
 ## Riddle-era review 2026-09-16
@@ -24,7 +24,7 @@ those that apply to combat stay open.
 | [AUD-003](issues/AUD-003-confirm-settle-anchor.md) | Retired (riddle code removed 2026-09-28, see tag riddle-v0-final) | P1 / public operation | Confirm SETTLE inclusion before terminal status |
 | [AUD-004](issues/AUD-004-single-writer-state.md) | Retired (riddle code removed 2026-09-28, see tag riddle-v0-final) | P1 / unattended operation | Enforce single-writer ownership of state |
 | [AUD-005](issues/AUD-005-fail-closed-strategies.md) | Retired (riddle code removed 2026-09-28, see tag riddle-v0-final); principle carried by AUD-013 | P1 / unattended bots | Fail closed on crashed/invalid entry strategies |
-| [AUD-006](issues/AUD-006-house-fighter-disclosure.md) | **Open**, carries over to combat | P1 / outside stakes | Publish affiliations and resolve author-participation rules |
+| [AUD-006](issues/AUD-006-house-fighter-disclosure.md) | **Open** for the paid launch (owner's policy call); combat disclosure delivered (HOUSE/OUTSIDE, docs/beta.md §3) | P1 / outside stakes | Publish affiliations and resolve author-participation rules |
 | [AUD-007](issues/AUD-007-live-pot-matching.md) | Retired (riddle code removed 2026-09-28, see tag riddle-v0-final) | P1 / advertised money | Match live pot calculations to house-fighter exclusions |
 | [AUD-008](issues/AUD-008-verification-scope.md) | Retired (riddle code removed 2026-09-28, see tag riddle-v0-final); combat shows per-check badges | P1 / public trust | Separate hash consistency from independent verification |
 | [AUD-009](issues/AUD-009-freeze-nft-art-and-allocation.md) | **Mitigated** f8a734e: freeze/verify pipeline and duplicate check; allocation and contact sheet open | P1 / NFT release | Freeze art/traits and define allocation/duplicate policy |
@@ -62,12 +62,12 @@ Seven findings were fixed and deployed on 2026-09-25; the rest are open.
 | [AUD-019](issues/AUD-019-player-ev-and-event-farming.md) | **Mitigated** f27a972 | P1 / fairness / outside stakes | Honest players lose money; cups and duels were farmed |
 | [AUD-020](issues/AUD-020-ratings-and-seasons.md) | **Mitigated** f27a972 | P2 / competition quality | Ratings do not converge and season titles are noisy |
 | [AUD-021](issues/AUD-021-balance-kick-duck.md) | Mitigated (candidate 3: 11/11 gates; human study in AUD-038) | P2 / strategic depth | Kick dominates; duck and throw are near useless |
-| [AUD-022](issues/AUD-022-pacing.md) | Mitigated (profile `demo-c2`, 9/8 ticks; wiring 67f10c1) | P2 / spectator experience | A ranked fight takes twice the target time |
+| [AUD-022](issues/AUD-022-pacing.md) | **Fixed** on the live arena: `demo-c3`, 9/8 ticks; median ranked fight ~57 s, p95 ~61.5 s (2026-10-10) | P2 / spectator experience | A ranked fight takes twice the target time |
 | [AUD-023](issues/AUD-023-market-without-prices.md) | **Fixed** 65ac7b8 | P2 / NFT readiness | The simulated market has no prices |
 | [AUD-024](issues/AUD-024-unbounded-growth.md) | **Fixed** 67f10c1 | P2 / operations | index.json and restart time grow without bound |
 | [AUD-025](issues/AUD-025-overdue-invariant.md) | **Fixed** 67f10c1 | P1 / regression safety | Tests accepted overdue live fights |
 | [AUD-026](issues/AUD-026-read-model-database.md) | Fixed in 7557e2a, cb5a22d (deploy pending) | P1 / product foundation | Full history needs a read model, not static files |
-| [AUD-027](issues/AUD-027-outside-builder-entry.md) | Entry implemented; beta enablement and independent journey open | P1 / product | Outside builders cannot enter the arena |
+| [AUD-027](issues/AUD-027-outside-builder-entry.md) | Entry implemented; policy published and linked from BUILD A BOT; entry status shown (7a0837c3). Open: enabling entry (owner) and an independent builder's journey | P1 / product | Outside builders cannot enter the arena |
 | [AUD-028](issues/AUD-028-licence.md) | Open (proposal ready) | P1 / open-source release | The repository has no licence |
 
 Suggested order recorded with the September 25 review:

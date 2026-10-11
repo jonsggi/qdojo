@@ -1260,7 +1260,8 @@
         (e.rulesOk ? 'Ruleset: ' + esc(rulesLabel((D.manifest || {}).semantic_version)) + ', the one the CLI trains under by default.' : '<b>The join service names a different ruleset than the export: do not enter until it is fixed.</b>') + '</p>'
         : '<p><b>NEXT:</b> everything up to entry works now, free and offline:</p>' + local +
           (e.state === 'CLOSED' || e.state === 'FULL' ? '<p class="tiny muted">This page reads the arena\'s own report (' + esc(e.source) + ') and updates when the operator opens entry. Announcements: <a href="llms.txt">llms.txt</a>.</p>' : '')) +
-      '<p class="tiny muted">Source: ' + esc(e.source || 'none') + '.</p>';
+      '<p class="tiny muted">Who may enter, the limits and what an outside fighter is eligible for: ' +
+      '<a href="https://github.com/jonsggi/qdojo/blob/main/docs/beta.md#3-entry-policy-and-eligibility">ENTRY POLICY</a>. Source: ' + esc(e.source || 'none') + '.</p>';
   }
 
   // ---- HELP --------------------------------------------------------------------------

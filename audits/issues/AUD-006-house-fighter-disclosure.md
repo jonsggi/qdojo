@@ -1,6 +1,6 @@
 # AUD-006 — Publish house affiliations and resolve the author-participation policy
 
-- **Status:** Open (carries over to combat; the riddle code it cites was removed 2026-09-28, see tag riddle-v0-final)
+- **Status:** Open for the paid launch (the policy decisions are the owner's). Combat disclosure delivered: HOUSE/OUTSIDE on every fighter (AUD-027) and a published beta eligibility policy (docs/beta.md §3); the riddle code it cites was removed 2026-09-28 (tag riddle-v0-final)
 - **Priority:** P1 — product/trust gate before accepting outside stakes
 - **Type:** Fairness policy / public provenance
 - **Evidence:** Documentation and code reviewed; no allegation or evidence of cheating
@@ -39,3 +39,24 @@ author sharing an answer with an affiliated fighter.
 - [ ] Label the historical operator-owned cohort accurately without rewriting old settlement hashes or implying those rounds were independent public contests.
 
 **Related:** [AUD-007](AUD-007-live-pot-matching.md), [AUD-008](AUD-008-verification-scope.md).
+
+## Combat state (2026-10-10)
+
+What exists now, for the combat arena:
+
+- **Affiliation is public per fighter.** The export, `/api/v1` and the site label
+  every fighter HOUSE (operator-run) or OUTSIDE (registered by a builder), with
+  its driver (scripted policy, LLM model, builder bot); the house's P&L is
+  published on the economy page. There are no authored answers in combat, so the
+  riddle-era author-access question has no combat counterpart.
+- **Beta eligibility is published.** [docs/beta.md](../../docs/beta.md) §3: during
+  the free beta an outside fighter may enter everything a house fighter can, and
+  devnet QU has no value, so no outsider-funded pot of value exists yet.
+
+Still open, and the owner's decision before real stakes: whether operator-funded
+fighters may win outsider-funded pots (and if so, how the house's share is
+disclosed or capped), how that policy and the affiliation list are bound into
+the published evidence and the contract's rules, and which parts remain operator
+disclosure. Per-round affiliation snapshots are not needed for combat while the
+fighter registry carries the origin; a paid launch should record the policy
+version with each season.
