@@ -171,8 +171,18 @@ def verify_replay(replay: dict, rules: Ruleset | None = None) -> dict:
 
     Only the plans (and the ruleset digest) are inputs. States, traces and the
     outcome in the file are claims, checked against an independent resolution.
+    A malformed document raises ReplayMismatch like any other failed check.
     """
-    if replay.get("schema") != REPLAY_SCHEMA:
+    try:
+        return _verify_replay(replay, rules)
+    except ReplayMismatch:
+        raise
+    except (KeyError, IndexError, TypeError, AttributeError, ValueError, RecursionError) as exc:
+        raise ReplayMismatch(f"malformed replay: {type(exc).__name__} {exc}") from None
+
+
+def _verify_replay(replay: dict, rules: Ruleset | None) -> dict:
+    if not isinstance(replay, dict) or replay.get("schema") != REPLAY_SCHEMA:
         raise ReplayMismatch(f"not a {REPLAY_SCHEMA} document")
     if rules is None:                     # the replay names its ruleset; use that packaged one
         try:
