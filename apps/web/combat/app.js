@@ -2292,11 +2292,12 @@
     // On a pinned phone screen the page shows the replay while a round plays
     // back, then goes back to the deck: when it has played to the end (unless
     // the player has scrolled meanwhile), and when the replay controls skip
-    // or step to its end. Focus on those controls goes along to the deck.
+    // or step to its end. The focus stays on those controls: ENTER on a beat
+    // means FIGHT, so one press too many must not fight the next round.
     const onEnd = how => {
-      const v = pinView, f = document.activeElement;
+      const v = pinView;
       if (how !== 'skipped' && !(v && v.kind === 'replay' && v.deck === $('#planner') && Math.abs(window.scrollY - v.y) < 2)) return;
-      if (showDeck(motion()) && f && f.closest && f.closest('#player .controls')) focusBeat();
+      showDeck(motion());
     };
     const player = track(createPlayer($('#player'), { frames, ids: { A: aId, B: 'npc:' + s.npc }, names: { A: aName, B: npc.name }, links: false, replay: {}, stageSeed: 'practice:' + s.npc, mySide: 'A', autoplay: false,
       planRound: over ? null : s.state.round_index + 1, onEnd }));
@@ -2513,10 +2514,14 @@
       el.classList.toggle('sel', i === draft.sel);
       el.setAttribute('aria-selected', String(i === draft.sel));
       // One tab stop for the beats, on the selected one; a focused beat
-      // hands the focus on with the selection (arrows, HOME/END, a move key),
-      // scrolling no further than it takes to show it (clear of a pinned arena).
+      // hands the focus on with the selection (arrows, HOME/END, a move key).
+      // On a pinned phone the page scrolls no further than it takes to show
+      // it clear of the arena; a desktop page stays where it is.
       el.tabIndex = i === draft.sel ? 0 : -1;
-      if (i === draft.sel && focused && focused !== el && focused.matches('.slot')) { el.focus({ preventScroll: true }); el.scrollIntoView({ block: 'nearest' }); }
+      if (i === draft.sel && focused && focused !== el && focused.matches('.slot')) {
+        el.focus({ preventScroll: true });
+        if ($('.practice-stage.pin')) el.scrollIntoView({ block: 'nearest' });
+      }
       el.classList.toggle('filled', a != null);
       el.classList.toggle('broke', !!p && !p.ok);
       $('.slot-act', el).textContent = a == null ? '?' : deckLabel(a);
@@ -2594,7 +2599,7 @@
       else if (e.key === ' ' && onBeat) pick(Number(slot.dataset.slot));
       else if (e.key === 'Backspace' || e.key === 'Delete') { draft.actions[draft.sel] = null; if (draft.power_slot === draft.sel) draft.power_slot = -1; paintDraft(); }
       else if (e.key === 'p' || e.key === 'P') togglePower(draft.sel);
-      else if (e.key === 'Enter' && !e.target.closest('button')) fight();
+      else if (e.key === 'Enter' && !e.repeat && !e.target.closest('button')) fight();   // a held ENTER fights once
       else handled = false;
       if (handled) e.preventDefault();
       // The deck sits inside the replay player for layout only. Its keys stay

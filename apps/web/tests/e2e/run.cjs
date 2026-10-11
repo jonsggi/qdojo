@@ -423,6 +423,7 @@ async function main() {
     await must(await page.evaluate(() => scrollY) === 0 && !!(await page.$('#player .beat-headline + #planner')), 'a desktop round opening at the top, its deck under the replay headline');
     await must(await page.$eval('#to-deck', el => getComputedStyle(el).display) === 'none', 'no YOUR MOVES button on a desktop (the deck is under the replay there)');
     for (const k of ['4', '1', '2', '6', '5', '1']) await page.keyboard.press(k);
+    await must(await page.evaluate(() => scrollY) === 0, 'typing the moves leaving a desktop page at the top');
     await page.click('#fight');
     await page.waitForSelector('tr.fr-beat', { state: 'attached' });   // the beat table is folded in practice
     await must((await page.locator('tr.fr-beat').count()) >= 1, 'resolved beats');
@@ -684,8 +685,10 @@ async function main() {
     // for what the tap does (a page that only then starts to glide would
     // look "still" before it moved).
     const pos = () => page.$eval('.controls .pos', el => el.textContent);
-    // A replay control that lands on the deck takes the focus there with it.
+    // A replay control that lands on the deck keeps the focus (ENTER on a beat
+    // means FIGHT); YOUR MOVES takes it to the selected beat.
     const focusOnBeat = () => page.evaluate(() => document.activeElement.matches('#planner .slot[aria-selected="true"]'));
+    const focusOnControl = () => page.evaluate(() => !!document.activeElement.closest('#player .controls'));
     const step1 = async (sel, was) => { await page.tap(sel); await page.waitForFunction(w => document.querySelector('.controls .pos').textContent !== w, was, { timeout: 5000 }); };
     const landed = async (r, what) => {
       await page.waitForFunction(() => { const q = s => document.querySelector(s).getBoundingClientRect(); return q('#planner .slots').top >= q('.practice-stage .stage').bottom && q('#fight').bottom <= innerHeight; }, null, { timeout: 8000 }).catch(() => {});
@@ -699,7 +702,7 @@ async function main() {
     await playing(1);
     await page.tap('[data-act=last]');
     await landed(2, '▶| during the playback');
-    await must(await focusOnBeat(), 'the focus on the selected beat after ▶|');
+    await must(await focusOnControl(), 'the focus left on ▶| after it landed on the deck');
     await shot(page, 'practice-phone-skip-last', false);
     // PAUSE while round 2 plays back
     await write();
@@ -719,7 +722,7 @@ async function main() {
     // ▶ stepped onto the end
     for (let i = 0, was = await pos(); i < 12 && !/BREAK/.test(was); i++, was = await pos()) await step1('[data-act=next]', was);
     const deck = await landed(3, '▶ stepped onto the end');
-    await must(await focusOnBeat(), 'the focus on the selected beat after ▶ onto the end');
+    await must(await focusOnControl(), 'the focus left on ▶ after it stepped onto the end');
     // back down to the replay controls, three beats back, then YOUR MOVES
     for (let i = 0; i < 3; i++) await step1('[data-act=prev]', await pos());
     await must(/^R2 B\d/.test(await pos()), 'the replay stepped back into round 2 (' + await pos() + ')');
@@ -736,6 +739,23 @@ async function main() {
     await page.waitForFunction(() => document.querySelectorAll('#planner .slot.filled').length === 1, null, { timeout: 5000 });
     const v = await landed(3, 'a tap on a move');
     await must(v.filled === 1 && v.y === deck.y, 'the tapped move in the first beat, the page still (' + v.filled + ' filled, scroll ' + deck.y + ' to ' + v.y + ')');
+    // Round 3 written in full, then the replay stepped to its end by keyboard
+    // and one ENTER more: the focus stays on ▶, so round 3 stays open.
+    for (const a of ['0', '1', '5', '4', '0']) await page.tap('#planner .act-btn[data-a="' + a + '"]');
+    await page.waitForFunction(() => document.querySelectorAll('#planner .slot.filled').length === 6, null, { timeout: 5000 });
+    await page.focus('[data-act=next]');
+    for (let i = 0, was = await pos(); i < 12 && !/BREAK/.test(was); i++, was = await pos()) {
+      await page.keyboard.press('Enter');
+      await page.waitForFunction(w => document.querySelector('.controls .pos').textContent !== w, was, { timeout: 5000 });
+    }
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(300);
+    await must(!!(await page.$('#planner')) && /ROUND 3/.test(await text(page, '#planner h3')) && await focusOnControl(), 'ENTER past the end of the replay leaving round 3 open, the focus on ▶ (' + await pos() + ')');
+    // Nor does a held ENTER on a beat (a key repeat) fight it.
+    await page.focus('#planner .slot[aria-selected="true"]');
+    await page.evaluate(() => document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', repeat: true, bubbles: true, cancelable: true })));
+    await page.waitForTimeout(300);
+    await must(!!(await page.$('#planner')) && /ROUND 3/.test(await text(page, '#planner h3')), 'a repeated ENTER on a beat leaving round 3 open');
   }, { context: phoneCtx(390, 844) });
   await step('rules', async (page, base) => {
     await go(page, base, '#rules', '#digest .vstat');

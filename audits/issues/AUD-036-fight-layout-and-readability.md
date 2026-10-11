@@ -51,8 +51,9 @@ all information must fit in one phone viewport.
   While a round plays back with motion on, the replay controls and the beat headline sit
   right under the arena and hold still, and the page glides back to the deck when the
   round has played to the end (not if the player has scrolled meanwhile) and at once when
-  ▶| or ▶ (or END and RIGHT) skips or steps the replay to its end; focus on the replay
-  controls goes along to the selected beat. PAUSE, or stepping back, leaves the replay
+  ▶| or ▶ (or END and RIGHT) skips or steps the replay to its end; the focus stays on
+  the replay control, since ENTER on a beat means FIGHT (a held ENTER fights once).
+  PAUSE, or stepping back, leaves the replay
   on screen, and on a pinned screen the replay controls end with YOUR MOVES ▲ (on the row
   of the beat position, so the controls gain no row): from any frame and any scroll
   position it stops the replay, lands on the deck and focuses the selected beat. While a
@@ -64,8 +65,9 @@ all information must fit in one phone viewport.
   round, and the beats are labelled "Your plan for round N".
   The beats are a listbox with one tab stop: the focus moves with the selection (LEFT and
   RIGHT a beat, UP and DOWN a row, HOME and END), a typed move lands on the focused beat,
-  the focused beat has the 3 px hazard ring, and focus scrolls clear of the arena (scroll
-  padding on the page from the arena's measured height, never inside the beat table). A
+  the focused beat has the 3 px hazard ring, and on a pinned screen focus scrolls clear
+  of the arena (scroll padding on the page from the arena's measured height, never inside
+  the beat table); a desktop page does not scroll while moves are typed. A
   phone turned sideways and back, or a resized window, fits the arena again and lands on
   the deck. Desktop element rectangles at 1280×900 and 1440×900 are identical to b3e3f71a
   (six and eight moves; arrival, mid-round and round 2; re-checked on d4b1f6ee, where
