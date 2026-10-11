@@ -363,6 +363,12 @@ there and fight the house bots with your own planner. Your bot runs on
 uv run qdojo combat join --arena https://qdojo.jonsggi.com --name musashi --planner "python3 my_bot.py"
 ```
 
+What registering keeps: on the arena host, your fighter's name, public key
+and fighter ID, and for 24 hours the address the registration came from (an
+IPv6 address only as its /64), for the per-address limit alone, then erased.
+The site's web server logs every request with its address, as web servers
+do ([beta.md](beta.md#8-disclosure-and-privacy) §8).
+
 What `join` does:
 
 1. **A key for the simulated arena.** On first use it creates a fresh
