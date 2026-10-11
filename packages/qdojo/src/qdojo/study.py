@@ -223,13 +223,18 @@ COHORT_FIELDS = ("participant", "cohort_phase", "house_or_test", "started_at", "
 ONBOARDING_TARGET_MIN = 10
 HANDS_ON = "hands_on"            # help that disqualifies a first fight from the H3 target
 ASSISTANCE = ("none", "docs", "hint", HANDS_ON)          # validation-protocol.md §4 T3; a blank cell is none
+# Coded answers (validation-protocol.md §4): house_or_test, second_submission and returned_week_2 are y or n,
+# explained_improvement y, partial or n. TRUE/FALSE (a spreadsheet's checkbox) and 1/0 read as y and n; blank is n.
+YES, NO = ("y", "yes", "true", "1"), ("n", "no", "false", "0", "")
+T6 = {"second_submission": ("y", "n"), "returned_week_2": ("y", "n"), "explained_improvement": ("y", "partial", "n")}
+SURVEY = ("clarity", "counterplay", "replay_desire")      # H8: whole numbers from 1 to 5; a blank cell is no answer
 # A date and a time to the minute (seconds and a UTC offset may follow); a date alone is midnight to fromisoformat.
 STAMP_RE = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}")
 
 
 class CohortLogError(ValueError):
     """A cohort log value the report cannot count without guessing (a timestamp it
-    cannot read, an assistance level the protocol does not define)."""
+    cannot read, a coded answer or survey score the protocol does not define)."""
 
 
 def read_csv(path: Path) -> list[dict]:
@@ -237,12 +242,33 @@ def read_csv(path: Path) -> list[dict]:
         return list(csv.DictReader(f))
 
 
-def _yes(v) -> bool:
-    return str(v or "").strip().lower() in ("y", "yes", "1", "true")
-
-
 def _cell(r: dict, col: str) -> str:
     return str(r.get(col) or "").strip()
+
+
+def _answer(r: dict, col: str, codes: tuple[str, ...] = ("y", "n")) -> str:
+    """A coded answer, spelling folded (Yes and TRUE are y, a blank cell is n). One
+    the protocol does not define raises CohortLogError: read as n, "house" in
+    house_or_test made the operator's smoke test a participant, and TRUE in
+    explained_improvement hid every improvement from H4."""
+    v = _cell(r, col).lower()
+    a = "y" if v in YES else "n" if v in NO else v
+    if a not in codes:
+        raise CohortLogError(f"{_cell(r, 'participant') or '?'}: {col} {_cell(r, col)!r} is not "
+                             f"{', '.join(codes[:-1])} or {codes[-1]}")
+    return a
+
+
+def _score(r: dict, col: str) -> int | None:
+    """A survey answer from 1 to 5, or None for a blank cell. Anything else raises
+    CohortLogError: a 2.5 left out moved a median from 2.5 to 3 (the H8 finding
+    gone), and a 7 counted in the median but not in the distribution."""
+    v = _cell(r, col)
+    if not v:
+        return None
+    if not re.fullmatch(r"[1-5]", v):
+        raise CohortLogError(f"{_cell(r, 'participant') or '?'}: {col} {v!r} is not a whole number from 1 to 5")
+    return int(v)
 
 
 def _assistance(r: dict) -> str:
@@ -320,21 +346,29 @@ def cohort_report(rows: list[dict]) -> dict:
     reported under its own key), and the minutes to a first fight are taken
     over everyone who started, a dropout counting as "over" (the median is the
     lower one: always a participant's own time, never an average with a
-    dropout). Raises CohortLogError, naming every bad cell, when a timestamp
-    cannot be read or an assistance level is not one the protocol defines."""
+    dropout). H4 counts explained_improvement = y, not partial. Raises
+    CohortLogError, naming every bad cell, when a timestamp cannot be read or a
+    coded answer (house_or_test, assistance, the T6 answers) or a survey score
+    is not one the protocol defines."""
     unknown = sorted(set().union(*(r.keys() for r in rows)) - set(COHORT_FIELDS)) if rows else []
-    excluded = [r for r in rows if _yes(r.get("house_or_test"))]
-    people = [r for r in rows if not _yes(r.get("house_or_test"))]
-    minutes, problems = {}, []
+    problems: list[str] = []
+
+    def check(read, r, *args):
+        try:
+            return read(r, *args)
+        except CohortLogError as exc:
+            problems.append(str(exc))
+    house = {id(r): check(_answer, r, "house_or_test") for r in rows}
+    excluded = [r for r in rows if house[id(r)] == "y"]
+    people = [r for r in rows if house[id(r)] != "y"]       # an unreadable flag: the row is checked as a participant's
+    minutes = {}
     for r in people:
-        try:
-            minutes[id(r)] = _minutes(r)
-        except CohortLogError as exc:
-            problems.append(str(exc))
-        try:
-            _assistance(r)
-        except CohortLogError as exc:
-            problems.append(str(exc))
+        minutes[id(r)] = check(_minutes, r)
+        check(_assistance, r)
+        for col, codes in T6.items():
+            check(_answer, r, col, codes)
+        for q in SURVEY:
+            check(_score, r, q)
     if problems:
         raise CohortLogError("the cohort log has values the report cannot count without guessing: "
                              + "; ".join(problems))
@@ -363,10 +397,11 @@ def cohort_report(rows: list[dict]) -> dict:
         for r in reached:
             a = (r.get("approach") or "unrecorded").strip().lower()
             approaches[a] = approaches.get(a, 0) + 1
-        explained = sum(1 for r in started if _cell(r, "explained_improvement").lower() in ("y", "yes"))
+        answers = {col: _rate(sum(1 for r in started if _answer(r, col, codes) == "y"), len(started))
+                   for col, codes in T6.items()}
         survey = {}
-        for q in ("clarity", "counterplay", "replay_desire"):
-            vals = [int(r[q]) for r in grp if str(r.get(q) or "").strip().isdigit()]
+        for q in SURVEY:
+            vals = [v for v in (_score(r, q) for r in grp) if v is not None]
             survey[q] = {"answers": len(vals), "median": statistics.median(vals) if vals else None,
                          "distribution": {str(v): vals.count(v) for v in range(1, 6)}}
         out["phases"][ph] = {
@@ -380,9 +415,7 @@ def cohort_report(rows: list[dict]) -> dict:
             "assistance": dict(sorted(assistance.items())),
             "drop_offs": dict(sorted(drops.items(), key=lambda kv: -kv[1])),
             "approach": dict(sorted(approaches.items())),
-            "second_submission": _rate(sum(1 for r in started if _yes(r.get("second_submission"))), len(started)),
-            "returned_week_2": _rate(sum(1 for r in started if _yes(r.get("returned_week_2"))), len(started)),
-            "explained_improvement": _rate(explained, len(started)),
+            **answers,                                    # second_submission, returned_week_2, explained_improvement
             "survey": survey,
         }
     return out

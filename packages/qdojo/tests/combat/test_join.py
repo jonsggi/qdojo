@@ -125,6 +125,9 @@ def test_what_the_server_refuses(rig, tmp_path):
     # A house name is taken.
     _s, _p, dup = rig.register("house-a", tmp_path / "k2.seed")
     assert err(lambda: rig.http.post("/api/v1/join/register", dup)) == (409, "name_taken")
+    # A name is the whole string: "house-a\n" (a trailing newline passes a $) was issued as a fighter beside house-a.
+    _s, _p, lookalike = rig.register("house-a\n", tmp_path / "k2.seed")
+    assert err(lambda: rig.http.post("/api/v1/join/register", lookalike)) == (400, "bad_name")
     assert rig.http.post("/api/v1/join/register", body)["status"] == "new"
     # Transactions before the fighter is issued are refused.
     client = J.RemoteClient(rig.http, rig.info, subseed, pub, J.fighter_id_for("Tester"), tmp_path / "st")
@@ -223,6 +226,47 @@ def test_test_names_are_reserved_for_the_operators_keys(tmp_path, capsys):
     path.write_text(json.dumps({"operator_keys": ["test-smoke1"]}))
     with pytest.raises(SystemExit, match="operator_keys"):
         J.Limits.load(path)
+
+
+def test_a_second_name_from_a_registered_key_is_refused(tmp_path, capsys, monkeypatch):
+    """docs/beta.md §5 step 7: a second name from the same key is refused
+    (one_per_key) before join signs, sends or creates anything. It used to find
+    the key's registration by owner and run that fighter under the new name,
+    with a state directory of its own. The same name in another case is the
+    key's own fighter, as the arena compares names."""
+    monkeypatch.setenv("QDOJO_COMBAT_HOME", str(tmp_path / "home"))
+    rig = Rig(tmp_path, J.Limits(**FAST, max_outside_fighters=4))
+    try:
+        key = tmp_path / "smoke.seed"
+        subseed, pub, body = rig.register("First", key)
+        assert rig.http.post("/api/v1/join/register", body)["status"] == "new"
+        rig.tick()
+        fid = bytes.fromhex(rig.http.get(f"/api/v1/join/status?owner={pub.hex()}")["fighter_id"])
+        client = J.RemoteClient(rig.http, rig.info, subseed, pub, fid, tmp_path / "home" / "join" / "First")
+        client.refresh()
+        receipt = client.send(Op.REGISTER_FIGHTER, fighter_id=fid, registry_version=1)
+        for _ in range(6):
+            rig.tick()
+            client.refresh()
+            if client.poll(receipt) is not None:
+                break
+        assert client.state["fighter"] is not None
+        join = ("combat", "join", "--arena", f"http://127.0.0.1:{rig.srv.server_address[1]}", "--key", str(key))
+        code, out = _cli(capsys, *join, "--name", "Second", "--npc", "scout-v1", "--seconds", "0.01", "--poll", "0.01")
+        assert code != 0 and "refused the registration: one_per_key (this key already registered First)" in out, out
+        assert "run join with that fighter's --name" in out and "fighter Second" not in out, out
+        assert [tuple(r) for r in rig.svc.db.execute("SELECT name, status FROM registrations")] == [("First", "active")]
+        assert not (tmp_path / "home" / "join" / "Second").exists()
+        # The arena refuses a client that sends it anyway, and names the fighter too.
+        _s, _p, second = rig.register("Second", key)
+        with pytest.raises(J.HttpError) as e:
+            rig.http.post("/api/v1/join/register", second)
+        assert (e.value.status, e.value.code) == (409, "one_per_key")
+        assert e.value.message == "this key already registered First"
+        code, out = _cli(capsys, *join, "--name", "first", "--register-only")
+        assert code == 0 and f"fighter first = {fid.hex()}" in out and "registered on chain" in out, out
+    finally:
+        rig.srv.shutdown()
 
 
 def test_the_per_address_limit_counts_an_ipv6_client_per_64(tmp_path):
@@ -412,6 +456,7 @@ def test_entry_is_read_as_the_site_reads_it(stub, tmp_path, capsys):
     code, out = _cli(capsys, "combat", "join", "--arena", url, "--name", "Builder", "--key", str(key), "--register-only")
     assert code != 0 and "join_closed" in out and "nothing was created" in out and not key.exists(), out
     for refusal, says in ((_refusal(409, "name_taken"), "choose another --name"),
+                          (_refusal(409, "one_per_key"), "run join with that fighter's --name"),   # two joins raced
                           (_refusal(403, "arena_full"), "every outside-fighter place is taken"),
                           (_refusal(403, "name_reserved"), "names starting with 'test-' are the operator's"),
                           (_refusal(429, "rate_limited"), "try again tomorrow")):

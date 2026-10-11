@@ -223,6 +223,52 @@ def test_an_assistance_level_the_protocol_does_not_define_stops_the_report():
     assert m["first_fight_within_target"]["count"] == 3
 
 
+def test_a_coded_answer_or_score_the_protocol_does_not_define_stops_the_report():
+    """validation-protocol.md §4: house_or_test, second_submission and returned_week_2
+    are y or n, explained_improvement y, partial or n, and a survey answer a whole
+    number from 1 to 5. Read any other way, a value moved a measure without a word."""
+    fast, dropped = [_person(f"P0{i}", 5) for i in range(1, 5)], [_person(f"P0{i}") for i in range(5, 10)]
+    # "house" (the column's own word) read as n made the smoke test a participant: H3 5 of 10, a pass, for 4 of 9.
+    for value in ("house", "test", "x"):
+        with pytest.raises(study.CohortLogError) as exc:
+            study.cohort_report([*fast, *dropped, _person("T01", 3, house_or_test=value)])
+        assert f"T01: house_or_test {value!r} is not y or n" in str(exc.value)
+    r = study.cohort_report([*fast, *dropped, _person("T01", 3, house_or_test=" Yes ")])
+    h3 = r["phases"]["main"]["first_fight_within_target"]
+    assert r["participants"] == 9 and (h3["count"], h3["of"]) == (4, 9)
+    # A checkbox export (TRUE/FALSE) reads the same in all three T6 columns: H4 read 0 of 10 beside H5 and H6 at 7.
+    ticked = [dict.fromkeys(study.T6, "TRUE")] * 7 + [dict.fromkeys(study.T6, "FALSE")] * 3
+    m = _cohort(*[_person(f"P{i:02d}", 5, **t6) for i, t6 in enumerate(ticked, 1)])
+    assert [(m[k]["count"], m[k]["of"]) for k in study.T6] == [(7, 10)] * 3
+    # partial is an answer of explained_improvement only, and H4 does not count it.
+    m = _cohort(_person("P01", 5, explained_improvement=" Partial"), _person("P02", 5, explained_improvement="yes"))
+    assert m["explained_improvement"]["count"] == 1
+    for col, value, codes in (("explained_improvement", "y - jabber 0.40 -> 0.70", "y, partial or n"),
+                              ("explained_improvement", "maybe", "y, partial or n"),
+                              ("second_submission", "partial", "y or n"), ("returned_week_2", "2", "y or n")):
+        with pytest.raises(study.CohortLogError) as exc:
+            _cohort(_person("P01", 5, **{col: value}))
+        assert f"P01: {col} {value!r} is not {codes}" in str(exc.value)
+    # Left out, a 2.5 moved the clarity median from 2.5 to 3 (no H8 finding); a 7 was in the median but not
+    # the distribution.
+    clarity = ["2", "2", "2", "2", None, "4", "4", "4", "4"]
+    for value in ("2.5", "7", "0", "four", "4/5"):
+        with pytest.raises(study.CohortLogError) as exc:
+            _cohort(*[_person(f"P0{i}", 5, clarity=v or value) for i, v in enumerate(clarity, 1)])
+        assert f"P05: clarity {value!r} is not a whole number from 1 to 5" in str(exc.value)
+    m = _cohort(*[_person(f"P0{i}", 5, clarity=v or " 3 ") for i, v in enumerate(clarity, 1)],
+                _person("P10", clarity=""))                                       # a blank cell is no answer
+    assert m["survey"]["clarity"] == {"answers": 9, "median": 3,
+                                      "distribution": {"1": 0, "2": 4, "3": 1, "4": 4, "5": 0}}
+    # Every bad cell is named at once, those of a row whose house_or_test is unreadable too.
+    with pytest.raises(study.CohortLogError) as exc:
+        study.cohort_report([_person("T01", 3, house_or_test="house", clarity="7"),
+                             _person("P01", 5, returned_week_2="TRUE?", counterplay="3.5")])
+    for cell in ("T01: house_or_test 'house'", "T01: clarity '7'", "P01: returned_week_2 'TRUE?'",
+                 "P01: counterplay '3.5'"):
+        assert cell in str(exc.value)
+
+
 def test_a_phase_is_read_without_case_or_stray_spaces():
     """A spreadsheet's stray space or capital does not split a phase in two
     (7 of 10 reaching a fight would read as 6 of 9 and 1 of 1)."""

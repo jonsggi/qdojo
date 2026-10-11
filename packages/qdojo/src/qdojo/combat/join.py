@@ -412,7 +412,7 @@ class JoinService:
     def register(self, body: dict, ip: str) -> tuple[int, dict]:
         lim = self.limits
         name, pk, sig, tick = body.get("name"), body.get("public_key"), body.get("signature"), body.get("tick")
-        if not isinstance(name, str) or not NAME_RE.match(name):
+        if not isinstance(name, str) or not NAME_RE.fullmatch(name):     # $ alone lets a trailing newline through
             raise JoinError(400, "bad_name", "a name is 3-16 letters, digits, '-' or '_', starting with a letter or digit")
         if not (isinstance(pk, str) and re.fullmatch(r"[0-9a-f]{64}", pk) and isinstance(sig, str)
                 and re.fullmatch(r"[0-9a-f]{128}", sig) and isinstance(tick, int)):
@@ -435,7 +435,7 @@ class JoinService:
             if row is not None:
                 if row["name"].lower() == name.lower():
                     return 200, {"status": row["status"], "name": row["name"], "fighter_id": row["fighter_id"]}
-                raise JoinError(409, "one_per_key", "this key already registered a fighter")
+                raise JoinError(409, "one_per_key", f"this key already registered {row['name']}")
             if name.lower() in self._names():
                 raise JoinError(409, "name_taken", "that name is taken")
             n = self.db.execute("SELECT COUNT(*) FROM registrations WHERE status IN ('new','active')").fetchone()[0]
@@ -614,7 +614,8 @@ class HttpError(Exception):
 
 class Refused(HttpError):
     """An error answer to POST /api/v1/join/register: the arena's verdict on the
-    registration itself, not on a read around it (see REFUSAL_NEXT)."""
+    registration itself, not on a read around it (see REFUSAL_NEXT). Also
+    one_per_key for a key the arena has registered under another name (register())."""
 
 
 class Http:
@@ -867,7 +868,9 @@ def entry_state(http: Http) -> tuple[str, str, dict | None]:
 def register(http: Http, info: dict, name: str, subseed: bytes, pub: bytes, log=print, wait_s: float = 120) -> dict:
     """Idempotent: registers once, then waits until the arena has issued the fighter.
     An error answer to the registration itself raises Refused; one to a read
-    around it (the status, the tick it signs), HttpError."""
+    around it (the status, the tick it signs), HttpError. A key the arena has
+    registered under another name raises Refused one_per_key, as the arena
+    would answer, before anything is signed or sent: a key registers one fighter."""
     try:
         st = http.get(f"/api/v1/join/status?owner={pub.hex()}")
     except HttpError as e:
@@ -882,6 +885,10 @@ def register(http: Http, info: dict, name: str, subseed: bytes, pub: bytes, log=
         except HttpError as e:
             raise Refused(e.status, e.doc) from None
         log(f"registration sent: {printable(st.get('status'))}")
+    else:
+        other = st["name"]
+        if not isinstance(other, str) or other.lower() != name.lower():    # names are compared as the arena does
+            raise Refused(409, {"error": {"code": "one_per_key", "message": f"this key already registered {other}"}})
     deadline = time.monotonic() + wait_s
     while st["status"] == "new" and time.monotonic() < deadline:
         time.sleep(2)
@@ -895,6 +902,8 @@ def register(http: Http, info: dict, name: str, subseed: bytes, pub: bytes, log=
 # What a builder can do about each refusal of a registration: error codes of
 # POST /api/v1/join/register only (a chain read's rate_limited is the read
 # throttle, not the day's registrations; join says to run the command again).
+# one_per_key comes from register() itself when the key's registration has
+# another name, and from the arena when two joins with one key race.
 REFUSAL_NEXT = {
     "join_closed": "entry is closed; the site's BUILD A BOT page shows when it opens",
     "join_disabled": "entry is closed; the site's BUILD A BOT page shows when it opens",
@@ -903,7 +912,7 @@ REFUSAL_NEXT = {
     "name_taken": "choose another --name",
     "bad_name": "choose another --name: 3-16 letters, digits, '-' or '_', starting with a letter or digit",
     "name_reserved": f"names starting with '{OPERATOR_TEST_PREFIX}' are the operator's; choose another --name",
-    "one_per_key": "this key already registered another fighter: run join with that fighter's --name",
+    "one_per_key": "a key registers one fighter, for good: run join with that fighter's --name",
     "stale": "your clock or the arena's moved on; run the same command again",
 }
 

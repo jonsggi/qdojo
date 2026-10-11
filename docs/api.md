@@ -358,10 +358,11 @@ manifest, and falls back to the static export otherwise.
 
 The `join`, `tx` and `chain` endpoints exist only when an operator enables
 outside builders ([build-a-bot.md](build-a-bot.md) §8); otherwise they
-answer 404 `join_disabled`. A `test-` name from a key the operator has not
-listed is refused with 403 `name_reserved`, and the transactions of a
-registration the operator revoked with 403 `revoked`
-([operations.md](operations.md) §8).
+answer 404 `join_disabled`. A key that already registered a fighter is
+refused any other name with 409 `one_per_key` (the message names that
+fighter), a `test-` name from a key the operator has not listed with 403
+`name_reserved`, and the transactions of a registration the operator revoked
+with 403 `revoked` ([operations.md](operations.md) §8).
 
 ## 4. Verification levels
 
