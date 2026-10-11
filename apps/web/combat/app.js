@@ -166,7 +166,7 @@
         const pick = await L.chooseRuleset({ exported: art, embedded: window.QDojoRulesets || window.QDojoRuleset, manifestDigest: m.ruleset_digest, sha256: SHA });
         await noteFreshness();
         await probeApi();
-        R = pick.rules;
+        setActiveRules(pick.rules);
         RULES_INFO = pick;
         return;
       } catch (e) { /* try the next source */ }
@@ -196,9 +196,10 @@
     if (D.sample || !D.manifest) {
       // A live export that appears later takes over from the sample. Its
       // ruleset can differ: the replays on screen stop, and its rules come
-      // into force only once it has loaded (loadSource), as route() redraws.
+      // into force only once it has loaded (loadSource), as the view is drawn
+      // again. That is no navigation: the page stays where it is.
       const live = await trySource(SOURCES[0]).catch(() => null);
-      if (live) { stopPlayer(); await loadSource(); paintSource(); route(); return; }
+      if (live) { stopPlayer(); await loadSource(); paintSource(); render(false); return; }
       if (!D.manifest) return;
     }
     const done = D.done;
@@ -1407,6 +1408,10 @@
    *         controls or keys skipped or stepped there) } */
   function createPlayer(root, opts) {
     const frames = opts.frames, names = opts.names;
+    // The rules its frames were derived under, for as long as it is on screen:
+    // R is the active ruleset again as soon as the page heads to another
+    // screen, while this one (a practice fight shown under its own) is still up.
+    const rules = R;
     let idx = 0, playing = false, timer = null, speed = 1;
     const speedStored = Number(store.get('qdojo.combat.speed'));
     if (SPEEDS.includes(speedStored)) speed = speedStored;
@@ -1439,7 +1444,7 @@
       let text = '';
       if (f.kind === 'start') text = 'ROUND 1: both start at HP ' + f.a.hp + ', STAMINA ' + f.a.stamina;
       if (f.kind === 'round') text = 'ROUND ' + (f.round + 1) + ' START';
-      if (f.kind === 'break') text = 'BREAK after round ' + (f.round + 1) + ': stamina A +' + f.recovery.A + ', B +' + f.recovery.B + ' (capped at ' + R.limits.stamina + '); HP, opening, guard and power carry';
+      if (f.kind === 'break') text = 'BREAK after round ' + (f.round + 1) + ': stamina A +' + f.recovery.A + ', B +' + f.recovery.B + ' (capped at ' + rules.limits.stamina + '); HP, opening, guard and power carry';
       if (f.kind === 'end') text = L.outcomeLabel({ outcome: f.outcome }).text;
       if (f.kind === 'forfeit') text = L.outcomeLabel(opts.replay).text;
       return '<tr class="' + cls + '" data-i="' + i + '" tabindex="-1"><td>' + (f.round + 1) + '</td><td></td><td colspan="7" class="note">' + esc(text) + '</td></tr>';
@@ -1511,7 +1516,7 @@
 
     function stateOf(f) {
       if (f.a && f.b) return f;
-      return { a: E.newFight(R).a, b: E.newFight(R).b, initialOnly: true };
+      return { a: E.newFight(rules).a, b: E.newFight(rules).b, initialOnly: true };
     }
 
     function render(animate) {
@@ -1521,8 +1526,8 @@
       for (const s of ['A', 'B']) {
         const me = s === 'A' ? st.a : st.b, x = els[s];
         const t = f.kind === 'beat' ? f.trace[s] : null;
-        setBar(x.hp, me.hp, R.limits.hp, t ? t.before.hp : null);
-        setBar(x.st, me.stamina, R.limits.stamina, null);
+        setBar(x.hp, me.hp, rules.limits.hp, t ? t.before.hp : null);
+        setBar(x.st, me.stamina, rules.limits.stamina, null);
         x.power.textContent = me.power_available ? 'POWER READY' : 'POWER SPENT';
         x.power.classList.toggle('on', !!me.power_available);
         x.opening.classList.toggle('on', !!me.opening);
@@ -1539,9 +1544,9 @@
         if (f.kind === 'beat') {
           x.now.innerHTML = sideSummary(t, f.trace[s === 'A' ? 'B' : 'A']);
           const who = opts.mySide === s ? 'YOU' : names[s], them = opts.mySide === (s === 'A' ? 'B' : 'A') ? 'YOU' : names[s === 'A' ? 'B' : 'A'];
-          const lines = L.explainSide(t, f.trace[s === 'A' ? 'B' : 'A'], who, them, R.opening_damage);
+          const lines = L.explainSide(t, f.trace[s === 'A' ? 'B' : 'A'], who, them, rules.opening_damage);
           if (opts.mySide === s) {
-            const h = L.hindsight(R, { a: f.trace.A.before, b: f.trace.B.before }, s, f.trace);
+            const h = L.hindsight(rules, { a: f.trace.A.before, b: f.trace.B.before }, s, f.trace);
             if (h) lines.push(h.text);
           }
           x.cap.innerHTML = '<h4>' + esc(names[s]) + '</h4><ul>' + lines.map(words).map(l => '<li' + (/^HINDSIGHT/.test(l) ? ' class="hindsight"' : '') + '>' + esc(l) + '</li>').join('') + '</ul>';
@@ -1561,7 +1566,7 @@
         for (const k of ['reactor', 'steam', 'ghost', 'call']) els[s][k].classList.remove('go');
       }
       // The round box counts beats left in the round (never a fake timer).
-      const left = f.kind === 'beat' || f.kind === 'unexecuted' ? R.beats_per_round - f.beat - 1 : f.kind === 'start' || f.kind === 'round' ? R.beats_per_round : null;
+      const left = f.kind === 'beat' || f.kind === 'unexecuted' ? rules.beats_per_round - f.beat - 1 : f.kind === 'start' || f.kind === 'round' ? rules.beats_per_round : null;
       clockN.textContent = left == null ? (f.kind === 'break' ? '--' : 'END') : String(left);
       clockL.textContent = left == null ? '' : 'BEATS LEFT';
       koEmblem.classList.toggle('lit', (st.a.hp === 0 || st.b.hp === 0));
@@ -1569,8 +1574,8 @@
       // In practice the break that ends the replay is where you plan the next
       // round from, so there the round box names the round you are planning.
       const next = opts.planRound && idx === frames.length - 1 && f.kind === 'break' ? opts.planRound : null;
-      rnd.textContent = 'ROUND ' + (next || Math.min(f.round + 1, R.rounds)) + '/' + R.rounds;
-      bn.textContent = f.kind === 'beat' || f.kind === 'unexecuted' ? 'BEAT ' + (f.beat + 1) + '/' + R.beats_per_round : '';
+      rnd.textContent = 'ROUND ' + (next || Math.min(f.round + 1, rules.rounds)) + '/' + rules.rounds;
+      bn.textContent = f.kind === 'beat' || f.kind === 'unexecuted' ? 'BEAT ' + (f.beat + 1) + '/' + rules.beats_per_round : '';
       let text = '';
       if (f.kind === 'start') text = 'FIGHT!';
       if (f.kind === 'round') text = 'ROUND ' + (f.round + 1);
@@ -1657,7 +1662,7 @@
         replay(ann, 'enter');
         const w = f.kind === 'end' ? f.outcome.winner : (opts.replay && opts.replay.result || {}).winner;
         if (w) {
-          const perfect = f.kind === 'end' && (w === 'A' ? f.a : f.b).hp === R.limits.hp;
+          const perfect = f.kind === 'end' && (w === 'A' ? f.a : f.b).hp === rules.limits.hp;
           setTimeout(() => {
             if (token !== fxToken || !root.isConnected) return;
             announcer.textContent = perfect ? 'PERFECT' : opts.mySide ? (opts.mySide === w ? 'YOU WIN' : 'YOU LOSE') : names[w].replace(/^[AB] /, '') + ' WINS';
@@ -2340,11 +2345,16 @@
     if (phone) html.style.overflowAnchor = 'none';
     try { return buildPracticeFight(playFrom); } finally { if (phone) html.style.overflowAnchor = ''; }
   }
+  // The replay on the practice screen on show, and the fight it shows.
+  let shownReplay = null;
   function buildPracticeFight(playFrom) {
     stopPlayer();
-    const s = practice;
+    const s = practice, tok = viewToken;
     const npc = N.ROSTER.find(n => n.id === s.npc);
     const over = !!s.outcome;
+    // A finished fight drawn again over itself (a live export taking over)
+    // keeps its replay on the frame it was on, so the page around it stays put.
+    const was = shownReplay, keep = playFrom == null && over && !!was && was.s === s && was.root.isConnected ? was.player.index : null;
     // A shared link does not carry the sharer's name or look (your own reloaded fight keeps yours).
     const anon = s.shared && !s.shared.own;
     const aName = anon ? 'PLAYER' : myName(), aId = anon ? 'practice:player' : myId();
@@ -2370,6 +2380,7 @@
     };
     const player = track(createPlayer($('#player'), { frames, ids: { A: aId, B: 'npc:' + s.npc }, names: { A: aName, B: npc.name }, links: false, replay: {}, stageSeed: 'practice:' + s.npc, mySide: 'A', autoplay: false,
       planRound: over ? null : s.state.round_index + 1, onEnd }));
+    shownReplay = { s, player, root: $('#player') };
     if (over) wirePracticeResult(s, player);
     else {
       pinPlayer = player;
@@ -2394,7 +2405,7 @@
       else { $('.practice-stage').scrollIntoView({ block: 'start', behavior: motion() ? 'smooth' : 'auto' }); landed = true; }
       if (motion()) player.start(); else player.seek(frames.length - 1, false);
     } else {
-      player.seek(frames.length - 1, false);
+      player.seek(keep != null ? keep : frames.length - 1, false);
       // Arrival and a rematch open on the deck.
       if (pinned) landed = showDeck(false);
     }
@@ -2406,7 +2417,10 @@
     if (over) {
       if (!s.shared) {
         $('#rematch').addEventListener('click', () => {
-          // A new fight: under the active rules, also after one begun under others.
+          // A new fight: under the active rules, also after one begun under
+          // others. Not from a result the page is already leaving (FIGHT too,
+          // wirePlanner): it would take that screen's address and be drawn over.
+          if (tok !== viewToken) return;
           useActiveRules();
           practice = newFight(s.npc, s.seed); resetDraft();
           try { history.replaceState(null, '', '#practice/' + s.npc + '/' + s.seed); } catch (e) { /* the view still resets */ }
@@ -2610,7 +2624,7 @@
   }
 
   function wirePlanner() {
-    const root = $('#planner');
+    const root = $('#planner'), tok = viewToken;
     const setAction = a => {
       draft.actions[draft.sel] = a;
       if (draft.power_slot === draft.sel && !POWERABLE.includes(a)) draft.power_slot = -1;
@@ -2624,11 +2638,15 @@
       draft.power_slot = draft.power_slot === i ? -1 : i;
       paintDraft();
     };
+    // A round is played under the rules the fight was begun under, and only
+    // from the screen on show: this deck stays up for a moment after the page
+    // heads to another screen (the active rules back in R by then), and its
+    // FIGHT or ENTER there plays nothing and draws nothing.
     const fight = () => {
-      if (draft.actions.some(a => a == null)) return;
+      if (tok !== viewToken || draft.actions.some(a => a == null)) return;
       try {
         const before = practiceFrames(practice).length;
-        L.practicePlay(R, practice, { actions: draft.actions.slice(), power_slot: draft.power_slot });
+        L.practicePlay(begunUnder.get(practice) || R, practice, { actions: draft.actions.slice(), power_slot: draft.power_slot });
         resetDraft();
         if (practice.outcome && !practice.shared) practice.recorded = PR.recordResult(freshProgress().p, practice, fightKey(practice));
         if (practice.recorded && practice.recorded.added) saveProgress();
@@ -2690,14 +2708,20 @@
   const PR = window.QDojoPractice;
   // A fight played or begun under another ruleset (a shared one, or yours
   // from before a live export took over) swaps R while it is on screen
-  // (useFightRules); render() and REMATCH swap back (useActiveRules).
-  let R_SAVED = null, R_FIGHT = null;
-  // The ruleset new fights use, also while a fight is shown under its own:
-  // the one a live export brought in meanwhile, if it did (poll).
-  const activeRules = () => (R_SAVED && R === R_FIGHT ? R_SAVED : R);
+  // (useFightRules); render() and REMATCH swap back (useActiveRules). While
+  // it is swapped in, R_SAVED holds the active ruleset: the one new fights use.
+  let R_SAVED = null;
+  const activeRules = () => R_SAVED || R;
+  // A live export that takes over (loadSource) brings in the active ruleset,
+  // also while a fight is shown under its own: it takes effect when that
+  // fight leaves the screen, even where it is the very ruleset the fight is
+  // shown under (the export's artifact missing, its embedded copy in use).
+  function setActiveRules(rules) {
+    if (R_SAVED) R_SAVED = rules; else R = rules;
+  }
   function useActiveRules() {
     if (!R_SAVED) return;
-    R = activeRules(); R_SAVED = R_FIGHT = null;
+    R = R_SAVED; R_SAVED = null;
     paintRules();
   }
   const PROGRESS_KEY = 'qdojo.practice.v1';
@@ -2919,11 +2943,12 @@
     if (!parsed.ok) return refuse(parsed.error);
     // Own fight already on screen (the address bar was just updated), or a
     // shared one come back to (BACK): keep it, under the rules it was played
-    // under. Your own is drawn under the active rules, so after a switch (a
-    // live export taking over from the sample) it is replayed from its link
-    // below instead, as a reload would; a shared one notes the new active rules.
-    if (practice && practice.shareTail === tail && practice.npc === npcId && practice.seed === seed && (practice.shared || practice.rules_version === R.semantic_version)) {
+    // under, also after a switch (a live export taking over from the sample).
+    // Your own keeps its record and REMATCH; a shared one notes the new
+    // active rules.
+    if (practice && practice.shareTail === tail && practice.npc === npcId && practice.seed === seed) {
       if (practice.shared) { practice.shared.active = R.semantic_version; useFightRules(practice.shared.rules); }
+      else useFightRules(begunUnder.get(practice));
       return renderPracticeFight();
     }
     // The active ruleset first: the export's own may be one this site does
@@ -2943,7 +2968,7 @@
   // Played or begun under another ruleset: shown under its own, never reinterpreted.
   function useFightRules(rules) {
     if (!rules || rules === R) return;
-    R_SAVED = activeRules(); R = R_FIGHT = rules;
+    R_SAVED = activeRules(); R = rules;
     paintRules();
   }
 
@@ -3876,6 +3901,10 @@
     const [name, ...rest] = currentRoute();
     const tok = ++viewToken;
     const y = window.scrollY;
+    // Drawn again in place, a page stays where it was, except a phone on the
+    // move deck of an open round (AUD-036): the round lands on its deck once
+    // more, as a switch of rules can move it (the note naming the fight's).
+    const onDeck = !navigated && !!pinView && pinView.kind === 'deck' && pinView.deck === $('#planner') && Math.abs(y - pinView.y) < 2;
     stopPlayer();
     revealHook = null;
     spoilForce = name === 'fight' && rest[1] === 'spoilerfree';
@@ -3926,7 +3955,7 @@
     const playerRoot = name === 'fight' ? $('#view [data-player]') : null;
     if (navigated && playerRoot) playerRoot.focus({ preventScroll: true });
     else if (navigated && name !== 'practice' && !(name === 'fighters' && document.activeElement && document.activeElement.id === 'ff-q')) $('#view').focus({ preventScroll: true });
-    if (!navigated) window.scrollTo(0, y);
+    if (!navigated && !(onDeck && landed)) window.scrollTo(0, y);
   }
 
   function paintMotion() {

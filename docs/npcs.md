@@ -146,7 +146,8 @@ Example: `#practice/jabber-v1/abab…ab/p1.1.cf19b7cfee8ccbdd.3331333-330135n.69
   this tab is picked up where you left it, also by BACK or FORWARD from another
   screen. It is played to its end under the ruleset it was begun under and
   recorded under that one, also when a live export takes over meanwhile under
-  another ruleset (the fight says so); a new fight uses the active ruleset.
+  another ruleset (the fight says so, and once over its result stays on screen
+  as it was); a new fight uses the active ruleset.
 
 The local practice record (`localStorage` key `qdojo.practice.v1`) keeps wins,
 losses, draws and the best result per NPC under each ruleset version, kept apart
