@@ -265,9 +265,9 @@ def cmd_doctor(a):
     def check(name, ok, detail, warn=False):
         checks.append({"check": name, "status": "PASS" if ok else ("WARN" if warn else "FAIL"), "detail": detail})
     rules = by_version(a.ruleset)
-    check("ruleset", True, f"{rules.semantic_version} {rules.digest.hex()}"
+    check("ruleset", a.ruleset == PUBLIC_ARENA, f"{rules.semantic_version} {rules.digest.hex()}"
           + (" (the public arena's)" if a.ruleset == PUBLIC_ARENA else f" (the public arena runs {PUBLIC_ARENA})"),
-          warn=a.ruleset != PUBLIC_ARENA)
+          warn=True)
     try:
         c1 = candidate_1()                     # a frozen vector: candidate 1, six JABs each
         s = engine.new_fight(c1)
@@ -310,44 +310,53 @@ def cmd_doctor(a):
 def _doctor_fight(command, budget_ms, rules):
     """One complete practice fight against an opponent that uses every move
     of the ruleset (candidate 3: LAST_STAND and FEINT), seed fixed."""
-    from .training import Contestant, run_fight
+    from .training import ILLEGAL_PLAN, Contestant, run_fight
     opp = "feinter" if len(rules.submitted) > 6 else "scout-v1"
     you = Contestant("you", command=command, budget_ms=budget_ms)
     them = Contestant(opp, policy=E.policy_by_name(opp, rules), policy_id=opp)
     replay = run_fight(you, them, bytes(32), 1, rules)
     errors = [d["error"] for d in you.diagnostics if d.get("error")]
-    adjusted = [d["adjusted"] for d in you.diagnostics if d.get("adjusted")]
+    illegal = [d["adjusted"] for d in you.diagnostics if d.get("error") == ILLEGAL_PLAN]
+    adjusted = [d["adjusted"] for d in you.diagnostics if d.get("adjusted") and not d.get("error")]
     detail = (f"a full fight vs {opp} ({len(replay['rounds'])} rounds, {replay['outcome']['result']}): "
               + (f"{len(errors)} round(s) fell back ({', '.join(errors)})" if errors else "no fallback")
-              + (f", {len(adjusted)} plan(s) adjusted ({adjusted[0]})" if adjusted else ", every plan legal"))
+              + (f", {illegal[0]}" if illegal else "")
+              + (f", {len(adjusted)} plan(s) adjusted ({adjusted[0]})" if adjusted
+                 else "" if illegal else ", every plan legal"))
     return "planner fight", not errors and not adjusted, detail
 
 
 def _doctor_arena(url, rules, check):
-    """The arena's manifest ruleset against the one selected here, and whether it accepts outside fighters."""
-    from .join import Http, HttpError
+    """The arena's manifest ruleset against the one selected here, and whether it
+    accepts outside fighters (OPEN, FULL, CLOSED or UNKNOWN, as the site's BUILD
+    A BOT page says). Everything the arena sends is printed escaped."""
+    from .join import Http, HttpError, entry_state, printable
     base = url.rstrip("/")
     try:
         m = Http(base).get("/data/combat/v1/manifest.json")
+        if not isinstance(m, dict):
+            raise ValueError("not a manifest object")
     except (HttpError, OSError, ValueError) as exc:
-        check("arena ruleset", False, f"{base}: no manifest ({exc})")
+        check("arena ruleset", False, f"{base}: no manifest ({printable(exc)})")
         return
     same = m.get("ruleset_digest") == rules.digest.hex()
-    check("arena ruleset", same, f"{base} runs {m.get('semantic_version')} {m.get('ruleset_digest')}"
-          + ("" if same else f"; you selected {rules.semantic_version}: train with --ruleset {m.get('semantic_version')}"
+    version, digest = printable(m.get("semantic_version")), printable(m.get("ruleset_digest"))
+    check("arena ruleset", same, f"{base} runs {version} {digest}"
+          + ("" if same else f"; you selected {rules.semantic_version}: train with --ruleset {version}"
              if m.get("semantic_version") in KNOWN else "; this checkout does not know it: update qdojo"))
-    try:
-        info = Http(base).get("/api/v1/join")
-        lim = info.get("limits") or {}
-        check("arena entry", True, f"open: {info.get('outside_fighters', '?')} of "
-              f"{lim.get('max_outside_fighters', '?')} outside fighters registered; "
+    state, detail, _ = entry_state(Http(base))
+    if state == "OPEN":
+        check("arena entry", True, f"open: {detail} outside fighters registered; "
               f"`qdojo combat join --arena {base} --name NAME --planner CMD`")
-    except HttpError as exc:
-        code = getattr(exc, "code", None) or str(exc)
-        check("arena entry", False, f"closed ({code}): practise and benchmark locally until the operator opens it",
+    elif state == "FULL":
+        check("arena entry", False, f"full: {detail} outside-fighter places are taken; practise and benchmark "
+              "locally until one is free (a fighter registered before still runs)", warn=True)
+    elif state == "CLOSED":
+        check("arena entry", False, f"closed ({detail}): practise and benchmark locally until the operator opens it",
               warn=True)
-    except (OSError, ValueError) as exc:
-        check("arena entry", False, f"unknown: {exc}", warn=True)
+    else:
+        check("arena entry", False, f"unknown ({detail}): the arena did not say whether entry is open; "
+              "try again later", warn=True)
 
 
 def _sample_observation(rules):

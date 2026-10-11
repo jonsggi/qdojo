@@ -24,13 +24,16 @@ What the numbers can and cannot say:
 - An *arena day* is DAY_SECONDS of arena time at the deployment's tick length.
   Ticks stop while the arena is down, so arena days drift from calendar days.
 - Outside fighters named test-... are the operator's smoke tests (docs/beta.md
-  §5): reported as `operator_tests`, counted with the house in pairings.
+  §5): reported as `operator_tests`, counted with the house in pairings. The
+  join gateway registers such a name only for a key on the operator's list
+  (join.operator_test_name, the same rule), so a builder is never one of them.
 """
 from __future__ import annotations
 
 import sqlite3
 
 from . import readmodel as rm
+from .join import operator_test_name
 
 SCHEMA = "qdojo.combat.api.community.v1"
 DAY_SECONDS = 86_400
@@ -38,9 +41,6 @@ DEFAULT_TICK_SECONDS = 1.5
 DAYS_SHOWN = 14
 WEEKS_SHOWN = 8
 CLASSES = ("house_vs_house", "outside_vs_house", "outside_vs_outside")
-# Outside fighters the operator registers to test the entry path (docs/beta.md §5)
-# are named test-...; they count as house in the pairings and never as builders.
-TEST_PREFIX = "test-"
 
 
 def measure(conn: sqlite3.Connection) -> dict:
@@ -63,7 +63,7 @@ def measure(conn: sqlite3.Connection) -> dict:
     for fid, org, owner, creator, name in conn.execute(
             "SELECT f.fighter_id, f.origin, f.owner, t.creator, f.name FROM fighters f "
             "LEFT JOIN nft_tokens t ON t.fighter_id = f.fighter_id"):
-        if org == "outside" and str(name or "").lower().startswith(TEST_PREFIX):
+        if org == "outside" and operator_test_name(name):
             org, tests = "test", tests + 1     # the operator's own smoke tests: never a builder
         origin[fid] = org
         if org == "outside":

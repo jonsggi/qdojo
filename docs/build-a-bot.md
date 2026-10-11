@@ -176,14 +176,16 @@ uv run qdojo combat evaluate --planner "python3 my_bot.py"
 
 It prints the ruleset first, then per opponent the fights, W/D/L, the mean
 score with a 95% lower bound, and how many rounds fell back; then a total row,
-the planner's run count, failures by cause, adjusted plans and its slowest
-round. If any round fell back (timeout, crash, invalid output), the fights it
+the planner's run count, failures by cause, adjusted plans (a spent power
+slot dropped, actions kept) and its slowest round. If any round fell back
+(timeout, crash, invalid output, or `ILLEGAL_PLAN`: a plan the selected
+ruleset rejects, such as FEINT under candidate 1 or 2), the fights it
 touched are not your planner's play: the report says so, prints the first
-failure with its stderr, and the command exits 1. `--json` gives the same as
-`qdojo.combat.evaluation.v1`. Narrow it with `--opponent stander --opponent
-feinter`, or pick `--pool roster`, `house` or `builder` (the default);
-`--seeds 5` for a quick look. On a two-CPU machine the default run takes about
-three minutes.
+failure with its stderr or reason, and the command exits 1. `--json` gives
+the same as `qdojo.combat.evaluation.v1`. Narrow it with `--opponent
+stander --opponent feinter`, or pick `--pool roster`, `house` or `builder`
+(the default); `--seeds 5` for a quick look. On a two-CPU machine the
+default run takes about three minutes.
 
 Measured on 2026-10-03, the unmodified starter (`--seeds 20`, suite `test`,
 520 fights, no fallback): random 32/1/7, jabber, turtle and kicker 40/0/0,
@@ -346,9 +348,10 @@ What `join` does:
 2. **Registration.** It signs `(network, contract, public key, tick, name)`
    with SchnorrQ and posts it. Within a few ticks the arena issues a
    simulated fighter NFT (`QDOJOF`, asset label `outside:musashi`) to your
-   key, grants 100,000 fake QU once, and registers the asset with the
-   contract. Your fighter is disclosed as **OUTSIDE** in the export, the
-   API and on the site; the operator's bots are **HOUSE**.
+   key, grants fake QU once (the amount `GET /api/v1/join` publishes as
+   `limits.grant_qu`), and registers the asset with the contract. Your
+   fighter is disclosed as **OUTSIDE** in the export, the API and on the
+   site; the operator's bots are **HOUSE**.
 3. **On-chain registration.** It sends `REGISTER_FIGHTER` itself: a
    Qubic-format transaction (source = your key, destination = the arena
    contract, input type 1, input = one 512-byte combat call frame),
@@ -373,16 +376,20 @@ page shows ENTRY ON THIS ARENA: OPEN, FULL, CLOSED or NOT REPORTED, read from
 the arena's own `/api/v1/status` (`join_enabled`), `/api/v1/join` and
 `index.json` (`deployment.outside_entry`).
 `uv run qdojo combat doctor --arena https://qdojo.jonsggi.com` checks the same
-from the command line.
+from the command line: open, full, closed (only when the arena says
+`join_disabled` or `join_closed`) or unknown (the API or a proxy did not
+answer: try again later).
 
 **What the arena accepts.** Only transactions from a registered outside
 key, with a valid signature, a tick close to the arena's, an attachment of
 at most 20,000 fake QU, and a player opcode (register, queue, duel, cup,
 commit, reveal, withdraw; never the admin opcodes). Each key may register
-one fighter; the arena has room for a limited number of outside fighters;
-transactions are rate-limited per key (a burst of 20, then about one per
-second) with a daily quota. Errors come back as JSON with a code, for
-example `not_registered`, `bad_signature`, `stale` or `rate_limited`.
+one fighter; a name is 3–16 letters, digits, `-` or `_`, and names starting
+with `test-` are the operator's smoke tests (`name_reserved`); the arena has
+room for a limited number of outside fighters; transactions are rate-limited
+per key (a burst of 20, then about one per second) with a daily quota.
+Errors come back as JSON with a code, for example `not_registered`,
+`bad_signature`, `stale` or `rate_limited`.
 
 **Your own client.** Anything that can build and sign the transaction can
 play: `GET /api/v1/join` returns the network and contract IDs, tiers, input
@@ -394,7 +401,11 @@ contract's result) or `dropped`. `combat/join.py` is the reference.
 
 If the operator has not opened the arena, `join` stops with
 `join_disabled` (or `join_closed` from the public proxy), says what to do
-meanwhile, and creates nothing: no key, no state.
+meanwhile, and creates nothing: no key, no state. It does the same when every
+place is taken or the arena does not answer. Any other refusal of the
+registration (`name_taken`, `name_reserved`, `arena_full`, `rate_limited`)
+is printed with its code and what to do next; the key stays for the next
+attempt.
 
 **Check a fight.** Every arena fight is public at
 `/data/combat/v1/fights/{id}/replay.json`. `qdojo combat replay` verifies one

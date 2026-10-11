@@ -1,4 +1,5 @@
 import json
+import shlex
 import sys
 from pathlib import Path
 
@@ -7,7 +8,7 @@ import pytest
 from qdojo.cli import build_parser, main
 from qdojo.combat import evaluate as E
 from qdojo.combat import npcs, planner
-from qdojo.combat.rules import candidate_1
+from qdojo.combat.rules import by_version, candidate_1
 from qdojo.combat.training import Contestant, ReplayMismatch, explain, run_fight, summary, verify_replay
 from qdojo.combat.types import Action, FighterState, Plan
 
@@ -193,3 +194,51 @@ def test_best_response_search_is_bounded(rules):
 def test_parser_knows_the_combat_commands():
     for argv in (["combat", "train"], ["combat", "replay", "f.json"], ["combat", "evaluate"], ["combat", "npcs"]):
         build_parser().parse_args(argv)
+
+
+def _always(actions, power_slot=-1):
+    return ("import json,sys\njson.load(sys.stdin)\nprint(json.dumps({'schema':'qdojo.combat.plan.v1',"
+            f"'actions':{actions!r},'power_slot':{power_slot}}}))\n")
+
+
+def _evaluate(capsys, cmd, *argv):
+    code = 0
+    try:
+        main(["combat", "evaluate", "--planner", shlex.join(cmd), "--opponent", "jabber-v1", "--seeds", "1",
+              "--budget-ms", "20000", "--json", *argv])
+    except SystemExit as exc:
+        code = exc.code
+    return code, json.loads(capsys.readouterr().out)["planners"][0]["planner"]
+
+
+def test_an_illegal_plan_is_a_fallback_round_not_an_adjustment(tmp_path, capsys):
+    """Candidates 1 and 2 reject FEINT, so such a plan is replaced by six RECOVERs:
+    the round is not the planner's play. The replay, train, doctor and evaluate
+    (its count and its exit code) all treat it as a fallback round."""
+    feints = _script(tmp_path, _always(["FEINT", "KICK", "JAB", "FEINT", "JAB", "KICK"]))
+    you = Contestant("you", command=feints, budget_ms=20_000)
+    replay = run_fight(you, Contestant("npc", npc="jabber-v1"), SEED, 1, by_version("combat-v1-candidate-2"))
+    assert [f["cause"] for f in replay["fallbacks"]] == ["ILLEGAL_PLAN"] * len(replay["rounds"])
+    assert all(d["error"] == "ILLEGAL_PLAN" and "fallback plan used" in d["adjusted"] for d in you.diagnostics)
+    code, p = _evaluate(capsys, feints, "--ruleset", "combat-v1-candidate-2")
+    assert code == 1 and p["rounds"] > 0 and p["fallback_rounds"] == p["rounds"]
+    assert p["failures"] == {"ILLEGAL_PLAN": p["rounds"]} and p["fights_with_fallback"] == p["fights"] == 2
+    assert p["adjusted_rounds"] == 0 and "FEINT" in p["first_error"]
+    # train names each such round once, as an illegal plan; a crash stays a planner failure.
+    train = ["combat", "train", "--npc", "jabber-v1", "--budget-ms", "20000", "--ruleset", "combat-v1-candidate-2"]
+    main([*train, "--planner", shlex.join(feints)])
+    text = capsys.readouterr().out
+    assert "your plan was illegal" in text and "your planner failed" not in text
+    crash = tmp_path / "crash"
+    crash.mkdir()
+    main([*train, "--planner", shlex.join(_script(crash, "import sys\nsys.exit(3)\n"))])
+    text = capsys.readouterr().out
+    assert "your planner failed (EXIT)" in text and "your plan was illegal" not in text
+    from qdojo.combat.chain_cli import _doctor_fight
+    _name, ok, detail = _doctor_fight(feints, 20_000, by_version("combat-v1-candidate-2"))
+    assert not ok and "fell back (ILLEGAL_PLAN" in detail and "fallback plan used" in detail
+    # A spent power slot dropped keeps the planner's actions: adjusted, not a fallback, exit 0.
+    power = tmp_path / "power"
+    power.mkdir()
+    code, p = _evaluate(capsys, _script(power, _always(["KICK", "JAB", "RECOVER", "JAB", "KICK", "RECOVER"], 0)))
+    assert code == 0 and p["fallback_rounds"] == 0 and p["adjusted_rounds"] > 0

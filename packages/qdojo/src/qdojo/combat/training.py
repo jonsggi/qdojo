@@ -19,6 +19,9 @@ REPLAY_SCHEMA = "qdojo.combat.replay.v1"
 TAG_PRACTICE_FIGHTER = b"qdojo/combat/practice-fighter/v1\0"
 TAG_PRACTICE_SIDE = b"qdojo/combat/practice-side/v1\0"
 ZERO32 = bytes(32)
+# The fallback cause of a round whose plan ran but was illegal (beside the
+# planner's own failure codes: EXIT, TIMEOUT, BAD_PLAN, ...).
+ILLEGAL_PLAN = "ILLEGAL_PLAN"
 
 
 def practice_fighter_id(name: str) -> bytes:
@@ -131,12 +134,18 @@ def run_fight(a: Contestant, b: Contestant, seed: bytes, fight_number: int = 1,
                 # reject at reveal (a spent power slot) never reaches the round.
                 me = state.a if slot == "A" else state.b
                 plans[slot], adjusted = planner.legal_plan(rules, me, ran.plan, who.fallback)
+                cause = err.code if err else None
+                if cause is None and adjusted and plans[slot].actions != ran.plan.actions:
+                    # An illegal plan replaced by the fallback: as after a crash or a
+                    # timeout, the round is not the planner's play. (Dropping a spent
+                    # power slot keeps the planner's actions and is only an adjustment.)
+                    cause = ILLEGAL_PLAN
                 who.diagnostics.append({"round_index": state.round_index, "elapsed_ms": ran.elapsed_ms,
-                                        "stderr": ran.stderr[-2000:], "error": err.code if err else None,
+                                        "stderr": ran.stderr[-2000:], "error": cause,
                                         **({"adjusted": adjusted} if adjusted else {})})
-                if err:
+                if cause:
                     fallbacks.append({"slot": slot, "round_index": state.round_index,
-                                      "code": "FALLBACK_PLAN_USED", "cause": err.code})
+                                      "code": "FALLBACK_PLAN_USED", "cause": cause})
         res = resolve_round(rules, state, plans["A"], plans["B"])
         results.append(res)
         for slot in "AB":

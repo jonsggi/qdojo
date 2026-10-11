@@ -338,7 +338,9 @@ at 1.5 s; arena days stop while the arena is down). A running bot is not a
 human visit. A *bot run* starts with a key's first transaction and again
 after 1,200 ticks without one, usually a restart after a planner change.
 Outside fighters named `test-...` are the operator's smoke tests: reported as
-`fighters.operator_tests` and counted with the house. The read model keeps
+`fighters.operator_tests` and counted with the house. The join service
+registers such a name only for a key the operator listed (`operator_keys`),
+so a builder is never one of them. The read model keeps
 per-key transaction counts in 600-tick buckets (`activity`) and run starts
 (`bot_runs`) for this; the API publishes neither table.
 
@@ -356,7 +358,10 @@ manifest, and falls back to the static export otherwise.
 
 The `join`, `tx` and `chain` endpoints exist only when an operator enables
 outside builders ([build-a-bot.md](build-a-bot.md) §8); otherwise they
-answer 404 `join_disabled`.
+answer 404 `join_disabled`. A `test-` name from a key the operator has not
+listed is refused with 403 `name_reserved`, and the transactions of a
+registration the operator revoked with 403 `revoked`
+([operations.md](operations.md) §8).
 
 ## 4. Verification levels
 
