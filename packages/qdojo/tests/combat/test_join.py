@@ -242,6 +242,12 @@ def test_the_per_address_limit_counts_an_ipv6_client_per_64(tmp_path):
         assert register("v4next", "198.51.100.8") == 202                           # IPv4: the exact address
         stored = {r[0] for r in rig.svc.db.execute("SELECT ip FROM registrations")}
         assert stored == {"2001:db8:1:2::/64", "2001:db8:1:3::/64", "198.51.100.7", "198.51.100.8"}
+        # The chain-read limit too: a host that rotates through its /64 does not get a fresh bucket per address.
+        rig.svc.read_bucket = J.Bucket(2, 1e-9)                    # two reads per client, no refill in the test
+        read = lambda ip: rig.svc.get(["chain", "state"], {}, ip)[0]                # noqa: E731
+        assert [read("2001:db8:1:2::1"), read("2001:db8:1:2::abcd"), read("2001:db8:1:2:ffff::9")] == [200, 200, 429]
+        assert [read("2001:db8:1:3::1"), read("198.51.100.7"), read("::ffff:198.51.100.7")] == [200, 200, 200]
+        assert read("198.51.100.7") == 429 and read("198.51.100.8") == 200
     finally:
         rig.srv.shutdown()
 
@@ -418,6 +424,104 @@ def test_entry_is_read_as_the_site_reads_it(stub, tmp_path, capsys):
     routes[("POST", "/api/v1/join/register")] = _refusal(503, "api_down")
     code, out = _cli(capsys, "combat", "join", "--arena", url, "--name", "Builder", "--key", str(key), "--register-only")
     assert code != 0 and "did not complete (api_down" in out and "run the same command again" in out and key.exists()
+
+
+def test_a_throttled_chain_read_is_not_the_days_registration_limit(stub, tmp_path, capsys):
+    """rate_limited is also the per-address chain-read throttle. join reads the
+    tick it signs before it posts, so a throttled read means nothing was sent
+    yet: run the same command again, not "try again tomorrow"."""
+    url, routes = stub
+    key = tmp_path / "me.seed"
+    routes[("GET", "/api/v1/join")] = (200, _join_doc(3, 16))
+    routes[("GET", "/api/v1/chain/state")] = _refusal(429, "rate_limited", "too many chain reads; slow down")
+    routes[("POST", "/api/v1/join/register")] = (202, {"status": "new"})
+    code, out = _cli(capsys, "combat", "join", "--arena", url, "--name", "Builder", "--key", str(key), "--register-only")
+    assert code != 0 and "did not complete (rate_limited (too many chain reads; slow down))" in out, out
+    assert "run the same command again" in out and "tomorrow" not in out and key.exists(), out
+    # The same code from the registration itself is the day's limit.
+    routes[("GET", "/api/v1/chain/state")] = (200, {"tick": 50})
+    routes[("POST", "/api/v1/join/register")] = _refusal(429, "rate_limited", "registration limit reached")
+    code, out = _cli(capsys, "combat", "join", "--arena", url, "--name", "Builder", "--key", str(key), "--register-only")
+    assert code != 0 and "refused the registration: rate_limited" in out and "try again tomorrow" in out, out
+
+
+def test_a_registration_cut_short_on_chain_says_to_run_join_again(stub, tmp_path, capsys):
+    """The arena has issued the fighter, then stops answering (its API restarting)
+    before REGISTER_FIGHTER lands: join says so, escaped, and that the same
+    command finishes it; never a traceback."""
+    url, routes = stub
+    key = tmp_path / "me.seed"
+    join = ("combat", "join", "--arena", url, "--name", "Builder", "--key", str(key), "--register-only")
+    routes[("GET", "/api/v1/join")] = (200, _join_doc(3, 16))
+    routes[("GET", "/api/v1/join/status")] = (200, {"name": "Builder", "owner": "ab" * 32, "status": "active",
+                                                    "fighter_id": J.fighter_id_for("Builder").hex()})
+    routes[("GET", "/api/v1/chain/state")] = _refusal(503, "api_down" + ESC, "read API unavailable" + ESC)
+    code, out = _cli(capsys, *join)
+    assert code != 0 and "Builder is registered on" in out and "on chain did not complete (api_down\\x1b" in out, out
+    assert "run the same command again" in out and "Traceback" not in out, out
+    assert "\x1b" not in out and "\x07" not in out, out
+    # The same while it waits for REGISTER_FIGHTER: the first read finds no fighter, the next one no API.
+    reads = []
+
+    def state_then_down(handler):
+        reads.append(handler.path)
+        status, doc = (200, {"tick": 50, "fighter": None}) if len(reads) == 1 else _refusal(503, "api_down")
+        raw = json.dumps(doc).encode()
+        handler.send_response(status)
+        handler.send_header("Content-Type", "application/json")
+        handler.send_header("Content-Length", str(len(raw)))
+        handler.end_headers()
+        handler.wfile.write(raw)
+    routes[("GET", "/api/v1/chain/state")] = (200, state_then_down)
+    code, out = _cli(capsys, *join)
+    assert len(reads) == 2 and "REGISTER_FIGHTER sent" in out, out
+    assert code != 0 and "on chain did not complete (api_down" in out and "Traceback" not in out, out
+
+
+def test_an_answer_that_is_not_http_counts_as_no_answer(stub, tmp_path, capsys):
+    """Another service on the port, or an answer cut off mid-way: join.Http raises
+    OSError (ValueError for a body that is not a JSON object), so doctor --arena
+    and join report it as no answer, escaped, never with a traceback."""
+    url, routes = stub
+    manifest = routes[("GET", "/data/combat/v1/manifest.json")]
+
+    def raw(data):
+        def answer(handler):
+            handler.wfile.write(data)
+            handler.close_connection = True
+        return 200, answer
+
+    def cut_off(handler):                               # announces a 64-byte chunk, sends less, closes
+        handler.send_response(200)
+        handler.send_header("Transfer-Encoding", "chunked")
+        handler.end_headers()
+        handler.wfile.write(b'40\r\n{"enabled": true')
+        handler.close_connection = True
+    bad_line = raw(b"XTTP/1.1 200 " + ESC.encode() + b"PASS forged\r\n\r\n")
+    routes.update({("GET", "/bad"): bad_line, ("GET", "/ssh"): raw(b"SSH-2.0-OpenSSH_9.6\r\n"),
+                   ("GET", "/headers"): raw(b"HTTP/1.1 200 OK\r\n" + b"X-A: 1\r\n" * 120 + b"\r\n{}"),
+                   ("GET", "/cut"): (200, cut_off), ("GET", "/list"): (200, [1, 2]),
+                   ("GET", "/deep"): (200, b"[" * 100_000)})
+    for path, exc in (("/bad", OSError), ("/ssh", OSError), ("/headers", OSError), ("/cut", OSError),
+                      ("/list", ValueError), ("/deep", ValueError)):
+        with pytest.raises(exc) as e:
+            J.Http(url).get(path)
+        assert "\x1b" not in str(e.value), (path, e.value)
+    outs = []
+    routes[("GET", "/data/combat/v1/manifest.json")] = routes[("GET", "/api/v1/join")] = bad_line
+    code, out = _cli(capsys, "combat", "doctor", "--arena", url, "--state", str(tmp_path / "bots"))
+    assert code == 1 and "FAIL  arena ruleset" in out and "not a complete HTTP answer (BadStatusLine" in out, out
+    outs.append(out)
+    key = tmp_path / "me.seed"
+    code, out = _cli(capsys, "combat", "join", "--arena", url, "--name", "Builder", "--key", str(key), "--register-only")
+    assert code != 0 and "did not say whether entry is open" in out and not key.exists(), out
+    outs.append(out)
+    routes[("GET", "/data/combat/v1/manifest.json")], routes[("GET", "/api/v1/join")] = manifest, (200, cut_off)
+    code, out = _cli(capsys, "combat", "doctor", "--arena", url, "--state", str(tmp_path / "bots"))
+    assert code == 0 and "WARN  arena entry: unknown (no answer:" in out and "IncompleteRead" in out, out
+    outs.append(out)
+    for out in outs:
+        assert "\x1b" not in out and "\x07" not in out and "Traceback" not in out, out
 
 
 def test_text_from_the_arena_is_printed_escaped(stub, tmp_path, capsys):

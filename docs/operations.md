@@ -262,12 +262,12 @@ itself are never trusted; if the walk ends at a Cloudflare edge it uses
 that header only from a peer in an exact trusted CIDR. Refresh the Cloudflare
 ranges in the Dockerfile from cloudflare.com/ips when they change. Per-IP
 limits are a courtesy; the per-key quotas are the real protection. The
-registration limit counts an IPv4 client per address and an IPv6 client per
-/64 network. The inbox keeps a registration's address (for IPv6 only the
-/64) for the 24 hours that limit looks back, and no longer: the arena erases
-older ones every tick and the API at every registration. Once entry is
-closed nothing erases them, so the rollback runs `qdojo combat
-registrations forget-addresses` ([beta.md](beta.md) §5, §8).
+registration and chain-read limits count an IPv4 client per address and an
+IPv6 client per /64 network. The inbox keeps a registration's address (for
+IPv6 only the /64) for the 24 hours the registration limit looks back, and no
+longer: the arena erases older ones every tick and the API at every
+registration. Once entry is closed nothing erases them, so the rollback runs
+`qdojo combat registrations forget-addresses` ([beta.md](beta.md) §5, §8).
 
 **Operate:**
 

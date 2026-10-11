@@ -38,6 +38,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass, field, fields
+from http.client import HTTPException
 from pathlib import Path
 
 from ..hashing import sha256
@@ -112,7 +113,7 @@ class Limits:
     tx_burst: int = 20                     # token bucket per identity
     tx_per_second: float = 1.0
     tx_per_day: int = 20_000               # per identity
-    reads_per_second: float = 20.0         # chain reads, per client IP
+    reads_per_second: float = 20.0         # chain reads, per client address (an IPv6 client: per /64)
     max_pending: int = 400                 # queued transactions, all identities together
     tick_behind: int = 30                  # a transaction's tick field must be within
     tick_ahead: int = 60                   # [tick - behind, tick + ahead] of the arena
@@ -364,7 +365,7 @@ class JoinService:
             return 200, {"hash": row["hash"], "status": row["status"], "target_tick": row["target_tick"],
                          "result": json.loads(row["result"]) if row["result"] else None}
         if parts[:1] == ["chain"]:
-            if not self.read_bucket.take(ip):
+            if not self.read_bucket.take(address_key(ip)):     # one host may use every address of its /64
                 raise JoinError(429, "rate_limited", "too many chain reads; slow down")
             return self._chain(parts[1:], one)
         raise JoinError(404, "not_found", "no such endpoint")
@@ -606,12 +607,23 @@ class HttpError(Exception):
         super().__init__(f"HTTP {status}: {self.code or ''} {self.message}".strip())
         self.status, self.doc = status, doc
 
+    def why(self) -> str:
+        """The code and message, escaped for printing."""
+        return printable(self.code or f"HTTP {self.status}") + (f" ({printable(self.message)})" if self.message else "")
+
+
+class Refused(HttpError):
+    """An error answer to POST /api/v1/join/register: the arena's verdict on the
+    registration itself, not on a read around it (see REFUSAL_NEXT)."""
+
 
 class Http:
     """JSON over HTTP(S) to an arena. Every call is bounded: `timeout` seconds for
     each socket operation, `deadline` seconds for the whole call (connecting,
     headers and body), and at most `max_bytes` of body. A call that runs out of
-    time raises TimeoutError; a larger body raises OSError."""
+    time raises TimeoutError; a larger body, or an answer that is not HTTP (another
+    service on that port) or is cut off, raises OSError; an answer that is not a
+    JSON object raises ValueError."""
 
     def __init__(self, base: str, timeout: float = 10.0, deadline: float = 30.0, max_bytes: int = MAX_RESPONSE):
         self.base, self.timeout, self.deadline, self.max_bytes = base.rstrip("/"), timeout, deadline, max_bytes
@@ -656,13 +668,23 @@ class Http:
                                      headers={"Content-Type": "application/json", "User-Agent": "qdojo-join"})
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as r:
-                return json.loads(self._read(r, until))
+                raw = self._read(r, until)
         except urllib.error.HTTPError as e:
             try:
                 doc = json.loads(self._read(e, until))
-            except (ValueError, OSError):
+            except (ValueError, OSError, HTTPException, RecursionError):
                 doc = None
             raise HttpError(e.code, doc) from None
+        except HTTPException as e:              # BadStatusLine, LineTooLong, IncompleteRead (text the server's: escaped)
+            raise OSError(f"{self.base}{path}: not a complete HTTP answer "
+                          f"({type(e).__name__}: {printable(e)})") from None
+        try:
+            doc = json.loads(raw)
+        except RecursionError:
+            raise ValueError(f"{self.base}{path}: the answer is nested too deeply") from None
+        if not isinstance(doc, dict):
+            raise ValueError(f"{self.base}{path}: the answer is not a JSON object")
+        return doc
 
     def get(self, path: str) -> dict:
         return self.call("GET", path)
@@ -843,7 +865,9 @@ def entry_state(http: Http) -> tuple[str, str, dict | None]:
 
 
 def register(http: Http, info: dict, name: str, subseed: bytes, pub: bytes, log=print, wait_s: float = 120) -> dict:
-    """Idempotent: registers once, then waits until the arena has issued the fighter."""
+    """Idempotent: registers once, then waits until the arena has issued the fighter.
+    An error answer to the registration itself raises Refused; one to a read
+    around it (the status, the tick it signs), HttpError."""
     try:
         st = http.get(f"/api/v1/join/status?owner={pub.hex()}")
     except HttpError as e:
@@ -852,8 +876,11 @@ def register(http: Http, info: dict, name: str, subseed: bytes, pub: bytes, log=
         tick = int(http.get(f"/api/v1/chain/state")["tick"])
         digest = register_digest(bytes.fromhex(info["network_id"]), bytes.fromhex(info["contract_id"]), pub, name, tick)
         sig = schnorrq.sign(subseed, pub, digest)
-        st = http.post("/api/v1/join/register", {"name": name, "public_key": pub.hex(), "tick": tick,
-                                                 "signature": sig.hex()})
+        try:
+            st = http.post("/api/v1/join/register", {"name": name, "public_key": pub.hex(), "tick": tick,
+                                                     "signature": sig.hex()})
+        except HttpError as e:
+            raise Refused(e.status, e.doc) from None
         log(f"registration sent: {printable(st.get('status'))}")
     deadline = time.monotonic() + wait_s
     while st["status"] == "new" and time.monotonic() < deadline:
@@ -865,7 +892,9 @@ def register(http: Http, info: dict, name: str, subseed: bytes, pub: bytes, log=
     return st
 
 
-# What a builder can do about each refusal of a registration (the server's error codes).
+# What a builder can do about each refusal of a registration: error codes of
+# POST /api/v1/join/register only (a chain read's rate_limited is the read
+# throttle, not the day's registrations; join says to run the command again).
 REFUSAL_NEXT = {
     "join_closed": "entry is closed; the site's BUILD A BOT page shows when it opens",
     "join_disabled": "entry is closed; the site's BUILD A BOT page shows when it opens",
@@ -905,25 +934,30 @@ def cmd_join(a):
     subseed, pub = load_or_make_key(key)
     print(f"key {key} -> owner {pub.hex()} (simulated arena only: fake QU)")
 
-    def unfinished(why):
+    def unfinished(why, issued=False):
+        if issued:                                 # what is left is REGISTER_FIGHTER on chain
+            return SystemExit(f"qdojo: {a.name} is registered on {a.arena}, but registering it on chain did not "
+                              f"complete ({why}).\nNext: run the same command again; it reuses {key}, finds the "
+                              "registration and finishes it.")
         return SystemExit(f"qdojo: the registration on {a.arena} did not complete ({why}).\nNext: run the same "
                           f"command again; it reuses {key} and finds the registration if the arena received it.")
     try:
         reg = register(http, info, a.name, subseed, pub)
-    except HttpError as e:
-        why = printable(e.code or f"HTTP {e.status}") + (f" ({printable(e.message)})" if e.message else "")
+        fid = bytes.fromhex(reg["fighter_id"])
+    except Refused as e:
         if e.code not in REFUSAL_NEXT:            # api_down, a proxy error: it may or may not have arrived
-            raise unfinished(why) from None
+            raise unfinished(e.why()) from None
         if e.code in CLOSED_CODES and created:    # the public proxy refuses writes: as closed as a refused GET
             key.unlink(missing_ok=True)
             kept = "nothing was created (the new key is removed again)"
         else:
             kept = f"nothing was registered, and the key stays in {key} for the next attempt"
-        raise SystemExit(f"qdojo: {a.arena} refused the registration: {why}; {kept}.\n"
+        raise SystemExit(f"qdojo: {a.arena} refused the registration: {e.why()}; {kept}.\n"
                          f"Next: {REFUSAL_NEXT[e.code]}.") from None
+    except HttpError as e:                        # a read around it: the API restarting, the read throttle
+        raise unfinished(e.why()) from None
     except (OSError, ValueError, KeyError, TypeError) as e:
         raise unfinished(printable(e)) from None
-    fid = bytes.fromhex(reg["fighter_id"])
     print(f"fighter {a.name} = {fid.hex()}")
     rules = candidate_1()
     if info.get("ruleset_digest") and info["ruleset_digest"] != rules.digest.hex():
@@ -934,21 +968,26 @@ def cmd_join(a):
     print(f"arena ruleset {rules.semantic_version} {rules.digest.hex()}")
     state = Path(a.state) if a.state else _home() / "join" / a.name
     say = lambda m: print(printable(m, None), flush=True)       # noqa: E731  (arena text, escaped)
-    client = RemoteClient(http, info, subseed, pub, fid, state, log=say)
-    client.refresh()
-    if client.state.get("fighter") is None:
-        r = client.send(Op.REGISTER_FIGHTER, fighter_id=fid, registry_version=1)
-        print("REGISTER_FIGHTER sent")
-        for _ in range(60):
-            time.sleep(2)
-            client.refresh()
-            st = client.poll(r)
-            if client.state.get("fighter") is not None:
-                break
-            if st == "dropped":
-                r = client.send(Op.REGISTER_FIGHTER, fighter_id=fid, registry_version=1)
+    try:
+        client = RemoteClient(http, info, subseed, pub, fid, state, log=say)
+        client.refresh()
         if client.state.get("fighter") is None:
-            raise SystemExit("qdojo: the fighter did not register; run join again")
+            r = client.send(Op.REGISTER_FIGHTER, fighter_id=fid, registry_version=1)
+            print("REGISTER_FIGHTER sent")
+            for _ in range(60):
+                time.sleep(2)
+                client.refresh()
+                st = client.poll(r)
+                if client.state.get("fighter") is not None:
+                    break
+                if st == "dropped":
+                    r = client.send(Op.REGISTER_FIGHTER, fighter_id=fid, registry_version=1)
+    except HttpError as e:                        # the API restarting, the read throttle: a rerun resends it
+        raise unfinished(e.why(), issued=True) from None
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        raise unfinished(printable(e), issued=True) from None
+    if client.state.get("fighter") is None:
+        raise SystemExit("qdojo: the fighter did not register; run join again")
     say(f"registered on chain; balance {client.state.get('balance')} fake QU")
     if a.register_only:
         return

@@ -124,7 +124,7 @@ operator adds `operator_keys` when copying it, §5 step 2):
 | `max_amount` (per transaction) | 20,000 | 20,000 | Covers tier 2 ranked and cup entry; keeps one bad budget from staking everything at once |
 | `tx_burst` / `tx_per_second` | 20 / 1.0 | 20 / 1.0 | A bot sends a few transactions a minute; the live house bots' busiest one sends ~2,700 a day |
 | `tx_per_day` (per key) | 20,000 | 20,000 | Seven times a busy bot |
-| `reads_per_second` (per IP) | 20 | 20 | `join` reads chain state once per poll |
+| `reads_per_second` (per address; IPv6 per /64) | 20 | 20 | `join` reads chain state once per poll |
 | `max_pending` (all keys) | 400 | 400 | Bounds the inbox the arena drains each tick |
 | `tick_behind` / `tick_ahead` | 30 / 60 | 30 / 60 | Stale or future transactions are refused with `stale` |
 

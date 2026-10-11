@@ -119,9 +119,12 @@ tested in `packages/qdojo/tests/test_study.py`:
   the measure) of every rate. H3 counts a first fight within the target only
   without `hands_on` help; the count including it is printed beside it. The
   minutes to a first fight are over everyone who started, a dropout counting
-  as `over`. A timestamp it cannot read (not `YYYY-MM-DDTHH:MM`, a UTC offset
-  on one side only, a first fight before the start) stops the report and
-  names the participant and column.
+  as `over`. A timestamp it cannot read (not `YYYY-MM-DDTHH:MM`, such as a
+  date without a time; a UTC offset on one side only; a first fight before the
+  start) or an `assistance` other than `none`, `docs`, `hint` or `hands_on` (a
+  blank cell is `none`; case, spaces and hyphens do not matter) stops the
+  report and names the participant and column. Phases are compared without
+  case or surrounding spaces.
 - **Adaptation** (`adaptation`): H7 from the read model's per-fighter results
   against the switching bot.
 - **Arena participation** (`GET /api/v1/community`, [beta.md](beta.md) §7):

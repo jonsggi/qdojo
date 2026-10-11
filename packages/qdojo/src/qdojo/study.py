@@ -22,6 +22,7 @@ from __future__ import annotations
 import csv
 import json
 import random
+import re
 import statistics
 from datetime import datetime
 from math import sqrt
@@ -221,10 +222,14 @@ COHORT_FIELDS = ("participant", "cohort_phase", "house_or_test", "started_at", "
                  "explained_improvement", "clarity", "counterplay", "replay_desire")
 ONBOARDING_TARGET_MIN = 10
 HANDS_ON = "hands_on"            # help that disqualifies a first fight from the H3 target
+ASSISTANCE = ("none", "docs", "hint", HANDS_ON)          # validation-protocol.md §4 T3; a blank cell is none
+# A date and a time to the minute (seconds and a UTC offset may follow); a date alone is midnight to fromisoformat.
+STAMP_RE = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}")
 
 
 class CohortLogError(ValueError):
-    """A cohort log value the report cannot count without guessing (a timestamp it cannot read)."""
+    """A cohort log value the report cannot count without guessing (a timestamp it
+    cannot read, an assistance level the protocol does not define)."""
 
 
 def read_csv(path: Path) -> list[dict]:
@@ -241,18 +246,26 @@ def _cell(r: dict, col: str) -> str:
 
 
 def _assistance(r: dict) -> str:
-    return "_".join(_cell(r, "assistance").lower().replace("-", " ").split()) or "none"
+    """The help level, spelling normalised (Hands-On is hands_on). One the protocol
+    does not define raises CohortLogError: counted as unaided it would raise H3."""
+    a = "_".join(_cell(r, "assistance").lower().replace("-", " ").split()) or "none"
+    if a not in ASSISTANCE:
+        raise CohortLogError(f"{_cell(r, 'participant') or '?'}: assistance {_cell(r, 'assistance')!r} is not one "
+                             f"of {', '.join(ASSISTANCE)}")
+    return a
 
 
 def _stamp(r: dict, col: str) -> datetime | None:
     v = _cell(r, col)
     if not v:
         return None
-    try:
-        return datetime.fromisoformat(v)
-    except ValueError:
-        raise CohortLogError(f"{_cell(r, 'participant') or '?'}: {col} {v!r} is not a date and time "
-                             "(write YYYY-MM-DDTHH:MM)") from None
+    if STAMP_RE.match(v):
+        try:
+            return datetime.fromisoformat(v)
+        except ValueError:
+            pass
+    raise CohortLogError(f"{_cell(r, 'participant') or '?'}: {col} {v!r} is not a date and time "
+                         "(write YYYY-MM-DDTHH:MM)")
 
 
 def _minutes(r: dict) -> float | None:
@@ -261,7 +274,15 @@ def _minutes(r: dict) -> float | None:
     first fight before the start raises CohortLogError: the participant would
     otherwise drop out of the funnel without a word."""
     who = _cell(r, "participant") or "?"
-    a, b = _stamp(r, "started_at"), _stamp(r, "first_fight_at")
+    stamps, bad = [], []
+    for col in ("started_at", "first_fight_at"):
+        try:
+            stamps.append(_stamp(r, col))
+        except CohortLogError as exc:
+            bad.append(str(exc))
+    if bad:
+        raise CohortLogError("; ".join(bad))
+    a, b = stamps
     if a is None:
         if b is not None:
             raise CohortLogError(f"{who}: first_fight_at without started_at")
@@ -274,6 +295,11 @@ def _minutes(r: dict) -> float | None:
     if minutes < 0:
         raise CohortLogError(f"{who}: first_fight_at is before started_at")
     return minutes
+
+
+def _phase(r: dict) -> str:
+    """The cohort phase; a stray space or capital (a spreadsheet's) does not split a phase in two."""
+    return _cell(r, "cohort_phase").lower() or "main"
 
 
 def _rate(k: int, n: int) -> dict:
@@ -295,7 +321,7 @@ def cohort_report(rows: list[dict]) -> dict:
     over everyone who started, a dropout counting as "over" (the median is the
     lower one: always a participant's own time, never an average with a
     dropout). Raises CohortLogError, naming every bad cell, when a timestamp
-    cannot be read."""
+    cannot be read or an assistance level is not one the protocol defines."""
     unknown = sorted(set().union(*(r.keys() for r in rows)) - set(COHORT_FIELDS)) if rows else []
     excluded = [r for r in rows if _yes(r.get("house_or_test"))]
     people = [r for r in rows if not _yes(r.get("house_or_test"))]
@@ -305,14 +331,19 @@ def cohort_report(rows: list[dict]) -> dict:
             minutes[id(r)] = _minutes(r)
         except CohortLogError as exc:
             problems.append(str(exc))
+        try:
+            _assistance(r)
+        except CohortLogError as exc:
+            problems.append(str(exc))
     if problems:
-        raise CohortLogError("the cohort log has timestamps the report cannot count: " + "; ".join(problems))
+        raise CohortLogError("the cohort log has values the report cannot count without guessing: "
+                             + "; ".join(problems))
     out = {"rows": len(rows), "excluded_house_or_test": len(excluded), "participants": len(people),
            "unknown_columns": unknown}
-    phases = sorted({r.get("cohort_phase") or "main" for r in people})
+    phases = sorted({_phase(r) for r in people})
     out["phases"] = {}
     for ph in phases:
-        grp = [r for r in people if (r.get("cohort_phase") or "main") == ph]
+        grp = [r for r in people if _phase(r) == ph]
         started = [r for r in grp if _cell(r, "started_at")]
         reached = [r for r in started if minutes[id(r)] is not None]
         within = [r for r in reached if minutes[id(r)] <= ONBOARDING_TARGET_MIN]

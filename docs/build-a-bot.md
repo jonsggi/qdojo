@@ -405,7 +405,9 @@ meanwhile, and creates nothing: no key, no state. It does the same when every
 place is taken or the arena does not answer. Any other refusal of the
 registration (`name_taken`, `name_reserved`, `arena_full`, `rate_limited`)
 is printed with its code and what to do next; the key stays for the next
-attempt.
+attempt. If the arena stops answering partway (its API restarting, chain
+reads throttled), `join` says how far it got: the same command, run again,
+picks up where it stopped with the same key.
 
 **Check a fight.** Every arena fight is public at
 `/data/combat/v1/fights/{id}/replay.json`. `qdojo combat replay` verifies one

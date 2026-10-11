@@ -172,11 +172,25 @@ def test_a_timestamp_the_report_cannot_read_stops_it(tmp_path):
         {**_person("P03"), "first_fight_at": "2026-10-19T10:05"},                 # before the start
         {"participant": "P04", "first_fight_at": "2026-10-20T10:05"},              # never started
         {**_person("P05"), "started_at": "20.10.2026 10:00"},                     # a locale date
+        {**_person("P06", 5), "started_at": "2026-10-20", "first_fight_at": "2026-10-20"},   # dates, no times
+        {**_person("P07", 5), "started_at": "2026-10-20"},                        # 607 minutes if read as midnight
+        {**_person("P08", 5), "first_fight_at": "2026-10-20T10"},                 # no minutes
+        {**_person("P09", 5), "first_fight_at": "2026-W43-2T10:05"},              # an ISO week date
     ]
     with pytest.raises(study.CohortLogError) as exc:
         study.cohort_report(bad)
-    for p in ("P01", "P02", "P03", "P04", "P05"):
+    for p in ("P01", "P02", "P03", "P04", "P05", "P06", "P07", "P08", "P09"):
         assert p in str(exc.value)
+    assert "P06: started_at '2026-10-20'" in str(exc.value) and "P06: first_fight_at '2026-10-20'" in str(exc.value)
+    # A date alone (the time not noted) read as midnight made 0 minutes: H3 5 of 10, a pass, where 4 of 10 is known.
+    with pytest.raises(study.CohortLogError, match="P05: started_at '2026-10-20' is not a date and time"):
+        _cohort(*[_person(f"P0{i}", 5) for i in range(1, 5)],
+                {**_person("P05", 5), "started_at": "2026-10-20", "first_fight_at": "2026-10-20"},
+                *[_person(f"P{i:02d}") for i in range(6, 11)])
+    # A space for the T, seconds, and an offset on both sides are a date and a time.
+    m = _cohort({**_person("P01", 5), "started_at": "2026-10-20 10:00:30", "first_fight_at": "2026-10-20 10:05:30"},
+                {**_person("P02", 5), "started_at": "2026-10-20T10:00+02:00", "first_fight_at": "2026-10-20T08:09Z"})
+    assert m["first_fight_within_target"]["count"] == 2 and m["minutes_to_first_fight"]["max"] == 9.0
     # Offsets on both sides are fine, and a blank cell is an empty one: a dropout keeps its reason.
     m = _cohort({"participant": "P01", "started_at": "2026-10-20T10:00Z", "first_fight_at": "2026-10-20T12:07+02:00"},
                 {**_person("P02"), "first_fight_at": "  "})
@@ -191,6 +205,34 @@ def test_a_timestamp_the_report_cannot_read_stops_it(tmp_path):
     out = subprocess.run([sys.executable, str(ROOT / "scripts" / "beta-study.py"), "cohort", str(path)],
                          capture_output=True, text=True, timeout=120)
     assert out.returncode == 2 and "P02" in out.stderr and "'10:09'" in out.stderr and out.stdout == ""
+
+
+def test_an_assistance_level_the_protocol_does_not_define_stops_the_report():
+    """validation-protocol.md §4 T3 logs none, docs, hint or hands_on. Any other
+    value counted as unaided would raise H3: 'hands-on help' on one of five fast
+    first fights turned a 4 of 10 fail into a 5 of 10 pass."""
+    dropped = [_person(f"P{i:02d}") for i in range(6, 11)]
+    for value in ("hands-on help", "handson", "hands\u2013on", "hands_on (typed install)", "HO"):
+        with pytest.raises(study.CohortLogError) as exc:
+            _cohort(_person("P01", 5, value), *[_person(f"P0{i}", 5) for i in range(2, 6)], *dropped)
+        assert f"P01: assistance {value!r} is not one of none, docs, hint, hands_on" in str(exc.value)
+    # Case, spaces and hyphens do not matter, and a blank cell is none.
+    m = _cohort(_person("P01", 5, " Hands-On "), _person("P02", 5, "HINT"), _person("P03", 5, "Docs"),
+                _person("P04", 5, ""), *dropped)
+    assert m["assistance"] == {"docs": 1, "hands_on": 1, "hint": 1, "none": 6}
+    assert m["first_fight_within_target"]["count"] == 3
+
+
+def test_a_phase_is_read_without_case_or_stray_spaces():
+    """A spreadsheet's stray space or capital does not split a phase in two
+    (7 of 10 reaching a fight would read as 6 of 9 and 1 of 1)."""
+    rows = [_person(f"P{i:02d}", 5 if i <= 7 else None, cohort_phase="main") for i in range(1, 11)]
+    rows[0]["cohort_phase"], rows[1]["cohort_phase"], rows[2]["cohort_phase"] = "main ", "Main", ""
+    rows += [_person("P11", 5, cohort_phase=" After-Correction"), _person("P12", cohort_phase="after-correction")]
+    r = study.cohort_report(rows)
+    assert sorted(r["phases"]) == ["after-correction", "main"]
+    assert (r["phases"]["main"]["first_fight"]["count"], r["phases"]["main"]["first_fight"]["of"]) == (7, 10)
+    assert r["phases"]["after-correction"]["started"] == 2
 
 
 def test_adaptation_to_a_style_switch():
