@@ -336,8 +336,9 @@ cost could not be counted toward the cap: the planner says `fallback to
 mixed-v1: state directory unusable: ...` and plays `mixed-v1`. A write that
 fails after a request (the disk filled meanwhile) costs no paid reply; a
 `spend not saved: ...` or `breaker state not saved: ...` line says what was
-not recorded. Every billed reply counts toward the daily cap, one without a
-completion too.
+not recorded. Every billed reply the planner receives counts toward the
+daily cap, one without a completion too; a request given up at `--timeout`
+may still be billed by the provider and is not counted.
 
 ```sh
 uv run qdojo combat train --npc jabber-v1 --budget-ms 25000 --planner "uv run python -m qdojo.combat.llm_planner --model some/model --state .llm-state --daily-usd 0.50"
