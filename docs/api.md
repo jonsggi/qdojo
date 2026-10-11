@@ -287,8 +287,9 @@ The static export keeps the most recent 200 fights. The read API answers
 full-history questions from a SQLite read model (`combat/readmodel.py`)
 that indexes the arena's input journal: every fight, fighter, per-mode
 record, rating change, season, cup, duel and ownership record. It replays
-the journal into its own contract copy and never compacts it, so the arena
-pruning finished history from its own memory does not lose anything here.
+the journal into its own contract copy, compacted as the arena compacts its
+own, but that copy forgets a finished record only once the database holds it:
+the arena pruning finished history from its own memory loses nothing here.
 It uses the manifest the arena was created with (devnet.json), checks the
 arena's `digest` checkpoints as it crosses them, and re-executes the fighter
 NFT operations (`nft` records: mints, orders, sales, transfers), so tokens,
@@ -360,10 +361,10 @@ per-key transaction counts in 600-tick buckets (`activity`) and run starts
 Errors are `{"schema": "qdojo.combat.api.error.v1", "error": {"status",
 "code", "message"}}` with the HTTP status: 400 `bad_id`/`bad_query`, 404
 `not_found`, 405 `read_only`, 503 `not_ready` while the first index is
-built. CORS answers only the configured origins (`--cors-origin`). Finished
-fights and replays carry `Cache-Control: public, max-age=86400`, everything
-else `max-age=5`; responses have an `ETag` (`If-None-Match` gives 304) and
-are gzipped on request.
+built or the operator rebuilds it. CORS answers only the configured origins
+(`--cors-origin`). Finished fights and replays carry `Cache-Control: public,
+max-age=86400`, everything else `max-age=5`; responses have an `ETag`
+(`If-None-Match` gives 304) and are gzipped on request.
 
 The site uses the API for fighter pages, scouting, the leaderboard and fight
 lists when `/api/v1/status` answers for the same network as the export's

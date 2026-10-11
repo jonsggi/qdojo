@@ -390,8 +390,8 @@ compaction, every fight finished before the current tick is folded into a
 small state kept with the compacted history, which the arena's snapshot
 pickles and a full replay of the journal rebuilds at the same ticks. Readers
 fold the few fights finished since on a copy. The exporter publishes it as
-`titles.json` and per fighter (`titles`); the read model (which holds every
-fight) computes the same state from its own replay and serves
+`titles.json` and per fighter (`titles`); the read model (whose database
+holds every fight) computes the same state from its own replay and serves
 `/api/v1/titles`, `/api/v1/titles/lineal` and the fighter documents. The
 site reads `titles.json` and needs the API only for the complete lineage.
 

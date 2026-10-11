@@ -16,15 +16,24 @@ already.
   unsettled contests, open cups, every fighter and season. Every write is an
   upsert of a pure function of the replica's state, so an incremental database
   and a rebuilt one hold the same rows (tests/combat/test_readmodel.py).
-- Restartable: the follower pickles its replica now and then (a private,
-  local file next to the database), so a restart resumes in seconds instead of
-  replaying the whole journal. A snapshot from different code is ignored.
+- Bounded: the replica compacts its contract exactly as the arena does, so a
+  tick costs the same however long the journal is and a replay is linear in
+  its length (a never-compacted replica made it quadratic: 90 minutes for
+  333 MB on 2026-10-06). What compaction moves out waits in the replica's
+  archive until a sync has written it; once the database holds a record in
+  final form, the replica forgets it.
+- Restartable: the follower pickles its replica now and then, and right after
+  a long catch-up (a private, local file next to the database), so a restart
+  resumes in seconds instead of replaying the whole journal. A snapshot from
+  other code is ignored, and so is one synced to a database further along
+  than this one (its replica no longer holds what that database had).
 
 Stored documents carry no `generated_tick`: the API adds the database's tick
 when it serves them, so a document never depends on when it was indexed.
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
@@ -44,7 +53,12 @@ SCHEMA_VERSION = "qdojo.combat.readmodel.v1"
 JOURNAL = "devnet.journal"
 MARKER = "devnet.json"
 SNAPSHOT_EVERY_S = 900.0
+SNAPSHOT_AFTER_BYTES = 64 << 20     # a catch-up this long is saved at once, so a restart need not repeat it
 READ_CHUNK = 8 << 20
+REBUILD_SYNC_BYTES = 64 << 20       # `rebuild` syncs its unserved file this often: the replica's archive stays small
+# A snapshot file is this tag and a JSON head line (code, network, offsets),
+# then the pickled replica: one that cannot be used is refused unread.
+SNAPSHOT_TAG = b"qdojo.combat.readmodel.snapshot.v2 "
 
 DDL = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -118,6 +132,17 @@ FINAL_CUP = ("COMPLETE", "CANCELLED", "ABORTED")
 # a longer silence means the bot was stopped or the builder restarted it.
 ACTIVITY_BUCKET = 600
 RUN_GAP_TICKS = 1200
+# The replica compacts exactly as the arena does (live.compact, on the same
+# ticks). Not only for speed: a call naming a record that compaction removed
+# (cancelling an old offer, say) gets another answer and records its nonce
+# differently, so a replica that kept more than the arena could diverge from
+# it. Fault counts and season stats stay whole: the contract reads only the
+# current ones, and the database shows them all.
+KEEP_ALL = 1 << 62
+
+
+def compact(contract):
+    return store.compact(contract, keep_epochs=KEEP_ALL, keep_seasons=KEEP_ALL)
 
 
 class ReadModelError(RuntimeError):
@@ -177,9 +202,12 @@ def code_version() -> str:
 
 class Replica:
     """World.replay, one record at a time and without re-journalling. Only
-    confirmed inputs are applied; nothing here can send a transaction."""
+    confirmed inputs are applied; nothing here can send a transaction. It
+    compacts its contract on the arena's ticks (`compact`); with `archive`,
+    what that moves out waits in `archive` until the follower's database
+    has it, and `view()` is the contract with it put back."""
 
-    def __init__(self, manifest: Manifest, rule=None):
+    def __init__(self, manifest: Manifest, rule=None, archive: bool = False):
         self.m = manifest
         self.rule = rule                   # the season qualification rule, for season titles
         self.contract: CombatContract | None = None
@@ -193,6 +221,8 @@ class Replica:
         self.activity: dict[int, dict[str, list[int]]] = {}
         self.runs: dict[str, list[int]] = {}       # who -> start tick of each bot run
         self.last_call: dict[str, int] = {}
+        # Compacted fights, contests and cups by ID (Follower.sync and _prune empty it).
+        self.archive: dict[str, dict] | None = {"fights": {}, "contests": {}, "cups": {}} if archive else None
 
     def _nft_env(self) -> Env:
         def lock_of(fid):
@@ -235,7 +265,7 @@ class Replica:
             self.tick += 1
             self.contract.begin_tick(self.tick)
             if self.tick % titles.CHECKPOINT_EVERY == 0:
-                titles.checkpoint(self.contract)     # the arena's compaction ticks (titles.py)
+                self._compact()                      # the arena's compaction ticks (titles.py)
         elif k == "nft":
             r = self.nft.apply(self._nft_env(), bytes.fromhex(rec["who"]), rec["op"], rec["args"], rec["amount"],
                                self.tick)
@@ -258,6 +288,26 @@ class Replica:
             raise ReadModelError(f"unknown journal record {k!r}")
         self.records += 1
 
+    def _compact(self):
+        """`compact` (the title checkpoint first), keeping what it moves out
+        in the archive when there is one."""
+        c, kept = self.contract, self.archive
+        before = {name: dict(getattr(c, name)) for name in kept} if kept is not None else {}
+        compact(c)
+        for name, hot in before.items():
+            now = getattr(c, name)
+            kept[name].update((k, v) for k, v in hot.items() if k not in now)
+
+    def view(self) -> CombatContract:
+        """The contract with the archive put back: what the database is synced
+        from. A shallow copy sharing everything else, so only read it."""
+        c, kept = self.contract, self.archive
+        if not kept or not any(kept.values()):
+            return c
+        v = copy.copy(c)
+        for name, out in kept.items():
+            setattr(v, name, {**out, **getattr(c, name)})
+        return v
 
     def _note_call(self, who: str, tick: int):
         cell = self.activity.setdefault(tick // ACTIVITY_BUCKET, {}).get(who)
@@ -468,7 +518,8 @@ class Syncer:
 
     def _backfill_title_flags(self, c, look, done: set):
         """Once, for a database indexed before titles: add the title flags to
-        every stored final fight summary (the replica holds every fight)."""
+        every stored final fight summary. The synced view holds every fight:
+        the follower forgets none while this is pending (Follower._prune)."""
         rows = self.conn.execute("SELECT fight_id, summary FROM fights WHERE final = 1").fetchall()
         for fid, blob in rows:
             if fid in done or fid not in c.fights:
@@ -594,6 +645,13 @@ def dump(conn) -> dict:
 
 # ---- following the journal ----------------------------------------------------
 
+def snapshot_head(f) -> dict:
+    """The head line of a snapshot file open for reading (code, network,
+    offsets), leaving `f` at the pickled replica; {} for any other file."""
+    line = f.readline(4096)
+    return json.loads(line[len(SNAPSHOT_TAG):]) if line.startswith(SNAPSHOT_TAG) else {}
+
+
 class Follower:
     """Tails a devnet journal into a replica and a database.
 
@@ -608,14 +666,16 @@ class Follower:
                               Path(snapshot) if snapshot else None)
         self.log = log
         self.lock = threading.RLock()
-        self.m = manifest_for(self.dir)
-        from .devnet import QUALIFICATION
-        self.rule = QUALIFICATION.get(json.loads((self.dir / MARKER).read_text()).get("profile", "dev"))
+        self._rules()
         self.conn = connect(self.db_path)
-        self.syncer = Syncer(self.conn)
+        # The database's cursors (open records, newest IDs). None from a failed
+        # sync until they are read again: they may have moved past a
+        # transaction that rolled back, and _prune must not trust them.
+        self.syncer: Syncer | None = Syncer(self.conn)
         self.replica: Replica | None = None
         self.offset = 0
         self.tail_sig = ""
+        self.healing = False                 # replaying from the start to rewrite rows the replica had dropped
         self.db_offset = get_meta(self.conn, "journal_offset", 0)
         self._deployment: tuple[float, dict] = (-1.0, {})
         self._snap_at = time.monotonic()
@@ -630,14 +690,25 @@ class Follower:
 
     # -- state ---------------------------------------------------------------
 
+    def _rules(self):
+        """The manifest and season rule the arena directory was created with
+        (read again when its journal is replaced: a new arena may differ)."""
+        from .devnet import QUALIFICATION
+        self.m = manifest_for(self.dir)
+        self.rule = QUALIFICATION.get(json.loads((self.dir / MARKER).read_text()).get("profile", "dev"))
+
     def _sig(self, f, offset: int) -> str:
         start = max(0, offset - 256)
         f.seek(start)
         return hashlib.sha256(f.read(offset - start)).hexdigest()
 
+    def _from_start(self):
+        self.replica, self.offset, self.tail_sig = Replica(self.m, self.rule, archive=True), 0, ""
+
     def _resume(self):
-        """Load the snapshot when it belongs to this code and this journal; else start from byte 0."""
-        self.replica, self.offset, self.tail_sig = Replica(self.m, self.rule), 0, ""
+        """Load the snapshot when it belongs to this code, this journal and
+        this database; else start from byte 0."""
+        self._from_start()
         if not self.snapshot_path or not self.snapshot_path.exists():
             return
         try:
@@ -650,19 +721,55 @@ class Follower:
                 self.log("readmodel: snapshot is not a private file of this user; ignoring it")
                 return
             with open(self.snapshot_path, "rb") as f:
-                snap = pickle.load(f)
-            ok = snap.get("code") == code_version() and snap.get("network") == self.m.network_id.hex()
-            if ok:
-                with open(self.dir / JOURNAL, "rb") as j:
-                    size = os.fstat(j.fileno()).st_size
-                    ok = snap["offset"] <= size and self._sig(j, snap["offset"]) == snap["tail_sig"]
-            if ok:
-                self.replica, self.offset, self.tail_sig = snap["replica"], snap["offset"], snap["tail_sig"]
+                head = snapshot_head(f)
+                why = self._unusable(head)
+                rep = pickle.load(f) if why is None else None
+            missing = self._missing(rep) if rep is not None else []
+            if missing:
+                why = f"missing rows this database has open ({', '.join(missing[:3])})"
+                self.healing = True
+            if why is None:
+                self.replica, self.offset, self.tail_sig = rep, head["offset"], head["tail_sig"]
                 self.log(f"readmodel: resumed replica at byte {self.offset} (tick {self.replica.tick})")
             else:
-                self.log("readmodel: snapshot is for other code or another journal; replaying from the start")
+                self.log(f"readmodel: snapshot is {why}; replaying from the start")
         except Exception as exc:                     # a bad snapshot costs a replay, never the service
             self.log(f"readmodel: snapshot unreadable ({exc}); replaying from the start")
+
+    def _unusable(self, head: dict) -> str | None:
+        """Why a snapshot with this head line cannot be resumed here, or None."""
+        if head.get("code") != code_version():
+            return "from other code"
+        if head.get("network") != self.m.network_id.hex():
+            return "for another network"
+        # Its replica forgot what its database held in final form; only a
+        # database at least as far along holds all of that too.
+        if head.get("db_offset", 1 << 62) > self.db_offset:
+            return "synced to a database further along than this one"
+        with open(self.dir / JOURNAL, "rb") as j:
+            size = os.fstat(j.fileno()).st_size
+            if not (head["offset"] <= size and self._sig(j, head["offset"]) == head["tail_sig"]):
+                return "for another journal"
+        return None
+
+    def _missing(self, rep: Replica) -> list[str]:
+        """Records the database still has open (every sync rewrites them) that
+        `rep` no longer holds, and contests an open cup's document reads.
+        Records the replica has not reached yet do not count. Pruning never
+        drops these; a hand-edited database or a bug could."""
+        s, c, a = self.syncer, rep.contract, rep.archive
+
+        def held(name, i):
+            return i in getattr(c, name) or (a is not None and i in a[name])
+        out = []
+        for name, kind, ids in (("fights", "fight", s.open_fights), ("contests", "contest", s.open_contests),
+                                ("cups", "cup", s.open_cups)):
+            out += [f"{kind} {i}" for i in sorted(ids) if i < c.next_id[kind] and not held(name, i)]
+        for kid in sorted(s.open_cups):
+            k = c.cups.get(kid) or (a["cups"].get(kid) if a is not None else None)
+            out += [f"contest {p.contest_id}" for p in (k.pairings.values() if k else ())
+                    if p.contest_id and not held("contests", p.contest_id)]
+        return out
 
     def _wipe(self):
         """Forget every row: the journal they came from is gone."""
@@ -677,8 +784,9 @@ class Follower:
         if not self.snapshot_path or self.replica is None or self.replica.contract is None:
             return
         with self.lock:
-            blob = pickle.dumps({"code": code_version(), "network": self.m.network_id.hex(), "offset": self.offset,
-                                 "tail_sig": self.tail_sig, "replica": self.replica}, protocol=5)
+            head = {"code": code_version(), "network": self.m.network_id.hex(), "offset": self.offset,
+                    "tail_sig": self.tail_sig, "db_offset": self.db_offset}
+            blob = SNAPSHOT_TAG + json.dumps(head).encode() + b"\n" + pickle.dumps(self.replica, protocol=5)
         tmp = self.snapshot_path.with_suffix(".tmp")
         with open(tmp, "wb") as f:
             f.write(blob)
@@ -727,8 +835,9 @@ class Follower:
             if size < self.offset or (self.offset and self._sig(f, self.offset) != self.tail_sig):
                 self.log("readmodel: the journal was replaced or truncated; rebuilding from its start")
                 with self.lock:
-                    self.replica, self.offset, self.tail_sig = Replica(self.m, self.rule), 0, ""
-                    self.caught_up = False
+                    self._rules()
+                    self._from_start()
+                    self.caught_up = self.healing = False
                     self._wipe()
             f.seek(self.offset)
             data = f.read(min(max_bytes, size - self.offset))
@@ -745,7 +854,31 @@ class Follower:
             self.offset += end + 1
             with open(path, "rb") as f:
                 self.tail_sig = self._sig(f, self.offset)
+            self._prune()
         return n
+
+    def _prune(self):
+        """Forget archived records the database holds in final form (it never
+        writes them again): in steady state, and behind the database while
+        catching up, that is all of them. What the next sync writes stays:
+        open records and those newer than the database's newest, with the
+        contest a fight's row reads and the contests a cup's document reads."""
+        s, a = self.syncer, self.replica.archive
+        if s is None or not a or not (a["contests"] or a["cups"]):     # fights leave with their contest
+            return
+        if get_meta(self.conn, "titles_version") != TITLES_VERSION:
+            return                  # a one-time backfill reads every final fight (Syncer._backfill_title_flags)
+
+        def due(x, top, open_):
+            return x > top or x in open_
+        for kid in [k for k in a["cups"] if not due(k, s.max_cup, s.open_cups)]:
+            del a["cups"][kid]
+        for cid in [cid for cid, ct in a["contests"].items()
+                    if not (due(cid, s.max_contest, s.open_contests)
+                            or (ct.cup_id and due(ct.cup_id, s.max_cup, s.open_cups))
+                            or any(due(f, s.max_fight, s.open_fights) for f in ct.fights))]:
+            for fid in a["contests"].pop(cid).fights:
+                a["fights"].pop(fid, None)
 
     def sync(self):
         """Write the replica's state, unless it is still behind what the database already shows."""
@@ -754,36 +887,68 @@ class Follower:
         if self.offset < self.db_offset:
             return False                  # catching up after a restart: never show older state
         with self.lock:
-            self.syncer.sync(self.replica.contract, self.deployment(),
-                             {"journal_offset": self.offset, "journal_sig": self.tail_sig,
-                              "journal_records": self.replica.records,
-                              "synced_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
-                             rule=self.rule, sales=self.sales(), economics=self.economics(), nft=self.replica.nft,
-                             replica=self.replica)
+            if self.syncer is None:
+                self.syncer = Syncer(self.conn)          # after a failed sync: the cursors as committed
+            missing = self._missing(self.replica)
+            if missing:
+                # Only a replay from the start, behind the database, holds them
+                # all again; its first sync rewrites them. Once: a replay that
+                # still lacks them is a bug, and replaying again cannot help.
+                if self.healing:
+                    raise ReadModelError(f"a replay from the start lacks rows the database has open "
+                                         f"({', '.join(missing[:5])}); rebuild the read model")
+                self.log(f"readmodel: the replica dropped rows the database has open ({', '.join(missing[:5])});"
+                         " replaying the journal from the start")
+                if self.snapshot_path:
+                    self.snapshot_path.unlink(missing_ok=True)
+                self._from_start()
+                self.healing = True
+                return False
+            rep = self.replica
+            try:
+                self.syncer.sync(rep.view(), self.deployment(),
+                                 {"journal_offset": self.offset, "journal_sig": self.tail_sig,
+                                  "journal_records": rep.records,
+                                  "synced_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
+                                 rule=self.rule, sales=None if rep.nft.configured else self.sales(),
+                                 economics=self.economics(), nft=rep.nft, replica=rep)
+            except BaseException:
+                self.syncer = None                       # rolled back, but its cursors had moved on
+                raise
+            # In the database now: the archive, and the activity buckets before
+            # the newest stored one (Syncer._activity never writes those again).
+            for kept in (rep.archive or {}).values():
+                kept.clear()
+            for b in [b for b in rep.activity if b < self.syncer.max_bucket]:
+                del rep.activity[b]
+            self.healing = False
         self.db_offset = self.offset
         return True
 
-    def step(self) -> int:
-        """Catch up completely (in chunks), then sync once."""
-        total = 0
+    def step(self, stop: threading.Event | None = None) -> int:
+        """Catch up completely (in chunks), then sync once. A catch-up of
+        SNAPSHOT_AFTER_BYTES or more is saved at once, so a restart need not
+        repeat it; `stop` ends a catch-up early (run() then saves the snapshot)."""
+        total, start = 0, self.offset
         while True:
             n = self.poll()
             total += n
             if n == 0:
                 break
+            if stop is not None and stop.is_set():
+                return total
         before = self._deployment[0]
         self.deployment()
         if total or not self.caught_up or self._deployment[0] != before:   # new records, or new names/owners
-            self.sync()
-            self.caught_up = True
-        if time.monotonic() - self._snap_at > SNAPSHOT_EVERY_S:
+            self.caught_up = self.sync()
+        if self.offset - start >= SNAPSHOT_AFTER_BYTES or time.monotonic() - self._snap_at > SNAPSHOT_EVERY_S:
             self.save_snapshot()
         return total
 
     def run(self, stop: threading.Event, interval: float = 1.0):
         while not stop.is_set():
             try:
-                self.step()
+                self.step(stop)
             except Exception as exc:          # keep serving the last good database
                 self.log(f"readmodel: sync failed: {exc!r}")
                 stop.wait(10)
@@ -794,28 +959,54 @@ class Follower:
             self.log(f"readmodel: snapshot on exit failed: {exc!r}")
 
 
-def rebuild(devnet_dir: Path, db_path: Path, export_dir: Path | None = None, log=print) -> dict:
-    """Build a fresh database from the whole journal and swap it in atomically."""
+def rebuild(devnet_dir: Path, db_path: Path, export_dir: Path | None = None, log=print,
+            stop: threading.Event | None = None) -> dict | None:
+    """Build a fresh database from the whole journal and swap it in
+    atomically, with a snapshot of its replica (a follower resumes there).
+    `stop` ends it between chunks (None returned); stopped or failed, it
+    leaves the database and snapshot as they were and removes its own file."""
     db_path = Path(db_path)
     tmp = db_path.with_name(db_path.name + ".rebuild")
-    for p in (tmp, Path(str(tmp) + "-wal"), Path(str(tmp) + "-shm")):
+    aside = (tmp, Path(str(tmp) + "-wal"), Path(str(tmp) + "-shm"))
+    for p in aside:
         p.unlink(missing_ok=True)
     t0 = time.monotonic()
     fl = Follower(devnet_dir, tmp, export_dir, snapshot=False, log=log)
-    while fl.poll():
-        pass
-    t1 = time.monotonic()
-    fl.sync()
-    fl.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    fl.conn.close()
+    done = False
+    try:
+        synced = 0
+        while fl.poll():
+            if stop is not None and stop.is_set():
+                log("readmodel: rebuild stopped; the database is as it was")
+                return None
+            # Nobody reads this file yet. Syncing it now and then lets the replica
+            # forget what it compacted, so a long journal does not fill memory.
+            if fl.offset - synced >= REBUILD_SYNC_BYTES:
+                fl.sync()
+                synced = fl.offset
+        t1 = time.monotonic()
+        fl.sync()
+        fights = fl.conn.execute("SELECT COUNT(*) FROM fights").fetchone()[0]
+        fl.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        done = True
+    finally:
+        fl.conn.close()
+        if not done:
+            for p in aside:
+                p.unlink(missing_ok=True)
     os.replace(tmp, db_path)
     for suffix in ("-wal", "-shm"):
         Path(str(db_path) + suffix).unlink(missing_ok=True)
         Path(str(tmp) + suffix).unlink(missing_ok=True)
     snap = db_path.with_suffix(".replica")
     snap.unlink(missing_ok=True)             # a snapshot must never be ahead of or unrelated to the db
+    fl.snapshot_path = snap
+    try:
+        fl.save_snapshot()                   # synced to this very database: the API resumes from it
+    except OSError as exc:
+        log(f"readmodel: no snapshot after the rebuild ({exc!r}); the next start replays the journal")
     t2 = time.monotonic()
-    stats = {"records": fl.replica.records, "tick": fl.replica.tick, "fights": len(fl.replica.contract.fights),
+    stats = {"records": fl.replica.records, "tick": fl.replica.tick, "fights": fights,
              "replay_s": round(t1 - t0, 1), "index_s": round(t2 - t1, 1), "bytes": db_path.stat().st_size}
     log(f"readmodel: rebuilt {db_path}: {stats}")
     return stats

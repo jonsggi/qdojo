@@ -8,9 +8,10 @@
 #   systemctl --user daemon-reload
 #   systemctl --user disable --now qdojo-combat-data
 #   systemctl --user enable --now qdojo-combat-api
-# The first start replays the whole journal (about 4 min for 200k records);
-# meanwhile /api/v1/ answers 503 not_ready and the site uses the static files.
-# Later restarts resume from a private snapshot next to the database.
+# The first start replays the whole journal (about 0.4 s of CPU per journal
+# MB); meanwhile /api/v1/ answers 503 not_ready and the site uses the static
+# files. Later restarts resume from a private snapshot next to the database;
+# the first start on new code replays behind the database it keeps serving.
 [Unit]
 Description=qdojo combat read API + static export (tailnet only, 100.101.145.63:8790)
 After=network.target
