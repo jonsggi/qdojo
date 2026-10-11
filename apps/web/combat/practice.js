@@ -123,7 +123,8 @@
       o.counts[t.effective] = (o.counts[t.effective] || 0) + 1;
       if (t.effective === ID.EXHAUSTED) o.exhausted.push(Object.assign({ intended: t.intended, cost: t.cost, had: t.before.stamina, lost: t.actual_hp_lost }, at));
       if (t.reasons.includes('RECOVERY_PUNISHED')) o.punished.push(Object.assign({ lost: t.actual_hp_lost, by: x[OTHER[side]].effective }, at));
-      if (t.reasons.includes('POWER_WASTED')) o.powerWasted = Object.assign({ action: t.effective, against: x[OTHER[side]].effective }, at);
+      // Wasted power on an unaffordable move: it became EXHAUSTED, so nothing stopped it; it was never made.
+      if (t.reasons.includes('POWER_WASTED')) o.powerWasted = Object.assign({ action: t.intended, exhausted: t.effective === ID.EXHAUSTED, against: x[OTHER[side]].effective }, at);
       if (t.reasons.includes('POWER_USED')) o.powerLanded = Object.assign({ action: t.effective, dealt: t.computed_damage }, at);
       if (t.reasons.includes('BLOCKED') || t.reasons.includes('EVADED')) o.blockedOrDucked++;
       if (t.reasons.includes('THROW_INTERRUPTED')) o.interrupted++;
@@ -222,7 +223,12 @@
       const sum = (list, k) => list.reduce((n, x) => n + x[k], 0);
       if (o.exhausted.length) out.causes.push({ kind: 'exhausted', side: s, n: o.exhausted.length, text: who + ' ran out of stamina ' + o.exhausted.length + ' time' + (o.exhausted.length > 1 ? 's' : '') + ' (' + where(o.exhausted) + '): the move became EXHAUSTED, paid nothing and stood open' + (sum(o.exhausted, 'lost') ? ', costing ' + sum(o.exhausted, 'lost') + ' HP.' : '.') });
       if (o.punished.length) out.causes.push({ kind: 'punished', side: s, n: o.punished.length, text: who + ' got hit while recovering ' + o.punished.length + ' time' + (o.punished.length > 1 ? 's' : '') + ' (' + where(o.punished) + ') for ' + sum(o.punished, 'lost') + ' HP; a hit recovery also refills less stamina.' });
-      if (o.powerWasted) out.causes.push({ kind: 'power', side: s, n: 1, text: who + ' spent the power strike on a ' + word(o.powerWasted.action) + ' that the ' + word(o.powerWasted.against) + ' stopped (R' + (o.powerWasted.round + 1) + ' B' + (o.powerWasted.beat + 1) + '): wasted, it is once per fight.' });
+      if (o.powerWasted) {
+        const pw = o.powerWasted, at = '(R' + (pw.round + 1) + ' B' + (pw.beat + 1) + ')';
+        out.causes.push({ kind: 'power', side: s, n: 1, text: pw.exhausted
+          ? who + ' spent the power strike on an unaffordable ' + word(pw.action) + ' ' + at + ': the move became EXHAUSTED and was never made, so the power was wasted; it is once per fight.'
+          : who + ' spent the power strike on a ' + word(pw.action) + ' that the ' + word(pw.against) + ' stopped ' + at + ': wasted, it is once per fight.' });
+      }
       if (o.blockedOrDucked >= 3) out.causes.push({ kind: 'stopped', side: s, n: o.blockedOrDucked, text: o.blockedOrDucked + ' of ' + their + ' attacks were blocked or ducked: stamina paid for nothing.' });
       if (o.interrupted >= 2) out.causes.push({ kind: 'interrupted', side: s, n: o.interrupted, text: o.interrupted + ' of ' + their + ' throws were interrupted by strikes.' });
       if (o.openingsExpired >= 2) out.causes.push({ kind: 'openings', side: s, n: o.openingsExpired, text: who + ' earned ' + o.openingsExpired + ' openings that expired unused: the bonus only lands on the very next beat.' });
@@ -240,7 +246,13 @@
     out.habits = (P ? [OTHER[P]] : ['A', 'B']).map(s => Object.assign({ side: s, name: names[s] }, habits(beats, rounds, s)));
     if (!P) {
       // A replay suggests practice, from the loser's (or both sides') costliest habit.
-      const loser = outcome && outcome.winner ? OTHER[outcome.winner] : null;
+      // A fight with no combat result (a missed deadline stopped it, or it is
+      // still going) has no loser, and a deadline is no combat lesson: the
+      // side behind on HP after its last played beat is the one the fight was
+      // going against (level HP: both sides).
+      const end = rounds[rounds.length - 1].result.end;
+      const behind = end.a.hp < end.b.hp ? 'A' : end.b.hp < end.a.hp ? 'B' : null;
+      const loser = outcome && outcome.winner ? OTHER[outcome.winner] : !outcome ? behind : null;
       const c = out.causes.find(x => !loser || x.side === loser);
       const map = { exhausted: 'mixed-v1', punished: 'kicker-v1', stopped: 'turtle-v1', interrupted: 'jabber-v1', power: 'turtle-v1', openings: 'jabber-v1', strain: 'kicker-v1', feint: 'turtle-v1', stand: 'scout-v1' };
       const npc = c ? map[c.kind] : 'scout-v1';
@@ -300,6 +312,9 @@
   ]);
 
   function emptyProgress() { return { v: PROGRESS_VERSION, rules: {}, seen: [], steps: {} }; }
+  // A ruleset's records, created on first use. Own keys only: a stored key
+  // such as "constructor" must not reach Object's inherited members.
+  const rulesOf = (p, rv) => (Object.prototype.hasOwnProperty.call(p.rules, rv) ? p.rules[rv] : (p.rules[rv] = {}));
 
   /* Reads a stored record. Anything malformed or from another version gives
    * an empty record with damaged=true, so the page can say so. */
@@ -314,7 +329,7 @@
       if (!/^[a-z0-9.-]{1,64}$/.test(rv) || !byNpc || typeof byNpc !== 'object') continue;
       for (const [npc, r] of Object.entries(byNpc)) {
         if (!N.ROSTER.some(n => n.id === npc) || !okRec(r)) continue;
-        (p.rules[rv] = p.rules[rv] || {})[npc] = {
+        rulesOf(p, rv)[npc] = {
           w: r.w, l: r.l, d: r.d,
           best: r.best && Number.isFinite(r.best.rank) && typeof r.best.label === 'string' ? { rank: r.best.rank, label: r.best.label.slice(0, 40) } : null,
         };
@@ -339,7 +354,7 @@
    * Returns { added, rec, improved, milestone } and mutates p. */
   function recordResult(p, s, key) {
     const rv = s.rules_version;
-    const byNpc = p.rules[rv] = p.rules[rv] || {};
+    const byNpc = rulesOf(p, rv);
     const rec = byNpc[s.npc] = byNpc[s.npc] || { w: 0, l: 0, d: 0, best: null };
     if (p.seen.includes(key)) return { added: false, rec, improved: false, milestone: null };
     const before = laddersDone(p, rv);

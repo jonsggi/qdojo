@@ -153,7 +153,9 @@
     return m;
   }
 
-  // Live export first; the sample only when live is missing.
+  // Live export first; the sample only when live is missing. Its ruleset is
+  // put in force last, right before the caller redraws: until then the screen
+  // on show keeps the rules it was drawn under (a practice round's FIGHT too).
   async function loadSource() {
     for (const src of SOURCES) {
       try {
@@ -162,10 +164,10 @@
         D.base = src.base; D.sample = src.sample; D.manifest = m; D.cache.clear(); D.meta.clear(); D.done.clear();
         const art = HEX64.test(m.ruleset_digest || '') ? await fetchJson('rulesets/' + m.ruleset_digest + '.json').catch(() => null) : null;
         const pick = await L.chooseRuleset({ exported: art, embedded: window.QDojoRulesets || window.QDojoRuleset, manifestDigest: m.ruleset_digest, sha256: SHA });
-        R = pick.rules;
-        RULES_INFO = pick;
         await noteFreshness();
         await probeApi();
+        setActiveRules(pick.rules);
+        RULES_INFO = pick;
         return;
       } catch (e) { /* try the next source */ }
     }
@@ -192,9 +194,12 @@
   async function poll() {
     D.polls++;
     if (D.sample || !D.manifest) {
-      // A live export that appears later takes over from the sample.
+      // A live export that appears later takes over from the sample. Its
+      // ruleset can differ: the replays on screen stop, and its rules come
+      // into force only once it has loaded (loadSource), as the view is drawn
+      // again. That is no navigation: the page stays where it is.
       const live = await trySource(SOURCES[0]).catch(() => null);
-      if (live) { await loadSource(); paintSource(); route(); return; }
+      if (live) { stopPlayer(); await loadSource(); paintSource(); render(false); return; }
       if (!D.manifest) return;
     }
     const done = D.done;
@@ -211,6 +216,8 @@
     paintSource();
     const name = currentRoute()[0];
     if (['arena', 'title', 'book', 'results', 'leaderboard', 'titles', 'cups', 'cup', 'duels', 'duel', 'season', 'market', 'economy'].includes(name) || (name === 'fight' && D.tick !== before)) repaint();
+    // #join: only its entry panel follows the arena's report; the rest of the page stays put.
+    else if (name === 'join') await paintEntry(viewToken);
   }
 
   /* The network the arena runs on, from the export's own metadata
@@ -270,8 +277,7 @@
     fresh.title = fr.known ? 'Export written ' + new Date(D.wallMs).toString() : 'Export time unknown';
     // The sample is old by design; STALE is for a live export that stopped.
     $('#hud-stale').hidden = !(D.manifest && !D.sample && fr.stale);
-    $('#hud-rules').textContent = rulesLabel(R.semantic_version);
-    $('#hud-rules').title = 'Ruleset this page replays with: ' + (R.semantic_version || 'combat-v1');
+    paintRules();
     const n = net(), badge = $('#hud-net');
     badge.hidden = !(D.manifest && n.badge);
     badge.textContent = n.badge || '';
@@ -283,6 +289,12 @@
         ' &middot; refreshed every ' + (POLL_MS / 1000) + ' s' + (D.sample ? '' : D.api ? ' &middot; FULL HISTORY from the read API' : ' &middot; recent fights only (read API unavailable)') +
         ' &middot; Every replay is re-derived in your browser; rendering never changes a result.'
       : esc(D.error || 'No data. PRACTICE and RULES still work offline.');
+  }
+  // The HUD's RULES pill: with the source, and whenever a practice fight
+  // swaps its ruleset in or out (useFightRules, useActiveRules).
+  function paintRules() {
+    $('#hud-rules').textContent = rulesLabel(R.semantic_version);
+    $('#hud-rules').title = 'Ruleset this page replays with: ' + (R.semantic_version || 'combat-v1');
   }
 
   // ---- small renderers -----------------------------------------------------------
@@ -318,8 +330,9 @@
   // reaches its end or the viewer reveals that fight. Fights revealed so far
   // are remembered (the last 300), so a reload or the results list does not
   // hide a fight already watched. A #fight/<id>/spoilerfree link hides that
-  // one replay without changing the visitor's setting. Display only: the
-  // replay, its checks and its result are the same either way.
+  // one replay without changing the visitor's setting, until the visitor uses
+  // a SPOILERS chip there. Display only: the replay, its checks and its
+  // result are the same either way.
   const SPOIL_KEY = 'qdojo.spoilers', SEEN_KEY = 'qdojo.spoilers.seen', SEEN_MAX = 300;
   let spoilForce = false;
   let revealHook = null;   // the open replay's reveal, so SHOW SPOILERS does not restart it
@@ -351,7 +364,13 @@
       if (t) {
         const hide = !spoilFree();
         store.set(SPOIL_KEY, hide ? 'hide' : 'show');
-        spoilForce = false;
+        // On a #fight/<id>/spoilerfree link the visitor's own setting takes
+        // over: the address drops /spoilerfree, so repainting this screen
+        // does not hide the replay again and the chips keep what was chosen.
+        if (spoilForce) {
+          spoilForce = false;
+          try { history.replaceState(null, '', '#fight/' + currentRoute()[1]); } catch (e) { /* without it the link keeps holding the replay */ }
+        }
         paintSpoil();
         // Showing spoilers on an open replay reveals it in place; anything
         // else repaints the view with the new setting.
@@ -932,18 +951,21 @@
       '<p><a href="#duels">ALL DUELS &#9654;</a></p>');
   }
 
-  // Replay header: which series or cup pairing a fight belongs to.
+  // Replay header: which series or cup pairing a fight belongs to. Its score
+  // counts every fight of the series, so with spoilers hidden it waits until
+  // none of them is held (AUD-037); noScore holds it for this fight.
   async function seriesLink(fightId, mode, noScore) {
+    const held = fights => noScore || (fights || []).some(f => String(f) !== String(fightId) && spoilHidden(f));
     if (mode === 'duel') {
       const d = (await loadDuels()).find(x => (x.fights || []).includes(String(fightId)));
-      if (d) return '<a class="pill" href="#duel/' + esc(d.contest_id) + '">DUEL #' + esc(d.contest_id) + ' &middot; ' + esc(d.format) + (noScore ? '' : ' ' + duelScore(d)) + ' &#9654;</a>';
+      if (d) return '<a class="pill" href="#duel/' + esc(d.contest_id) + '">DUEL #' + esc(d.contest_id) + ' &middot; ' + esc(d.format) + (held(d.fights) ? '' : ' ' + duelScore(d)) + ' &#9654;</a>';
     }
     if (mode === 'cup') {
       for (const c of await loadCups()) {
         const p = (c.pairings || []).find(x => (x.fights || []).includes(String(fightId)));
         if (p) {
           const w = p.series ? seriesWins(p.a, p.b, p.series.wins_a, p.series.wins_b) : null;
-          return '<a class="pill" href="#cup/' + esc(c.cup_id) + '">CUP #' + esc(c.cup_id) + ' &middot; PAIRING ' + esc(p.pairing_id) + (w && p.a && p.b && !noScore ? ' ' + esc(w[p.a]) + '&ndash;' + esc(w[p.b]) : '') + ' &#9654;</a>';
+          return '<a class="pill" href="#cup/' + esc(c.cup_id) + '">CUP #' + esc(c.cup_id) + ' &middot; PAIRING ' + esc(p.pairing_id) + (w && p.a && p.b && !held(p.fights) ? ' ' + esc(w[p.a]) + '&ndash;' + esc(w[p.b]) : '') + ' &#9654;</a>';
         }
       }
     }
@@ -1233,7 +1255,9 @@
   /* AUD-027: whether this deployment takes outside fighters, from what it
    * reports (logic.js entryStatus), with the next step either way. The join
    * endpoint is asked only when the API says join_enabled, so a closed arena
-   * costs no 404. */
+   * costs no 404. Every poll asks again; a panel whose report did not change
+   * is left alone, so the focus and a selection in it (the join command) stay. */
+  const entryPainted = new WeakMap();
   async function paintEntry(tok) {
     let join = null;
     const st = D.api ? D.apiStatus : null;
@@ -1251,8 +1275,8 @@
       '<li>Train and benchmark the starter locally, under this arena\'s rules: <code>uv run qdojo combat evaluate --planner "python3 my_bot.py"</code></li>' +
       '<li>Check readiness against this arena: <code>uv run qdojo combat doctor --planner "python3 my_bot.py" --arena ' + esc(origin) + '</code></li></ol>';
     const label = { OPEN: 'OPEN', FULL: 'FULL', CLOSED: 'CLOSED', UNKNOWN: 'NOT REPORTED', OFFLINE: 'ARENA OFFLINE' }[e.state];
-    box.className = 'panel entry-panel entry-' + e.state.toLowerCase() + ' ' + (e.state === 'OPEN' ? 'panel-green' : 'panel-yellow');
-    box.innerHTML = '<h3>ENTRY ON THIS ARENA: ' + label + '</h3><p>' + esc(e.detail) + '</p>' +
+    const cls = 'panel entry-panel entry-' + e.state.toLowerCase() + ' ' + (e.state === 'OPEN' ? 'panel-green' : 'panel-yellow');
+    const html = '<h3>ENTRY ON THIS ARENA: ' + label + '</h3><p>' + esc(e.detail) + '</p>' +
       (e.state === 'OPEN' ? '<p>Register a fighter and run your bot from your machine:</p><pre class="code">' +
         esc('uv run qdojo combat join --arena ' + origin + ' --name <name> --planner "python3 my_bot.py"') + '</pre>' +
         '<p class="tiny">' + (e.grant != null ? 'A new outside fighter gets ' + esc(numberFmt(e.grant)) + ' ' + esc(CUR()) + ' once. ' : '') +
@@ -1262,6 +1286,10 @@
           (e.state === 'CLOSED' || e.state === 'FULL' ? '<p class="tiny muted">This page reads the arena\'s own report (' + esc(e.source) + ') and updates when the operator opens entry. Announcements: <a href="llms.txt">llms.txt</a>.</p>' : '')) +
       '<p class="tiny muted">Who may enter, the limits and what an outside fighter is eligible for: ' +
       '<a href="https://github.com/jonsggi/qdojo/blob/main/docs/beta.md#3-entry-policy-and-eligibility">ENTRY POLICY</a>. Source: ' + esc(e.source || 'none') + '.</p>';
+    if (entryPainted.get(box) === cls + '\n' + html) return;
+    entryPainted.set(box, cls + '\n' + html);
+    box.className = cls;
+    box.innerHTML = html;
   }
 
   // ---- HELP --------------------------------------------------------------------------
@@ -1380,6 +1408,10 @@
    *         controls or keys skipped or stepped there) } */
   function createPlayer(root, opts) {
     const frames = opts.frames, names = opts.names;
+    // The rules its frames were derived under, for as long as it is on screen:
+    // R is the active ruleset again as soon as the page heads to another
+    // screen, while this one (a practice fight shown under its own) is still up.
+    const rules = R;
     let idx = 0, playing = false, timer = null, speed = 1;
     const speedStored = Number(store.get('qdojo.combat.speed'));
     if (SPEEDS.includes(speedStored)) speed = speedStored;
@@ -1412,7 +1444,7 @@
       let text = '';
       if (f.kind === 'start') text = 'ROUND 1: both start at HP ' + f.a.hp + ', STAMINA ' + f.a.stamina;
       if (f.kind === 'round') text = 'ROUND ' + (f.round + 1) + ' START';
-      if (f.kind === 'break') text = 'BREAK after round ' + (f.round + 1) + ': stamina A +' + f.recovery.A + ', B +' + f.recovery.B + ' (capped at ' + R.limits.stamina + '); HP, opening, guard and power carry';
+      if (f.kind === 'break') text = 'BREAK after round ' + (f.round + 1) + ': stamina A +' + f.recovery.A + ', B +' + f.recovery.B + ' (capped at ' + rules.limits.stamina + '); HP, opening, guard and power carry';
       if (f.kind === 'end') text = L.outcomeLabel({ outcome: f.outcome }).text;
       if (f.kind === 'forfeit') text = L.outcomeLabel(opts.replay).text;
       return '<tr class="' + cls + '" data-i="' + i + '" tabindex="-1"><td>' + (f.round + 1) + '</td><td></td><td colspan="7" class="note">' + esc(text) + '</td></tr>';
@@ -1420,12 +1452,14 @@
     const beatTable = '<summary>BEAT TABLE (' + frames.filter(f => f.kind === 'beat').length + ' executed beats)</summary>' +
       '<div class="tscroll"><table class="beats"><thead><tr><th>RND</th><th>BEAT</th><th>' + esc(names.A) + '</th><th class="num">HP</th><th class="num">ST</th><th>' + esc(names.B) + '</th><th class="num">HP</th><th class="num">ST</th><th>WHAT HAPPENED</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
     const heldTable = '<summary>BEAT TABLE</summary><p class="tiny muted beat-hold">Spoiler-free: the beat table appears when the replay reaches its end or you reveal the result.</p>';
+    // Only a fight where the belt changed hands has a finale: held, it is not in the page at all.
+    const finale = opts.finale ? '<div class="finale" aria-hidden="true">' + titleBeltSvg('lineal', 'tbelt-md') + '<b>' + esc(opts.finale) + '</b></div>' : '';
     root.innerHTML =
       '<div class="stage arcade' + (opts.compact ? ' stage-compact' : '') + '"><canvas class="stage-bg" aria-hidden="true"></canvas>' + corner('A') +
       '<div class="center"><span class="ko-emblem" aria-hidden="true">KO</span><div class="clock" aria-hidden="true"><b class="clock-n"></b><small class="clock-l"></small></div>' +
       '<div class="round-no"></div><div class="beat-no"></div><div class="center-note"></div></div>' + corner('B') +
       '<div class="announcer" aria-hidden="true"><span></span></div><div class="fx-flash" aria-hidden="true"></div>' +
-      (opts.finale ? '<div class="finale" aria-hidden="true">' + titleBeltSvg('lineal', 'tbelt-md') + '<b>' + (held ? '' : esc(opts.finale)) + '</b></div>' : '') + '</div>' +
+      (held ? '' : finale) + '</div>' +
       '<div class="controls" role="group" aria-label="Replay controls">' +
       '<button class="chip" data-act="first" title="First (Home)" aria-label="First frame">|&#9664;</button>' +
       '<button class="chip" data-act="prev" title="Previous beat (Left)" aria-label="Previous beat">&#9664;</button>' +
@@ -1473,14 +1507,16 @@
       table = $('table.beats', root);
       $$('tr[data-i]', table).forEach(tr => { tr.tabIndex = 0; });
       markScrollers(root);
-      const fb = $('.finale b', root);
-      if (fb) fb.textContent = opts.finale || '';
+      if (finale) {
+        stageEl.insertAdjacentHTML('beforeend', finale);
+        void $('.finale', root).offsetWidth;   // laid out hidden first, so it still fades in at the end
+      }
       if (opts.onReveal) opts.onReveal();
     }
 
     function stateOf(f) {
       if (f.a && f.b) return f;
-      return { a: E.newFight(R).a, b: E.newFight(R).b, initialOnly: true };
+      return { a: E.newFight(rules).a, b: E.newFight(rules).b, initialOnly: true };
     }
 
     function render(animate) {
@@ -1490,8 +1526,8 @@
       for (const s of ['A', 'B']) {
         const me = s === 'A' ? st.a : st.b, x = els[s];
         const t = f.kind === 'beat' ? f.trace[s] : null;
-        setBar(x.hp, me.hp, R.limits.hp, t ? t.before.hp : null);
-        setBar(x.st, me.stamina, R.limits.stamina, null);
+        setBar(x.hp, me.hp, rules.limits.hp, t ? t.before.hp : null);
+        setBar(x.st, me.stamina, rules.limits.stamina, null);
         x.power.textContent = me.power_available ? 'POWER READY' : 'POWER SPENT';
         x.power.classList.toggle('on', !!me.power_available);
         x.opening.classList.toggle('on', !!me.opening);
@@ -1508,9 +1544,9 @@
         if (f.kind === 'beat') {
           x.now.innerHTML = sideSummary(t, f.trace[s === 'A' ? 'B' : 'A']);
           const who = opts.mySide === s ? 'YOU' : names[s], them = opts.mySide === (s === 'A' ? 'B' : 'A') ? 'YOU' : names[s === 'A' ? 'B' : 'A'];
-          const lines = L.explainSide(t, f.trace[s === 'A' ? 'B' : 'A'], who, them, R.opening_damage);
+          const lines = L.explainSide(t, f.trace[s === 'A' ? 'B' : 'A'], who, them, rules.opening_damage);
           if (opts.mySide === s) {
-            const h = L.hindsight(R, { a: f.trace.A.before, b: f.trace.B.before }, s, f.trace);
+            const h = L.hindsight(rules, { a: f.trace.A.before, b: f.trace.B.before }, s, f.trace);
             if (h) lines.push(h.text);
           }
           x.cap.innerHTML = '<h4>' + esc(names[s]) + '</h4><ul>' + lines.map(words).map(l => '<li' + (/^HINDSIGHT/.test(l) ? ' class="hindsight"' : '') + '>' + esc(l) + '</li>').join('') + '</ul>';
@@ -1530,7 +1566,7 @@
         for (const k of ['reactor', 'steam', 'ghost', 'call']) els[s][k].classList.remove('go');
       }
       // The round box counts beats left in the round (never a fake timer).
-      const left = f.kind === 'beat' || f.kind === 'unexecuted' ? R.beats_per_round - f.beat - 1 : f.kind === 'start' || f.kind === 'round' ? R.beats_per_round : null;
+      const left = f.kind === 'beat' || f.kind === 'unexecuted' ? rules.beats_per_round - f.beat - 1 : f.kind === 'start' || f.kind === 'round' ? rules.beats_per_round : null;
       clockN.textContent = left == null ? (f.kind === 'break' ? '--' : 'END') : String(left);
       clockL.textContent = left == null ? '' : 'BEATS LEFT';
       koEmblem.classList.toggle('lit', (st.a.hp === 0 || st.b.hp === 0));
@@ -1538,8 +1574,8 @@
       // In practice the break that ends the replay is where you plan the next
       // round from, so there the round box names the round you are planning.
       const next = opts.planRound && idx === frames.length - 1 && f.kind === 'break' ? opts.planRound : null;
-      rnd.textContent = 'ROUND ' + (next || Math.min(f.round + 1, R.rounds)) + '/' + R.rounds;
-      bn.textContent = f.kind === 'beat' || f.kind === 'unexecuted' ? 'BEAT ' + (f.beat + 1) + '/' + R.beats_per_round : '';
+      rnd.textContent = 'ROUND ' + (next || Math.min(f.round + 1, rules.rounds)) + '/' + rules.rounds;
+      bn.textContent = f.kind === 'beat' || f.kind === 'unexecuted' ? 'BEAT ' + (f.beat + 1) + '/' + rules.beats_per_round : '';
       let text = '';
       if (f.kind === 'start') text = 'FIGHT!';
       if (f.kind === 'round') text = 'ROUND ' + (f.round + 1);
@@ -1626,7 +1662,7 @@
         replay(ann, 'enter');
         const w = f.kind === 'end' ? f.outcome.winner : (opts.replay && opts.replay.result || {}).winner;
         if (w) {
-          const perfect = f.kind === 'end' && (w === 'A' ? f.a : f.b).hp === R.limits.hp;
+          const perfect = f.kind === 'end' && (w === 'A' ? f.a : f.b).hp === rules.limits.hp;
           setTimeout(() => {
             if (token !== fxToken || !root.isConnected) return;
             announcer.textContent = perfect ? 'PERFECT' : opts.mySide ? (opts.mySide === w ? 'YOU WIN' : 'YOU LOSE') : names[w].replace(/^[AB] /, '') + ' WINS';
@@ -1827,7 +1863,9 @@
     const lab = L.outcomeLabel(replay);
     // A forfeit before any round has nothing to watch: hiding its result
     // would invent suspense, so it is shown and the page says why (AUD-037).
+    // Shown, it is watched: the results list and its series stop holding it.
     const nothingToWatch = !derived.rounds.length;
+    if (!live && nothingToWatch && spoilHidden(id)) markSeen(id);
     let hide = !live && spoilHidden(id) && !nothingToWatch;
     const resultHtml = () => '<section class="panel panel-cyan result-panel"><h3>RESULT</h3><p>' + resultBadge(replay) + ' ' + esc(lab.text) + '</p>' +
       (tf.champ ? '<p class="tf-result">' + titleTag(tf) + ' ' + fighterLink(tf.champ) + ' takes ' + esc(TITLE_KINDS.lineal.name) + '.</p>' : tf.title ? '<p class="tf-result">' + titleTag(tf) + ' The belt stays where it was.</p>' : '') +
@@ -2176,17 +2214,53 @@
   const myName = () => (store.get('qdojo.combat.myname') || 'CHALLENGER').slice(0, 14);
   const myId = () => 'practice:' + myName().toLowerCase();
 
+  // Your own unfinished fights that another practice screen took off the
+  // screen (the select screen, a share link, another fight), by opponent and
+  // seed, each with the moves typed for its next round: the fight's address
+  // picks it up again, by BACK or FORWARD too. The last few are kept. You
+  // have one open fight at most per opponent and seed, whatever its rules:
+  // its address resumes it instead of starting another.
+  const shelf = new Map(), SHELF_MAX = 8;
+  const shelfKey = s => s.npc + '/' + s.seed;
+  // The ruleset each of your fights was begun under. It is played to its end
+  // under those rules, also after a live export took over under others.
+  const begunUnder = new WeakMap();
+  function newFight(npcId, seed) {
+    const s = L.practiceStart(R, npcId, seed, 1);
+    begunUnder.set(s, R);
+    return s;
+  }
+  // Puts s on screen as the practice fight (null: none).
+  function showFight(s) {
+    const was = practice;
+    if (s && (shelf.get(shelfKey(s)) || {}).s === s) shelf.delete(shelfKey(s));
+    if (was && was !== s && !was.shared && !was.outcome) {
+      shelf.delete(shelfKey(was));
+      shelf.set(shelfKey(was), { s: was, draft: { actions: draft.actions.slice(), power_slot: draft.power_slot, sel: draft.sel } });
+      if (shelf.size > SHELF_MAX) shelf.delete(shelf.keys().next().value);
+    }
+    practice = s;
+  }
+
   function viewPractice(tok, parts) {
     const npcId = parts[0], seed = parts[1];
     if (parts.length > 2) return viewSharedPractice(tok, npcId, seed, parts.slice(2).join('/'));
     if (npcId && seed && N.ROSTER.some(n => n.id === npcId) && HEX64.test(seed)) {
-      if (!practice || practice.npc !== npcId || practice.seed !== seed) {
-        practice = L.practiceStart(R, npcId, seed, 1);
-        resetDraft();
+      // The seeded challenge link is a new fight. Only your own fight still
+      // open there is picked up again (back from another screen, or from the
+      // shelf), under the rules it was begun under: a live export that took
+      // over meanwhile under other rules leaves it as it was. A finished or
+      // shared one is replayed by its own link.
+      const resumable = s => !!s && !s.shared && !s.outcome && s.npc === npcId && s.seed === seed;
+      if (!resumable(practice)) {
+        const back = shelf.get(shelfKey({ npc: npcId, seed })), keep = back && resumable(back.s) ? back : null;
+        showFight(keep ? keep.s : newFight(npcId, seed));
+        if (keep) Object.assign(draft, keep.draft); else resetDraft();
       }
+      useFightRules(begunUnder.get(practice));
       return renderPracticeFight();
     }
-    practice = null;
+    showFight(null);
     const ladderNext = PR.nextChallenge(loadProgress().p, R.semantic_version);
     let pick = N.ROSTER.some(n => n.id === npcId) ? npcId : (store.get('qdojo.combat.npc') || (ladderNext ? ladderNext.npc : 'jabber-v1'));
     const pre = HEX64.test(seed || '') ? seed : L.randomSeed();
@@ -2271,11 +2345,16 @@
     if (phone) html.style.overflowAnchor = 'none';
     try { return buildPracticeFight(playFrom); } finally { if (phone) html.style.overflowAnchor = ''; }
   }
+  // The replay on the practice screen on show, and the fight it shows.
+  let shownReplay = null;
   function buildPracticeFight(playFrom) {
     stopPlayer();
-    const s = practice;
+    const s = practice, tok = viewToken;
     const npc = N.ROSTER.find(n => n.id === s.npc);
     const over = !!s.outcome;
+    // A finished fight drawn again over itself (a live export taking over)
+    // keeps its replay on the frame it was on, so the page around it stays put.
+    const was = shownReplay, keep = playFrom == null && over && !!was && was.s === s && was.root.isConnected ? was.player.index : null;
     // A shared link does not carry the sharer's name or look (your own reloaded fight keeps yours).
     const anon = s.shared && !s.shared.own;
     const aName = anon ? 'PLAYER' : myName(), aId = anon ? 'practice:player' : myId();
@@ -2301,6 +2380,7 @@
     };
     const player = track(createPlayer($('#player'), { frames, ids: { A: aId, B: 'npc:' + s.npc }, names: { A: aName, B: npc.name }, links: false, replay: {}, stageSeed: 'practice:' + s.npc, mySide: 'A', autoplay: false,
       planRound: over ? null : s.state.round_index + 1, onEnd }));
+    shownReplay = { s, player, root: $('#player') };
     if (over) wirePracticeResult(s, player);
     else {
       pinPlayer = player;
@@ -2322,10 +2402,10 @@
       // with motion off the round is already played out, so the deck at once.
       if (pinned && motion()) landed = showReplay(true);
       else if (pinned) landed = showDeck(false);
-      else $('.practice-stage').scrollIntoView({ block: 'start', behavior: motion() ? 'smooth' : 'auto' });
+      else { $('.practice-stage').scrollIntoView({ block: 'start', behavior: motion() ? 'smooth' : 'auto' }); landed = true; }
       if (motion()) player.start(); else player.seek(frames.length - 1, false);
     } else {
-      player.seek(frames.length - 1, false);
+      player.seek(keep != null ? keep : frames.length - 1, false);
       // Arrival and a rematch open on the deck.
       if (pinned) landed = showDeck(false);
     }
@@ -2337,7 +2417,12 @@
     if (over) {
       if (!s.shared) {
         $('#rematch').addEventListener('click', () => {
-          practice = L.practiceStart(R, s.npc, s.seed, 1); resetDraft();
+          // A new fight: under the active rules, also after one begun under
+          // others. Not from a result the page is already leaving (FIGHT too,
+          // wirePlanner): it would take that screen's address and be drawn over.
+          if (tok !== viewToken) return;
+          useActiveRules();
+          practice = newFight(s.npc, s.seed); resetDraft();
           try { history.replaceState(null, '', '#practice/' + s.npc + '/' + s.seed); } catch (e) { /* the view still resets */ }
           renderPracticeFight();
         });
@@ -2495,7 +2580,7 @@
     const tile = a => '<button class="act-btn mv-' + NAMES[a].toLowerCase() + '" data-a="' + a + '" title="' + esc(moveName(NAMES[a]) + ': ' + (moveOf(NAMES[a]).deck || purposeText(NAMES[a]))) + '">' +
       '<span class="key">' + esc(keyOf(a)) + '</span><b>' + esc(deckLabel(a)) + '</b><span class="cost">' + cost(a) + ' ST</span>' +
       (a === ID.LAST_STAND ? '<span class="stand-now' + (bonus ? '' : ' off') + '" title="Bonus if it lands now: +1 per HP you trail">+' + bonus + '</span>' : '') + '</button>';
-    return '<section class="panel panel-green planner" id="planner"><h3>ROUND ' + (practice.state.round_index + 1) + ' &middot; YOUR MOVES</h3>' + firstFightTip(npc) +
+    return '<section class="panel panel-green planner" id="planner"><h3>ROUND ' + (practice.state.round_index + 1) + ' &middot; YOUR MOVES</h3>' + begunNote(practice) + firstFightTip(npc) +
       '<p class="planner-status"><span>HP <b>' + me.hp + '</b></span><span>STAMINA <b>' + me.stamina + '</b></span><span>POWER <b>' + (me.power_available ? 'READY' : 'SPENT') + '</b></span>' + (me.opening ? '<span class="pos">OPENING</span>' : '') +
       '<span class="sealed">' + esc(npc.name) + '\'S PLAN: <b>SEALED</b></span></p>' +
       '<div class="slots" role="listbox" aria-label="Your plan for round ' + (practice.state.round_index + 1) + '">' + [0, 1, 2, 3, 4, 5].map(i => '<div class="slot" role="option" data-slot="' + i + '" tabindex="-1"><span class="slot-no">BEAT ' + (i + 1) + '</span><span class="slot-act"></span><span class="slot-st"></span><button class="slot-pw" data-pw="' + i + '" title="Power strike on this beat (+' + R.power_cost + ' cost, +' + R.power_damage + ' damage if it lands)">&#9733; POWER</button></div>').join('') + '</div>' +
@@ -2539,7 +2624,7 @@
   }
 
   function wirePlanner() {
-    const root = $('#planner');
+    const root = $('#planner'), tok = viewToken;
     const setAction = a => {
       draft.actions[draft.sel] = a;
       if (draft.power_slot === draft.sel && !POWERABLE.includes(a)) draft.power_slot = -1;
@@ -2553,13 +2638,17 @@
       draft.power_slot = draft.power_slot === i ? -1 : i;
       paintDraft();
     };
+    // A round is played under the rules the fight was begun under, and only
+    // from the screen on show: this deck stays up for a moment after the page
+    // heads to another screen (the active rules back in R by then), and its
+    // FIGHT or ENTER there plays nothing and draws nothing.
     const fight = () => {
-      if (draft.actions.some(a => a == null)) return;
+      if (tok !== viewToken || draft.actions.some(a => a == null)) return;
       try {
         const before = practiceFrames(practice).length;
-        L.practicePlay(R, practice, { actions: draft.actions.slice(), power_slot: draft.power_slot });
+        L.practicePlay(begunUnder.get(practice) || R, practice, { actions: draft.actions.slice(), power_slot: draft.power_slot });
         resetDraft();
-        if (practice.outcome && !practice.shared) practice.recorded = PR.recordResult(loadProgress().p, practice, fightKey(practice));
+        if (practice.outcome && !practice.shared) practice.recorded = PR.recordResult(freshProgress().p, practice, fightKey(practice));
         if (practice.recorded && practice.recorded.added) saveProgress();
         renderPracticeFight(Math.max(0, before - (practice.rounds.length > 1 ? 0 : 1)));
       } catch (e) { $('#plan-err').textContent = e.message; }
@@ -2617,8 +2706,24 @@
   // this section only renders it and keeps the record in localStorage.
 
   const PR = window.QDojoPractice;
-  // A shared fight under another ruleset swaps R while it is on screen; render() swaps back.
-  let R_SAVED = null, R_SHARED = null;
+  // A fight played or begun under another ruleset (a shared one, or yours
+  // from before a live export took over) swaps R while it is on screen
+  // (useFightRules); render() and REMATCH swap back (useActiveRules). While
+  // it is swapped in, R_SAVED holds the active ruleset: the one new fights use.
+  let R_SAVED = null;
+  const activeRules = () => R_SAVED || R;
+  // A live export that takes over (loadSource) brings in the active ruleset,
+  // also while a fight is shown under its own: it takes effect when that
+  // fight leaves the screen, even where it is the very ruleset the fight is
+  // shown under (the export's artifact missing, its embedded copy in use).
+  function setActiveRules(rules) {
+    if (R_SAVED) R_SAVED = rules; else R = rules;
+  }
+  function useActiveRules() {
+    if (!R_SAVED) return;
+    R = R_SAVED; R_SAVED = null;
+    paintRules();
+  }
   const PROGRESS_KEY = 'qdojo.practice.v1';
   const progress = { p: null, damaged: false, storage: true };
   // Every storage access is guarded: a blocked or full store leaves an
@@ -2636,6 +2741,14 @@
     progress.damaged = r.damaged;
     return progress;
   }
+  // The record is shared by every tab of this site: a change starts from what
+  // is stored now, and a save in another tab drops this tab's copy, so two
+  // open tabs never undo each other's results, steps or RESET.
+  function freshProgress() {
+    if (progress.storage) progress.p = null;
+    return loadProgress();
+  }
+  window.addEventListener('storage', e => { if (progress.storage && (e.key === PROGRESS_KEY || e.key === null)) progress.p = null; });
   function saveProgress() {
     if (!progress.storage) return;
     try { localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress.p)); progress.damaged = false; } catch (e) { progress.storage = false; }
@@ -2646,7 +2759,7 @@
     try { localStorage.removeItem(PROGRESS_KEY); } catch (e) { /* nothing stored */ }
   }
   function markStep(k) {
-    const g = loadProgress();
+    const g = freshProgress();
     if (g.p.steps[k]) return;
     g.p.steps[k] = true;
     saveProgress();
@@ -2735,7 +2848,7 @@
    * address bar, so a reload or a copied URL shows this fight, not round 1. */
   async function prepareShare(s) {
     if (s.shared || !s.outcome || s.shareTail) { paintShare(s); return; }
-    const code = await PR.shareCode(s, await digestOf(R), SHA).catch(() => null);
+    const code = await PR.shareCode(s, await digestOf(begunUnder.get(s) || R), SHA).catch(() => null);
     if (!code || practice !== s) return;
     s.shareTail = code;
     try { history.replaceState(null, '', '#practice/' + s.npc + '/' + s.seed + '/' + code); } catch (e) { /* the link in the panel still works */ }
@@ -2828,26 +2941,51 @@
     const refuse = why => setView(screen('SHARED FIGHT', 'PRACTICE REPLAY') + '<section class="panel panel-red share-bad" id="share-bad"><h3>THIS LINK CANNOT BE REPLAYED</h3><p>' + esc(why) + '</p>' +
       (N.ROSTER.some(n => n.id === npcId) && HEX64.test(seed || '') ? '<p><a class="btn" href="#practice/' + esc(npcId) + '/' + esc(seed) + '">PLAY THIS OPPONENT AND SEED</a> <a class="btn btn-cyan" href="#practice">PRACTICE</a></p>' : '<p><a class="btn" href="#practice">PRACTICE</a></p>') + '</section>');
     if (!parsed.ok) return refuse(parsed.error);
-    // Own fight already on screen (the address bar was just updated): keep it.
-    if (practice && practice.shareTail === tail && practice.npc === npcId && practice.seed === seed) return renderPracticeFight();
-    const list = window.QDojoRulesets || [R];
+    // Own fight already on screen (the address bar was just updated), or a
+    // shared one come back to (BACK): keep it, under the rules it was played
+    // under, also after a switch (a live export taking over from the sample).
+    // Your own keeps its record and REMATCH; a shared one notes the new
+    // active rules.
+    if (practice && practice.shareTail === tail && practice.npc === npcId && practice.seed === seed) {
+      if (practice.shared) { practice.shared.active = R.semantic_version; useFightRules(practice.shared.rules); }
+      else useFightRules(begunUnder.get(practice));
+      return renderPracticeFight();
+    }
+    // The active ruleset first: the export's own may be one this site does
+    // not embed, and a link the site wrote under it must replay here too.
+    const list = [R].concat((window.QDojoRulesets || []).filter(x => x !== R));
     const rulesets = await Promise.all(list.map(async rules => ({ rules, digest: await digestOf(rules) })));
     const rep = await PR.replayShare(parsed, rulesets, SHA);
     if (tok !== viewToken) return;
     if (!rep.ok) return refuse(rep.error);
-    practice = rep.s;
+    showFight(rep.s);
     practice.shared = { match: rep.match, check: rep.check, claimed: parsed.check, rules: rep.rules, active: R.semantic_version, own: loadProgress().p.seen.includes(fightKey(rep.s)) };
     practice.shareTail = tail;
     resetDraft();
-    // Played under another ruleset: shown under its own, never reinterpreted.
-    if (rep.rules !== R) { R_SAVED = R; R = rep.rules; R_SHARED = rep.rules; }
-    renderPracticeFight(0);
+    useFightRules(rep.rules);
+    return renderPracticeFight(0);
+  }
+  // Played or begun under another ruleset: shown under its own, never reinterpreted.
+  function useFightRules(rules) {
+    if (!rules || rules === R) return;
+    R_SAVED = activeRules(); R = rules;
+    paintRules();
+  }
+
+  /* Your fight begun under rules that are no longer the active ones (a live
+   * export took over meanwhile) ends under its own, and says so. */
+  function begunNote(s) {
+    const now = activeRules().semantic_version, then = esc(rulesLabel(s.rules_version));
+    if (s.shared || s.rules_version === now) return '';
+    return '<p class="pr-rules" id="pr-rules">' + (s.outcome ? 'Played under <b>' + then + '</b> and recorded under those rules.' : 'Begun under <b>' + then + '</b>: this fight ends under those rules.') +
+      ' Your next fight is under the current <b>' + esc(rulesLabel(now)) + '</b>.</p>';
   }
 
   /* The result block of a finished practice fight: verdict, record, actions. */
   function practiceResultHtml(s, npc, verdict) {
     const sh = s.shared, rec = s.recorded;
-    const g = loadProgress(), next = PR.nextChallenge(g.p, s.rules_version);
+    // The next challenge is a new fight, under the active rules.
+    const g = loadProgress(), next = PR.nextChallenge(g.p, activeRules().semantic_version);
     const head = sh
       ? '<p class="share-check ' + (sh.match ? 'share-ok' : 'share-bad') + '" id="share-check">' + (sh.match
         ? (sh.own ? 'YOUR FIGHT, REPLAYED FROM ITS LINK' : 'SHARED FIGHT') + ' &middot; re-derived in your browser from the plans in the link; the check value <b>' + esc(sh.check) + '</b> matches.'
@@ -2864,7 +3002,7 @@
         '<p class="center pr-build"><a class="btn btn-sm btn-cyan" href="#join" id="pr-build">BUILD YOUR OWN BOT &#9654;</a> <span class="tiny">Teach a program what you just learned; it trains offline against the same NPCs.</span></p>';
     return '<section class="panel panel-yellow result-screen"><h3>RESULT</h3>' + head + '<p class="result-big ' + (s.outcome.winner === 'A' ? 'res-win' : s.outcome.winner === 'B' ? 'res-lose' : 'res-draw') + '">' + verdict + '</p>' +
       '<p class="center">' + resultBadge({ outcome: s.outcome }) + ' ' + esc({ KO: 'by knockout.', DOUBLE_KO: 'double knockout.', HP: 'on remaining HP.', HP_TIE: 'equal HP after three rounds.' }[s.outcome.result] || '') + '</p>' +
-      recLine + actions + storageNote() + '</section>';
+      recLine + begunNote(s) + actions + storageNote() + '</section>';
   }
 
   function sharePanelHtml(s) {
@@ -3733,8 +3871,12 @@
 
   function currentRoute() {
     // A first visit lands on the title screen: it explains the game and shows a fight.
-    const h = decodeURIComponent(location.hash.replace(/^#/, '')) || 'title';
-    return h.split('/');
+    // A malformed escape (a cut or altered link) is read as typed, so the
+    // screen it names still answers: a refused share link, or a 404.
+    const raw = location.hash.replace(/^#/, '');
+    let h;
+    try { h = decodeURIComponent(raw); } catch (e) { h = raw; }
+    return (h || 'title').split('/');
   }
 
   // A poll repaints a live view in place. A finished fight's replay never
@@ -3754,19 +3896,28 @@
   }
 
   async function render(navigated) {
-    // Leaving (or re-entering) a shared practice fight played under another ruleset.
-    if (R_SAVED) { if (R === R_SHARED) R = R_SAVED; R_SAVED = R_SHARED = null; }
+    // Leaving (or re-entering) a practice fight shown under another ruleset.
+    useActiveRules();
     const [name, ...rest] = currentRoute();
     const tok = ++viewToken;
     const y = window.scrollY;
+    // Drawn again in place, a page stays where it was, except a phone on the
+    // move deck of an open round (AUD-036): the round lands on its deck once
+    // more, as a switch of rules can move it (the note naming the fight's).
+    const onDeck = !navigated && !!pinView && pinView.kind === 'deck' && pinView.deck === $('#planner') && Math.abs(y - pinView.y) < 2;
     stopPlayer();
     revealHook = null;
     spoilForce = name === 'fight' && rest[1] === 'spoilerfree';
+    // The footer chip shows the setting in force on this screen, so a
+    // spoiler-free link reads HIDDEN there too and a click shows the result.
+    paintSpoil();
     paintNav(name);
     // A slow screen change shows a busy plate over the old view after 200 ms
     // instead of leaving it looking current (V-21). Polls never show it.
     const busy = navigated ? setTimeout(() => { if (tok === viewToken) setBusy(true); }, 200) : 0;
-    let landed = false;   // a practice round on a phone opens on its move deck (AUD-036)
+    // A practice view that put the page in place itself: a round on a phone
+    // opens on its move deck (AUD-036), a shared fight on its stage.
+    let landed = false;
     try {
       if (name === 'arena') await viewArena(tok);
       else if (name === 'title') await viewTitle(tok);
@@ -3791,7 +3942,7 @@
       else if (name === 'story') viewStory();
       else if (name === 'fight') await viewFight(tok, rest[0]);
       else if (name === 'fighter') await viewFighter(tok, rest[0], rest[1]);
-      else if (name === 'practice') landed = viewPractice(tok, rest) === true;
+      else if (name === 'practice') landed = (await viewPractice(tok, rest)) === true;
       else if (name === 'rules') await viewRules(tok);
       else viewLost(name);
     } catch (e) {
@@ -3804,7 +3955,7 @@
     const playerRoot = name === 'fight' ? $('#view [data-player]') : null;
     if (navigated && playerRoot) playerRoot.focus({ preventScroll: true });
     else if (navigated && name !== 'practice' && !(name === 'fighters' && document.activeElement && document.activeElement.id === 'ff-q')) $('#view').focus({ preventScroll: true });
-    if (!navigated) window.scrollTo(0, y);
+    if (!navigated && !(onDeck && landed)) window.scrollTo(0, y);
   }
 
   function paintMotion() {

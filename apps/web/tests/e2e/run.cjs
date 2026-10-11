@@ -111,15 +111,24 @@ function sampleFacts() {
   const kind = rp => (rp.result && rp.result.kind) || null;
   const settledRanked = replays.find(rp => rp.mode === 'ranked' && kind(rp) === 'COMBAT' && rp.settlement && rp.rounds.length >= 2);
   const duelFight = replays.find(rp => rp.mode === 'duel' && kind(rp) === 'COMBAT');
-  const forfeit = replays.find(rp => kind(rp) === 'FORFEIT');
+  // Both kinds of forfeit: after played rounds (held like any fight) and before any round (nothing to spoil).
+  const forfeitPlayed = replays.find(rp => kind(rp) === 'FORFEIT' && rp.rounds.length);
+  const forfeitUnplayed = replays.find(rp => kind(rp) === 'FORFEIT' && !rp.rounds.length);
   const cups = (fs.existsSync(path.join(SAMPLE, 'cups.json')) ? readJson(path.join(SAMPLE, 'cups.json')).cups : []) || [];
   const duels = (fs.existsSync(path.join(SAMPLE, 'duels.json')) ? readJson(path.join(SAMPLE, 'duels.json')).duels : []) || [];
+  // Series of several fights, each with a replay, the first one fought: a duel and a cup pairing.
+  const replayOf = id => replays.find(rp => String(rp.fight_id) === String(id));
+  const replayed = ids => (ids || []).length >= 2 && ids.every(replayOf) && replayOf(ids[0]).rounds.length > 0;
+  const duelSeries = duels.find(d => replayed(d.fights));
+  const cupSeries = cups.flatMap(c => c.pairings || []).find(p => replayed(p.fights));
+  // A decided ranked fight: its winner can be made a new champion.
+  const decidedRanked = replays.find(rp => rp.mode === 'ranked' && kind(rp) === 'COMBAT' && rp.result.winner && rp.rounds.length >= 2);
   const dep = index.deployment || {};
   const fighters = Object.entries(dep.fighters || {});
   const traded = fighters.find(([, m]) => m.asset && (m.asset.history || []).length > 1) || fighters[0];
   const book = readJson(path.join(SAMPLE, 'book.json'));
   return {
-    index, settledRanked, duelFight, forfeit, book,
+    index, settledRanked, duelFight, forfeitPlayed, forfeitUnplayed, duelSeries, cupSeries, decidedRanked, book,
     cup: cups.find(c => c.champion) || cups[0], duel: duels.find(d => d.status === 'DONE') || duels[0],
     fighter: traded ? traded[0] : index.fighters[0], owner: traded ? traded[1].asset.owner : null,
   };
@@ -218,6 +227,15 @@ async function main() {
   const text = (page, sel) => page.textContent(sel).then(t => (t || '').replace(/\s+/g, ' ').trim());
   const must = async (cond, what) => { if (!cond) throw new Error('expected ' + what); };
   const go = async (page, base, hash, sel) => { await page.goto(base + hash); await page.waitForSelector(sel, { timeout: 15000 }); };
+  // Waits for what a link, BACK or a new address opens; failing, says what the page shows instead.
+  const opens = async (page, sel, what) => {
+    if (await page.waitForSelector(sel, { timeout: 8000 }).then(() => true, () => false)) return;
+    const shows = await page.evaluate(() => {
+      const parts = Array.from(document.querySelectorAll('#view .screen-title, #view .screen-sub, #view .panel-red p')).map(e => e.textContent.replace(/\s+/g, ' ').trim());
+      return parts.length ? parts.join(' | ') : document.querySelector('#view').textContent.replace(/\s+/g, ' ').trim().slice(0, 100);
+    });
+    throw new Error('expected ' + what + '; the page shows: ' + shows);
+  };
 
   // ---- views ----
   await step('title', async (page, base) => {
@@ -372,8 +390,8 @@ async function main() {
     await page.waitForSelector('#series-slot a', { timeout: 10000 });
     await must(/DUEL #/.test(await text(page, '#series-slot')), 'a link to its duel series');
   });
-  if (facts.forfeit) await step('replay-forfeit', async (page, base) => {
-    await go(page, base, '#fight/' + facts.forfeit.fight_id, '.stage');
+  if (facts.forfeitPlayed) await step('replay-forfeit', async (page, base) => {
+    await go(page, base, '#fight/' + facts.forfeitPlayed.fight_id, '.stage');
     await expectVerified(page);
     await page.focus('#view');
     await must(/TIMEOUT/.test(await text(page, '.result-panel')), 'a forfeit reads TIMEOUT');
@@ -473,8 +491,27 @@ async function main() {
       beats: await page.$$eval('tr.fr-beat', t => t.map(r => r.innerText.replace(/\s+/g, ' '))) };
     await must(/\/p1\.1\.[0-9a-f]{16}\.[0-8n-]+\.[0-9a-f]{8}$/.test(shared.url), 'a p1 replay link: ' + shared.url);
     await must(page.url().endsWith(shared.url.split('#')[1]), 'the address bar holds the replay link');
+    // The share panel's CHALLENGE link is a new fight on the same opponent and seed, not this replay.
+    await page.click('.practice-meta a[href$="#practice/jabber-v1/' + 'cd'.repeat(32) + '"]');
+    await opens(page, '#planner', 'the CHALLENGE link to open a new fight');
+    await must(/ROUND 1 OF 3/.test(await text(page, '.screen-sub')), 'the CHALLENGE link opening round 1 of a new fight');
+    // That fight, left open for BACK to the replay link, is picked up again by
+    // FORWARD: its round 2, with the moves already typed for it.
+    await playRound(page);
+    await page.click('.slot[data-slot="0"]');
+    for (const k of ['2', '4']) await page.keyboard.press(k);
+    const typed = await planned(page);
+    await page.goBack(); await page.waitForSelector('#share-check');
+    await page.goForward(); await opens(page, '#planner', 'FORWARD to the fight left open');
+    await must(/ROUND 2 OF 3/.test(await text(page, '.screen-sub')) && await planned(page) === typed, 'FORWARD picking up the open fight at round 2 with its moves (' + await text(page, '.screen-sub') + '; ' + await planned(page) + ')');
+    await page.goBack(); await page.waitForSelector('#share-check');
+    // A reload replays the fight from its link and records nothing (AUD-033):
+    // the stored record still counts this one fight, once.
     await page.reload(); await page.waitForSelector('#share-check');
-    await must(!(await page.$('#pr-result')), 'a reload does not record the fight again');
+    await must(/^YOUR FIGHT, REPLAYED FROM ITS LINK/.test(await text(page, '#share-check')), 'the reload showing your own fight, from its link');
+    const rec = await page.evaluate(() => JSON.parse(localStorage.getItem('qdojo.practice.v1') || 'null'));
+    const jab = rec ? Object.values(rec.rules).map(m => m['jabber-v1']).filter(Boolean) : [];
+    await must(jab.length === 1 && jab[0].w + jab[0].l + jab[0].d === 1 && rec.seen.length === 1, 'a reload not recording the fight again: the stored record holds it once (' + JSON.stringify(rec) + ')');
     await shot(page, 'practice-result');
   });
   if (shared) await step('practice-share', async (page, base) => {
@@ -483,10 +520,359 @@ async function main() {
     await must(await text(page, '.result-big') === shared.verdict, 'the same verdict');
     const beats = await page.$$eval('tr.fr-beat', t => t.map(r => r.innerText.replace(/\s+/g, ' ')));
     await must(JSON.stringify(beats) === JSON.stringify(shared.beats), 'the same executed beats (' + beats.length + ')');
+    // PLAY THIS CHALLENGE is a new fight on the same opponent and seed, not the shared replay.
+    await page.click('text=PLAY THIS CHALLENGE');
+    await opens(page, '#planner', 'PLAY THIS CHALLENGE to open a new fight');
+    await must(/ROUND 1 OF 3/.test(await text(page, '.screen-sub')), 'PLAY THIS CHALLENGE opening round 1 of a new fight');
+    // A round played in it survives BACK to the shared fight and FORWARD.
+    await playRound(page);
+    await page.goBack(); await opens(page, '#share-check', 'BACK to show the shared fight');
+    await page.goForward(); await opens(page, '#planner', 'FORWARD to the fight left open');
+    await must(/ROUND 2 OF 3/.test(await text(page, '.screen-sub')), 'FORWARD picking up that fight at round 2 (' + await text(page, '.screen-sub') + ')');
     await page.goto(shared.url.replace(/[0-9a-f]{8}$/, '00000000')); await page.waitForSelector('#share-check');
     await must(/MISMATCH/.test(await text(page, '#share-check')), 'a tampered link shows MISMATCH');
     await page.goto(shared.url.replace('/p1.', '/p7.')); await page.waitForSelector('#share-bad');
     await must(/format/.test(await text(page, '#share-bad')), 'an unsupported link is refused with a reason');
+    // Its way out, with the tampered fight on that opponent and seed still in
+    // memory: your own fight there, the one left open, never the tampered one.
+    await page.click('text=PLAY THIS OPPONENT AND SEED');
+    await opens(page, '#planner', 'PLAY THIS OPPONENT AND SEED to open your fight');
+    await must(/ROUND 2 OF 3/.test(await text(page, '.screen-sub')), 'PLAY THIS OPPONENT AND SEED picking up your open fight there (' + await text(page, '.screen-sub') + ')');
+  });
+  // Your own unfinished fight that another practice screen took off the
+  // screen (the select screen, another fight) is picked up again by its
+  // address: BACK and FORWARD between two open fights find each at its round.
+  await step('practice-resume', async (page, base) => {
+    const at = async (npc, what) => { await opens(page, '#planner', what); const t = await text(page, '.screen-title') + ' ' + await text(page, '.screen-sub'); await must(t.includes('VS ' + npc) && /ROUND 2 OF 3/.test(t), what + ' at round 2 (' + t + ')'); };
+    await go(page, base, '#practice/jabber-v1/' + 'cd'.repeat(32), '#planner');
+    await playRound(page);
+    await page.evaluate(() => { location.hash = '#practice'; }); await page.waitForSelector('.npc-card');
+    await page.goBack(); await at('JABBER', 'BACK from the select screen to the open fight');
+    await page.goForward(); await page.waitForSelector('.npc-card');
+    await page.click('[data-npc="kicker-v1"]');
+    await page.click('.select-adv summary');
+    await page.fill('#seed', 'ef'.repeat(32));
+    await page.click('#go'); await page.waitForSelector('#planner');
+    await playRound(page);
+    await page.goBack(); await page.waitForSelector('.npc-card');
+    await page.goBack(); await at('JABBER', 'BACK twice to the first open fight');
+    await page.goForward(); await page.waitForSelector('.npc-card');
+    await page.goForward(); await at('KICKER', 'FORWARD twice to the second open fight');
+  });
+  // The embedded rulesets (ruleset.js), the sample's active one and the HUD's name for a ruleset.
+  const embedded = () => { require(path.join(WEB, 'combat/ruleset.js')); return globalThis.QDojoRulesets; };
+  const activeRules = () => embedded().find(r => r.semantic_version === readJson(path.join(SAMPLE, 'manifest.json')).semantic_version);
+  const rulesName = r => 'RULES V' + /(\d+)$/.exec(r.semantic_version)[1];
+  // A finished practice fight's share link, made by the site's own modules under the given rules.
+  async function shareLinkUnder(rules, npc, seed) {
+    const L = require(path.join(WEB, 'combat/logic.js')), P = require(path.join(WEB, 'combat/practice.js')), sha = L.defaultSha256();
+    const s = L.practiceStart(rules, npc, seed, 1);
+    for (const a of [[2, 2, 5, 2, 3, 5], [2, 3, 5, 2, 3, 5], [2, 2, 5, 3, 3, 5]]) if (!s.outcome) L.practicePlay(rules, s, { actions: a, power_slot: -1 });
+    return '#practice/' + npc + '/' + seed + '/' + await P.shareCode(s, await L.rulesetDigest(rules, sha), sha);
+  }
+  // Plays one round of the open practice fight.
+  async function playRound(page) {
+    const at = await text(page, '#view .screen-sub');
+    await page.click('.slot[data-slot="0"]');
+    for (const k of ['4', '4', '4', '2', '4', '4']) await page.keyboard.press(k);
+    await page.click('#fight');
+    await page.waitForFunction(at => document.querySelector('#view .screen-sub').textContent.replace(/\s+/g, ' ').trim() !== at, at);
+  }
+  // The moves typed for the next round, beat by beat.
+  function planned(page) { return page.$$eval('#planner .slot-act', s => s.map(x => x.textContent).join(' ')); }
+  // Plays the open practice fight to its end, the same six moves every round.
+  async function fightOut(page) {
+    for (let r = 0; r < 3 && await page.$('#planner'); r++) {
+      await page.click('.slot[data-slot="0"]');
+      for (const k of ['4', '4', '4', '2', '4', '4']) await page.keyboard.press(k);
+      await page.click('#fight');
+      await page.waitForTimeout(300);
+    }
+    await page.waitForSelector('.result-screen');
+  }
+  // A fight shared under another ruleset (AUD-034) is shown under that one,
+  // and the HUD names it while it is on screen, also when BACK returns to it;
+  // anywhere else the active ruleset is back. Its challenge is a new fight
+  // under the active ruleset. (The HUD shows the ruleset above 1500 px.)
+  await step('practice-share-rules', async (page, base) => {
+    const mine = activeRules(), all = embedded();
+    const other = all.find(r => r !== mine && r.limits.hp !== mine.limits.hp) || all.find(r => r !== mine);
+    await go(page, base, await shareLinkUnder(other, 'jabber-v1', 'ef'.repeat(32)), '#share-check');
+    await must(await text(page, '#share-check').then(t => t.includes('Played under ' + rulesName(other) + '; shown under those rules')), 'the shared fight under its own rules');
+    const hud = async (r, what) => { const t = await text(page, '#hud-rules'); await must(t === rulesName(r) && await page.isVisible('#hud-rules'), what + ' (HUD: ' + t + ')'); };
+    await hud(other, 'the HUD naming the shared fight\'s ruleset');
+    await page.click('#view a[href="#join"]'); await page.waitForSelector('#entry-status');
+    await hud(mine, 'the HUD back on the active ruleset after leaving the shared fight');
+    await page.goBack();
+    await opens(page, '#share-check', 'BACK to show the shared fight again');
+    await must(/ VS JABBER$/.test(await text(page, '.screen-title')), 'BACK showing the shared fight again');
+    await hud(other, 'the HUD naming its ruleset again');
+    await page.click('text=PLAY THIS CHALLENGE');
+    await opens(page, '#planner', 'PLAY THIS CHALLENGE to open a new fight');
+    await must(/ROUND 1 OF 3/.test(await text(page, '.screen-sub')) && await page.locator('#planner .act-btn').count() === mine.submitted_action_ids.length, 'its challenge a new fight with the active ruleset\'s moves');
+    await hud(mine, 'the HUD on the active ruleset in that fight');
+  }, { context: { viewport: { width: 1600, height: 900 } } });
+  // The export's own ruleset need not be one this site embeds (an arena
+  // switched ahead of the site): a fight played under it, reloaded from the
+  // link the site wrote, replays under it instead of being refused.
+  await step('practice-share-export-rules', async (page, base) => {
+    const rules = JSON.parse(JSON.stringify(embedded().find(r => r.semantic_version === 'combat-v1-candidate-3')));
+    rules.semantic_version = 'combat-v1-candidate-4'; rules.power_damage += 2;
+    await asRuleset(page, rules);
+    await go(page, base, '#practice/jabber-v1/' + 'cd'.repeat(32), '#planner');
+    await must(await text(page, '#hud-rules') === 'RULES V4', 'the export\'s own ruleset in force');
+    await fightOut(page);
+    await page.waitForSelector('#share-link');
+    await page.reload(); await page.waitForSelector('#share-check, #share-bad');
+    const ok = await page.$('#share-check');
+    await must(ok && /^YOUR FIGHT, REPLAYED FROM ITS LINK .*matches/.test(await text(page, '#share-check')), 'the reload replaying the fight under its ruleset' + (ok ? '' : ', refused: ' + await text(page, '#share-bad')));
+  });
+  // The arena coming online under another ruleset while a finished practice
+  // fight is on screen: the live export appears (sample files served under
+  // the live path, its manifest naming the other ruleset) and the next 30 s
+  // poll (page clock) switches the site to it. A fight played or opened
+  // under the old rules stays on screen under those, and says which rules
+  // are current now; nothing fails to render. The live index arrives late,
+  // so the old screen stays up while the switch is under way: a replay still
+  // playing there, or a FIGHT clicked there, must not meet the new rules.
+  // (The HUD shows the ruleset above 1500 px.) opts.artifact false: the
+  // export's ruleset artifact holds no ruleset, so the site uses its embedded
+  // copy of those rules (as when the artifact cannot be fetched at all).
+  async function liveUnder(page, rules, opts) {
+    const L = require(path.join(WEB, 'combat/logic.js'));
+    const digest = await L.rulesetDigest(rules, L.defaultSha256());
+    const manifest = Object.assign(readJson(path.join(SAMPLE, 'manifest.json')), { ruleset_digest: digest, semantic_version: rules.semantic_version });
+    const artifact = Object.assign({ schema: 'qdojo.combat.ruleset.v1', semantic_version: rules.semantic_version, digest }, opts && opts.artifact === false ? {} : { rules });
+    let live = false, asked = () => {}, held = null;
+    await page.clock.install();
+    await page.route(/\/data\/combat\/v1\/(?!sample\/)/, async r => {
+      const u = r.request().url();
+      if (!live) return r.continue();   // the expected 404 of the live manifest: the sample is in use
+      if (/\/manifest\.json$/.test(u)) return r.fulfill({ json: manifest });
+      if (u.includes('/rulesets/' + digest + '.json')) return r.fulfill({ json: artifact });
+      if (/\/index\.json$/.test(u)) { asked(); await Promise.all([new Promise(res => setTimeout(res, 2500)), held]); }
+      return r.continue({ url: u.replace('/data/combat/v1/', '/data/combat/v1/sample/') });
+    });
+    // during (optional): what is done on the page while the live export
+    // loads, from the moment the site asks for its index (held until then).
+    return async during => {
+      let release = null;
+      const ask = new Promise(res => { asked = res; });
+      held = new Promise(res => { release = res; });
+      live = true;
+      await page.clock.fastForward(30000);
+      try { if (during) { await ask; await during(); } } finally { release(); }
+      await page.waitForFunction(() => document.querySelector('#hud-source').textContent === 'LIVE', null, { timeout: 8000 });
+    };
+  }
+  const takeoverRules = () => { const mine = activeRules(); return embedded().find(r => r !== mine && r.limits.stamina !== mine.limits.stamina) || embedded().find(r => r !== mine); };
+  // Your own finished fight on screen stays as it was, under the rules it
+  // was played under: its result with the record line, REMATCH and its replay
+  // link, a note naming the current rules, the replay on the frame it was on
+  // and the page where the reader left it (here the debrief).
+  await step('practice-takeover-own', async (page, base) => {
+    const mine = activeRules(), live = takeoverRules();
+    const goLive = await liveUnder(page, live);
+    await go(page, base, '#practice/jabber-v1/' + 'cd'.repeat(32), '#planner');
+    await fightOut(page);
+    await page.waitForSelector('#share-link');
+    await page.evaluate(() => { for (const a of ['last', 'prev', 'prev']) document.querySelector('#player [data-act=' + a + ']').click(); });
+    await page.locator('#debrief').scrollIntoViewIfNeeded();
+    const result = () => page.evaluate(() => ({ y: Math.round(scrollY), rec: document.querySelector('#pr-result').textContent, link: document.querySelector('#share-link').href,
+      rematch: !!document.querySelector('#rematch'), pos: document.querySelector('#player .pos').textContent }));
+    const was = await result();
+    await goLive();
+    await opens(page, '#pr-rules', 'your finished fight still on screen after the switch, with a note on its rules');
+    const now = await result(), note = await text(page, '#pr-rules');
+    await must(!(await page.$('#share-check')) && now.rec === was.rec && now.link === was.link && now.rematch, 'your result kept: its record line, REMATCH and its replay link, not a replay from that link (' + JSON.stringify(now) + ')');
+    await must(note.startsWith('Played under ' + rulesName(mine)) && note.includes('current ' + rulesName(live)), 'the note naming the rules it was played under and the current ones (' + note + ')');
+    await must(await text(page, '#hud-rules') === rulesName(mine) && await page.locator('#view .panel-red').count() === 0, 'the HUD naming the fight\'s rules, nothing failing to render');
+    await must(Math.abs(now.y - was.y) <= 2 && now.pos === was.pos, 'the page left on the debrief, the replay on its frame (scroll ' + was.y + ' to ' + now.y + '; ' + was.pos + ' to ' + now.pos + ')');
+  }, { context: { viewport: { width: 1600, height: 900 } } });
+  await step('practice-takeover-shared', async (page, base) => {
+    const mine = activeRules(), live = takeoverRules();
+    const goLive = await liveUnder(page, live);
+    await go(page, base, await shareLinkUnder(mine, 'jabber-v1', 'ef'.repeat(32)), '#share-check');
+    await must(!/Played under/.test(await text(page, '#share-check')), 'a fight shared under the active rules, before the switch');
+    await goLive();
+    await page.waitForFunction(() => /Played under/.test(document.querySelector('#share-check').textContent), null, { timeout: 8000 }).catch(() => {});
+    const check = await text(page, '#share-check');
+    await must(check.includes('Played under ' + rulesName(mine) + '; shown under those rules, not the current ' + rulesName(live)), 'the shared fight naming the rules current after the switch (' + check + ')');
+    await must(await text(page, '#hud-rules') === rulesName(mine), 'the HUD naming the shared fight\'s rules');
+  }, { context: { viewport: { width: 1600, height: 900 } } });
+  // An open fight is played to its end under the rules it was begun under
+  // (switched here to rules with another stamina cap and another deck, as the
+  // public arena's V1 to V3): after the switch it is at its round with the
+  // moves typed for it, and says which rules it ends under and which are
+  // current. Its address still finds it after the select screen (on the
+  // current rules), never a new fight there; it ends and is recorded under
+  // its own rules, and REMATCH is a new fight under the current ones.
+  await step('practice-takeover-open', async (page, base) => {
+    const mine = activeRules();
+    const live = embedded().find(r => r !== mine && r.limits.stamina !== mine.limits.stamina && r.submitted_action_ids.length !== mine.submitted_action_ids.length) || takeoverRules();
+    const goLive = await liveUnder(page, live);
+    await go(page, base, '#practice/jabber-v1/' + 'cd'.repeat(32), '#planner');
+    await playRound(page);
+    await page.click('.slot[data-slot="0"]');
+    for (const k of ['2', '4', '1']) await page.keyboard.press(k);
+    const typed = await planned(page);
+    const same = async what => {
+      await opens(page, '#pr-rules', what + ' with a note on its rules');
+      const sub = await text(page, '.screen-sub'), hud = await text(page, '#hud-rules'), note = await text(page, '#pr-rules');
+      await must(/ROUND 2 OF 3/.test(sub) && await planned(page) === typed && hud === rulesName(mine) && await page.locator('#planner .act-btn').count() === mine.submitted_action_ids.length,
+        what + ' at round 2 with its moves, under ' + rulesName(mine) + ' (' + sub + '; ' + await planned(page) + '; HUD ' + hud + ')');
+      await must(note.startsWith('Begun under ' + rulesName(mine)) && note.includes('current ' + rulesName(live)), 'the note naming the fight\'s rules and the current ones (' + note + ')');
+    };
+    await goLive();
+    await same('the open fight after the switch');
+    await page.evaluate(() => { location.hash = '#practice'; }); await page.waitForSelector('.npc-card');
+    await must(await text(page, '#hud-rules') === rulesName(live), 'the select screen on the current rules');
+    await page.goBack(); await same('BACK to the open fight');
+    await fightOut(page);
+    await page.waitForSelector('#share-link');
+    const rec = await page.evaluate(() => JSON.parse(localStorage.getItem('qdojo.practice.v1') || 'null'));
+    await must(rec && Object.keys(rec.rules).join() === mine.semantic_version, 'the fight recorded under ' + mine.semantic_version + ' only (' + JSON.stringify(rec && rec.rules) + ')');
+    const L = require(path.join(WEB, 'combat/logic.js'));
+    const digest = (await L.rulesetDigest(mine, L.defaultSha256())).slice(0, 16);
+    await must((await page.getAttribute('#share-link', 'href')).includes('/p1.1.' + digest + '.'), 'its replay link naming ' + rulesName(mine));
+    await must((await text(page, '#pr-rules')).startsWith('Played under ' + rulesName(mine)), 'the result naming the rules it was played under');
+    // Nothing is won yet under the current rules, whose ladder starts with this opponent (REMATCH): no NEXT CHALLENGE, whatever this fight's result.
+    await must(!(await page.$('#pr-next-fight')), 'no NEXT CHALLENGE from the ladder of the rules the fight was played under');
+    await page.click('#rematch'); await opens(page, '#planner', 'REMATCH to open a new fight');
+    await must(/ROUND 1 OF 3/.test(await text(page, '.screen-sub')) && await text(page, '#hud-rules') === rulesName(live) && await page.locator('#planner .act-btn').count() === live.submitted_action_ids.length && !(await page.$('#pr-rules')),
+      'REMATCH a new fight under ' + rulesName(live));
+  }, { context: { viewport: { width: 1600, height: 900 } } });
+  // FIGHT clicked while the switch is under way (the live index held back)
+  // plays the round under the rules on screen, the fight's own: no engine
+  // error under the new stamina cap, the next round, and after the switch a
+  // link that replays the fight with a matching check.
+  await step('practice-takeover-fight', async (page, base) => {
+    const mine = activeRules();
+    const live = embedded().find(r => r !== mine && r.limits.stamina < mine.limits.stamina) || takeoverRules();
+    const goLive = await liveUnder(page, live);
+    await go(page, base, '#practice/jabber-v1/' + 'cd'.repeat(32), '#planner');
+    await playRound(page);
+    await page.click('.slot[data-slot="0"]');
+    for (const k of ['4', '4', '4', '2', '4', '4']) await page.keyboard.press(k);
+    await goLive(async () => {
+      await page.click('#fight');
+      await page.waitForFunction(() => /ROUND 3/.test(document.querySelector('#view .screen-sub').textContent) || (document.querySelector('#plan-err') || {}).textContent, null, { timeout: 5000 }).catch(() => {});
+      const err = await text(page, '#plan-err'), sub = await text(page, '.screen-sub');
+      await must(!err && /ROUND 3 OF 3/.test(sub), 'FIGHT during the switch playing round 2 under ' + rulesName(mine) + ' (' + (err || sub) + ')');
+    });
+    await opens(page, '#pr-rules', 'the fight after the switch with a note on its rules');
+    await must(/ROUND 3 OF 3/.test(await text(page, '.screen-sub')) && await text(page, '#hud-rules') === rulesName(mine), 'the fight at round 3 under ' + rulesName(mine) + ' after the switch');
+    await fightOut(page);
+    await page.waitForSelector('#share-link');
+    await page.goto(await page.getAttribute('#share-link', 'href')); await page.reload(); await page.waitForSelector('#share-check');
+    await must(/ check value [0-9a-f]{8} matches/.test(await text(page, '#share-check')), 'its link replaying it with a matching check (' + await text(page, '#share-check') + ')');
+  }, { context: { viewport: { width: 1600, height: 900 } } });
+  // Every frame of the replay on screen, stepped through by its beat table: the arena and the captions as drawn.
+  const replayFrames = page => page.evaluate(() => Array.from(document.querySelectorAll('#player tr[data-i]')).map(tr => {
+    tr.click();
+    return ['.stage', '.caption'].map(s => document.querySelector('#player ' + s).textContent.replace(/\s+/g, ' ')).join(' | ');
+  }));
+  // Leaving a fight shown under its own rules for a screen whose data comes
+  // late: the active rules are back in force at once, while the fight's
+  // screen stays up and still takes keys (also under the busy plate) and
+  // clicks. Nothing done there meets those rules or is drawn over the screen
+  // on its way. FIGHT and ENTER play nothing (the fight's address finds it at
+  // its round with its moves, and it ends under its own rules), its replay
+  // steps through its frames under the fight's rules, and REMATCH starts
+  // nothing.
+  await step('practice-takeover-leave', async (page, base) => {
+    const mine = activeRules();
+    const live = embedded().find(r => r !== mine && r.limits.stamina < mine.limits.stamina) || takeoverRules();
+    const goLive = await liveUnder(page, live);
+    await go(page, base, '#practice/jabber-v1/' + 'cd'.repeat(32), '#planner');
+    await playRound(page);
+    await page.click('.slot[data-slot="0"]');
+    for (const k of ['4', '4', '4', '2', '4', '4']) await page.keyboard.press(k);
+    const typed = await planned(page);
+    await goLive();
+    await opens(page, '#pr-rules', 'the open fight after the switch with a note on its rules');
+    // To another screen (one not shown yet: its data is not cached), its data
+    // held back while `meanwhile` acts on the screen left behind.
+    const leave = async (to, title, meanwhile) => {
+      let release = null;
+      const held = new Promise(res => { release = res; });
+      const hold = async r => { await held; return r.fallback(); };
+      await page.route(/\/data\/combat\/v1\/|\/api\/v1\//, hold);
+      try {
+        await page.evaluate(h => { location.hash = h; }, to);
+        await page.waitForFunction(n => document.querySelector('#hud-rules').textContent === n, rulesName(live));
+        await meanwhile();
+      } finally { release(); }
+      await page.waitForFunction(t => document.querySelector('#view .screen-title').textContent === t, title, { timeout: 10000 });
+      await page.unroute(/\/data\/combat\/v1\/|\/api\/v1\//, hold);
+      await must(await page.evaluate(() => location.hash) === to, 'the page on ' + to + ', at that address');
+    };
+    const frames = await replayFrames(page);
+    await leave('#cups', 'CUPS', async () => {
+      await page.$eval('#fight', b => b.click());
+      await page.focus('#planner .slot[data-slot="0"]');
+      await page.keyboard.press('Enter');
+      const err = await text(page, '#plan-err'), sub = await text(page, '.screen-sub');
+      await must(!err && /ROUND 2 OF 3/.test(sub) && await planned(page) === typed, 'FIGHT and ENTER on the fight being left playing nothing (' + (err || sub) + ')');
+      const stale = await replayFrames(page);
+      await must(stale.length === frames.length && stale.every((f, i) => f === frames[i]), 'its replay drawn under the fight\'s rules there too (' + (stale.find((f, i) => f !== frames[i]) || '').slice(0, 160) + ')');
+    });
+    await page.goBack();
+    await opens(page, '#pr-rules', 'BACK to the open fight');
+    const sub = await text(page, '.screen-sub'), hud = await text(page, '#hud-rules');
+    await must(/ROUND 2 OF 3/.test(sub) && await planned(page) === typed && hud === rulesName(mine), 'the fight at round 2 with its moves, under ' + rulesName(mine) + ' (' + sub + '; ' + await planned(page) + '; HUD ' + hud + ')');
+    await fightOut(page);
+    await page.waitForSelector('#share-link');
+    const link = await page.getAttribute('#share-link', 'href');
+    await leave('#duels', 'DUELS', async () => {
+      await page.$eval('#rematch', b => b.click());
+      await must(/FIGHT OVER/.test(await text(page, '.screen-sub')) && await page.evaluate(() => location.hash) === '#duels', 'REMATCH on the result being left starting nothing');
+    });
+    await page.goto(link); await page.reload(); await page.waitForSelector('#share-check');
+    await must(/ check value [0-9a-f]{8} matches/.test(await text(page, '#share-check')), 'its link replaying it with a matching check (' + await text(page, '#share-check') + ')');
+  }, { context: { viewport: { width: 1600, height: 900 }, reducedMotion: 'reduce' } });
+  // The live export's ruleset artifact cannot be used (here it holds no
+  // ruleset), so the site falls back to its embedded copy of those rules: the
+  // very rules a shared fight on screen is already shown under. The switch
+  // comes into force all the same: that fight is under the current rules,
+  // and RULES, the HUD and a new fight use them.
+  await step('practice-takeover-embedded', async (page, base) => {
+    const mine = activeRules();
+    const live = embedded().find(r => r !== mine && r.submitted_action_ids.length !== mine.submitted_action_ids.length) || takeoverRules();
+    const goLive = await liveUnder(page, live, { artifact: false });
+    await go(page, base, await shareLinkUnder(live, 'jabber-v1', 'ef'.repeat(32)), '#share-check');
+    await must((await text(page, '#share-check')).includes('Played under ' + rulesName(live) + '; shown under those rules, not the current ' + rulesName(mine)), 'a fight shared under ' + rulesName(live) + ' on the ' + rulesName(mine) + ' sample');
+    await goLive();
+    await page.waitForFunction(() => !/Played under/.test(document.querySelector('#share-check').textContent), null, { timeout: 8000 }).catch(() => {});
+    const check = await text(page, '#share-check'), hud = await text(page, '#hud-rules');
+    await must(!/Played under/.test(check) && hud === rulesName(live), 'the shared fight under the current rules after the switch (' + check + '; HUD ' + hud + ')');
+    await page.evaluate(() => { location.hash = '#rules'; });
+    await opens(page, '#digest .vstat', 'RULES with its digest checked');
+    await must(await text(page, '#hud-rules') === rulesName(live) && !!(await page.$('#digest .vstat-pass')), 'RULES on ' + rulesName(live) + ', the manifest\'s digest (' + (await text(page, '#digest')).slice(0, 140) + ')');
+    await page.evaluate(() => { location.hash = '#practice/kicker-v1/' + 'ab'.repeat(32); });
+    await opens(page, '#planner', 'a new fight');
+    await must(await page.locator('#planner .act-btn').count() === live.submitted_action_ids.length && await text(page, '#hud-rules') === rulesName(live), 'a new fight with the moves of ' + rulesName(live));
+  }, { context: { viewport: { width: 1600, height: 900 } } });
+  // The practice record is one per browser (AUD-033): a tab that read it
+  // before the other tab saved erases nothing when it saves itself, a fight
+  // or a step (a name typed).
+  await step('practice-two-tabs', async (page, base) => {
+    await go(page, base, '#practice', '#pr-ladder');
+    const other = await page.context().newPage(), errors = [];
+    other.on('pageerror', e => errors.push(e.message));
+    const stored = () => page.evaluate(() => JSON.parse(localStorage.getItem('qdojo.practice.v1') || 'null'));
+    const fights = (rec, npc) => Object.values((rec && rec.rules) || {}).reduce((n, m) => n + (m[npc] ? m[npc].w + m[npc].l + m[npc].d : 0), 0);
+    await go(other, base, '#practice/jabber-v1/' + 'cd'.repeat(32), '#planner');
+    await fightOut(other);
+    await go(page, base, '#practice/kicker-v1/' + 'ab'.repeat(32), '#planner');
+    await fightOut(page);
+    let rec = await stored();
+    await must(fights(rec, 'jabber-v1') === 1 && fights(rec, 'kicker-v1') === 1 && rec.seen.length === 2, 'a fight recorded in the first tab keeping the one the other tab recorded (' + JSON.stringify(rec) + ')');
+    await go(other, base, '#practice', '#pr-ladder');
+    await other.fill('#my-name', 'TWO');
+    rec = await stored();
+    await must(fights(rec, 'jabber-v1') === 1 && fights(rec, 'kicker-v1') === 1 && rec.steps.named, 'a name typed in the other tab keeping both fights (' + JSON.stringify(rec) + ')');
+    await must(!errors.length, 'no page error in the other tab: ' + errors.join(' | '));
   });
   await step('practice-no-storage', async (page, base) => {
     await page.addInitScript(() => { Object.defineProperty(window, 'localStorage', { get() { throw new Error('blocked'); } }); });
@@ -543,9 +929,12 @@ async function main() {
   // The same page under candidate 3 (eight moves): the manifest names that
   // ruleset and its artifact is the embedded copy, so nothing 404s.
   async function asCandidate3(page) {
-    const L = require(path.join(WEB, 'combat/logic.js'));
     require(path.join(WEB, 'combat/ruleset.js'));
-    const rules = globalThis.QDojoRulesets.find(r => r.semantic_version === 'combat-v1-candidate-3');
+    await asRuleset(page, globalThis.QDojoRulesets.find(r => r.semantic_version === 'combat-v1-candidate-3'));
+  }
+  // The sample's manifest names these rules, and the export serves their artifact.
+  async function asRuleset(page, rules) {
+    const L = require(path.join(WEB, 'combat/logic.js'));
     const digest = await L.rulesetDigest(rules, L.defaultSha256());
     const manifest = Object.assign(readJson(path.join(SAMPLE, 'manifest.json')), { ruleset_digest: digest, semantic_version: rules.semantic_version });
     await page.route(/\/data\/combat\/v1\/sample\/manifest\.json$/, r => r.fulfill({ json: manifest }));
@@ -651,6 +1040,27 @@ async function main() {
     await still(page);
     const v = await deckView(page);
     await must(v.pinned && v.order && !v.bad.length, 'pinned again with the deck on screen after turning back upright (' + v.bad.join(', ') + ')');
+  }, { context: phoneCtx(390, 844, true) });
+  // The arena coming online under other rules while a round is open on a
+  // phone (practice-takeover-open): the screen is drawn again in place, the
+  // deck with a note on the fight's rules, and the page lands on that deck
+  // once more, every control on screen and the moves typed still there.
+  await step('practice-phone-takeover', async (page, base) => {
+    await returning(page);
+    const goLive = await liveUnder(page, takeoverRules());
+    await go(page, base, '#practice/jabber-v1/' + 'ab'.repeat(32), '#planner');
+    await page.evaluate(() => document.fonts.ready);
+    await still(page);
+    for (const a of ['3', '3', '3', '1', '3', '3']) await page.tap('#planner .act-btn[data-a="' + a + '"]');
+    await page.tap('#fight');
+    await page.waitForFunction(() => /ROUND 2/.test((document.querySelector('#planner h3') || {}).textContent || ''));
+    await still(page);
+    for (const a of ['3', '0', '1']) await page.tap('#planner .act-btn[data-a="' + a + '"]');
+    await goLive();
+    await opens(page, '#pr-rules', 'the open fight after the switch with a note on its rules');
+    await still(page);
+    const v = await deckView(page);
+    await must(v.pinned && !v.bad.length && v.filled === 3 && v.round === 'ROUND 2/3', 'the deck of round 2 on screen with its three moves after the switch (' + v.bad.join(', ') + '; ' + v.filled + ' filled, ' + v.round + ')');
   }, { context: phoneCtx(390, 844, true) });
   // Leaving a playback early on a phone (AUD-036 review), motion on, 390 x 844.
   // ▶| while a round plays back lands on the deck at once, as playing to the
@@ -768,6 +1178,17 @@ async function main() {
     await must(/404/.test(await text(page, '.screen-title')) && /no-such-screen/.test(await text(page, '.lost')), 'a 404 screen naming the route');
     await must(page.url().endsWith('#no-such-screen'), 'no silent jump to another screen');
   });
+  // A link with a broken % escape (cut short, or altered) still gets its
+  // screen's answer: a share link is refused with a reason (AUD-034), an
+  // unknown screen named.
+  await step('malformed-link', async (page, base) => {
+    await page.goto(base + '#practice/jabber-v1/' + 'ab'.repeat(32) + '/p1.%E0%A4%A');
+    await opens(page, '#share-bad', 'the broken share link to be refused');
+    await must(/incomplete/.test(await text(page, '#share-bad')), 'the broken share link refused with a reason');
+    await page.goto(base + '#%');
+    await opens(page, '.lost', 'a 404 screen for "#%"');
+    await must(/called %\./.test(await text(page, '.lost')), 'the 404 screen naming "%"');
+  });
   // Network wording comes from deployment.kind; no screen carries test-bench
   // words of its own (the SAMPLE badge and footer line are the one exception,
   // and this run is on the sample).
@@ -837,6 +1258,48 @@ async function main() {
     await must(/docs\/beta\.md#3-entry-policy-and-eligibility$/.test(await page.getAttribute('#entry-status a[href*="beta.md"]', 'href')), 'the panel links the entry policy');
     await shot(page, 'join');
   });
+  // A closed arena's panel says it updates when entry opens: the next poll
+  // repaints it from the read API (sample served as live, API mocked, the
+  // 30 s poll fired by the page clock), without reloading the page. A poll
+  // whose report did not change leaves the panel alone: the focus and a
+  // selection in it (the join command, for copying) stay.
+  await step('join-poll', async (page, base) => {
+    const manifest = readJson(path.join(SAMPLE, 'manifest.json'));
+    let joinOpen = false;
+    await page.clock.install();
+    await page.route(/\/data\/combat\/v1\/(?!sample\/)/, r => r.continue({ url: r.request().url().replace('/data/combat/v1/', '/data/combat/v1/sample/') }));
+    await page.route(/\/api\/v1\//, r => {
+      const p = new URL(r.request().url()).pathname;
+      if (p.endsWith('/status')) return r.fulfill({ json: { schema: 'qdojo.combat.api.status.v1', network_id: manifest.network_id, join_enabled: joinOpen } });
+      if (p.endsWith('/join') && joinOpen) return r.fulfill({ json: { schema: 'qdojo.combat.api.join.v1', enabled: true, ruleset_digest: manifest.ruleset_digest, outside_fighters: 0, limits: { max_outside_fighters: 8, grant_qu: 100000 } } });
+      return r.fulfill({ status: 404, json: { schema: 'qdojo.combat.api.error.v1', error: { status: 404, code: 'not_found' } } });
+    });
+    await go(page, base, '#join', '#planner-src');
+    await page.waitForFunction(() => /CLOSED/.test((document.querySelector('#entry-status h3') || {}).textContent || ''), null, { timeout: 8000 });
+    await page.evaluate(() => { window.e2eSamePage = true; });
+    // A poll that finds the same report: it asks the API again (and the join endpoint when open).
+    const poll = async () => {
+      const asked = [page.waitForResponse(r => r.url().endsWith('/api/v1/status'))].concat(joinOpen ? [page.waitForResponse(r => r.url().endsWith('/api/v1/join'))] : []);
+      await page.clock.fastForward(30000);
+      await Promise.all(asked);
+      await page.waitForTimeout(300);
+    };
+    const select = sel => page.evaluate(sel => { const r = document.createRange(); r.selectNodeContents(document.querySelector(sel)); getSelection().removeAllRanges(); getSelection().addRange(r); return String(getSelection()); }, sel);
+    await page.focus('#entry-status a[href*="beta.md"]');
+    await poll();
+    await must(await page.evaluate(() => !!document.activeElement.closest('#entry-status') && /ENTRY POLICY/.test(document.activeElement.textContent)), 'the focus kept on the panel\'s link after a poll with the same report');
+    const next = await select('#entry-status .entry-next');
+    await poll();
+    await must(await page.evaluate(() => String(getSelection())) === next, 'a selection in the panel kept after a poll with the same report');
+    joinOpen = true;
+    await page.clock.fastForward(30000);
+    const opened = await page.waitForFunction(() => /ENTRY ON THIS ARENA: OPEN/.test(document.querySelector('#entry-status h3').textContent), null, { timeout: 8000 }).then(() => true, () => false);
+    await must(opened, 'the next poll repainting the panel as OPEN (it says: ' + await text(page, '#entry-status h3') + ')');
+    await must(await page.evaluate(() => window.e2eSamePage === true), 'the same page, not reloaded');
+    const cmd = await select('#entry-status pre.code');
+    await poll();
+    await must(/qdojo combat join/.test(cmd) && await page.evaluate(() => String(getSelection())) === cmd, 'the join command still selected after a poll with the same report');
+  });
   await step('redirect', async (page, base) => {
     await page.goto(base + 'combat.html#rules');
     await page.waitForSelector('#digest');
@@ -851,6 +1314,7 @@ async function main() {
     const html = await page.evaluate(() => { const c = document.documentElement.cloneNode(true); c.querySelectorAll('script').forEach(n => n.remove()); return c.outerHTML; });
     const bad = [];
     if (/NEW CHAMPION/.test(html)) bad.push('NEW CHAMPION');
+    if (/class="finale"/.test(html)) bad.push('the title finale (only a title change has one)');
     if (/rbadge-(ko|hp|draw|timeout)\b/.test(html)) bad.push('an outcome badge');
     if (/class="beat">BEAT</.test(html)) bad.push('an X BEAT Y line');
     for (const t of labels) if (html.includes(t.replace(/&/g, '&amp;'))) bad.push('"' + t + '"');
@@ -918,17 +1382,124 @@ async function main() {
     await page.waitForSelector('.result-panel');
     await must(await page.locator('table.beats').count() === 1, 'REVEAL RESULT NOW shows the beat table');
   }, { context: spoilerCtx({ reducedMotion: 'reduce' }) });
-  if (facts.forfeit) await step('spoiler-free-forfeit', async (page, base) => {
-    await spoilerInit(page);
-    await go(page, base, '#fight/' + facts.forfeit.fight_id, '.stage');
-    const lab = await labelOf(page, facts.forfeit.fight_id);
-    if (!lab.rounds) {
-      await must(/TIMEOUT|FORFEIT|DOUBLE FAULT|VOID/.test(await text(page, '.result-panel')) && /nothing to spoil|no fight to spoil/i.test(await text(page, '.result-panel')), 'a forfeit before any round shows its result and says why');
-    } else {
-      await must(await page.locator('.result-panel').count() === 0, 'a forfeit after played rounds is held like any fight');
-      await page.click('[data-act=last]');
-      await must(/TIMEOUT/.test(await text(page, '.result-panel')), 'it reveals TIMEOUT at the end');
+  // A forfeit before any round has nothing to spoil: its result shows at once
+  // and says why. One after played rounds is held like any fight. Both kinds
+  // are in the sample; a release check fails if one goes missing.
+  for (const [name, rp] of [['spoiler-free-forfeit', facts.forfeitUnplayed], ['spoiler-free-forfeit-played', facts.forfeitPlayed]]) {
+    if (rp || required) await step(name, async (page, base) => {
+      await must(rp, 'a FORFEIT replay ' + (name.endsWith('played') ? 'after played rounds' : 'before any round') + ' in the sample');
+      await spoilerInit(page);
+      await go(page, base, '#fight/' + rp.fight_id, '.stage');
+      if (!rp.rounds.length) {
+        await must(await page.locator('.result-hold').count() === 0, 'nothing held');
+        await must(/TIMEOUT|FORFEIT|DOUBLE FAULT|VOID/.test(await text(page, '.result-panel')) && /no fight to spoil/i.test(await text(page, '.result-panel')), 'a forfeit before any round shows its result and says why');
+      } else {
+        await must(await page.locator('.result-panel').count() === 0, 'a forfeit after played rounds is held like any fight');
+        await page.click('[data-act=last]');
+        await must(/TIMEOUT/.test(await text(page, '.result-panel')), 'it reveals TIMEOUT at the end');
+      }
+      return 'fight ' + rp.fight_id + ', ' + rp.rounds.length + ' round(s)';
+    }, { context: spoilerCtx() });
+  }
+  // A #fight/<id>/spoilerfree link hides that replay for a visitor who keeps
+  // spoilers shown: both SPOILERS chips say HIDDEN, and the footer one reveals
+  // it. From then on the chips are the visitor's own setting (the address
+  // drops /spoilerfree): each click switches it, also once the result is on
+  // the page, for a visitor who keeps spoilers hidden too.
+  if (facts.settledRanked) await step('spoiler-free-link', async (page, base) => {
+    const id = String(facts.settledRanked.fight_id);
+    const chips = () => page.$$eval('[data-spoil-toggle], #btn-spoil', bs => bs.map(b => b.textContent + '/' + b.getAttribute('aria-pressed')));
+    const both = async (word, what) => { const c = await chips(); await must(c.length === 2 && c.every(x => x === 'SPOILERS: ' + word + '/' + (word === 'HIDDEN')), what + ' (got ' + c.join(', ') + ')'); };
+    const setting = () => page.evaluate(() => localStorage.getItem('qdojo.spoilers'));
+    await go(page, base, '#fight/' + id + '/spoilerfree', '.stage');
+    await must(await page.locator('.result-hold').count() === 1 && await page.locator('.result-panel').count() === 0, 'RESULT HIDDEN on the link');
+    await both('HIDDEN', 'both SPOILERS chips saying HIDDEN');
+    await must(await setting() === null, 'the visitor\'s own setting unchanged');
+    await page.click('#btn-spoil');
+    await page.waitForSelector('.result-panel', { timeout: 8000 });
+    await must(await text(page, '#btn-spoil') === 'SPOILERS: SHOWN', 'the footer chip then saying SHOWN');
+    for (const [word, stored] of [['HIDDEN', 'hide'], ['SHOWN', 'show']]) {
+      await page.click('#btn-spoil');
+      await page.waitForFunction(w => document.querySelector('#btn-spoil').textContent === 'SPOILERS: ' + w, word, { timeout: 8000 }).catch(() => {});
+      await both(word, 'a click on the revealed replay switching both chips to ' + word);
+      await must(await setting() === stored && await page.locator('.result-panel').count() === 1, 'the setting stored as ' + stored + ', the watched result still shown');
     }
+    await must(await page.evaluate(() => location.hash) === '#fight/' + id, 'the address without /spoilerfree once the visitor chose');
+    // A visitor who keeps spoilers hidden, on the link to a fight already watched.
+    await page.evaluate(id => { localStorage.setItem('qdojo.spoilers', 'hide'); localStorage.setItem('qdojo.spoilers.seen', JSON.stringify([id])); }, id);
+    await go(page, base, '#results', '.feed-held');
+    await go(page, base, '#fight/' + id + '/spoilerfree', '.result-panel');
+    await both('HIDDEN', 'both chips saying HIDDEN on the link to a watched fight');
+    await page.click('#btn-spoil');
+    await page.waitForFunction(() => document.querySelector('#btn-spoil').textContent === 'SPOILERS: SHOWN', null, { timeout: 8000 }).catch(() => {});
+    await both('SHOWN', 'a click there switching both chips to SHOWN');
+    await must(await setting() === 'show', 'the setting stored as show');
+    await go(page, base, '#results', '.feed-row');
+    await must(await page.locator('.feed-held').count() === 0, 'the results list then holding nothing, as the chip said');
+  }, { context: spoilerCtx() });
+  // A series score counts every fight of the series: with spoilers hidden the
+  // replay header shows it only once none of them is held, so revealing the
+  // first fight gives nothing away about the others (AUD-037).
+  for (const [name, series] of [['spoiler-free-duel-series', facts.duelSeries], ['spoiler-free-cup-series', facts.cupSeries]]) {
+    if (series) await step(name, async (page, base) => {
+      const ids = series.fights.map(String), score = /\d\s*–\s*\d/;
+      await spoilerInit(page);
+      await go(page, base, '#fight/' + ids[0], '#series-slot a');
+      await must(!score.test(await text(page, '#series-slot')), 'no series score on a held fight');
+      await page.click('[data-reveal-replay]');
+      await page.waitForSelector('#db-fold');
+      await page.waitForTimeout(300);
+      await must(!score.test(await text(page, '#series-slot')), 'no series score after revealing one fight while the rest of the series is held (' + await text(page, '#series-slot') + ')');
+      await page.evaluate(seen => localStorage.setItem('qdojo.spoilers.seen', JSON.stringify(seen)), ids);
+      await page.reload();
+      await page.waitForFunction(re => new RegExp(re).test((document.querySelector('#series-slot') || {}).textContent || ''), score.source, { timeout: 8000 });
+    }, { context: spoilerCtx() });
+  }
+  // A fight with no round played shows its result at once (nothing to
+  // spoil), so it counts as watched: a series it belongs to (simulated: the
+  // duel series with that fight added) shows its score once the rest of the
+  // series is watched, and the results list shows its row.
+  if (facts.duelSeries && facts.forfeitUnplayed) await step('spoiler-free-series-forfeit', async (page, base) => {
+    const fought = String(facts.duelSeries.fights[0]), unplayed = String(facts.forfeitUnplayed.fight_id), score = /\d\s*–\s*\d/;
+    const doc = readJson(path.join(SAMPLE, 'duels.json'));
+    const duel = Object.assign({}, doc.duels.find(d => d.fights.includes(fought)), { fights: [fought, unplayed] });
+    await page.route(/\/duels\.json$/, r => r.fulfill({ json: Object.assign({}, doc, { duels: [duel].concat(doc.duels.filter(d => d.contest_id !== duel.contest_id)) }) }));
+    // The next replay's own screen, not the one still showing.
+    const fight = async (id, sel) => {
+      await page.goto(base + '#fight/' + id);
+      await page.waitForFunction(t => (document.querySelector('#view .screen-title') || {}).textContent === t, 'FIGHT #' + id, { timeout: 15000 });
+      await page.waitForSelector(sel, { timeout: 15000 });
+    };
+    await spoilerInit(page);
+    await fight(fought, '#series-slot a');
+    await page.click('[data-reveal-replay]');
+    await page.waitForSelector('#db-fold');
+    await page.waitForTimeout(300);
+    await must(!score.test(await text(page, '#series-slot')), 'no series score while its unplayed fight is unseen');
+    await fight(unplayed, '.result-panel');
+    await must(/no fight to spoil/i.test(await text(page, '.result-panel')), 'the unplayed fight shown at once');
+    await fight(fought, '#series-slot a');
+    const shown = await page.waitForFunction(re => new RegExp(re).test(document.querySelector('#series-slot').textContent), score.source, { timeout: 8000 }).then(() => true, () => false);
+    await must(shown, 'the series score once every fight of it is watched (' + await text(page, '#series-slot') + ')');
+    await go(page, base, '#results', '.feed-row');
+    const row = await page.$$eval('.feed-row', (lis, id) => lis.filter(li => li.querySelector('a.feed-id[href="#fight/' + id + '"]')).map(li => li.classList.contains('feed-held')), unplayed);
+    await must(row.length === 1 && !row[0], 'the results list showing the unplayed fight (rows: ' + JSON.stringify(row) + ')');
+  }, { context: spoilerCtx() });
+  // A title fight where the belt changed hands (simulated: the sample has no
+  // title fight) holds its NEW CHAMPION finale out of the page, not just out
+  // of sight, until the end: a held title defence and a held title change
+  // look alike (AUD-037).
+  if (facts.decidedRanked) await step('spoiler-free-title', async (page, base) => {
+    const rp = facts.decidedRanked, id = String(rp.fight_id), winner = rp.result.winner;
+    await page.route(new RegExp('/fights/' + id + '\\.json$'), r => r.fulfill({ json: Object.assign(readJson(path.join(SAMPLE, 'fights', id + '.json')), { title_fight: true, new_champion: rp.fighters[winner].fighter_id }) }));
+    await spoilerInit(page);
+    await go(page, base, '#fight/' + id, '.stage');
+    await must(/TITLE FIGHT/.test(await text(page, '.vsline')), 'a title fight');
+    const bad = await outcomeLeak(page, []);
+    await must(!bad.length && !(await page.$('.finale')), 'no title outcome in the DOM mid-replay, found ' + bad.join(', '));
+    await page.click('[data-act=last]');
+    await page.waitForSelector('.finale.on', { timeout: 8000 });
+    await must(await text(page, '.finale b') === 'NEW CHAMPION!', 'the finale at the end');
   }, { context: spoilerCtx() });
 
   // ---- reduced motion: the same information, nothing moving ----

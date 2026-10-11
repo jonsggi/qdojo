@@ -165,3 +165,64 @@ test('the record: once per fight, per ruleset, ladder order, best result, bad da
   const odd = P.parseProgress(JSON.stringify({ v: 1, rules: { 'combat-v1-candidate-3': { 'jabber-v1': { w: -1, l: 0, d: 0 }, 'nobody': { w: 1, l: 0, d: 0 } } }, seen: [1, 'ok'] }));
   assert.deepEqual(odd.p.rules, {}); assert.deepEqual(odd.p.seen, ['ok']);
 });
+
+test('wasted power on a move that became EXHAUSTED is not blamed on the opponent', () => {
+  const RECOVER = { actions: [5, 5, 5, 5, 5, 5], power_slot: -1 };
+  for (const rules of RS) {
+    // KICK on every beat, the power strike on the sixth: by then the kick is unaffordable.
+    const s = play(rules, 'turtle-v1', [{ actions: [1, 1, 1, 1, 1, 1], power_slot: 5 }, RECOVER, RECOVER]);
+    const t = s.rounds[0].result.beats[5].a;
+    assert.ok(t.effective === L.ID.EXHAUSTED && t.reasons.includes('POWER_WASTED'), rules.semantic_version + ': the sixth kick is EXHAUSTED with its power wasted');
+    const mine = P.debrief(s.rounds, s.outcome, { rules, mySide: 'A', names: { A: 'YOU', B: 'TURTLE' } }).causes.find(c => c.kind === 'power');
+    assert.match(mine.text, /^You spent the power strike on an unaffordable KICK \(R1 B6\): the move became EXHAUSTED and was never made/, rules.semantic_version);
+    assert.doesNotMatch(mine.text, /stopped/, rules.semantic_version);
+    const replay = P.debrief(s.rounds, s.outcome, { rules, mySide: null, names: { A: 'ALPHA', B: 'TURTLE' } }).causes.find(c => c.kind === 'power' && c.side === 'A');
+    assert.match(replay.text, /^ALPHA spent the power strike on an unaffordable KICK \(R1 B6\)/, rules.semantic_version);
+    // A strike the opponent did stop still says so: a powered JAB into TURTLE's opening BLOCK.
+    const blocked = play(rules, 'turtle-v1', [{ actions: [0, 3, 3, 3, 3, 3], power_slot: 0 }, RECOVER, RECOVER]);
+    const stopped = P.debrief(blocked.rounds, blocked.outcome, { rules, mySide: 'A', names: { A: 'YOU', B: 'TURTLE' } }).causes.find(c => c.kind === 'power');
+    assert.match(stopped.text, /^You spent the power strike on a JAB that the BLOCK stopped \(R1 B1\)/, rules.semantic_version);
+  }
+});
+
+test('a replay a missed deadline stopped suggests practice for the side behind on HP, not corner A', () => {
+  const E = require('../combat/engine.js');
+  const roundsOf = (rules, plans) => {
+    let state = E.newFight(rules);
+    return plans.map(([A, B]) => { const res = E.resolveRound(rules, state, A, B); const r = { round_index: state.round_index, start: state, plans: { A, B }, result: res }; state = res.end; return r; });
+  };
+  const plan = actions => ({ actions, power_slot: -1 });
+  const names = { A: 'ALPHA', B: 'BRAVO' };
+  for (const rules of RS) {
+    // Both sides are caught recovering; A is far ahead on HP when the deadline stops the fight.
+    const ahead = roundsOf(rules, [[plan([0, 5, 0, 0, 0, 0]), plan([5, 0, 5, 5, 5, 5])]]);
+    const end = ahead[0].result.end;
+    assert.ok(end.a.hp > end.b.hp, rules.semantic_version + ': A ahead');
+    const d = P.debrief(ahead, null, { rules, mySide: null, names, forfeit: 'TIMEOUT' });
+    assert.deepEqual(d.causes.filter(c => c.kind === 'punished').map(c => c.side), ['A', 'B'], 'both sides have the habit, A listed first');
+    assert.equal(d.practice.why, 'rehearse what BRAVO struggled with: punished', rules.semantic_version);
+    // A decided fight still follows its loser; with level HP, both sides.
+    assert.equal(P.debrief(ahead, { result: 'KO', winner: 'B' }, { rules, mySide: null, names }).practice.why, 'rehearse what ALPHA struggled with: punished');
+    const level = roundsOf(rules, [[plan([0, 5, 2, 2, 2, 2]), plan([5, 0, 2, 2, 2, 2])]]);
+    assert.equal(level[0].result.end.a.hp, level[0].result.end.b.hp);
+    assert.equal(P.debrief(level, null, { rules, mySide: null, names, forfeit: 'TIMEOUT' }).practice.why, 'rehearse what ALPHA struggled with: punished');
+  }
+});
+
+test('a stored ruleset named like an Object member stays an ordinary record', () => {
+  try {
+    const r = P.parseProgress(JSON.stringify({ v: 1, rules: { constructor: { 'jabber-v1': { w: 1, l: 0, d: 0 } } }, seen: [] }));
+    assert.equal(r.damaged, false);
+    assert.equal(Object['jabber-v1'], undefined, 'nothing is written onto Object');
+    assert.deepEqual(r.p.rules.constructor, { 'jabber-v1': { w: 1, l: 0, d: 0, best: null } });
+    assert.deepEqual(JSON.parse(JSON.stringify(r.p)).rules, { constructor: { 'jabber-v1': { w: 1, l: 0, d: 0, best: null } } }, 'kept by the next save');
+    assert.deepEqual(P.otherRulesets(r.p, C3.semantic_version), [{ rules: 'constructor', fights: 1 }]);
+    // A result recorded under such a name lands in its own record as well.
+    const p = P.emptyProgress();
+    P.recordResult(p, Object.assign(play(C3, 'kicker-v1', FULL_PLANS), { rules_version: 'constructor' }), 'k1');
+    assert.equal(Object['kicker-v1'], undefined);
+    assert.equal(Object.keys(p.rules.constructor).join(), 'kicker-v1');
+  } finally {
+    delete Object['jabber-v1']; delete Object['kicker-v1'];
+  }
+});
