@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from qdojo import study
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -98,14 +100,97 @@ def test_cohort_report_keeps_drop_offs_in_the_denominator(tmp_path):
     assert m["recruited"] == 4 and m["started"] == 3
     assert m["first_fight"]["count"] == 2 and m["first_fight"]["of"] == 3
     assert m["first_fight_within_target"]["count"] == 1 and m["first_fight_within_target"]["of"] == 3
-    assert m["minutes_to_first_fight"] == {"median": 16.5, "max": 25.0}
+    # P03 dropped out: counted as over, so the median is P02's 25 minutes and the max is over.
+    assert m["minutes_to_first_fight"] == {"median": 25.0, "max": "over", "of": 3}
     assert m["drop_offs"] == {"install: python version": 1}
-    assert m["second_submission"]["count"] == 1 and m["explained_improvement"]["count"] == 1
+    for k in ("second_submission", "returned_week_2", "explained_improvement"):
+        assert (m[k]["count"], m[k]["of"]) == (1, 3), k
     assert m["survey"]["clarity"]["median"] == 3.0
     assert r["phases"]["after-correction"]["first_fight"]["count"] == 1
     assert "P01" not in json.dumps(r)
     # The committed template parses with the same columns.
     assert study.cohort_report(study.read_csv(ROOT / "docs" / "fixtures" / "beta-cohort-template.csv"))["unknown_columns"] == []
+
+
+def _cohort(*rows):
+    return study.cohort_report(list(rows))["phases"]["main"]
+
+
+def _person(p, fight_min=None, assistance="none", **kw):
+    """A participant who started at 10:00 and reached a first fight `fight_min` minutes later (None: dropped out)."""
+    r = {"participant": p, "started_at": "2026-10-20T10:00", "assistance": assistance, **kw}
+    if fight_min is None:
+        r.setdefault("dropped_at_step", "install")
+        r.setdefault("drop_reason", "gave up")
+    else:
+        r["first_fight_at"] = f"2026-10-20T10:{fight_min:02d}"
+    return r
+
+
+def test_h3_counts_a_first_fight_within_target_only_without_hands_on_help():
+    """validation-protocol.md §3 H3: >= 50% within 10 minutes without hands_on help,
+    everyone who started in the denominator, dropouts counted as over."""
+    reached = [_person("P01", 5, "hands_on")] + [_person(f"P0{i}", 5) for i in range(2, 6)]
+    dropped = [_person(f"P{i:02d}") for i in range(6, 11)]
+    m = _cohort(*reached, *dropped)
+    assert (m["first_fight_within_target"]["count"], m["first_fight_within_target"]["of"]) == (4, 10)
+    assert m["first_fight_within_target"]["rate"] == 0.4                     # fails the 50% gate
+    assert m["first_fight_within_target_including_hands_on"]["count"] == 5
+    # The same log with the hands-on help given to a dropout instead passes: the report must tell them apart.
+    other = _cohort(*[_person(f"P0{i}", 5) for i in range(1, 6)], _person("P06", None, "hands_on"), *dropped[1:])
+    assert other["first_fight_within_target"]["rate"] == 0.5
+    assert other["first_fight_within_target_including_hands_on"]["count"] == 5
+    # Spelling of the help level does not matter.
+    assert _cohort(_person("P01", 5, "Hands-On"))["first_fight_within_target"]["count"] == 0
+    # 4 reach a fight (2 with hands-on help), 6 drop out: H3 is 2 of 10 and the median lands on a dropout.
+    m = _cohort(_person("P01", 3, "hands_on"), _person("P02", 4), _person("P03", 6, "hands_on"), _person("P04", 7),
+                *[_person(f"P{i:02d}") for i in range(5, 11)])
+    assert m["first_fight_within_target"]["count"] == 2
+    assert m["minutes_to_first_fight"] == {"median": "over", "max": "over", "of": 10}
+    # Exactly half within target: the lower median is a participant's own time, not an average with a dropout.
+    m = _cohort(*[_person(f"P0{i}", 9) for i in range(1, 6)], *[_person(f"P{i:02d}") for i in range(6, 11)])
+    assert m["first_fight_within_target"]["rate"] == 0.5 and m["minutes_to_first_fight"]["median"] == 9.0
+
+
+def test_h4_to_h6_count_everyone_who_started():
+    """Every participant counts in the denominator of every rate from the moment
+    they start (validation-protocol.md §3), and so in the count when they meet it."""
+    fought = [_person(f"P0{i}", 5, second_submission="y", returned_week_2="y", explained_improvement="y")
+              for i in range(1, 5)]
+    m = _cohort(*fought, *[_person(f"P{i:02d}") for i in range(5, 11)])
+    for k in ("second_submission", "returned_week_2", "explained_improvement"):
+        assert m[k] == {"count": 4, "of": 10, "rate": 0.4, "rate_95ci": [0.168, 0.687]}, k
+    # An improvement shown against an NPC in practice counts though that participant never reached the arena.
+    m = _cohort(_person("P01", 5, explained_improvement="y"), _person("P02", explained_improvement="y"), _person("P03"))
+    assert (m["explained_improvement"]["count"], m["explained_improvement"]["of"]) == (2, 3)
+
+
+def test_a_timestamp_the_report_cannot_read_stops_it(tmp_path):
+    bad = [
+        {**_person("P01"), "first_fight_at": "2026-10-20T10:07+02:00"},          # offset on one side only
+        {**_person("P02"), "first_fight_at": "10:09"},                            # a time without a date
+        {**_person("P03"), "first_fight_at": "2026-10-19T10:05"},                 # before the start
+        {"participant": "P04", "first_fight_at": "2026-10-20T10:05"},              # never started
+        {**_person("P05"), "started_at": "20.10.2026 10:00"},                     # a locale date
+    ]
+    with pytest.raises(study.CohortLogError) as exc:
+        study.cohort_report(bad)
+    for p in ("P01", "P02", "P03", "P04", "P05"):
+        assert p in str(exc.value)
+    # Offsets on both sides are fine, and a blank cell is an empty one: a dropout keeps its reason.
+    m = _cohort({"participant": "P01", "started_at": "2026-10-20T10:00Z", "first_fight_at": "2026-10-20T12:07+02:00"},
+                {**_person("P02"), "first_fight_at": "  "})
+    assert m["first_fight"]["count"] == 1 and m["first_fight_within_target"]["count"] == 1
+    assert m["drop_offs"] == {"install: gave up": 1}
+    # The script says what is wrong instead of printing a miscounted report.
+    path = tmp_path / "cohort.csv"
+    with open(path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=study.COHORT_FIELDS, extrasaction="ignore")
+        w.writeheader()
+        w.writerows(bad[1:2])
+    out = subprocess.run([sys.executable, str(ROOT / "scripts" / "beta-study.py"), "cohort", str(path)],
+                         capture_output=True, text=True, timeout=120)
+    assert out.returncode == 2 and "P02" in out.stderr and "'10:09'" in out.stderr and out.stdout == ""
 
 
 def test_adaptation_to_a_style_switch():

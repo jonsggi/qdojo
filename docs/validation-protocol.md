@@ -114,7 +114,14 @@ tested in `packages/qdojo/tests/test_study.py`:
 - **Scoring** (`score`): answers as CSV `reviewer,item,causes`; prints the
   identified rate with its interval, the sorted reviewer scores, per-category
   and reduced-motion results, and the H1 gate.
-- **Cohort report** (`cohort`): the H2–H6 and H8 aggregates per phase.
+- **Cohort report** (`cohort`): the H2–H6 and H8 aggregates per phase,
+  everyone who started in the denominator (and in the count, when they meet
+  the measure) of every rate. H3 counts a first fight within the target only
+  without `hands_on` help; the count including it is printed beside it. The
+  minutes to a first fight are over everyone who started, a dropout counting
+  as `over`. A timestamp it cannot read (not `YYYY-MM-DDTHH:MM`, a UTC offset
+  on one side only, a first fight before the start) stops the report and
+  names the participant and column.
 - **Adaptation** (`adaptation`): H7 from the read model's per-fighter results
   against the switching bot.
 - **Arena participation** (`GET /api/v1/community`, [beta.md](beta.md) §7):
