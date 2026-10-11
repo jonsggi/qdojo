@@ -33,7 +33,7 @@ from pathlib import Path
 from . import evaluate as E
 from . import export, invariants, join, llm_planner, store
 from .bot import Bot, Budget, planner_chooser, policy_chooser
-from .chainsim import FeeModel, SimChain, SimQubicClient
+from .chainsim import FeeModel, Pending, SimChain, SimQubicClient
 from .codec import Mode, Op, asset_name_u64
 from .devnet import PROFILES, Devnet, DevnetClient, roles
 from .nft import QDOJO, NFTPolicy, SimFighterNFTs
@@ -343,6 +343,8 @@ class Arena:
         self.frozen = self._load_frozen(nft_frozen, nft_frozen_url)
         self.labels: dict[bytes, dict] = {}
         self.bots: dict[bytes, Bot] = {}
+        # fighter -> (new owner, its registration in flight, the failure reasons logged so far)
+        self._registering: dict[bytes, tuple[bytes, Pending, frozenset[str]]] = {}
         self.cup_every, self.duel_every, self.market_every = cup_every, duel_every, market_every
         self.tier_stake = self.net.m.tiers[min(self.net.m.tiers)]
         self.market = Market(self, self._load("market.json", None))
@@ -661,7 +663,10 @@ class Arena:
 
     def _maybe_duel(self):
         """Now and then an idle duel bot challenges another. The challenger's
-        bot decides, under its own budget and duel filters (AUD-019)."""
+        bot decides, under its own budget and duel filters (AUD-019). A pair
+        whose target's filters would decline the offer is not proposed: the
+        offer would only hold the challenger's stake until it expired (about
+        120 a day live before, 2026-10-11)."""
         if self.w.tick % self.duel_every:
             return
         c = self.w.contract
@@ -670,11 +675,17 @@ class Arena:
         self.rng.shuffle(pairs)
         fmt = self.rng.choice([0, 1, 1, 2])
         stake = self._stake(EVENTS["duel_stake"][fmt])
-        for a, b in pairs[:6]:
+        tried = 0
+        for a, b in pairs:
+            if self.bots[b].declines_duel(a, c.fighters[a].lifetime, stake, c.fighters[b].lifetime):
+                continue
             why = self.bots[a].challenge(b, c.fighters[b].lifetime, stake, fmt, self.w.tick + 200)
             if why is None:
                 self.log(f"tick {self.w.tick}: duel challenge {self.labels[a]['label']} -> "
                          f"{self.labels[b]['label']} ({stake} QU)")
+                return
+            tried += 1
+            if tried == 6:
                 return
 
     def _maybe_market(self):
@@ -689,23 +700,49 @@ class Arena:
         """A house fighter that changed hands: its new owner registers it (the
         contract binds the new owner, operator = owner, auth_version + 1) and
         a new bot runs it for them. Rating, record and history stay with the
-        fighter (docs/nft.md §2)."""
+        fighter (docs/nft.md §2).
+
+        The registration is a transaction of the new owner's like any other,
+        through the chain on their own nonces: a collector's bots for the
+        fighters it already holds have moved those far past any count kept
+        here (a registration sent outside them was refused STALE for up to
+        1,200 ticks, 2026-10-11). The new bot starts once it is in. What is
+        due is read from the contract, not from which bot runs: a restart
+        while a registration is in flight (only an included one is in the
+        journal) builds the new owner's bot at once, and the registration is
+        sent again."""
         c = self.w.contract
         for fid, bot in list(self.bots.items()):
             owner = self.nfts.owner(fid)
-            if owner is None or owner == bot.wallet:
-                continue
             f = c.fighters.get(fid)
+            unregistered = owner is not None and f is not None and f.owner != owner
+            if owner is None or not unregistered and owner == bot.wallet:
+                self._registering.pop(fid, None)
+                continue
             if self.mirrored and self.w.balances.get(owner, 0) < 10**9:
                 self.w.mint(owner, 10**12)            # devnet QU for the bot that now runs for the new holder
-            if f is not None and f.owner != owner:
-                r = self.w.send(owner, Op.REGISTER_FIGHTER, fighter_id=fid, registry_version=1)
-                if not r.ok:
-                    self.log(f"tick {self.w.tick}: {self.labels[fid]['label']}: new owner's registration "
-                             f"refused ({r.code.name}); retrying next tick")
-                    continue
+            if unregistered:
+                self._register_for(fid, owner)
+                continue
+            self._registering.pop(fid, None)
             self._make_bot(fid)
             self.log(f"tick {self.w.tick}: {self.labels[fid]['label']} now runs for {owner.hex()[:12]}")
+
+    def _register_for(self, fid: bytes, owner: bytes):
+        """Sends the new owner's RegisterFighter, or waits for the one in flight;
+        a refused or dropped one is sent again, each reason logged once."""
+        sent, logged = self._registering.get(fid), frozenset()
+        if sent is not None and sent[0] == owner:
+            r = self.chain.poll(sent[1])
+            if r is None:
+                return                                # not included yet
+            why, logged = "dropped" if r == "dropped" else f"refused ({r.code.name})", sent[2]
+            if why not in logged:
+                logged |= {why}
+                self.log(f"tick {self.w.tick}: {self.labels[fid]['label']}: new owner's registration {why}; "
+                         "sending it again")
+        self._registering[fid] = (owner, self.chain.send(owner, Op.REGISTER_FIGHTER, fighter_id=fid,
+                                                         registry_version=1), logged)
 
     def _reserve(self):
         if self.chain.fees is not None and (self.chain.reserve or 0) < RESERVE_FLOOR:

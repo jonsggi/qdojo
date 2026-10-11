@@ -5,6 +5,8 @@ import pytest
 
 from qdojo.combat import npcs
 from qdojo.combat.bot import Bot, BotStop, Budget, BudgetState, decide, policy_chooser
+from qdojo.combat.codec import Code, Op
+from qdojo.combat.contract import CallResult
 from qdojo.combat.devnet import Devnet
 from qdojo.combat.rules import candidate_1
 
@@ -149,3 +151,26 @@ def test_slow_planner_runs_in_the_background(tmp_path):
             break
     done = [x for x in net.world.contract.contests.values() if x.status == "DONE"]
     assert done and done[0].result["kind"] == "COMBAT"
+
+
+@pytest.mark.parametrize("op", [Op.COMMIT, Op.REVEAL], ids=lambda o: o.name)
+@pytest.mark.parametrize("code", [Code.STALE, Code.NONCE_CONFLICT], ids=lambda c: c.name)
+def test_a_commit_or_reveal_refused_for_its_nonce_goes_out_again(tmp_path, op, code):
+    """Two bots of one owner share its nonces; the chain can include the
+    later send first, and the earlier is refused STALE without effect. The
+    bot resends at once with a fresh nonce instead of giving the round up."""
+    net = Devnet(tmp_path / "net")
+    a = _bot(net, "alpha", npcs.mixed_v1, tmp_path)
+    b = _bot(net, "beta", npcs.mixed_v1, tmp_path)
+    send, refused = a.client.send, []
+
+    def refuse_once(o, amount=0, **fields):
+        if o is op and not refused:
+            refused.append(o)
+            return CallResult(code, int(o))                      # refused for its nonce: nothing applied
+        return send(o, amount, **fields)
+    a.client.send = refuse_once
+    _run(net, [a, b], 400)
+    done = [x for x in net.world.contract.contests.values() if x.status == "DONE"]
+    assert refused and done and all(x.result["kind"] == "COMBAT" for x in done)
+    assert not a.rejected

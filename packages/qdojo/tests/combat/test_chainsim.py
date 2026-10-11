@@ -127,6 +127,26 @@ def test_poll_semantics(tmp_path):
     assert chain.poll(r2) == "dropped"
 
 
+def test_a_settled_transaction_is_forgotten_keep_ticks_after_its_tick(tmp_path):
+    """A long-running arena held every transaction it ever saw (~0.9 kB each,
+    about 23 MB a day live, 2026-10-11). A settled one is kept KEEP_TICKS for
+    its sender to poll; one polled later still reads as settled-and-gone."""
+    w, chain, _, _, owners = _setup(tmp_path, n=1, latency=(1, 1), seed=1)
+    chain.KEEP_TICKS = 5
+    r = chain.send(owners[0], Op.WITHDRAW)
+    chain.advance()
+    chain.advance()                       # its tick: included
+    assert chain.poll(r).ok
+    later = chain.send(owners[0], Op.WITHDRAW)
+    for _ in range(5):
+        chain.advance()
+    assert r.tx_id in chain.txs           # five ticks after its own
+    chain.advance()
+    assert r.tx_id not in chain.txs and chain.poll(r) == "dropped"
+    assert chain.poll(later).ok           # younger ones stay
+    assert len(chain.txs) == 1 and len(chain.settled) == chain.KEEP_TICKS + 1
+
+
 def test_bots_play_a_cup_and_a_duel_on_the_simulated_chain(tmp_path):
     w, chain, _, bots, owners = _setup(tmp_path, n=6, latency=(1, 3), drop_rate=0.05, seed=11)
     cuppers, challenger, target = bots[:4], bots[4], bots[5]
@@ -152,5 +172,9 @@ def test_bots_play_a_cup_and_a_duel_on_the_simulated_chain(tmp_path):
     assert cup.status == "COMPLETE", "a cup of bots that check in should crown a champion"
     duels = [x for x in c.contests.values() if x.mode == 1]
     assert duels and duels[0].status == "DONE"
-    for b in bots:                                         # every spend settles eventually
-        assert all(s.returned is not None for s in b.bstate.spends if s.contest_or_offer.startswith("cup:"))
+    for b in bots:                                         # every spend settles, at what the contract paid
+        for s in b.bstate.spends:
+            if s.contest_or_offer.startswith(("cup:", "contest:")):
+                assert s.returned == b.client.spend_outcome(s.contest_or_offer, b.fighter_id)[1], (b.wallet, s)
+    champion = next(b for b in cuppers if b.fighter_id == cup.champion)
+    assert [s.returned for s in champion.bstate.spends if s.contest_or_offer.startswith("cup:")] != [2000]

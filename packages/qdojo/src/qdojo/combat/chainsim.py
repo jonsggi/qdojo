@@ -21,6 +21,7 @@ Also simulated here, never on a real network:
 """
 from __future__ import annotations
 
+import collections
 import random
 from dataclasses import dataclass
 
@@ -63,6 +64,11 @@ class Pending:
 
 
 class SimChain:
+    # A transaction is kept this many ticks after its tick, for its sender to
+    # poll (bots and the join inbox poll every tick): a long-running arena
+    # otherwise holds every transaction it ever saw, ~0.9 kB each.
+    KEEP_TICKS = 1200
+
     def __init__(self, world: World, seed: int = 0, latency: tuple[int, int] = (1, 3), drop_rate: float = 0.0,
                  fees: FeeModel | None = None, reserve: int | None = None):
         self.world = world
@@ -71,6 +77,7 @@ class SimChain:
         self.fees, self.reserve = fees, reserve
         self.txs: dict[int, Tx] = {}
         self.queue: dict[int, list[int]] = {}
+        self.settled: collections.deque[tuple[int, list[int]]] = collections.deque()   # (tick, its tx ids)
         self.next_id = 1
         self.burned = 0
         self.halted_ticks = 0
@@ -101,8 +108,11 @@ class SimChain:
         return self.submit(who, codec.encode_frame(op, nonce, fields), amount)
 
     def poll(self, receipt: Pending) -> CallResult | str | None:
-        """The included result, "dropped" once the target tick has passed without it, or None while pending."""
-        tx = self.txs[receipt.tx_id]
+        """The included result, "dropped" once the target tick has passed without it, or None while pending.
+        A transaction forgotten KEEP_TICKS after its tick reads as dropped."""
+        tx = self.txs.get(receipt.tx_id)
+        if tx is None:
+            return "dropped"
         if tx.status == "included":
             return tx.result
         if tx.status == "dropped":
@@ -146,6 +156,10 @@ class SimChain:
             else:
                 tx.result = w.raw(tx.who, tx.frame, tx.amount)
             tx.status = "included"
+        self.settled.append((w.tick, ids))
+        while self.settled[0][0] < w.tick - self.KEEP_TICKS:
+            for tx_id in self.settled.popleft()[1]:
+                del self.txs[tx_id]
         if halted or (self.fees is not None and not self._cost(self.fees.per_tick)):
             # The contract could not run this tick: no END_TICK. Its heartbeat
             # sees the gap when it next runs and voids unfinished work.
