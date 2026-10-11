@@ -309,6 +309,12 @@ class Bot:
         del self.inflight[purpose]
         return st, extra
 
+    def _forget(self, kinds: tuple, keep=None, also=None):
+        """Drops the receipts of rounds or check-ins that are over: they are
+        never polled again, and a long-running bot would hold every one."""
+        for p in [p for p in self.inflight if isinstance(p, tuple) and p[0] in kinds and p not in (keep, also)]:
+            del self.inflight[p]
+
     def step(self) -> str:
         """One observation/action cycle. Returns what it did."""
         try:
@@ -319,8 +325,7 @@ class Bot:
         if me is None:
             return "fighter not registered"
         self._drain_challenge()
-        self._drain_cup()
-        self._drain_duel()
+        joined = [m for m in (self._drain_cup(), self._drain_duel()) if m]
         drained = self._drain_entry()
         if drained is not None and "enter" in self.inflight:
             return drained                                  # still waiting: don't act on stale state
@@ -330,6 +335,9 @@ class Bot:
         if me["lock"] == "TOURNAMENT":
             return self._tournament_step(me, tick)
         if me["lock"] == "IDLE":
+            self._forget(("commit", "reveal", "checkin"))
+            if joined:
+                return joined[0]                            # this step's view predates it: act next step
             cooldown = int(me.get("cooldown_until") or 0)
             if tick < cooldown:                             # every paid entry would be rejected
                 return f"cooling down after a fault until tick {cooldown}"
@@ -359,18 +367,20 @@ class Bot:
         ok, why = decide(self.budget, self.bstate, day, tick, amount, self.tier, wallet, self.rules.digest.hex())
         return ok, why, day
 
-    def _drain_duel(self):
+    def _drain_duel(self) -> str | None:
         """Settle an in-flight duel acceptance, whatever the fighter's lock says
         now: once it is in, the fighter is in the duel, not idle, and a receipt
-        polled only after the duel can be long forgotten by the chain."""
+        polled only after the duel can be long forgotten by the chain.
+        Returns what was included, if anything."""
         st, spend = self._poll("duel")
         if st is None or st == "pending":
-            return
+            return None
         if st != "dropped" and st.code.name in ("OK", "DUPLICATE"):
             spend.contest_or_offer = f"contest:{st.data['contest_id']}"
         else:
             spend.returned = spend.stake
         self.bstate.save(self.bpath)
+        return None if st == "dropped" else f"duel accept {st.code.name}"
 
     def _maybe_accept_duel(self, me: dict, tick: int) -> str | None:
         if "duel" in self.inflight:
@@ -465,17 +475,19 @@ class Bot:
             return f"lost {lost} of {series} series to this challenger"
         return None
 
-    def _drain_cup(self):
+    def _drain_cup(self) -> str | None:
         """Settle an in-flight cup registration, whatever the fighter's lock
-        says now (once it is in, the fighter is in the cup, not idle)."""
+        says now (once it is in, the fighter is in the cup, not idle).
+        Returns what was included, if anything."""
         st, spend = self._poll("cup")
         if st is None or st == "pending":
-            return
+            return None
         if st == "dropped" or st.code.name not in ("OK", "DUPLICATE"):
             spend.returned = spend.stake
             self.bstate.save(self.bpath)
             if st != "dropped":
                 self.skip_cups.add(int(spend.contest_or_offer.split(":")[1]))
+        return None if st == "dropped" else f"cup entry {st.code.name}"
 
     def _maybe_join_cup(self, me: dict, tick: int) -> str | None:
         if "cup" in self.inflight:
@@ -504,10 +516,13 @@ class Bot:
     def _tournament_step(self, me: dict, tick: int) -> str:
         if me.get("active_fight"):
             return self._fight_step(me, tick)
+        self._forget(("commit", "reveal"))
         cup = me.get("cup") or {}
         pid = cup.get("pairing_id")
         if pid is None or cup.get("checked_in"):
+            self._forget(("checkin",))
             return "waiting in cup"
+        self._forget(("checkin",), keep=("checkin", cup["cup_id"], pid))
         if not cup["level_start"] <= tick < cup["level_start"] + cup["checkin_ticks"]:
             return "waiting for check-in"
         st, _ = self._poll(("checkin", cup["cup_id"], pid))
@@ -577,7 +592,7 @@ class Bot:
         # A spend whose transaction is in flight is not settled yet: a cup
         # registration not yet included reads as withdrawn ("refund") and would
         # be booked as its entry fee back, whatever the cup then paid.
-        flying = {id(extra) for _, extra in self.inflight.values()}
+        flying = {id(extra) for p, (_, extra) in self.inflight.items() if isinstance(p, str)}
         for s in self.bstate.spends:
             if s.returned is not None or s.contest_or_offer == "pending" or id(s) in flying:
                 continue
@@ -608,10 +623,12 @@ class Bot:
         if fight is None or fight["phase"] == "DONE":
             return "contest between fights"
         key = (self.client.network_id.hex(), self.client.contract_id.hex(), fight["fight_id"], fight["round_index"])
+        self._forget(("commit", "reveal"), keep=("commit", key), also=("reveal", key))
         rec = self.journal.get(key)
         slot = fight["slot_of"][self.fighter_id.hex()]
         if fight["phase"] == "COMMIT":
             if slot in fight["committed"]:
+                self.inflight.pop(("commit", key), None)
                 return "committed; waiting for the reveal window"
             if tick <= fight["start_tick"] or tick > fight["commit_last"]:
                 return "outside the commit window"
@@ -656,6 +673,7 @@ class Bot:
             return f"commit {status}" + (" (resent after a drop)" if st == "dropped" else "")
         if fight["phase"] == "REVEAL":
             if slot in fight["revealed"]:
+                self.inflight.pop(("reveal", key), None)
                 return "revealed; waiting for resolution"
             if rec is None:
                 raise BotStop("committed plan/salt missing from the journal; cannot reveal (no substitute)")

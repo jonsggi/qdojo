@@ -62,6 +62,8 @@ def test_bots_finish_fights_despite_latency_drops_and_reordering(tmp_path):
     # Drops and latency must not turn into faults: the bots resend in time.
     kinds = [x.result["kind"] for x in done]
     assert kinds.count("COMBAT") >= 0.9 * len(kinds), kinds
+    # A round's receipts are dropped once it is over: a long-running bot held every one (2026-10-11).
+    assert all(len(b.inflight) <= 3 for b in bots), [len(b.inflight) for b in bots]
 
 
 def test_a_dry_reserve_halts_the_contract_and_voids_unfinished_fights(tmp_path):
