@@ -1376,7 +1376,9 @@
   /* opts: { frames, ids: {A, B}, names: {A, B}, links: bool, replay (for labels),
    *         mySide (practice: explanations say YOU), autoplay,
    *         planRound (practice: the round being planned, shown on the last frame),
-   *         onEnd (called when playback runs to the last frame) } */
+   *         onEnd(how) (the replay came to rest on its last frame: how is 'played'
+   *         when playback ran there by itself, 'skipped' when the replay
+   *         controls or keys skipped or stepped there) } */
   function createPlayer(root, opts) {
     const frames = opts.frames, names = opts.names;
     let idx = 0, playing = false, timer = null, speed = 1;
@@ -1713,11 +1715,12 @@
       if (!playing) return;
       timer = setTimeout(() => {
         if (!root.isConnected) { stop(); return; }
-        if (idx >= frames.length - 1) { pause(); if (opts.onEnd) opts.onEnd(); return; }
+        if (idx >= frames.length - 1) { pause(); ended('played'); return; }
         seek(idx + 1, true);
         schedule();
       }, holdFor(frames[idx]));
     }
+    function ended(how) { if (idx === frames.length - 1 && opts.onEnd) opts.onEnd(how); }
     function start() {
       if (idx >= frames.length - 1) seek(0, true);
       playing = true; play.textContent = 'PAUSE'; play.setAttribute('aria-pressed', 'true');
@@ -1733,9 +1736,9 @@
         const act = b.dataset.act;
         if (act === 'play') toggle();
         if (act === 'first') { pause(); seek(0, false); }
-        if (act === 'last') { pause(); seek(frames.length - 1, false); }
+        if (act === 'last') { pause(); seek(frames.length - 1, false); ended('skipped'); }
         if (act === 'prev') { pause(); seek(idx - 1, false); }
-        if (act === 'next') { pause(); seek(idx + 1, true); }
+        if (act === 'next') { pause(); seek(idx + 1, true); ended('skipped'); }
         return;
       }
       const tr = e.target.closest('tr[data-i]');
@@ -1749,10 +1752,11 @@
       if (e.target.closest('select, input, textarea')) return;
       const inTable = !!e.target.closest('table.beats');
       let handled = true;
-      if (e.key === 'ArrowRight' || (inTable && e.key === 'ArrowDown')) { pause(); seek(idx + 1, true); }
+      // Keys in the beat table only move through it; elsewhere they skip like the buttons.
+      if (e.key === 'ArrowRight' || (inTable && e.key === 'ArrowDown')) { pause(); seek(idx + 1, true); if (!inTable) ended('skipped'); }
       else if (e.key === 'ArrowLeft' || (inTable && e.key === 'ArrowUp')) { pause(); seek(idx - 1, false); }
       else if (e.key === 'Home') { pause(); seek(0, false); }
-      else if (e.key === 'End') { pause(); seek(frames.length - 1, false); }
+      else if (e.key === 'End') { pause(); seek(frames.length - 1, false); if (!inTable) ended('skipped'); }
       else if (e.key === ' ' || e.key === 'k') { if (e.target.tagName === 'BUTTON' && e.key === ' ') return; toggle(); }
       else handled = false;
       if (handled) {
@@ -1765,7 +1769,7 @@
     if (opts.autoplay && motion()) start();
     // With motion off a replay opens on its result, unless that is a spoiler.
     else if (opts.autoplay && !held) seek(frames.length - 1, false);
-    return { stop, seek, start, pause, reveal() { reveal(); render(false); }, get held() { return held; }, get index() { return idx; }, frames };
+    return { stop, seek, start, pause, reveal() { reveal(); render(false); }, get held() { return held; }, get index() { return idx; }, get playing() { return playing; }, frames };
   }
 
   function stopPlayer() {
@@ -2284,13 +2288,25 @@
       (over ? debriefHtml(PR.debrief(s.rounds, s.outcome, { rules: R, mySide: 'A', names: { A: aName, B: npc.name } }), { A: aName, B: npc.name }, { frameOf: frameFinder(practiceFrames(s)), mySide: 'A' }) : '') +
       roundRecap(s) + sharePanelHtml(s));
     const frames = practiceFrames(s);
-    pinView = null;
+    pinView = null; pinPlayer = null;
     // On a pinned phone screen the page shows the replay while a round plays
-    // back, then goes back to the deck when it has played to the end.
-    const onEnd = () => { const v = pinView; if (v && v.kind === 'replay' && v.deck === $('#planner') && Math.abs(window.scrollY - v.y) < 2) showDeck(motion()); };
+    // back, then goes back to the deck: when it has played to the end (unless
+    // the player has scrolled meanwhile), and when the replay controls skip
+    // or step to its end. Focus on those controls goes along to the deck.
+    const onEnd = how => {
+      const v = pinView, f = document.activeElement;
+      if (how !== 'skipped' && !(v && v.kind === 'replay' && v.deck === $('#planner') && Math.abs(window.scrollY - v.y) < 2)) return;
+      if (showDeck(motion()) && f && f.closest && f.closest('#player .controls')) focusBeat();
+    };
     const player = track(createPlayer($('#player'), { frames, ids: { A: aId, B: 'npc:' + s.npc }, names: { A: aName, B: npc.name }, links: false, replay: {}, stageSeed: 'practice:' + s.npc, mySide: 'A', autoplay: false,
       planRound: over ? null : s.state.round_index + 1, onEnd }));
     if (over) wirePracticeResult(s, player);
+    else {
+      pinPlayer = player;
+      // While a round is open the replay controls end with a way back to the
+      // deck, shown on a pinned phone screen only (shell.css; wirePinned).
+      $('#player .controls').insertAdjacentHTML('beforeend', '<button class="chip to-deck" id="to-deck" aria-label="Your moves for round ' + (s.state.round_index + 1) + '" title="Back to your moves">YOUR MOVES &#9650;</button>');
+    }
     const details = $('#player .beat-details');
     if (details) details.open = false;
     // The move deck sits right under the stage and its headline, so writing
@@ -2326,9 +2342,31 @@
         });
         $('#newfight').addEventListener('click', () => { location.hash = '#practice/' + s.npc + '/' + L.randomSeed(); });
       }
-    } else wirePlanner();
+    } else { wirePlanner(); wirePinned(player); }
     return landed;
   }
+
+  /* On a pinned phone screen the arena above the deck is the combat state you
+   * plan from, so the replay rests on its last frame while you plan
+   * (restOnPlan): the page landing on the deck, or a tap or focus in it, puts
+   * back a replay left paused or stepped back on an earlier frame. YOUR MOVES
+   * (under the replay controls) stops the replay and lands on the deck, the
+   * focus with it. A desktop page keeps its replay where it is. */
+  function wirePinned(player) {
+    const deck = $('#planner');
+    const back = () => { if (deck.isConnected && $('.practice-stage.pin')) restOnPlan(); };
+    deck.addEventListener('click', back);
+    deck.addEventListener('focusin', back);
+    $('#to-deck').addEventListener('click', () => { player.pause(); if (showDeck(motion())) focusBeat(); });
+  }
+  // A playing replay is left to play: it ends on the last frame anyway.
+  function restOnPlan() {
+    const p = pinPlayer, last = p ? p.frames.length - 1 : 0;
+    if (p && !p.playing && p.index !== last) p.seek(last, false);
+  }
+  // The focus goes along to the deck, on the selected beat, so a move key
+  // lands there; the page is already on its way, so it does not scroll.
+  function focusBeat() { const sel = $('#planner .slot[tabindex="0"]'); if (sel) sel.focus({ preventScroll: true }); }
 
   /* Phones while planning (AUD-036). pinDeck() pins the arena at the top of
    * the screen (.pin, shell.css) wherever it fits on one screen together with
@@ -2344,6 +2382,7 @@
    * changes the fit. Returns true when the arena is pinned. */
   const PIN = { min: 72, max: 170, gap: 12, edge: 8 };   // floor px; gap under the arena; bottom margin
   let pinView = null;   // where the page last put itself: { kind: 'deck' | 'replay', y, deck }
+  let pinPlayer = null;   // the open round's replay (restOnPlan)
   function pinDeck() {
     const ps = $('.practice-stage.planning'), deck = $('#planner');
     if (!ps || !deck) return false;
@@ -2377,11 +2416,13 @@
 
   /* Lands the page on the deck under the pinned arena: the round heading too
    * where everything down to the coach tip fits, else the beats right under
-   * the arena (pinDeck made sure FIGHT fits under them). Returns false, and
+   * the arena (pinDeck made sure FIGHT fits under them), and the arena on
+   * the state the round is planned from (restOnPlan). Returns false, and
    * leaves the page alone, where the arena is not pinned. */
   function showDeck(smooth) {
     const ps = $('.practice-stage.pin'), deck = $('#planner');
     if (!ps || !deck) return false;
+    restOnPlan();
     const root = document.documentElement, y0 = window.scrollY;
     const top = el => el.getBoundingClientRect().top + y0, bottom = el => el.getBoundingClientRect().bottom + y0;
     const under = $('.stage', ps).offsetHeight + PIN.gap, room = root.clientHeight - PIN.edge;

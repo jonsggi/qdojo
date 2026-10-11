@@ -9,9 +9,9 @@
  * site then falls back to the SAMPLE export), or a missing key element. It
  * also re-runs a replay against a tampered temp copy of the export and
  * requires FAIL, checks reduced-motion parity, a 375 px phone width and the
- * practice deck on phone screens 664 to 844 px tall and on a phone turned
- * sideways and back (AUD-036), and saves screenshots to
- * apps/web/tests/e2e/shots/ (gitignored).
+ * practice deck on phone screens 664 to 844 px tall, on a phone turned
+ * sideways and back and after a playback skipped or paused (AUD-036), and
+ * saves screenshots to apps/web/tests/e2e/shots/ (gitignored).
  *
  * Needs the Playwright package and its Chromium; without them it prints why
  * and exits 0, so it never breaks a machine that cannot run a browser. It is
@@ -421,6 +421,7 @@ async function main() {
     // arena, the page at the top, the deck after the replay controls and headline.
     await must(await page.$eval('.practice-stage .stage', el => getComputedStyle(el).position) === 'relative', 'an unpinned arena on a desktop (only phones pin it, AUD-036)');
     await must(await page.evaluate(() => scrollY) === 0 && !!(await page.$('#player .beat-headline + #planner')), 'a desktop round opening at the top, its deck under the replay headline');
+    await must(await page.$eval('#to-deck', el => getComputedStyle(el).display) === 'none', 'no YOUR MOVES button on a desktop (the deck is under the replay there)');
     for (const k of ['4', '1', '2', '6', '5', '1']) await page.keyboard.press(k);
     await page.click('#fight');
     await page.waitForSelector('tr.fr-beat', { state: 'attached' });   // the beat table is folded in practice
@@ -650,6 +651,92 @@ async function main() {
     const v = await deckView(page);
     await must(v.pinned && v.order && !v.bad.length, 'pinned again with the deck on screen after turning back upright (' + v.bad.join(', ') + ')');
   }, { context: phoneCtx(390, 844, true) });
+  // Leaving a playback early on a phone (AUD-036 review), motion on, 390 x 844.
+  // ▶| while a round plays back lands on the deck at once, as playing to the
+  // end does, and so does stepping ▶ onto its end; the focus goes along to
+  // the selected beat. PAUSE keeps the replay
+  // under the arena with YOUR MOVES on screen, uncovered and on the row of
+  // the beat position. YOUR MOVES puts the arena back on the state the round
+  // is planned from, lands on the deck and takes the focus to the selected
+  // beat; after stepping the replay back and scrolling up to the deck by
+  // hand, a tap in the deck puts the arena back on that state too.
+  await step('practice-phone-skip', async (page, base) => {
+    await returning(page);
+    // Half speed: a busy machine still taps ▶| and PAUSE well before a round has played out.
+    await page.addInitScript(() => { try { localStorage.setItem('qdojo.combat.speed', '0.5'); } catch (e) { /* storage blocked */ } });
+    await go(page, base, '#practice/jabber-v1/' + 'ab'.repeat(32), '#planner');
+    await page.evaluate(() => document.fonts.ready);
+    await still(page);
+    const write = async () => { for (const a of ['3', '0', '1', '5', '4', '0']) await page.tap('#planner .act-btn[data-a="' + a + '"]'); await page.tap('#fight'); };
+    // Round r playing back, the page at rest on the replay under the arena.
+    const playing = async r => {
+      await page.waitForFunction(r => new RegExp('^R' + r + ' B\\d').test(document.querySelector('.controls .pos').textContent) && document.querySelector('[data-act=play]').textContent === 'PAUSE', r, { timeout: 8000 });
+      await still(page);
+    };
+    // The arena's HP and stamina for you next to the planner's own (the state the round is planned from).
+    const arena = () => page.evaluate(() => {
+      const q = s => document.querySelector(s), now = s => q('.practice-stage .corner-A ' + s).getAttribute('aria-valuenow');
+      return { pos: q('.controls .pos').textContent, round: q('.practice-stage .round-no').textContent, shows: now('.cbar-hp') + '/' + now('.cbar-st'),
+        plan: [...document.querySelectorAll('.planner-status b')].slice(0, 2).map(b => b.textContent).join('/') };
+    });
+    const onPlan = (a, r) => /^R\d BREAK/.test(a.pos) && a.round === 'ROUND ' + r + '/3' && a.shows === a.plan;
+    // A tap's click can come a moment after the tap returns, so each wait is
+    // for what the tap does (a page that only then starts to glide would
+    // look "still" before it moved).
+    const pos = () => page.$eval('.controls .pos', el => el.textContent);
+    // A replay control that lands on the deck takes the focus there with it.
+    const focusOnBeat = () => page.evaluate(() => document.activeElement.matches('#planner .slot[aria-selected="true"]'));
+    const step1 = async (sel, was) => { await page.tap(sel); await page.waitForFunction(w => document.querySelector('.controls .pos').textContent !== w, was, { timeout: 5000 }); };
+    const landed = async (r, what) => {
+      await page.waitForFunction(() => { const q = s => document.querySelector(s).getBoundingClientRect(); return q('#planner .slots').top >= q('.practice-stage .stage').bottom && q('#fight').bottom <= innerHeight; }, null, { timeout: 8000 }).catch(() => {});
+      await still(page);
+      const v = await deckView(page), a = await arena();
+      await must(!v.bad.length && v.over <= 0 && onPlan(a, r), what + ' landing on the round ' + r + ' deck, the arena on the state it is planned from (' + v.bad.join(', ') + '; ' + JSON.stringify(a) + ')');
+      return v;
+    };
+    // ▶| while round 1 plays back
+    await write();
+    await playing(1);
+    await page.tap('[data-act=last]');
+    await landed(2, '▶| during the playback');
+    await must(await focusOnBeat(), 'the focus on the selected beat after ▶|');
+    await shot(page, 'practice-phone-skip-last', false);
+    // PAUSE while round 2 plays back
+    await write();
+    await playing(2);
+    await page.tap('[data-act=play]');
+    await page.waitForFunction(() => document.querySelector('[data-act=play]').textContent === 'PLAY', null, { timeout: 5000 });
+    await page.waitForTimeout(300);
+    await still(page);
+    const paused = await page.evaluate(() => {
+      const q = s => document.querySelector(s), c = q('#to-deck'), b = c.getBoundingClientRect(), p = q('.controls .pos').getBoundingClientRect();
+      const t = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+      return { pos: q('.controls .pos').textContent, onScreen: b.top >= q('.practice-stage .stage').getBoundingClientRect().bottom && b.bottom <= innerHeight, onTop: !!t && c.contains(t),
+        row: p.top < b.bottom && b.top < p.bottom, headline: q('#player .beat-headline').getBoundingClientRect().bottom <= innerHeight };
+    });
+    await must(/^R2 B\d/.test(paused.pos) && paused.onScreen && paused.onTop && paused.row && paused.headline, 'a paused replay under the arena with its headline and YOUR MOVES on screen, uncovered, on the beat position\'s row (' + JSON.stringify(paused) + ')');
+    await shot(page, 'practice-phone-skip-paused', false);
+    // ▶ stepped onto the end
+    for (let i = 0, was = await pos(); i < 12 && !/BREAK/.test(was); i++, was = await pos()) await step1('[data-act=next]', was);
+    const deck = await landed(3, '▶ stepped onto the end');
+    await must(await focusOnBeat(), 'the focus on the selected beat after ▶ onto the end');
+    // back down to the replay controls, three beats back, then YOUR MOVES
+    for (let i = 0; i < 3; i++) await step1('[data-act=prev]', await pos());
+    await must(/^R2 B\d/.test(await pos()), 'the replay stepped back into round 2 (' + await pos() + ')');
+    await page.tap('#to-deck');
+    await landed(3, 'YOUR MOVES');
+    await must(await focusOnBeat(), 'the focus on the selected beat after YOUR MOVES');
+    await shot(page, 'practice-phone-skip-moves', false);
+    // two beats back, up to the deck by hand, a tap on a move
+    for (let i = 0; i < 2; i++) await step1('[data-act=prev]', await pos());
+    await page.evaluate(y => window.scrollTo(0, y), deck.y);
+    await still(page);
+    await must(!/BREAK/.test(await pos()), 'the arena still on the stepped-back beat before the deck is touched');
+    await page.tap('#planner .act-btn[data-a="3"]');
+    await page.waitForFunction(() => document.querySelectorAll('#planner .slot.filled').length === 1, null, { timeout: 5000 });
+    const v = await landed(3, 'a tap on a move');
+    await must(v.filled === 1 && v.y === deck.y, 'the tapped move in the first beat, the page still (' + v.filled + ' filled, scroll ' + deck.y + ' to ' + v.y + ')');
+  }, { context: phoneCtx(390, 844) });
   await step('rules', async (page, base) => {
     await go(page, base, '#rules', '#digest .vstat');
     await must((await text(page, '#digest .vstat')) === 'PASS', 'the ruleset digest PASSes');
