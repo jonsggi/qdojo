@@ -1,6 +1,6 @@
 # AUD-036 — Put fights and controls ahead of banners and technical detail
 
-- **Status:** Mitigated in 11059267 (replay, arena and title cards lead with the stage; technical detail folded; reading face). Remaining: the phone move deck in practice (practice-ux track, AUD-032/035) and the new-viewer comparison (beta study, AUD-038/039).
+- **Status:** Mitigated in 11059267 (replay, arena and title cards lead with the stage; technical detail folded; reading face) and in f147149e and 52c48685 (practice on phones: the arena stays pinned while you plan and the page opens on the move deck under it). Remaining: the new-viewer comparison (beta study, AUD-038/039).
 - **Priority:** P2 — spectator and mobile usability
 - **Type:** UX / accessibility
 - **Scope:** combat/app.js, combat/combat.css, combat/shell.css, shared typography
@@ -25,10 +25,35 @@ all information must fit in one phone viewport.
   and 360 px (`round3/spectator/before/`, `after/`): before, the stage started below
   the first screen on both phone widths; after, stage and PLAY/step controls are on
   the first screen at every width. Arena cards put the stage before phase and acted rows.
-- [ ] Keep the move deck easy to reach while planning on phones, without duplicate
-  controls drifting out of sync or covering essential combat state. *Not changed here:*
-  the practice planner belongs to the practice-ux track (AUD-032/035); left to that track
-  to avoid conflicting edits in the same view.
+- [x] Keep the move deck easy to reach while planning on phones, without duplicate
+  controls drifting out of sync or covering essential combat state. *Evidence:* measured
+  first on b3e3f71a at 390×844, 360×740, 412×915 and 640×960 with the six- and
+  eight-move decks. On arrival every beat, move, POWER, CLEAR and FIGHT was below the
+  first screen (at 390×844 the beats began 1,072 px down, FIGHT 1,452 px); after round 1,
+  14 to 20 of the 20 were off screen again; and once scrolled to them, both HP bars were
+  above the screen. A bottom tray holding the beats would have covered the arena's
+  POWER/OPENING/GUARD strip (on arrival at 360×740 the arena ends at 603 px), and a
+  deck-only tray would have split the deck from the beats. So in f147149e and 52c48685,
+  while a round is open on a screen at most 700 px wide and at least 700 px tall, the
+  arena stays pinned at the top, the planner follows it directly (the replay controls
+  come after the planner, on screen and in tab order) and the page opens on the deck on
+  arrival, after every round and on a rematch. In a first fight at 390×844 and at 360×740
+  the beats sit at 342–548 px, the deck at 554–664 and FIGHT at 674–719, under the arena
+  at 0–328, with no scrolling needed. Both fighters' HP and stamina bars and
+  POWER/OPENING/GUARD strips stay on screen and uncovered, no control sits under the
+  arena or on an HP bar, and there is one deck, which scrolls under the arena, never over
+  it. Taps never move the page, and while a round plays back the beats follow the arena
+  as it grows. The round heading shows too where everything fits (412×915, 640×960, and
+  390×844 after the first fight). A first fight's coach tip follows FIGHT: on the same
+  screen at 390×844 and larger, just below FIGHT at 360×740. Keys pressed in the planner
+  no longer step the replay above it off the state you plan from. Desktop element
+  rectangles are identical to b3e3f71a at 1280×900 and 1440×900. The e2e steps
+  `practice-phone` (390×844), `practice-phone-360` (360×740, reduced motion) and
+  `practice-phone-v3` (eight moves) assert all of this on arrival, mid-round and after
+  round 1 with no scripted scroll, and fail on b3e3f71a and on f147149e; screenshots
+  `shots/practice-phone*-{plan,mid,round2}.png`. A screen under 700 px tall (375×667)
+  cannot hold the arena and the deck together and keeps the plain scrolling page, the
+  deck reached by scrolling past the arena as before.
 - [x] Place ticks, commitment/verification internals and extended accounting in
   accessible detail sections; keep network identity and material status visible.
   *Evidence:* VERIFICATION is a `<details>` panel (opens by itself when the level is
