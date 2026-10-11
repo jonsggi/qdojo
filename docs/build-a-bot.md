@@ -160,7 +160,8 @@ uv run qdojo combat train --npc turtle-v1 --planner "python3 my_bot.py" --seed 0
 ```
 
 Add `--out fight.json` to save the replay, and `uv run qdojo combat replay fight.json`
-to re-derive it from the plans alone. `--json` prints everything machine-readably.
+to re-derive it from the plans alone: every round, the outcome and the final
+state must be the re-derived ones. `--json` prints everything machine-readably.
 
 **Many fights.** One fight tells you little: a win can be one lucky seed.
 `evaluate --planner` runs your planner exactly as `train` does (same time
@@ -428,7 +429,13 @@ meanwhile, and creates nothing: no key, no state.
 **Check a fight.** Every arena fight is public at
 `/data/combat/v1/fights/{id}/replay.json`. `qdojo combat replay` verifies one
 from a file or URL without trusting it: the ruleset, the context digest, every
-round-start digest and commitment, and an independent replay of every beat:
+round-start digest and commitment, and an independent replay of every beat,
+which must reproduce the recorded outcome, winner and final state. A forfeit,
+double fault or void is decided by the protocol (a missed deadline or a
+service gap), not by the plans: the command checks that the revealed rounds
+had not already ended the fight, and reports the result as the export records
+it. Any failed check, or a malformed file, prints `replay FAILED verification`
+(with `--json`, `"verified": false`) and exits 1:
 
 ```sh
 uv run qdojo combat replay https://qdojo.jonsggi.com/data/combat/v1/fights/<id>/replay.json

@@ -166,14 +166,46 @@ class ReplayMismatch(ValueError):
     pass
 
 
-def verify_replay(replay: dict, rules: Ruleset | None = None) -> dict:
-    """Re-derive every round from the recorded plans; compare everything else.
+# The fields only an arena replay has (export.fight_replay): at the top, in a
+# round and in a fighter. A practice replay never has one; a document that does
+# is an arena record, or a forgery of one, under the practice label, and
+# verify_replay checks none of these fields.
+ARENA_ONLY = ("network_id", "contract_id", "generated_tick", "source", "fight_id", "contest_id", "context_bytes",
+              "result", "forfeit_round", "settlement", "evidence", "title_fight", "new_champion")
+ARENA_ONLY_ROUND = ("tick", "commitments", "salts", "plan_bytes")
+ARENA_ONLY_FIGHTER = ("owner", "operator", "auth_version", "payout_recipient", "lifetime_rating", "season_rating")
 
-    Only the plans (and the ruleset digest) are inputs. States, traces and the
-    outcome in the file are claims, checked against an independent resolution.
+
+def verify_replay(replay: dict, rules: Ruleset | None = None) -> dict:
+    """Re-derive a practice replay (run_fight's) from its recorded plans.
+
+    The inputs are the plans, the ruleset digest, the fight number and the
+    fighters' names. Every value run_fight derives from them is a claim,
+    checked against an independent resolution: each fighter ID (the practice
+    ID of its name), the context digest (the practice context's), and each
+    round's index, round-start digest, states, trace and unplayed suffix, the
+    outcome and the final state. The seed, the fighters' kinds and policies
+    and the fallbacks are not checked: re-deriving them needs the planners.
+    A document with a field of ARENA_ONLY, ARENA_ONLY_ROUND or
+    ARENA_ONLY_FIGHTER is refused, and a malformed one raises ReplayMismatch
+    like any other failed check.
     """
-    if replay.get("schema") != REPLAY_SCHEMA:
+    try:
+        return _verify_replay(replay, rules)
+    except ReplayMismatch:
+        raise
+    except (KeyError, IndexError, TypeError, AttributeError, ValueError, RecursionError) as exc:
+        raise ReplayMismatch(f"malformed replay: {type(exc).__name__} {exc}") from None
+
+
+def _verify_replay(replay: dict, rules: Ruleset | None) -> dict:
+    if not isinstance(replay, dict) or replay.get("schema") != REPLAY_SCHEMA:
         raise ReplayMismatch(f"not a {REPLAY_SCHEMA} document")
+    arena = sorted({k for k in ARENA_ONLY if k in replay}
+                   | {k for entry in replay["rounds"] for k in ARENA_ONLY_ROUND if k in entry}
+                   | {k for s in "AB" for k in ARENA_ONLY_FIGHTER if k in replay["fighters"][s]})
+    if arena:
+        raise ReplayMismatch(f"not a practice replay: it has {', '.join(arena)}, which only an arena replay has")
     if rules is None:                     # the replay names its ruleset; use that packaged one
         try:
             rules = by_digest(str(replay.get("ruleset_digest")))
@@ -181,22 +213,39 @@ def verify_replay(replay: dict, rules: Ruleset | None = None) -> dict:
             raise ReplayMismatch("replay names a ruleset this package does not know") from None
     if replay.get("ruleset_digest") != rules.digest.hex():
         raise ReplayMismatch("replay names a different ruleset")
+    ids = tuple(practice_fighter_id(replay["fighters"][s]["name"]) for s in "AB")
+    if [replay["fighters"][s]["fighter_id"] for s in "AB"] != [i.hex() for i in ids]:
+        raise ReplayMismatch("a fighter_id is not the practice ID of the fighter's name")
+    ctx_digest = practice_context(rules, replay["fight_number"], ids).digest()
+    if replay.get("context_digest") != ctx_digest.hex():
+        raise ReplayMismatch("context_digest is not the practice context of this fight number and these fighters")
     state = new_fight(rules)
     for i, entry in enumerate(replay["rounds"]):
         if state.outcome is not None:
             raise ReplayMismatch(f"round {i} recorded after the fight ended")
-        plans = entry["plans"]
-        res = resolve_round(rules, state, Plan.of(plans["A"]["actions"], plans["A"]["power_slot"]),
-                            Plan.of(plans["B"]["actions"], plans["B"]["power_slot"]))
+        if entry.get("round_index") != state.round_index:
+            raise ReplayMismatch(f"round {i} has round_index {entry.get('round_index')!r}")
+        rsd = codec.round_state_digest(ctx_digest, state.round_index, state.a, state.b)
+        if entry.get("round_state_digest") != rsd.hex():
+            raise ReplayMismatch(f"round {i}: round_state_digest differs from the re-derived start state")
+        shown = entry["plans"]
+        plans = {s: Plan.of(shown[s]["actions"], shown[s]["power_slot"]) for s in "AB"}
+        res = resolve_round(rules, state, plans["A"], plans["B"])
         recomputed = res.to_json()
         for key in ("start", "executed_beats", "beats", "break_recovery", "end"):
             if recomputed[key] != entry.get(key):
                 raise ReplayMismatch(f"round {i}: recorded {key} differs from the re-derived one")
+        unplayed = entry.get("unexecuted") or {}
+        for s in "AB":
+            if (unplayed.get(s) or []) != [a.name for a in plans[s].actions[res.executed:]]:
+                raise ReplayMismatch(f"round {i} {s}: recorded unexecuted suffix differs from the re-derived one")
         state = res.end
     if state.outcome is None:
         raise ReplayMismatch("replay stops before the fight ended")
     if state.outcome.to_json() != replay.get("outcome"):
         raise ReplayMismatch("recorded outcome differs from the re-derived one")
+    if replay.get("final") != {"A": state.a.to_json(), "B": state.b.to_json()}:
+        raise ReplayMismatch("recorded final state differs from the replayed one")
     return state.outcome.to_json()
 
 

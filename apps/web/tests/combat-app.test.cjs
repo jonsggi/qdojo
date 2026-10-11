@@ -416,6 +416,18 @@ test('a forfeit carries the re-derived state at the deadline; a tampered one fai
   assert.equal(statusOf(await verify(u), 'replay'), 'FAIL');
 });
 
+test('a void records no forfeit round and still verifies; a recorded one must be the replayed round', async () => {
+  // The exporter writes forfeit_round null for a void: the service ended the fight, no deadline was missed.
+  const rp = clone(REPLAYS.find(r => L.isForfeit(r) && r.rounds.length));
+  Object.assign(rp, { result: { kind: 'VOID', winner: null, tick: rp.result.tick }, outcome: { winner: null, result: 'VOID' },
+    forfeit_round: null, settlement: null });
+  const v = await verify(rp);
+  assert.equal(statusOf(v, 'replay'), 'PASS');
+  assert.equal(v.level, 'REPLAY_MATCH');
+  rp.forfeit_round = rp.rounds.length + 1;
+  assert.equal(statusOf(await verify(rp), 'replay'), 'FAIL');
+});
+
 // ---- live site helpers --------------------------------------------------------
 
 const summaryOf = id => { try { return readJson(path.join(SAMPLE, 'fights', String(id) + '.json')); } catch (e) { return null; } };

@@ -13,8 +13,8 @@ import sys
 
 from . import evaluate as E
 from . import npcs, planner
-from .rules import KNOWN, PUBLIC_ARENA, by_version
-from .training import Contestant, explain, run_fight, summary, verify_replay
+from .rules import KNOWN, PUBLIC_ARENA, by_digest, by_version
+from .training import Contestant, ReplayMismatch, explain, run_fight, summary, verify_replay
 
 
 class CombatCliError(RuntimeError):
@@ -119,39 +119,53 @@ def _print_fight(replay: dict, you: str):
     print(f"\n{who} ({out['result']})")
 
 
+def _shown(text, limit: int = 500) -> str:
+    """Text from a replay or a server, safe to print: characters a terminal
+    acts on (ESC, CR, BEL, any other control or non-printing one) are escaped,
+    and it stops after `limit` characters."""
+    s = "".join(c if c.isprintable() else repr(c)[1:-1] for c in str(text))
+    return s if len(s) <= limit else s[:limit] + "..."
+
+
 def cmd_replay(a):
     """A practice replay (from train --out) or an arena replay (an export's
-    fights/<id>/replay.json, a file or an http(s) URL)."""
+    fights/<id>/replay.json, a file or an http(s) URL). Prints only what it
+    verified; any failed check, a malformed document included, is FAILED
+    (`--json`: verified false) with exit code 1."""
     from . import replaycheck
     try:
         replay = replaycheck.load(a.file)
     except (OSError, ValueError) as exc:
-        raise CombatCliError(f"cannot read {a.file}: {exc}") from None
+        raise CombatCliError(f"cannot read {_shown(a.file)}: {_shown(exc)}") from None
     try:
         if replaycheck.is_arena(replay):
-            report = replaycheck.verify_arena_replay(replay)
-            outcome, kind = report["outcome"], "arena"
+            kind, report = "arena", replaycheck.verify_arena_replay(replay)
         else:
-            outcome, kind, report = verify_replay(replay), "practice", None
-    except replaycheck.ReplayMismatch as exc:
+            kind, report = "practice", {"checks": [], "outcome": verify_replay(replay), "claimed": None}
+    except ReplayMismatch as exc:
         if a.json:
-            print(json.dumps({"verified": False, "error": str(exc)}))
+            print(json.dumps({"verified": False, "error": _shown(exc)}))
         else:
-            print(f"replay FAILED verification: {exc}")
+            print(f"replay FAILED verification: {_shown(exc)}")
         sys.exit(1)
+    rules = by_digest(str(replay["ruleset_digest"]))     # both verifiers resolved it: a packaged ruleset
+    outcome, claimed = report["outcome"], report["claimed"]
     if a.json:
-        print(json.dumps({"verified": True, "kind": kind, "ruleset_digest": replay.get("ruleset_digest"),
-                          "outcome": outcome, **({"checks": report["checks"]} if report else {})}))
+        print(json.dumps({"verified": True, "kind": kind, "ruleset_digest": rules.digest.hex(),
+                          "semantic_version": rules.semantic_version, "outcome": outcome, "claimed": claimed,
+                          **({"checks": report["checks"]} if kind == "arena" else {})}))
         return
-    print(f"ruleset {replay.get('semantic_version', '?')} {str(replay.get('ruleset_digest'))[:16]}")
-    if report:
-        for line in report["checks"]:
-            print("  " + line)
-    if outcome is None:
-        print(f"{kind} replay verified so far; the fight has no result yet")
-    else:
+    print(f"ruleset {rules.semantic_version} {rules.digest.hex()[:16]}")
+    for line in report["checks"]:
+        print("  " + _shown(line))
+    if outcome is not None:
         print(f"{kind} replay re-derived from its plans: {outcome['result']}, "
               f"winner {outcome['winner'] or 'none (draw)'}")
+    elif claimed is not None:              # the export's words, escaped like any other text from it
+        print(f"{kind} replay verified up to its end; the export records {_shown(claimed['result'])}, "
+              f"winner {_shown(claimed['winner'] or 'none')}: decided by the protocol, not re-derived from the plans")
+    else:
+        print(f"{kind} replay verified so far; the fight has no result yet")
 
 
 def cmd_evaluate(a):
