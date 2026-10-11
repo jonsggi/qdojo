@@ -9,7 +9,8 @@
  * site then falls back to the SAMPLE export), or a missing key element. It
  * also re-runs a replay against a tampered temp copy of the export and
  * requires FAIL, checks reduced-motion parity, a 375 px phone width and the
- * practice deck on 390 and 360 px phones (AUD-036), and saves screenshots to
+ * practice deck on phone screens 664 to 844 px tall and on a phone turned
+ * sideways and back (AUD-036), and saves screenshots to
  * apps/web/tests/e2e/shots/ (gitignored).
  *
  * Needs the Playwright package and its Chromium; without them it prints why
@@ -496,18 +497,23 @@ async function main() {
   });
 
   // ---- practice on a phone (AUD-036): the deck within reach, the fight in view ----
-  // While a round is open the arena is pinned at the top and the page opens on
-  // the deck, with no scrolling by the player or by this test. On arrival,
-  // mid-round and once the round has played back, the six beats, every move,
-  // POWER, CLEAR and FIGHT are on screen, each the topmost element at its
-  // centre, none under the arena or on an HP bar, and both fighters' HP and
-  // stamina bars and POWER / OPENING / GUARD strips are on screen, uncovered.
-  // One deck (the planner straight after the arena, the replay controls after
-  // the planner), no sideways scroll, taps never move the page, and while a
-  // round plays back the page holds still and the beats follow the arena as it
-  // grows, never sliding under it. A first fight's coach tip follows FIGHT.
-  // 360 x 740 runs with reduced motion, and a candidate-3 page checks the
-  // eight-move deck.
+  // While a round is open the arena is pinned at the top of the screen and the
+  // page opens on the deck, with no scrolling by the player or by this test.
+  // On arrival, mid-round and when the next round is planned, the six beats,
+  // every move, POWER, CLEAR and FIGHT are on screen, each the topmost element
+  // at its centre, none on an HP bar or under the arena (the whole box, not
+  // just its centre), and both fighters' HP and stamina bars and POWER /
+  // OPENING / GUARD strips are on screen, uncovered. One deck (the planner
+  // straight after the arena, the replay controls after the planner), no
+  // sideways scroll, and taps never move the page. The arena keeps one height
+  // on every frame of a replay, so the deck under it never moves. With motion
+  // on, the replay controls and the beat headline sit under the arena while
+  // the round plays back, and the page lands on the deck again when it ends;
+  // with motion off it lands there at once. The arena names the round being
+  // planned, and the beats are a keyboard listbox whose focus moves with the
+  // selection. Sizes: 390 x 844 and 360 x 740 (the first fight's coach tip on
+  // that screen too, with six and with eight moves), and short screens such
+  // as a browser with its toolbars showing (375 x 667, 390 x 664, 360 x 700).
   const deckView = page => page.evaluate(() => {
     const vw = innerWidth, vh = innerHeight, bad = [];
     const label = el => el.id || (el.dataset.a != null ? 'move ' + el.dataset.a : el.dataset.pw != null ? 'POWER ' + el.dataset.pw : el.dataset.slot != null ? 'beat ' + el.dataset.slot
@@ -527,10 +533,11 @@ async function main() {
     return { bad, over: document.documentElement.scrollWidth - innerWidth, y: Math.round(scrollY), planners: document.querySelectorAll('#planner').length,
       moves: document.querySelectorAll('.act-btn').length, fights: document.querySelectorAll('#fight').length, filled: document.querySelectorAll('#planner .slot.filled').length,
       pinned: getComputedStyle(stage).position === 'sticky', order: !!document.querySelector('#player > .stage + #planner') && !!document.querySelector('#player > #planner ~ .controls'),
+      round: document.querySelector('.practice-stage .round-no').textContent, list: document.querySelector('#planner .slots').getAttribute('aria-label'),
       tip: tip && { top: Math.round(box(tip).top), bottom: Math.round(box(tip).bottom), afterFight: box(tip).top >= box(fight).bottom } };
   });
-  // Waits out a smooth scroll: two animation frames in a row without movement.
-  const still = page => page.waitForFunction(() => new Promise(r => { const y = scrollY; requestAnimationFrame(() => requestAnimationFrame(() => r(scrollY === y))); }));
+  // Waits out a smooth scroll: the page has not moved for 300 ms.
+  const still = page => page.waitForFunction(() => new Promise(r => { let y = scrollY, n = 0; const t = setInterval(() => { if (scrollY !== y) { y = scrollY; n = 0; } else if (++n >= 6) { clearInterval(t); r(true); } }, 50); }), null, { timeout: 10000 });
   // The same page under candidate 3 (eight moves): the manifest names that
   // ruleset and its artifact is the embedded copy, so nothing 404s.
   async function asCandidate3(page) {
@@ -542,20 +549,29 @@ async function main() {
     await page.route(/\/data\/combat\/v1\/sample\/manifest\.json$/, r => r.fulfill({ json: manifest }));
     await page.route(new RegExp('/data/combat/v1/sample/rulesets/' + digest + '\\.json$'), r => r.fulfill({ json: { schema: 'qdojo.combat.ruleset.v1', semantic_version: rules.semantic_version, digest, rules } }));
   }
-  for (const [name, w, h, extra] of [['practice-phone', 390, 844, {}], ['practice-phone-360', 360, 740, { reducedMotion: 'reduce' }], ['practice-phone-v3', 390, 844, { v3: true }]]) {
+  // A returning player: the first fight is behind them, so no coach tip.
+  const returning = page => page.addInitScript(() => { try { localStorage.setItem('qdojo.practice.v1', JSON.stringify({ v: 1, rules: {}, seen: [], steps: { named: true, fought: true } })); } catch (e) { /* storage blocked */ } });
+  const phoneCtx = (w, h, rm) => Object.assign({ viewport: { width: w, height: h }, isMobile: true, hasTouch: true }, rm ? { reducedMotion: 'reduce' } : {});
+  // options: rm (reduced motion), v3 (eight moves), back (a returning player), tip (the coach tip on the first screen too)
+  for (const [name, w, h, o] of [['practice-phone', 390, 844, { tip: true }], ['practice-phone-360', 360, 740, { rm: true, tip: true }], ['practice-phone-360-v3', 360, 740, { rm: true, v3: true, tip: true }],
+    ['practice-phone-v3', 390, 844, { v3: true, back: true }], ['practice-phone-667', 375, 667, { rm: true, back: true }], ['practice-phone-664', 390, 664, { rm: true, v3: true }], ['practice-phone-700', 360, 700, { rm: true, back: true }]]) {
     await step(name, async (page, base) => {
-      if (extra.v3) await asCandidate3(page);
+      if (o.v3) await asCandidate3(page);
+      if (o.back) await returning(page);
       await go(page, base, '#practice/jabber-v1/' + 'ab'.repeat(32), '#planner');
       await page.evaluate(() => document.fonts.ready);
       await still(page);
-      const moves = extra.v3 ? 8 : 6;
+      const moves = o.v3 ? 8 : 6, size = w + 'x' + h;
       // arrival: the page opens on the deck
       let v = await deckView(page);
       await must(v.planners === 1 && v.moves === moves && v.fights === 1, 'one deck of ' + moves + ' moves and one FIGHT (got ' + v.planners + ' decks, ' + v.moves + ' moves, ' + v.fights + ' FIGHT)');
-      await must(v.pinned && v.order, 'the arena pinned while planning, the deck straight after it and the replay controls after the deck');
+      await must(v.pinned && v.order, 'the arena pinned while planning at ' + size + ', the deck straight after it and the replay controls after the deck');
       await must(v.over <= 0, 'no sideways scroll at ' + w + ' px (overflow ' + v.over + ' px)');
-      await must(!v.bad.length, 'the beats, the deck, POWER, CLEAR, FIGHT and both fighters\' HP, stamina and flags on the first screen at ' + w + 'x' + h + ' (' + v.bad.join(', ') + ')');
-      await must(v.tip && v.tip.afterFight && (h < 844 || v.tip.bottom <= h), 'the first fight\'s coach tip under FIGHT' + (h < 844 ? '' : ', on that screen') + ' (' + JSON.stringify(v.tip) + ')');
+      await must(!v.bad.length, 'the beats, the deck, POWER, CLEAR, FIGHT and both fighters\' HP, stamina and flags on the first screen at ' + size + ' (' + v.bad.join(', ') + ')');
+      await must(v.round === 'ROUND 1/3' && v.list === 'Your plan for round 1', 'the arena and the beats naming round 1 (got ' + v.round + ', ' + v.list + ')');
+      if (o.back) await must(!v.tip, 'no coach tip for a returning player');
+      else await must(v.tip && v.tip.afterFight && (!o.tip || v.tip.bottom <= h), 'the first fight\'s coach tip under FIGHT' + (o.tip ? ', on that screen' : '') + ' (' + JSON.stringify(v.tip) + ')');
+      const arena = await page.$eval('.practice-stage .stage', el => el.offsetHeight);
       await shot(page, name + '-plan', false);
       // mid-round: taps fill beats in place, POWER goes on the JAB, nothing moves
       for (const a of ['3', '0', '1']) await page.tap('#planner .act-btn[data-a="' + a + '"]');
@@ -564,37 +580,76 @@ async function main() {
       await must(mid.filled === 3 && mid.y === v.y && !mid.bad.length, 'three beats filled without moving the screen (' + mid.filled + ' filled, scroll ' + v.y + ' to ' + mid.y + (mid.bad.length ? '; ' + mid.bad.join(', ') : '') + ')');
       await must(await page.getAttribute('#planner .slot[data-slot="1"] .slot-pw', 'aria-pressed') === 'true', 'POWER on the JAB');
       await shot(page, name + '-mid', false);
-      // FIGHT: round 1 plays back in the arena, above round 2's deck
+      // FIGHT: round 1 plays back in the arena
       for (const a of ['5', '4', '0']) await page.tap('#planner .act-btn[data-a="' + a + '"]');
       await page.tap('#fight');
       await page.waitForFunction(() => /ROUND 2/.test((document.querySelector('#planner h3') || {}).textContent || ''));
+      if (!o.rm) {
+        // While it plays: the replay controls and the beat headline right under the arena.
+        await page.waitForFunction(() => { const q = s => document.querySelector(s).getBoundingClientRect(), a = q('.practice-stage .stage'), c = q('#player .controls'), hl = q('#player .beat-headline');
+          return /^R1 B\d/.test(document.querySelector('.controls .pos').textContent) && document.querySelector('[data-act=play]').textContent === 'PAUSE' && c.top >= a.bottom && hl.bottom <= innerHeight; }, null, { timeout: 8000 });
+        await must(await page.evaluate(() => { const p = document.querySelector('[data-act=play]'), b = p.getBoundingClientRect(), t = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return !!t && p.contains(t) && document.querySelector('#player .beat-headline').textContent.length > 10; }),
+          'PAUSE and the beat headline on screen while the round plays');
+        await shot(page, name + '-playing', false);
+        // The controls hold still under the arena on every beat (the arena keeps its height).
+        await still(page);
+        const tops = await page.evaluate(async () => { const q = s => document.querySelector(s), seen = new Set();
+          while (q('[data-act=play]').textContent === 'PAUSE') { if (/B\d/.test(q('.controls .pos').textContent)) seen.add(Math.round(q('#player .controls').getBoundingClientRect().top)); await new Promise(r => setTimeout(r, 50)); }
+          return [...seen]; });
+        await must(tops.length === 1, 'the replay controls holding still while the round plays (at ' + tops.join(', ') + ' px)');
+        // When it has played to the end, the page goes back to the deck.
+        await page.waitForFunction(() => document.querySelector('[data-act=play]').textContent === 'PLAY', null, { timeout: 15000 });
+        await page.waitForFunction(() => { const q = s => document.querySelector(s).getBoundingClientRect(); return q('#planner .slots').top >= q('.practice-stage .stage').bottom && q('#fight').bottom <= innerHeight; }, null, { timeout: 8000 }).catch(() => {});
+      }
       await still(page);
-      // The arena is taller during a beat. Stepped through frame by frame, the
-      // page holds still and the beats follow the arena down, never under it.
-      const ys = new Set(), under = [];
+      // round 2 is written on the screen the page lands on
+      v = await deckView(page);
+      await must(!v.bad.length && v.filled === 0, 'round 2 on the screen the page lands on (' + v.bad.join(', ') + ')');
+      await must(v.over <= 0, 'no sideways scroll after the round (overflow ' + v.over + ' px)');
+      await must(v.round === 'ROUND 2/3' && v.list === 'Your plan for round 2', 'the arena and the beats naming round 2 while it is planned (got ' + v.round + ', ' + v.list + ')');
+      await shot(page, name + '-round2', false);
+      // Stepped through frame by frame, the arena keeps its height and the page and the beats hold still.
+      const seen = { h: new Set([arena]), y: new Set(), top: new Set() };
       const ctl = act => page.evaluate(a => document.querySelector('[data-act=' + a + ']').click(), act);
-      if ((await text(page, '[data-act=play]')) === 'PAUSE') await ctl('play');
       await ctl('first');
       for (let i = 0; i < 12; i++) {
-        const s = await page.evaluate(() => ({ y: Math.round(scrollY), pos: document.querySelector('.controls .pos').textContent,
-          gap: Math.round(document.querySelector('#planner .slots').getBoundingClientRect().top - document.querySelector('.practice-stage .stage').getBoundingClientRect().bottom) }));
-        ys.add(s.y); if (s.gap < 6) under.push(s.pos + ' (' + s.gap + ' px)');
+        const s = await page.evaluate(() => ({ y: Math.round(scrollY), pos: document.querySelector('.controls .pos').textContent, h: document.querySelector('.practice-stage .stage').offsetHeight,
+          top: Math.round(document.querySelector('#planner .slots').getBoundingClientRect().top) }));
+        seen.h.add(s.h); seen.y.add(s.y); seen.top.add(s.top);
         if (/BREAK|END/.test(s.pos)) break;
         await ctl('next');
       }
-      await must(ys.size === 1 && !under.length, 'the page holding still beat by beat, the beats clear of the arena (scroll ' + [...ys].join(', ') + (under.length ? '; under it at ' + under.join(', ') : '') + ')');
-      // after the round: round 2 is written on the screen the page left
-      v = await deckView(page);
-      await must(!v.bad.length && v.filled === 0, 'round 2 on the screen the page left (' + v.bad.join(', ') + ')');
-      await must(v.over <= 0, 'no sideways scroll after the round (overflow ' + v.over + ' px)');
-      await shot(page, name + '-round2', false);
+      await must(seen.h.size === 1 && seen.y.size === 1 && seen.top.size === 1, 'one arena height, scroll and beat row on every frame (heights ' + [...seen.h].join(', ') + '; scroll ' + [...seen.y].join(', ') + '; beats at ' + [...seen.top].join(', ') + ')');
+      // The beats are a listbox: the focus moves with the selection, DOWN a row, and the page holds still.
+      const y0 = await page.evaluate(() => scrollY);
+      await page.focus('#planner .slot[data-slot="1"]');
+      await page.keyboard.press('ArrowDown');
+      await must(await page.evaluate(() => document.activeElement.dataset.slot === '4' && document.querySelector('#planner .slot[aria-selected="true"]').dataset.slot === '4' && document.activeElement.tabIndex === 0), 'DOWN moving the focus and the selection from beat 2 to beat 5');
+      await must(await page.evaluate(() => scrollY) === y0, 'keys in the beats not scrolling the page');
       // the replay controls follow the deck: focused, PLAY comes into view clear of the arena
       await page.focus('[data-act=play]');
       await still(page);
       await must(await page.evaluate(() => { const p = document.querySelector('[data-act=play]'), b = p.getBoundingClientRect(), t = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
         return b.top >= document.querySelector('.practice-stage .stage').getBoundingClientRect().bottom && b.bottom <= innerHeight && !!t && p.contains(t); }), 'the focused PLAY button on screen, clear of the arena');
-    }, { context: Object.assign({ viewport: { width: w, height: h }, isMobile: true, hasTouch: true }, extra.reducedMotion ? { reducedMotion: extra.reducedMotion } : {}) });
+    }, { context: phoneCtx(w, h, o.rm) });
   }
+  // A phone turned sideways and back: wider than a phone the arena lets go and
+  // the deck goes back under the replay; upright again it is pinned and the
+  // page opens on the deck once more.
+  await step('practice-phone-rotate', async (page, base) => {
+    await returning(page);
+    await go(page, base, '#practice/jabber-v1/' + 'ab'.repeat(32), '#planner');
+    await page.evaluate(() => document.fonts.ready);
+    await still(page);
+    await page.setViewportSize({ width: 844, height: 390 });
+    await page.waitForFunction(() => !document.querySelector('.practice-stage.pin') && !!document.querySelector('#player .beat-headline + #planner'));
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForFunction(() => !!document.querySelector('.practice-stage.pin') && !!document.querySelector('#player > .stage + #planner'));
+    await page.waitForTimeout(200);
+    await still(page);
+    const v = await deckView(page);
+    await must(v.pinned && v.order && !v.bad.length, 'pinned again with the deck on screen after turning back upright (' + v.bad.join(', ') + ')');
+  }, { context: phoneCtx(390, 844, true) });
   await step('rules', async (page, base) => {
     await go(page, base, '#rules', '#digest .vstat');
     await must((await text(page, '#digest .vstat')) === 'PASS', 'the ruleset digest PASSes');

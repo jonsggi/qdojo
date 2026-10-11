@@ -1374,7 +1374,9 @@
     ...Object.entries(MOVES).filter(([, m]) => m && m.clip).map(([n, m]) => ({ [n]: m.clip })));
 
   /* opts: { frames, ids: {A, B}, names: {A, B}, links: bool, replay (for labels),
-   *         mySide (practice: explanations say YOU), autoplay } */
+   *         mySide (practice: explanations say YOU), autoplay,
+   *         planRound (practice: the round being planned, shown on the last frame),
+   *         onEnd (called when playback runs to the last frame) } */
   function createPlayer(root, opts) {
     const frames = opts.frames, names = opts.names;
     let idx = 0, playing = false, timer = null, speed = 1;
@@ -1532,7 +1534,10 @@
       clockL.textContent = left == null ? '' : 'BEATS LEFT';
       koEmblem.classList.toggle('lit', (st.a.hp === 0 || st.b.hp === 0));
       const rnd = $('.round-no', root), bn = $('.beat-no', root), note = $('.center-note', root);
-      rnd.textContent = 'ROUND ' + Math.min(f.round + 1, R.rounds) + '/' + R.rounds;
+      // In practice the break that ends the replay is where you plan the next
+      // round from, so there the round box names the round you are planning.
+      const next = opts.planRound && idx === frames.length - 1 && f.kind === 'break' ? opts.planRound : null;
+      rnd.textContent = 'ROUND ' + (next || Math.min(f.round + 1, R.rounds)) + '/' + R.rounds;
       bn.textContent = f.kind === 'beat' || f.kind === 'unexecuted' ? 'BEAT ' + (f.beat + 1) + '/' + R.beats_per_round : '';
       let text = '';
       if (f.kind === 'start') text = 'FIGHT!';
@@ -1708,7 +1713,7 @@
       if (!playing) return;
       timer = setTimeout(() => {
         if (!root.isConnected) { stop(); return; }
-        if (idx >= frames.length - 1) { pause(); return; }
+        if (idx >= frames.length - 1) { pause(); if (opts.onEnd) opts.onEnd(); return; }
         seek(idx + 1, true);
         schedule();
       }, holdFor(frames[idx]));
@@ -2255,6 +2260,14 @@
   }
 
   function renderPracticeFight(playFrom) {
+    // A phone rebuilds the round in place with scroll anchoring off: it would
+    // follow the old deck down the new page while the replay is built above
+    // it, a jump of a whole screen before the page is put where it belongs.
+    const html = document.documentElement, phone = !!practice && !practice.outcome && matchMedia('(max-width: 700px)').matches;
+    if (phone) html.style.overflowAnchor = 'none';
+    try { return buildPracticeFight(playFrom); } finally { if (phone) html.style.overflowAnchor = ''; }
+  }
+  function buildPracticeFight(playFrom) {
     stopPlayer();
     const s = practice;
     const npc = N.ROSTER.find(n => n.id === s.npc);
@@ -2264,36 +2277,46 @@
     const aName = anon ? 'PLAYER' : myName(), aId = anon ? 'practice:player' : myId();
     const me = s.state.a;
     const verdict = over ? (s.outcome.winner === 'A' ? 'YOU WIN' : s.outcome.winner === 'B' ? esc(npc.name) + ' WINS' : 'DRAW') : '';
-    // .planning: on a phone the arena stays pinned above the deck while you plan (shell.css, AUD-036).
+    // .planning: a round is open; on a phone pinDeck() pins the arena above its deck (AUD-036).
     setView(screen(aName + ' VS ' + npc.name, over ? 'FIGHT OVER' : 'ROUND ' + (s.state.round_index + 1) + ' OF ' + R.rounds + ' &middot; WRITE YOUR SIX MOVES') +
       '<section class="panel player-panel practice-stage' + (over ? '' : ' planning') + '"><div id="player"></div></section>' +
       (over ? practiceResultHtml(s, npc, verdict) : planner(me, npc)) +
       (over ? debriefHtml(PR.debrief(s.rounds, s.outcome, { rules: R, mySide: 'A', names: { A: aName, B: npc.name } }), { A: aName, B: npc.name }, { frameOf: frameFinder(practiceFrames(s)), mySide: 'A' }) : '') +
       roundRecap(s) + sharePanelHtml(s));
     const frames = practiceFrames(s);
-    const player = track(createPlayer($('#player'), { frames, ids: { A: aId, B: 'npc:' + s.npc }, names: { A: aName, B: npc.name }, links: false, replay: {}, stageSeed: 'practice:' + s.npc, mySide: 'A', autoplay: false }));
+    pinView = null;
+    // On a pinned phone screen the page shows the replay while a round plays
+    // back, then goes back to the deck when it has played to the end.
+    const onEnd = () => { const v = pinView; if (v && v.kind === 'replay' && v.deck === $('#planner') && Math.abs(window.scrollY - v.y) < 2) showDeck(motion()); };
+    const player = track(createPlayer($('#player'), { frames, ids: { A: aId, B: 'npc:' + s.npc }, names: { A: aName, B: npc.name }, links: false, replay: {}, stageSeed: 'practice:' + s.npc, mySide: 'A', autoplay: false,
+      planRound: over ? null : s.state.round_index + 1, onEnd }));
     if (over) wirePracticeResult(s, player);
     const details = $('#player .beat-details');
     if (details) details.open = false;
     // The move deck sits right under the stage and its headline, so writing
-    // a round and watching it happen use the same screen. Where the arena is
-    // pinned while you plan (phones, shell.css) the deck comes straight after
-    // it and the replay controls follow the deck, on screen and in tab order.
-    const deck = $('#planner'), stage = $('#player .stage'), head = $('#player .beat-headline');
-    const pinned = !!deck && getComputedStyle(stage).position === 'sticky';
-    if (deck && head) (pinned ? stage : head).after(deck);
-    // There the page opens on the deck, measured on the state you plan from
-    // (the last frame) before a new round plays back above it.
+    // a round and watching it happen use the same screen; on a phone it comes
+    // straight after the pinned arena instead (pinDeck).
+    const pinned = !over && pinDeck();
     let landed = false;
-    if (pinned) {
-      player.seek(frames.length - 1, false);
-      landed = showDeck(playFrom != null && motion());
-    }
     if (playFrom != null) {
       player.seek(playFrom, false);
-      if (!landed) $('.practice-stage').scrollIntoView({ block: 'start', behavior: motion() ? 'smooth' : 'auto' });
+      // A pinned phone screen shows the replay controls and the beat headline
+      // under the arena while the round plays, then the deck (onEnd above);
+      // with motion off the round is already played out, so the deck at once.
+      if (pinned && motion()) landed = showReplay(true);
+      else if (pinned) landed = showDeck(false);
+      else $('.practice-stage').scrollIntoView({ block: 'start', behavior: motion() ? 'smooth' : 'auto' });
       if (motion()) player.start(); else player.seek(frames.length - 1, false);
-    } else player.seek(frames.length - 1, false);
+    } else {
+      player.seek(frames.length - 1, false);
+      // Arrival and a rematch open on the deck.
+      if (pinned) landed = showDeck(false);
+    }
+    // Web fonts that arrive later reflow the page: fit and land again unless the player has scrolled.
+    if (pinned && document.fonts && document.fonts.status === 'loading') {
+      const deck = $('#planner');
+      document.fonts.ready.then(() => { if (deck === $('#planner')) refit(); });
+    }
     if (over) {
       if (!s.shared) {
         $('#rematch').addEventListener('click', () => {
@@ -2307,27 +2330,95 @@
     return landed;
   }
 
-  /* Phones while planning (AUD-036): with the arena pinned at the top of the
-   * screen, scroll so the beats, the deck and FIGHT sit right under it. The
-   * round heading shows too when everything down to the coach tip fits; FIGHT
-   * is always on screen. Returns false, and leaves the page alone, wherever
-   * the arena is not pinned (desktops, short screens). */
-  function showDeck(smooth) {
-    const stage = $('.practice-stage.planning .stage'), h3 = $('#planner h3'), slots = $('#planner .slots'), act = $('#planner .planner-actions');
-    if (!stage || !h3 || !slots || !act || getComputedStyle(stage).position !== 'sticky') return false;
-    const y0 = window.scrollY, top = el => el.getBoundingClientRect().top + y0, bottom = el => el.getBoundingClientRect().bottom + y0;
-    const under = stage.offsetHeight + 14, room = window.innerHeight - 8;   // the arena, its shadow and a gap; the bottom edge
-    const tip = $('#pr-tip'), last = Math.max(bottom(act), tip ? bottom(tip) : 0);
-    const withHead = top(h3) - under, withBeats = top(slots) - under, withFight = bottom(act) - room;
-    const y = Math.max(0, Math.round(last - room <= withHead ? withHead : withFight <= withBeats ? withBeats : withFight));
-    window.scrollTo({ top: y, behavior: smooth ? 'smooth' : 'auto' });
-    // Web fonts that arrive later reflow the page: land again unless the player has scrolled.
-    if (!smooth && document.fonts && document.fonts.status === 'loading') {
-      const planner = $('#planner');
-      document.fonts.ready.then(() => { if ($('#planner') === planner && Math.abs(window.scrollY - y) < 2) showDeck(false); });
+  /* Phones while planning (AUD-036). pinDeck() pins the arena at the top of
+   * the screen (.pin, shell.css) wherever it fits on one screen together with
+   * the beats, the deck and FIGHT, and puts the planner straight after it,
+   * before the replay controls (on screen and in tab order). The arena's
+   * floor is fitted to the screen here, once per round, so the arena keeps
+   * that height on every frame of the replay and nothing under it moves: as
+   * tall as the screen allows up to PIN.max, smaller in a first fight so the
+   * coach tip under FIGHT fits too, never under PIN.min. A screen too short
+   * even for that, and anything wider than a phone, keeps the plain page with
+   * the planner under the replay headline. The small viewport height
+   * (clientHeight) is used, so a browser toolbar that slides away never
+   * changes the fit. Returns true when the arena is pinned. */
+  const PIN = { min: 72, max: 170, gap: 12, edge: 8 };   // floor px; gap under the arena; bottom margin
+  let pinView = null;   // where the page last put itself: { kind: 'deck' | 'replay', y, deck }
+  function pinDeck() {
+    const ps = $('.practice-stage.planning'), deck = $('#planner');
+    if (!ps || !deck) return false;
+    const root = document.documentElement, stage = $('.stage', ps), head = $('.beat-headline', ps);
+    // Moving the planner keeps its listeners; focus inside it is kept too.
+    const place = after => {
+      if (!after || after.nextElementSibling === deck) return;
+      const f = document.activeElement;
+      after.after(deck);
+      if (f && deck.contains(f) && document.activeElement !== f) f.focus({ preventScroll: true });
+    };
+    if (matchMedia('(max-width: 700px)').matches) {
+      ps.classList.add('pin');
+      place(stage);
+      const box = el => el.getBoundingClientRect();
+      const floor = parseFloat(getComputedStyle(stage).gridTemplateRows.split(' ')[1]) || 0;
+      const fixed = stage.offsetHeight - floor;   // the HUD row, the move strip, the borders
+      const act = $('.planner-actions', deck), tip = $('#pr-tip', deck);
+      const room = root.clientHeight - PIN.edge - fixed - PIN.gap - (box(act).bottom - box($('.slots', deck)).top);
+      if (room >= PIN.min) {
+        const withTip = tip ? room - (box(tip).bottom - box(act).bottom) : room;
+        root.style.setProperty('--pin-floor', Math.floor(Math.min(PIN.max, withTip >= PIN.min ? withTip : room)) + 'px');
+        root.style.setProperty('--pin-pad', (stage.offsetHeight + PIN.gap) + 'px');
+        return true;
+      }
     }
+    ps.classList.remove('pin');
+    place(head);
+    return false;
+  }
+
+  /* Lands the page on the deck under the pinned arena: the round heading too
+   * where everything down to the coach tip fits, else the beats right under
+   * the arena (pinDeck made sure FIGHT fits under them). Returns false, and
+   * leaves the page alone, where the arena is not pinned. */
+  function showDeck(smooth) {
+    const ps = $('.practice-stage.pin'), deck = $('#planner');
+    if (!ps || !deck) return false;
+    const root = document.documentElement, y0 = window.scrollY;
+    const top = el => el.getBoundingClientRect().top + y0, bottom = el => el.getBoundingClientRect().bottom + y0;
+    const under = $('.stage', ps).offsetHeight + PIN.gap, room = root.clientHeight - PIN.edge;
+    const tip = $('#pr-tip', deck), last = Math.max(bottom($('.planner-actions', deck)), tip ? bottom(tip) : 0);
+    const withHead = top($('h3', deck)) - under, withBeats = top($('.slots', deck)) - under;
+    const y = Math.round(Math.min(root.scrollHeight - root.clientHeight, Math.max(0, last - room <= withHead ? withHead : withBeats)));
+    window.scrollTo({ top: y, behavior: smooth ? 'smooth' : 'auto' });
+    pinView = { kind: 'deck', y, deck };
     return true;
   }
+
+  /* While a round plays back on a pinned phone screen: the replay controls and
+   * the beat headline (the narration, also with motion off) right under the
+   * arena, the empty deck for the next round scrolled under it. */
+  function showReplay(smooth) {
+    const ps = $('.practice-stage.pin'), ctl = ps && $('#player .controls');
+    if (!ctl) return false;
+    const root = document.documentElement;
+    const y = Math.round(Math.min(root.scrollHeight - root.clientHeight, Math.max(0, ctl.getBoundingClientRect().top + window.scrollY - $('.stage', ps).offsetHeight - PIN.gap)));
+    window.scrollTo({ top: y, behavior: smooth ? 'smooth' : 'auto' });
+    pinView = { kind: 'replay', y, deck: $('#planner') };
+    return true;
+  }
+
+  // A rotated phone, a split screen or late web fonts: fit the arena again
+  // and put the page back where it was (the deck, or the replay while one
+  // plays), unless the player has scrolled away from there meanwhile.
+  function refit() {
+    if (!$('.practice-stage.planning')) return;
+    const v = pinView, wasPinned = !!$('.practice-stage.pin');
+    const here = !v || Math.abs(window.scrollY - v.y) < 2;
+    if (!pinDeck()) { pinView = null; return; }
+    if (!here && wasPinned) return;
+    if (v && v.kind === 'replay' && v.deck === $('#planner')) showReplay(false); else showDeck(false);
+  }
+  let refitTimer = 0;
+  window.addEventListener('resize', () => { clearTimeout(refitTimer); refitTimer = setTimeout(refit, 150); });
 
   // Your stamina beat by beat if nothing hits you: the best case. A beat you
   // cannot afford even then is marked, because it would become EXHAUSTED.
@@ -2365,7 +2456,7 @@
     return '<section class="panel panel-green planner" id="planner"><h3>ROUND ' + (practice.state.round_index + 1) + ' &middot; YOUR MOVES</h3>' + firstFightTip(npc) +
       '<p class="planner-status"><span>HP <b>' + me.hp + '</b></span><span>STAMINA <b>' + me.stamina + '</b></span><span>POWER <b>' + (me.power_available ? 'READY' : 'SPENT') + '</b></span>' + (me.opening ? '<span class="pos">OPENING</span>' : '') +
       '<span class="sealed">' + esc(npc.name) + '\'S PLAN: <b>SEALED</b></span></p>' +
-      '<div class="slots" role="listbox" aria-label="Your plan">' + [0, 1, 2, 3, 4, 5].map(i => '<div class="slot" role="option" data-slot="' + i + '" tabindex="0"><span class="slot-no">BEAT ' + (i + 1) + '</span><span class="slot-act"></span><span class="slot-st"></span><button class="slot-pw" data-pw="' + i + '" title="Power strike on this beat (+' + R.power_cost + ' cost, +' + R.power_damage + ' damage if it lands)">&#9733; POWER</button></div>').join('') + '</div>' +
+      '<div class="slots" role="listbox" aria-label="Your plan for round ' + (practice.state.round_index + 1) + '">' + [0, 1, 2, 3, 4, 5].map(i => '<div class="slot" role="option" data-slot="' + i + '" tabindex="-1"><span class="slot-no">BEAT ' + (i + 1) + '</span><span class="slot-act"></span><span class="slot-st"></span><button class="slot-pw" data-pw="' + i + '" title="Power strike on this beat (+' + R.power_cost + ' cost, +' + R.power_damage + ' damage if it lands)">&#9733; POWER</button></div>').join('') + '</div>' +
       '<div class="palette palette-' + ids.length + '">' + ids.map(tile).join('') + '</div>' +
       '<p class="planner-actions"><button class="btn btn-start" id="fight" disabled>FIGHT! &#9654;</button> <button class="btn btn-sm btn-cyan" id="clear">CLEAR</button> <span id="plan-err" class="neg tiny" role="alert"></span></p>' +
       '<p class="tiny muted">Tap a move to fill the selected beat, or press ' + esc(keys[0] + '-' + keys[keys.length - 1]) + '. Tap a beat to change it. POWER (or P) adds +' + R.power_damage + ' damage to one JAB, KICK or THROW per fight' + (ids.includes(ID.LAST_STAND) ? ' (never to a LAST STAND)' : '') + '. The small number is your stamina after that beat if nothing hits you; red means you would be EXHAUSTED.' +
@@ -2375,10 +2466,16 @@
   function paintDraft() {
     const pwOk = practice.state.a.power_available === 1;
     const proj = projectStamina(practice.state.a, draft.actions, draft.power_slot);
+    const focused = document.activeElement;
     $$('.slot').forEach(el => {
       const i = Number(el.dataset.slot), a = draft.actions[i], p = proj[i];
       el.classList.toggle('sel', i === draft.sel);
       el.setAttribute('aria-selected', String(i === draft.sel));
+      // One tab stop for the beats, on the selected one; a focused beat
+      // hands the focus on with the selection (arrows, HOME/END, a move key),
+      // scrolling no further than it takes to show it (clear of a pinned arena).
+      el.tabIndex = i === draft.sel ? 0 : -1;
+      if (i === draft.sel && focused && focused !== el && focused.matches('.slot')) { el.focus({ preventScroll: true }); el.scrollIntoView({ block: 'nearest' }); }
       el.classList.toggle('filled', a != null);
       el.classList.toggle('broke', !!p && !p.ok);
       $('.slot-act', el).textContent = a == null ? '?' : deckLabel(a);
@@ -2431,17 +2528,29 @@
       if (e.target.id === 'clear') { resetDraft(); paintDraft(); }
       if (e.target.id === 'fight') fight();
     });
+    // A beat that takes the focus (TAB, a tap) is the selected beat, so a move
+    // typed next lands where the focus ring is. Its POWER button is a control
+    // of its own: powering a beat never moves where the next move goes.
+    root.addEventListener('focusin', e => {
+      const slot = e.target.matches('.slot') ? e.target : null;
+      if (slot && Number(slot.dataset.slot) !== draft.sel) { draft.sel = Number(slot.dataset.slot); paintDraft(); }
+    });
+    const pick = i => { draft.sel = Math.max(0, Math.min(5, i)); paintDraft(); };
     root.addEventListener('keydown', e => {
       if (e.target.tagName === 'INPUT') return;
       let handled = true;
       const byKey = deckIds().find(a => keyOf(a) === e.key);
-      const slot = e.target.closest('[data-slot]');
+      const slot = e.target.closest('[data-slot]'), onBeat = !!slot && !e.target.closest('button');
+      // The beats are a listbox laid out in rows (3 x 2 on a phone, 6 x 1 wider):
+      // LEFT and RIGHT step a beat, UP and DOWN a row, HOME and END go to the
+      // first and last beat, SPACE picks the focused one.
+      const row = onBeat ? getComputedStyle(slot.parentElement).gridTemplateColumns.split(' ').length : 0;
       if (byKey != null) setAction(byKey);
-      else if (e.key === 'ArrowRight') { draft.sel = Math.min(5, draft.sel + 1); paintDraft(); }
-      else if (e.key === 'ArrowLeft') { draft.sel = Math.max(0, draft.sel - 1); paintDraft(); }
-      // The beats are a listbox: HOME and END pick the first and last, SPACE the focused one.
-      else if (e.key === 'Home' || e.key === 'End') { draft.sel = e.key === 'Home' ? 0 : 5; paintDraft(); }
-      else if (e.key === ' ' && slot && !e.target.closest('button')) { draft.sel = Number(slot.dataset.slot); paintDraft(); }
+      else if (e.key === 'ArrowRight') pick(draft.sel + 1);
+      else if (e.key === 'ArrowLeft') pick(draft.sel - 1);
+      else if (onBeat && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { const i = draft.sel + (e.key === 'ArrowDown' ? row : -row); if (i >= 0 && i <= 5) pick(i); }
+      else if (e.key === 'Home' || e.key === 'End') pick(e.key === 'Home' ? 0 : 5);
+      else if (e.key === ' ' && onBeat) pick(Number(slot.dataset.slot));
       else if (e.key === 'Backspace' || e.key === 'Delete') { draft.actions[draft.sel] = null; if (draft.power_slot === draft.sel) draft.power_slot = -1; paintDraft(); }
       else if (e.key === 'p' || e.key === 'P') togglePower(draft.sel);
       else if (e.key === 'Enter' && !e.target.closest('button')) fight();
@@ -2453,8 +2562,8 @@
       if (handled || e.key === ' ' || e.key === 'k') e.stopPropagation();
     });
     paintDraft();
-    const first = $('.slot', root);
-    if (first && document.activeElement === document.body) first.focus({ preventScroll: true });
+    const sel = $('.slot[tabindex="0"]', root);
+    if (sel && document.activeElement === document.body) sel.focus({ preventScroll: true });
   }
 
   // ---- PRACTICE extras: debrief, local record, shared replays, first session ----------
