@@ -205,8 +205,6 @@ def test_a_receipt_waits_until_the_reads_the_bot_acts_on_have_passed_its_tick(tm
     assert client.poll(receipt) is None
     client.state = {"tick": 11}
     assert client.poll(receipt).code == codec.Code.OK
-    row["status"] = "dropped"
-    client.state = {"tick": 9}
-    assert client.poll(receipt) is None
-    client.state = {"tick": 11}
+    row["status"] = "dropped"                                      # nothing applied: no read to wait for,
+    client.state = {"tick": 9}                                     # and the resend should not wait either
     assert client.poll(receipt) == "dropped"

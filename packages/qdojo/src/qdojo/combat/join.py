@@ -636,7 +636,7 @@ class RemoteClient:
         except (HttpError, OSError):
             return None
         seen = self.state.get("tick")
-        if r["status"] in ("included", "dropped") and seen is not None and int(seen) <= int(r.get("target_tick") or 0):
+        if r["status"] == "included" and seen is not None and int(seen) <= int(r.get("target_tick") or 0):
             return None              # the reads this bot acts on have not reached that tick yet
         if r["status"] == "included":
             x = r["result"]

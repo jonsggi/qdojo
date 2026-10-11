@@ -390,7 +390,11 @@ type and limits; `GET /api/v1/chain/state?fighter=&who=` your fighter's
 lock, balance, credit and nonce; `GET /api/v1/chain/fight/{id}?slot=A` the
 observation; `POST /api/v1/tx {"tx": "<hex>"}` submits and
 `GET /api/v1/tx/{hash}` returns `new`, `pending`, `included` (with the
-contract's result) or `dropped`. `combat/join.py` is the reference.
+contract's result) or `dropped`, and the transaction's `target_tick`. The
+chain reads come from a replica that can trail the inbox by a second: act
+on an `included` result once `chain/state` reports a tick past its
+`target_tick` (a `dropped` one applied nothing and can be resent at once).
+`combat/join.py` is the reference.
 
 If the operator has not opened the arena, `join` stops with
 `join_disabled` (or `join_closed` from the public proxy), says what to do
