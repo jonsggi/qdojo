@@ -45,7 +45,8 @@ their progress across sessions.
 - **Evidence:**
   - `practice.test.cjs`: record-once, ladder order, rulesets kept apart, round trip, and bad JSON or
     versions.
-  - e2e `practice-debrief`: recorded once, and a reload adds no record line.
+  - e2e `practice-debrief`: recorded once, and after a reload the stored practice record
+    still holds that fight once (it read the result panel before, which a reload never shows).
   - e2e `practice-no-storage`: a full round works with storage throwing.
   - Screenshots: `shots/select-after-1440.png` and `select-390.png`.
 
