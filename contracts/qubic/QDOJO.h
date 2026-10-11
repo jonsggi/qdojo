@@ -5822,7 +5822,7 @@ struct QDOJO : public ContractBase
                 return;
             }
         }
-        // sync:begin withdraw-dispatch (check_sync.py: Withdraw's handler)
+        // sync:begin withdraw-dispatch (check_sync.py: Withdraw's handler and the runHandler call)
         if (c.fr_op == QDOJO_OP_WITHDRAW)
         {
             withdrawBegin(s, c, inv, amount, c.dp_r);

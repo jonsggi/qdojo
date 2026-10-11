@@ -13,9 +13,10 @@ is compared with it:
                   contracts/qubic/QDOJO.h: numbers, names, field names and
                   widths (the doc), body lengths (both C++ files), a case for
                   each opcode in the dispatch switch (both C++ files; QDOJO.h
-                  dispatches Withdraw from Dispatch), the admin range in
-                  protocol.md; "Name (opcode N)" mentions and "admin opcodes
-                  N–M" ranges anywhere in the active docs
+                  dispatches Withdraw from Dispatch, which calls the switch,
+                  runHandler, for the rest), the admin range in protocol.md;
+                  "Name (opcode N)" mentions and "admin opcodes N–M" ranges
+                  anywhere in the active docs
   2. event types  contract.EVENT_TYPES  vs  docs/protocol.md §6 table and both
                   C++ files (numbers, names, an emit site for each)
   3. result codes codec.Code  vs  docs/protocol.md §6 table and both C++ files
@@ -38,10 +39,11 @@ is compared with it:
 C++ is read with simple regexes over regions marked `// sync:begin NAME` ...
 `// sync:end NAME`; Markdown tables are marked `<!-- sync:begin NAME -->` ...
 `<!-- sync:end NAME -->`. The regexes read C++ code only: comments and
-`#if 0` blocks are removed first, so a commented-out case, emit, registration
-or constant is not there (the markers and QDOJO.h's ruleset comments are the
-only comments read). A number listed twice in any numbered table is an
-error. Each error names the file, the table and the value.
+`#if 0` blocks are removed from the whole file first, so a commented-out case,
+emit, registration or constant is not there, and neither is a marked region
+kept in a comment or an #if 0 block (the markers and QDOJO.h's ruleset
+comments are the only comments read). A number listed twice in any numbered
+table is an error. Each error names the file, the table and the value.
 """
 from __future__ import annotations
 
@@ -86,9 +88,13 @@ def flat(s: str) -> str:
 
 def code(s: str) -> str:
     """C++ without what the compiler skips: comments and `#if 0` blocks (up to their
-    #else, #elif or #endif). Other conditionals stay, every branch of them."""
+    #else, #elif or #endif). Other conditionals stay, every branch of them. The sync
+    markers are the only comments kept; one inside another comment or in an #if 0
+    block is removed with it."""
     out, off = [], 0                                    # off: #if depth inside an #if 0
-    for line in re.sub(r"//[^\n]*|/\*.*?\*/", " ", s, flags=re.S).split("\n"):
+    s = re.sub(r"//[^\n]*|/\*.*?\*/", lambda m: m[0] if re.match(r"//\s*sync:(?:begin|end) ", m[0]) else " ", s,
+               flags=re.S)
+    for line in s.split("\n"):
         d = re.match(r"\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b(.*)", line)
         if off:
             if d and d.group(1).startswith("if"):
@@ -110,14 +116,16 @@ def cpp_code(rel: str) -> str:
 
 
 def region(rel: str, name: str) -> str:
-    """The text between the sync markers NAME of a Markdown file, or the code between them of a C++ file."""
-    s = text(rel)
+    """The text between the sync markers NAME of a Markdown file, or the code between them of a C++ file. A C++
+    file is read as code before the markers are looked for, so a marked region kept in a comment or an #if 0
+    block is not there; the live copy is read, or the region is reported as not marked."""
+    s = cpp_code(rel) if rel.endswith(".h") else text(rel)
     m = re.search(r"sync:begin " + re.escape(name) + r"\b[^\n]*\n(.*?)\n[^\n]*sync:end " + re.escape(name) + r"\b",
                   s, re.S)
     if not m:
         fail(rel, f"no region marked 'sync:begin {name}' ... 'sync:end {name}'")
         return ""
-    return code(m.group(1)) if rel.endswith(".h") else m.group(1)
+    return m.group(1)
 
 
 def table_rows(md: str) -> list[list[str]]:
@@ -190,15 +198,20 @@ def check_opcodes():
     compare("opcode", ref, f"{PROTOCOL} opcodes table", numbered(f"{PROTOCOL} opcodes table", pairs), "codec.Op")
 
     # Both C++ files: the numbers, the body lengths, a case in the dispatch switch for each.
-    # QDOJO.h dispatches Withdraw, which needs a transfer, from Dispatch (its withdraw-dispatch region).
+    # QDOJO.h dispatches Withdraw, which needs a transfer, from Dispatch (its withdraw-dispatch region);
+    # the same region calls runHandler, the switch, for every other opcode.
     for rel, prefix in ((PORT, "OP_"), (QDOJO, "QDOJO_OP_")):
         got = numbered(f"{rel} opcodes", re.findall(r"\b" + prefix + r"([A-Z_]+)\s*=\s*(\d+)", region(rel, "opcodes")))
         compare("opcode", ref, f"{rel} opcodes", got, "codec.Op")
         lens = {name: cpp_sum(expr) for name, expr in
                 re.findall(r"case\s+" + prefix + r"([A-Z_]+):\s*return\s+([\d\s+]+);", region(rel, "body-lengths"))}
         cases = set(re.findall(r"\bcase\s+" + prefix + r"([A-Z_]+)\s*:", region(rel, "dispatch")))
-        if rel == QDOJO and re.search(r"\bc\.fr_op\s*==\s*QDOJO_OP_WITHDRAW\b", region(rel, "withdraw-dispatch")):
-            cases.add("WITHDRAW")
+        if rel == QDOJO:
+            branch = region(rel, "withdraw-dispatch")
+            if re.search(r"\bc\.fr_op\s*==\s*QDOJO_OP_WITHDRAW\b", branch):
+                cases.add("WITHDRAW")
+            if not re.search(r"\brunHandler\s*\(", branch):
+                fail(f"{rel} withdraw-dispatch", "Dispatch never calls runHandler (no opcode but Withdraw is handled)")
         for num, name in ref.items():
             if name not in lens:
                 fail(f"{rel} body-lengths", f"no body length for opcode {num} {name}")
