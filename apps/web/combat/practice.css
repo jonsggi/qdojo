@@ -39,6 +39,9 @@
 /* ---- fight: coach tip, result, record ---- */
 .pr-tip { margin: 4px 0 8px; padding: 6px 8px; border-left: 4px solid var(--hazard, #f2c230); font-family: var(--font-text); font-size: 14px; line-height: 1.45; }
 .pr-tip b { font-family: var(--font-pixel, inherit); font-size: 9px; color: var(--hazard, #f2c230); margin-right: 6px; }
+/* Your fight begun under rules a live export has replaced since (app.js begunNote). */
+.pr-rules { margin: 4px 0 8px; padding: 6px 8px; border-left: 4px solid var(--cyan); font-family: var(--font-text); font-size: 14px; line-height: 1.45; }
+.result-screen .pr-rules { width: fit-content; max-width: 100%; margin: 10px auto; text-align: left; }
 .pr-result { font-size: 10px; line-height: 1.8; }
 .pr-milestone { color: var(--hazard, #f2c230); }
 .pr-build { margin-top: 10px; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px; }

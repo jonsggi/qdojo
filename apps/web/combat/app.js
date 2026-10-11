@@ -153,7 +153,9 @@
     return m;
   }
 
-  // Live export first; the sample only when live is missing.
+  // Live export first; the sample only when live is missing. Its ruleset is
+  // put in force last, right before the caller redraws: until then the screen
+  // on show keeps the rules it was drawn under (a practice round's FIGHT too).
   async function loadSource() {
     for (const src of SOURCES) {
       try {
@@ -162,10 +164,10 @@
         D.base = src.base; D.sample = src.sample; D.manifest = m; D.cache.clear(); D.meta.clear(); D.done.clear();
         const art = HEX64.test(m.ruleset_digest || '') ? await fetchJson('rulesets/' + m.ruleset_digest + '.json').catch(() => null) : null;
         const pick = await L.chooseRuleset({ exported: art, embedded: window.QDojoRulesets || window.QDojoRuleset, manifestDigest: m.ruleset_digest, sha256: SHA });
-        R = pick.rules;
-        RULES_INFO = pick;
         await noteFreshness();
         await probeApi();
+        R = pick.rules;
+        RULES_INFO = pick;
         return;
       } catch (e) { /* try the next source */ }
     }
@@ -193,8 +195,8 @@
     D.polls++;
     if (D.sample || !D.manifest) {
       // A live export that appears later takes over from the sample. Its
-      // ruleset can differ, so the replays on screen stop before it loads
-      // (a frame drawn meanwhile would use the new rules); route() redraws.
+      // ruleset can differ: the replays on screen stop, and its rules come
+      // into force only once it has loaded (loadSource), as route() redraws.
       const live = await trySource(SOURCES[0]).catch(() => null);
       if (live) { stopPlayer(); await loadSource(); paintSource(); route(); return; }
       if (!D.manifest) return;
@@ -287,8 +289,8 @@
         ' &middot; Every replay is re-derived in your browser; rendering never changes a result.'
       : esc(D.error || 'No data. PRACTICE and RULES still work offline.');
   }
-  // The HUD's RULES pill: with the source, and whenever a shared practice
-  // fight swaps its ruleset in or out (useSharedRules, render).
+  // The HUD's RULES pill: with the source, and whenever a practice fight
+  // swaps its ruleset in or out (useFightRules, useActiveRules).
   function paintRules() {
     $('#hud-rules').textContent = rulesLabel(R.semantic_version);
     $('#hud-rules').title = 'Ruleset this page replays with: ' + (R.semantic_version || 'combat-v1');
@@ -2210,9 +2212,19 @@
   // Your own unfinished fights that another practice screen took off the
   // screen (the select screen, a share link, another fight), by opponent and
   // seed, each with the moves typed for its next round: the fight's address
-  // picks it up again, by BACK or FORWARD too. The last few are kept.
+  // picks it up again, by BACK or FORWARD too. The last few are kept. You
+  // have one open fight at most per opponent and seed, whatever its rules:
+  // its address resumes it instead of starting another.
   const shelf = new Map(), SHELF_MAX = 8;
   const shelfKey = s => s.npc + '/' + s.seed;
+  // The ruleset each of your fights was begun under. It is played to its end
+  // under those rules, also after a live export took over under others.
+  const begunUnder = new WeakMap();
+  function newFight(npcId, seed) {
+    const s = L.practiceStart(R, npcId, seed, 1);
+    begunUnder.set(s, R);
+    return s;
+  }
   // Puts s on screen as the practice fight (null: none).
   function showFight(s) {
     const was = practice;
@@ -2230,15 +2242,17 @@
     if (parts.length > 2) return viewSharedPractice(tok, npcId, seed, parts.slice(2).join('/'));
     if (npcId && seed && N.ROSTER.some(n => n.id === npcId) && HEX64.test(seed)) {
       // The seeded challenge link is a new fight. Only your own fight still
-      // open there under these rules is picked up again (back from another
-      // screen, or from the shelf); a finished or shared one is replayed by
-      // its own link.
-      const resumable = s => !!s && !s.shared && !s.outcome && s.npc === npcId && s.seed === seed && s.rules_version === R.semantic_version;
+      // open there is picked up again (back from another screen, or from the
+      // shelf), under the rules it was begun under: a live export that took
+      // over meanwhile under other rules leaves it as it was. A finished or
+      // shared one is replayed by its own link.
+      const resumable = s => !!s && !s.shared && !s.outcome && s.npc === npcId && s.seed === seed;
       if (!resumable(practice)) {
         const back = shelf.get(shelfKey({ npc: npcId, seed })), keep = back && resumable(back.s) ? back : null;
-        showFight(keep ? keep.s : L.practiceStart(R, npcId, seed, 1));
+        showFight(keep ? keep.s : newFight(npcId, seed));
         if (keep) Object.assign(draft, keep.draft); else resetDraft();
       }
+      useFightRules(begunUnder.get(practice));
       return renderPracticeFight();
     }
     showFight(null);
@@ -2392,7 +2406,9 @@
     if (over) {
       if (!s.shared) {
         $('#rematch').addEventListener('click', () => {
-          practice = L.practiceStart(R, s.npc, s.seed, 1); resetDraft();
+          // A new fight: under the active rules, also after one begun under others.
+          useActiveRules();
+          practice = newFight(s.npc, s.seed); resetDraft();
           try { history.replaceState(null, '', '#practice/' + s.npc + '/' + s.seed); } catch (e) { /* the view still resets */ }
           renderPracticeFight();
         });
@@ -2550,7 +2566,7 @@
     const tile = a => '<button class="act-btn mv-' + NAMES[a].toLowerCase() + '" data-a="' + a + '" title="' + esc(moveName(NAMES[a]) + ': ' + (moveOf(NAMES[a]).deck || purposeText(NAMES[a]))) + '">' +
       '<span class="key">' + esc(keyOf(a)) + '</span><b>' + esc(deckLabel(a)) + '</b><span class="cost">' + cost(a) + ' ST</span>' +
       (a === ID.LAST_STAND ? '<span class="stand-now' + (bonus ? '' : ' off') + '" title="Bonus if it lands now: +1 per HP you trail">+' + bonus + '</span>' : '') + '</button>';
-    return '<section class="panel panel-green planner" id="planner"><h3>ROUND ' + (practice.state.round_index + 1) + ' &middot; YOUR MOVES</h3>' + firstFightTip(npc) +
+    return '<section class="panel panel-green planner" id="planner"><h3>ROUND ' + (practice.state.round_index + 1) + ' &middot; YOUR MOVES</h3>' + begunNote(practice) + firstFightTip(npc) +
       '<p class="planner-status"><span>HP <b>' + me.hp + '</b></span><span>STAMINA <b>' + me.stamina + '</b></span><span>POWER <b>' + (me.power_available ? 'READY' : 'SPENT') + '</b></span>' + (me.opening ? '<span class="pos">OPENING</span>' : '') +
       '<span class="sealed">' + esc(npc.name) + '\'S PLAN: <b>SEALED</b></span></p>' +
       '<div class="slots" role="listbox" aria-label="Your plan for round ' + (practice.state.round_index + 1) + '">' + [0, 1, 2, 3, 4, 5].map(i => '<div class="slot" role="option" data-slot="' + i + '" tabindex="-1"><span class="slot-no">BEAT ' + (i + 1) + '</span><span class="slot-act"></span><span class="slot-st"></span><button class="slot-pw" data-pw="' + i + '" title="Power strike on this beat (+' + R.power_cost + ' cost, +' + R.power_damage + ' damage if it lands)">&#9733; POWER</button></div>').join('') + '</div>' +
@@ -2672,8 +2688,18 @@
   // this section only renders it and keeps the record in localStorage.
 
   const PR = window.QDojoPractice;
-  // A shared fight under another ruleset swaps R while it is on screen; render() swaps back.
-  let R_SAVED = null, R_SHARED = null;
+  // A fight played or begun under another ruleset (a shared one, or yours
+  // from before a live export took over) swaps R while it is on screen
+  // (useFightRules); render() and REMATCH swap back (useActiveRules).
+  let R_SAVED = null, R_FIGHT = null;
+  // The ruleset new fights use, also while a fight is shown under its own:
+  // the one a live export brought in meanwhile, if it did (poll).
+  const activeRules = () => (R_SAVED && R === R_FIGHT ? R_SAVED : R);
+  function useActiveRules() {
+    if (!R_SAVED) return;
+    R = activeRules(); R_SAVED = R_FIGHT = null;
+    paintRules();
+  }
   const PROGRESS_KEY = 'qdojo.practice.v1';
   const progress = { p: null, damaged: false, storage: true };
   // Every storage access is guarded: a blocked or full store leaves an
@@ -2798,7 +2824,7 @@
    * address bar, so a reload or a copied URL shows this fight, not round 1. */
   async function prepareShare(s) {
     if (s.shared || !s.outcome || s.shareTail) { paintShare(s); return; }
-    const code = await PR.shareCode(s, await digestOf(R), SHA).catch(() => null);
+    const code = await PR.shareCode(s, await digestOf(begunUnder.get(s) || R), SHA).catch(() => null);
     if (!code || practice !== s) return;
     s.shareTail = code;
     try { history.replaceState(null, '', '#practice/' + s.npc + '/' + s.seed + '/' + code); } catch (e) { /* the link in the panel still works */ }
@@ -2897,7 +2923,7 @@
     // live export taking over from the sample) it is replayed from its link
     // below instead, as a reload would; a shared one notes the new active rules.
     if (practice && practice.shareTail === tail && practice.npc === npcId && practice.seed === seed && (practice.shared || practice.rules_version === R.semantic_version)) {
-      if (practice.shared) { practice.shared.active = R.semantic_version; useSharedRules(practice.shared.rules); }
+      if (practice.shared) { practice.shared.active = R.semantic_version; useFightRules(practice.shared.rules); }
       return renderPracticeFight();
     }
     // The active ruleset first: the export's own may be one this site does
@@ -2911,20 +2937,30 @@
     practice.shared = { match: rep.match, check: rep.check, claimed: parsed.check, rules: rep.rules, active: R.semantic_version, own: loadProgress().p.seen.includes(fightKey(rep.s)) };
     practice.shareTail = tail;
     resetDraft();
-    useSharedRules(rep.rules);
+    useFightRules(rep.rules);
     return renderPracticeFight(0);
   }
-  // Played under another ruleset: shown under its own, never reinterpreted.
-  function useSharedRules(rules) {
-    if (rules === R) return;
-    R_SAVED = R; R = rules; R_SHARED = rules;
+  // Played or begun under another ruleset: shown under its own, never reinterpreted.
+  function useFightRules(rules) {
+    if (!rules || rules === R) return;
+    R_SAVED = activeRules(); R = R_FIGHT = rules;
     paintRules();
+  }
+
+  /* Your fight begun under rules that are no longer the active ones (a live
+   * export took over meanwhile) ends under its own, and says so. */
+  function begunNote(s) {
+    const now = activeRules().semantic_version, then = esc(rulesLabel(s.rules_version));
+    if (s.shared || s.rules_version === now) return '';
+    return '<p class="pr-rules" id="pr-rules">' + (s.outcome ? 'Played under <b>' + then + '</b> and recorded under those rules.' : 'Begun under <b>' + then + '</b>: this fight ends under those rules.') +
+      ' Your next fight is under the current <b>' + esc(rulesLabel(now)) + '</b>.</p>';
   }
 
   /* The result block of a finished practice fight: verdict, record, actions. */
   function practiceResultHtml(s, npc, verdict) {
     const sh = s.shared, rec = s.recorded;
-    const g = loadProgress(), next = PR.nextChallenge(g.p, s.rules_version);
+    // The next challenge is a new fight, under the active rules.
+    const g = loadProgress(), next = PR.nextChallenge(g.p, activeRules().semantic_version);
     const head = sh
       ? '<p class="share-check ' + (sh.match ? 'share-ok' : 'share-bad') + '" id="share-check">' + (sh.match
         ? (sh.own ? 'YOUR FIGHT, REPLAYED FROM ITS LINK' : 'SHARED FIGHT') + ' &middot; re-derived in your browser from the plans in the link; the check value <b>' + esc(sh.check) + '</b> matches.'
@@ -2941,7 +2977,7 @@
         '<p class="center pr-build"><a class="btn btn-sm btn-cyan" href="#join" id="pr-build">BUILD YOUR OWN BOT &#9654;</a> <span class="tiny">Teach a program what you just learned; it trains offline against the same NPCs.</span></p>';
     return '<section class="panel panel-yellow result-screen"><h3>RESULT</h3>' + head + '<p class="result-big ' + (s.outcome.winner === 'A' ? 'res-win' : s.outcome.winner === 'B' ? 'res-lose' : 'res-draw') + '">' + verdict + '</p>' +
       '<p class="center">' + resultBadge({ outcome: s.outcome }) + ' ' + esc({ KO: 'by knockout.', DOUBLE_KO: 'double knockout.', HP: 'on remaining HP.', HP_TIE: 'equal HP after three rounds.' }[s.outcome.result] || '') + '</p>' +
-      recLine + actions + storageNote() + '</section>';
+      recLine + begunNote(s) + actions + storageNote() + '</section>';
   }
 
   function sharePanelHtml(s) {
@@ -3835,8 +3871,8 @@
   }
 
   async function render(navigated) {
-    // Leaving (or re-entering) a shared practice fight played under another ruleset.
-    if (R_SAVED) { if (R === R_SHARED) R = R_SAVED; R_SAVED = R_SHARED = null; paintRules(); }
+    // Leaving (or re-entering) a practice fight shown under another ruleset.
+    useActiveRules();
     const [name, ...rest] = currentRoute();
     const tok = ++viewToken;
     const y = window.scrollY;

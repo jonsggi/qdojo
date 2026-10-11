@@ -633,25 +633,32 @@ async function main() {
   // poll (page clock) switches the site to it. A fight played or opened
   // under the old rules stays on screen under those, and says which rules
   // are current now; nothing fails to render. The live index arrives late,
-  // so a replay still playing on the old screen would draw frames under the
-  // new rules meanwhile. (The HUD shows the ruleset above 1500 px.)
+  // so the old screen stays up while the switch is under way: a replay still
+  // playing there, or a FIGHT clicked there, must not meet the new rules.
+  // (The HUD shows the ruleset above 1500 px.)
   async function liveUnder(page, rules) {
     const L = require(path.join(WEB, 'combat/logic.js'));
     const digest = await L.rulesetDigest(rules, L.defaultSha256());
     const manifest = Object.assign(readJson(path.join(SAMPLE, 'manifest.json')), { ruleset_digest: digest, semantic_version: rules.semantic_version });
-    let live = false;
+    let live = false, asked = () => {}, held = null;
     await page.clock.install();
     await page.route(/\/data\/combat\/v1\/(?!sample\/)/, async r => {
       const u = r.request().url();
       if (!live) return r.continue();   // the expected 404 of the live manifest: the sample is in use
       if (/\/manifest\.json$/.test(u)) return r.fulfill({ json: manifest });
       if (u.includes('/rulesets/' + digest + '.json')) return r.fulfill({ json: { schema: 'qdojo.combat.ruleset.v1', semantic_version: rules.semantic_version, digest, rules } });
-      if (/\/index\.json$/.test(u)) await new Promise(res => setTimeout(res, 2500));
+      if (/\/index\.json$/.test(u)) { asked(); await Promise.all([new Promise(res => setTimeout(res, 2500)), held]); }
       return r.continue({ url: u.replace('/data/combat/v1/', '/data/combat/v1/sample/') });
     });
-    return async () => {
+    // during (optional): what is done on the page while the live export
+    // loads, from the moment the site asks for its index (held until then).
+    return async during => {
+      let release = null;
+      const ask = new Promise(res => { asked = res; });
+      held = new Promise(res => { release = res; });
       live = true;
       await page.clock.fastForward(30000);
+      try { if (during) { await ask; await during(); } } finally { release(); }
       await page.waitForFunction(() => document.querySelector('#hud-source').textContent === 'LIVE', null, { timeout: 8000 });
     };
   }
@@ -678,6 +685,73 @@ async function main() {
     const check = await text(page, '#share-check');
     await must(check.includes('Played under ' + rulesName(mine) + '; shown under those rules, not the current ' + rulesName(live)), 'the shared fight naming the rules current after the switch (' + check + ')');
     await must(await text(page, '#hud-rules') === rulesName(mine), 'the HUD naming the shared fight\'s rules');
+  }, { context: { viewport: { width: 1600, height: 900 } } });
+  // An open fight is played to its end under the rules it was begun under
+  // (switched here to rules with another stamina cap and another deck, as the
+  // public arena's V1 to V3): after the switch it is at its round with the
+  // moves typed for it, and says which rules it ends under and which are
+  // current. Its address still finds it after the select screen (on the
+  // current rules), never a new fight there; it ends and is recorded under
+  // its own rules, and REMATCH is a new fight under the current ones.
+  await step('practice-takeover-open', async (page, base) => {
+    const mine = activeRules();
+    const live = embedded().find(r => r !== mine && r.limits.stamina !== mine.limits.stamina && r.submitted_action_ids.length !== mine.submitted_action_ids.length) || takeoverRules();
+    const goLive = await liveUnder(page, live);
+    await go(page, base, '#practice/jabber-v1/' + 'cd'.repeat(32), '#planner');
+    await playRound(page);
+    await page.click('.slot[data-slot="0"]');
+    for (const k of ['2', '4', '1']) await page.keyboard.press(k);
+    const typed = await planned(page);
+    const same = async what => {
+      await opens(page, '#pr-rules', what + ' with a note on its rules');
+      const sub = await text(page, '.screen-sub'), hud = await text(page, '#hud-rules'), note = await text(page, '#pr-rules');
+      await must(/ROUND 2 OF 3/.test(sub) && await planned(page) === typed && hud === rulesName(mine) && await page.locator('#planner .act-btn').count() === mine.submitted_action_ids.length,
+        what + ' at round 2 with its moves, under ' + rulesName(mine) + ' (' + sub + '; ' + await planned(page) + '; HUD ' + hud + ')');
+      await must(note.startsWith('Begun under ' + rulesName(mine)) && note.includes('current ' + rulesName(live)), 'the note naming the fight\'s rules and the current ones (' + note + ')');
+    };
+    await goLive();
+    await same('the open fight after the switch');
+    await page.evaluate(() => { location.hash = '#practice'; }); await page.waitForSelector('.npc-card');
+    await must(await text(page, '#hud-rules') === rulesName(live), 'the select screen on the current rules');
+    await page.goBack(); await same('BACK to the open fight');
+    await fightOut(page);
+    await page.waitForSelector('#share-link');
+    const rec = await page.evaluate(() => JSON.parse(localStorage.getItem('qdojo.practice.v1') || 'null'));
+    await must(rec && Object.keys(rec.rules).join() === mine.semantic_version, 'the fight recorded under ' + mine.semantic_version + ' only (' + JSON.stringify(rec && rec.rules) + ')');
+    const L = require(path.join(WEB, 'combat/logic.js'));
+    const digest = (await L.rulesetDigest(mine, L.defaultSha256())).slice(0, 16);
+    await must((await page.getAttribute('#share-link', 'href')).includes('/p1.1.' + digest + '.'), 'its replay link naming ' + rulesName(mine));
+    await must((await text(page, '#pr-rules')).startsWith('Played under ' + rulesName(mine)), 'the result naming the rules it was played under');
+    // Nothing is won yet under the current rules, whose ladder starts with this opponent (REMATCH): no NEXT CHALLENGE, whatever this fight's result.
+    await must(!(await page.$('#pr-next-fight')), 'no NEXT CHALLENGE from the ladder of the rules the fight was played under');
+    await page.click('#rematch'); await opens(page, '#planner', 'REMATCH to open a new fight');
+    await must(/ROUND 1 OF 3/.test(await text(page, '.screen-sub')) && await text(page, '#hud-rules') === rulesName(live) && await page.locator('#planner .act-btn').count() === live.submitted_action_ids.length && !(await page.$('#pr-rules')),
+      'REMATCH a new fight under ' + rulesName(live));
+  }, { context: { viewport: { width: 1600, height: 900 } } });
+  // FIGHT clicked while the switch is under way (the live index held back)
+  // plays the round under the rules on screen, the fight's own: no engine
+  // error under the new stamina cap, the next round, and after the switch a
+  // link that replays the fight with a matching check.
+  await step('practice-takeover-fight', async (page, base) => {
+    const mine = activeRules();
+    const live = embedded().find(r => r !== mine && r.limits.stamina < mine.limits.stamina) || takeoverRules();
+    const goLive = await liveUnder(page, live);
+    await go(page, base, '#practice/jabber-v1/' + 'cd'.repeat(32), '#planner');
+    await playRound(page);
+    await page.click('.slot[data-slot="0"]');
+    for (const k of ['4', '4', '4', '2', '4', '4']) await page.keyboard.press(k);
+    await goLive(async () => {
+      await page.click('#fight');
+      await page.waitForFunction(() => /ROUND 3/.test(document.querySelector('#view .screen-sub').textContent) || (document.querySelector('#plan-err') || {}).textContent, null, { timeout: 5000 }).catch(() => {});
+      const err = await text(page, '#plan-err'), sub = await text(page, '.screen-sub');
+      await must(!err && /ROUND 3 OF 3/.test(sub), 'FIGHT during the switch playing round 2 under ' + rulesName(mine) + ' (' + (err || sub) + ')');
+    });
+    await opens(page, '#pr-rules', 'the fight after the switch with a note on its rules');
+    await must(/ROUND 3 OF 3/.test(await text(page, '.screen-sub')) && await text(page, '#hud-rules') === rulesName(mine), 'the fight at round 3 under ' + rulesName(mine) + ' after the switch');
+    await fightOut(page);
+    await page.waitForSelector('#share-link');
+    await page.goto(await page.getAttribute('#share-link', 'href')); await page.reload(); await page.waitForSelector('#share-check');
+    await must(/ check value [0-9a-f]{8} matches/.test(await text(page, '#share-check')), 'its link replaying it with a matching check (' + await text(page, '#share-check') + ')');
   }, { context: { viewport: { width: 1600, height: 900 } } });
   // The practice record is one per browser (AUD-033): a tab that read it
   // before the other tab saved erases nothing when it saves itself, a fight
