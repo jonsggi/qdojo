@@ -9,6 +9,7 @@ import datetime as dt
 import io
 import json
 import os
+import pathlib
 import subprocess
 import sys
 import time
@@ -98,12 +99,16 @@ def fallback():
     return planner.plan_json(L.fallback_plan(_obs()))
 
 
-def closed(fails=0, since=None, answered=None):
+def model_plan(plan=GOOD):
+    return planner.plan_json(planner.parse_plan(json.dumps({"schema": planner.PLAN_SCHEMA, **plan})))
+
+
+def closed(fails=0, since=None, failed=None, answered=None):
     """A closed breaker as read_breaker returns it."""
-    return {"state": "closed", "fails": fails, "since": since, "answered": answered}
+    return {"state": "closed", "fails": fails, "since": since, "failed": failed, "answered": answered}
 
 
-ARENA_LOGS = ("fallback", "adjusted", "breaker")       # what bot.planner_chooser logs
+ARENA_LOGS = ("fallback", "adjusted", "breaker", "spend")       # what bot.planner_chooser logs
 
 
 # ---- the breaker in the planner process -----------------------------------------
@@ -154,7 +159,7 @@ def test_after_the_backoff_one_probe_goes_out_and_an_answer_closes_the_breaker(t
     clock.t = b["until"]
     provider.script = [answer()]
     out, err = decide(state, clock, capsys)
-    assert out == planner.plan_json(planner.parse_plan(json.dumps({"schema": planner.PLAN_SCHEMA, **GOOD})))
+    assert out == model_plan()
     assert err[0] == ("breaker closed: the model answered again after 1 h 30 min "
                       "(offline since 08:12 UTC: provider out of credit (HTTP 402))")
     assert err[0].startswith(ARENA_LOGS) and provider.requests == 3
@@ -204,7 +209,7 @@ def test_transient_failures_open_the_breaker_after_three_in_a_row(tmp_path, prov
         out, err = decide(state, clock, capsys)
         lines += [x for x in err if x.startswith("fallback")]
         assert L.status(state, 1.0, clock.t) == {"state": "ok"}       # a few failures are not an outage
-    assert L.read_breaker(state, clock.t) == closed(2, since=T0, answered=T0)    # the answer reset the count
+    assert L.read_breaker(state, clock.t) == closed(2, since=T0, failed=T0, answered=T0)  # the answer reset the count
     assert lines == ["fallback to mixed-v1: provider error (HTTP 503): Service Unavailable",
                      "fallback to mixed-v1: provider timeout: TimeoutError: The read operation timed out",
                      "fallback to mixed-v1: provider unreachable: URLError: <urlopen error [Errno 111] "
@@ -253,7 +258,7 @@ def test_a_200_without_a_completion_is_classified_by_its_error_object(tmp_path, 
                      "fallback to mixed-v1: unreadable provider response: JSONDecodeError: Expecting value: "
                      "line 1 column 1 (char 0)"]
     assert provider.requests == 3 and not provider.script
-    assert L.read_breaker(tmp_path / "t", T0) == closed(2, since=T0)
+    assert L.read_breaker(tmp_path / "t", T0) == closed(2, since=T0, failed=T0)
 
 
 def test_a_billed_reply_without_a_completion_counts_toward_the_daily_cap(tmp_path, provider, capsys):
@@ -276,7 +281,7 @@ def test_a_billed_reply_without_a_completion_counts_toward_the_daily_cap(tmp_pat
     assert json.loads((state / "spend.json").read_text()) == pytest.approx({"2026-09-29": 1.05})
     out, err = decide(state, clock, capsys)
     assert out == fallback() and provider.requests == 3 and err == ["fallback to mixed-v1: daily cap $1.00 reached"]
-    assert L.read_breaker(state, clock.t) == closed(2, since=T0 + 120, answered=T0)     # the last real answer
+    assert L.read_breaker(state, clock.t) == closed(2, T0 + 120, T0 + 120, answered=T0)   # the last real answer
 
 
 def test_offline_since_the_first_failure_with_the_last_answer_beside_it(tmp_path, provider, capsys):
@@ -293,6 +298,44 @@ def test_offline_since_the_first_failure_with_the_last_answer_beside_it(tmp_path
     assert L.status(state, 1.0, clock.t) == {
         "state": "fallback", "reason": "provider timeout", "since": "2026-09-29T08:12:00Z",
         "last_answer": "2026-09-27T08:12:00Z", "retry_at": "2026-09-29T08:18:00Z", "plays": "mixed-v1"}
+
+
+def test_failures_more_than_half_an_hour_apart_are_not_one_run(tmp_path, provider, capsys):
+    """Two timeouts just before the arena stopped and one two days later are
+    not three in a row, and date no outage from two days ago; an account
+    refusal after a stale failure dates the outage from itself. Failures at
+    most half an hour apart stay one run, however long it lasts."""
+    state, start = tmp_path / "ken", T0 - 2 * 86400
+    clock = Clock(start)
+    provider.script = [answer(), TimeoutError("timed out"), TimeoutError("timed out")]
+    for minutes in (0, 1, 2):
+        clock.t = start + 60 * minutes
+        decide(state, clock, capsys)
+    assert L.read_breaker(state, clock.t) == closed(2, start + 60, start + 120, answered=start)
+    clock.t = T0
+    provider.script = [TimeoutError("The read operation timed out")]
+    out, err = decide(state, clock, capsys)
+    assert err == ["fallback to mixed-v1: provider timeout: TimeoutError: The read operation timed out"]
+    assert L.read_breaker(state, clock.t) == closed(1, T0, T0, answered=start)
+    assert L.status(state, 1.0, clock.t) == {"state": "ok"}
+    # A lone 429 five days ago, then out of credit: the outage begins now.
+    qwen = tmp_path / "qwen"
+    qwen.mkdir()
+    (qwen / "breaker.json").write_text(json.dumps({"state": "closed", "fails": 1, "since": T0 - 5 * 86400,
+                                                   "failed": T0 - 5 * 86400, "answered": T0 - 5 * 86400 - 60}))
+    provider.script = [http_error(402)]
+    decide(qwen, clock, capsys)
+    assert L.status(qwen, 1.0, clock.t) == {
+        "state": "fallback", "reason": "provider out of credit (HTTP 402)", "since": "2026-09-29T08:12:00Z",
+        "last_answer": "2026-09-24T08:11:00Z", "retry_at": "2026-09-29T08:42:00Z", "plays": "mixed-v1"}
+    # Each failure half an hour after the one before: one run of three.
+    gem = tmp_path / "gem"
+    provider.always = TimeoutError("timed out")
+    for minutes in (0, 30, 60):
+        clock.t = T0 + 60 * minutes
+        decide(gem, clock, capsys)
+    b = L.read_breaker(gem, clock.t)
+    assert (b["state"], b["since"]) == ("open", T0) and provider.requests == 8
 
 
 def test_a_state_directory_from_before_the_breaker_dates_the_last_answer_by_spend_json(tmp_path, provider, capsys,
@@ -369,12 +412,74 @@ def test_numbers_no_float_can_hold_never_stop_a_decision(tmp_path, provider, cap
     assert provider.requests == 1 and L.read_breaker(state, T0) == closed(answered=T0)
 
 
-def test_a_state_directory_that_cannot_be_written_still_plays_the_fallback(tmp_path, provider, capsys,
-                                                                            monkeypatch):
-    """A full disk or a read-only mount: the breaker cannot open, but no
-    decision fails (the arena would play six RECOVERs for a planner that
-    exits non-zero), each says why in its one log line, and no temporary
-    file is left behind."""
+@pytest.mark.parametrize("how", ["full disk", "read-only directory"])
+def test_a_state_directory_that_cannot_be_written_gets_no_request(tmp_path, provider, capsys, monkeypatch, how):
+    """Nowhere to keep the day's spend: no request goes out, not even to a
+    provider that would answer (and bill), so the cap holds. Each decision
+    plays the fallback and says why in its one log line, and leaves
+    spend.json as it was and no temporary file behind."""
+    state = tmp_path / "ken"
+    state.mkdir()
+    (state / "spend.json").write_text(json.dumps({"2026-09-29": 0.25}))
+    provider.always = answer(cost=0.3)
+    if how == "full disk":
+        real = pathlib.Path.write_text
+
+        def full(path, *args, **kw):
+            if path.parent == state:
+                real(path, "")                  # created, then the disk has no room for the text
+                raise OSError(28, "No space left on device")
+            return real(path, *args, **kw)
+        monkeypatch.setattr(pathlib.Path, "write_text", full)
+        why = "OSError: [Errno 28] No space left on device"
+    elif os.name == "nt" or os.geteuid() == 0:
+        pytest.skip("a read-only directory needs POSIX permissions that bind this user")
+    else:
+        state.chmod(0o500)
+        why = "PermissionError: [Errno 13] Permission denied: "
+    try:
+        for _ in range(3):
+            out, err = decide(state, Clock(T0), capsys)
+            assert out == fallback() and len(err) == 1
+            assert err[0].startswith(f"fallback to mixed-v1: state directory unusable: {why}")
+    finally:
+        state.chmod(0o700)
+    assert provider.requests == 0
+    assert json.loads((state / "spend.json").read_text()) == {"2026-09-29": 0.25}
+    assert sorted(f.name for f in state.iterdir()) == ["spend.json"]
+
+
+def test_a_spend_record_the_disk_refuses_after_the_request_costs_no_paid_reply(tmp_path, provider, capsys,
+                                                                                 monkeypatch):
+    """The disk fills while the model answers: its paid reply is played and
+    the unsaved spend is logged (the arena logs the line). A billed reply
+    without a completion is logged the same way, and is still the
+    provider's failure."""
+    state, clock = tmp_path / "ken", Clock(T0)
+    real = os.replace
+
+    def full(src, dst):
+        if str(dst).endswith("spend.json"):
+            raise OSError(28, "No space left on device")
+        real(src, dst)
+    monkeypatch.setattr(L.os, "replace", full)
+    provider.script = [answer(cost=0.3), {"choices": [], "usage": {"cost": 0.4}}]
+    out, err = decide(state, clock, capsys)
+    unsaved = "spend not saved: OSError: [Errno 28] No space left on device"
+    assert out == model_plan() and err[0] == unsaved and err[0].startswith(ARENA_LOGS)
+    assert L.read_breaker(state, clock.t) == closed(answered=T0)
+    out, err = decide(state, clock, capsys)
+    assert out == fallback() and err == [unsaved, "fallback to mixed-v1: provider sent no completion"]
+    assert L.read_breaker(state, clock.t) == closed(1, T0, T0, answered=T0)
+    assert provider.requests == 2 and sorted(f.name for f in state.iterdir()) == ["breaker.json"]
+
+
+def test_a_breaker_record_that_cannot_be_saved_still_plays_the_fallback(tmp_path, provider, capsys, monkeypatch):
+    """breaker.json cannot be written (the disk filled after the directory
+    took the spend check, say): the breaker cannot open, but no decision
+    fails (the arena would play six RECOVERs for a planner that exits
+    non-zero), each says why in its log lines, and no temporary file is
+    left behind."""
     state, clock = tmp_path / "ken", Clock(T0)
     provider.script = [http_error(402)]
     decide(state, clock, capsys)                                        # opened while the disk had room
@@ -557,10 +662,11 @@ def test_without_a_key_every_llm_fighter_says_so(tmp_path, monkeypatch):
     assert m["driver_status"] == {"state": "fallback", "reason": "no model API key configured", "plays": "mixed-v1"}
 
 
-def test_the_bot_logs_breaker_lines_and_not_skipped_rounds(monkeypatch):
+def test_the_bot_logs_breaker_and_spend_lines_and_not_skipped_rounds(monkeypatch):
     stderr = "\n".join(["no model call, breaker open until 08:42 UTC: provider out of credit (HTTP 402); "
                         "mixed-v1 plays",
                         "breaker closed: the model answered again after 2 h",
+                        "spend not saved: OSError: [Errno 28] No space left on device",
                         "test/model: $0.00010 (today $0.0001); tokens in 900, out 40, finish stop",
                         "adjusted: power strike already spent: power_slot dropped, actions kept"])
     monkeypatch.setattr(planner, "run_or_fallback",
@@ -568,4 +674,5 @@ def test_the_bot_logs_breaker_lines_and_not_skipped_rounds(monkeypatch):
     logs = []
     bot.planner_chooser(["planner"], 1000, log=logs.append)(_obs())
     assert logs == ["fight 7 round 1: planner breaker closed: the model answered again after 2 h",
+                    "fight 7 round 1: planner spend not saved: OSError: [Errno 28] No space left on device",
                     "fight 7 round 1: planner adjusted: power strike already spent: power_slot dropped, actions kept"]

@@ -279,9 +279,15 @@ Handling problems:
   OpenRouter key`), not one per round. After a top-up, deleting the bots'
   `breaker.json` files makes them ask their models at the next decision
   instead of at the next probe (at most 6 hours away); no restart is needed.
-  A line ending `breaker state not saved: ...` means the bot's state
-  directory cannot be written (a full disk): the breaker cannot open, so
-  every decision asks the model again, until the directory is writable.
+  A `planner fallback to mixed-v1: state directory unusable: ...` line on
+  every decision means the bot's state directory cannot be written (a full
+  disk, a read-only mount, an owner other than the arena's user): with
+  nowhere to keep the day's spend the bot makes no model call and plays
+  mixed-v1 until the directory is writable again. Its page still names the
+  model meanwhile, so fix the directory. A `planner spend not saved: ...`
+  line, or one ending `breaker state not saved: ...`, means a write failed
+  after a request (the disk filled meanwhile): the reply was played, but
+  its cost or the breaker's change was not recorded.
 - **Deploy order: the arena first, then the site.** The site (Dokploy, built
   from the repository) and the arena (`~/src/qdojo-live`) ship separately.
   When a change makes the site describe something only the newer arena

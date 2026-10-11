@@ -712,8 +712,9 @@ def policy_chooser(rules: Ruleset, policy: npcs.Policy, seed: bytes) -> Choose:
 def planner_chooser(command: list[str], budget_ms: int = planner.DEFAULT_BUDGET_MS,
                     log: Callable[[str], None] | None = None) -> Choose:
     """A planner subprocess. With `log`, a failed run and the planner's own
-    notes (stderr lines starting "fallback", "adjusted" or "breaker", the last
-    for llm_planner's circuit breaker) are reported, so an operator can see them."""
+    notes (stderr lines starting "fallback", "adjusted", "breaker" or "spend",
+    the last two for llm_planner's circuit breaker and its spend record) are
+    reported, so an operator can see them."""
     def choose(obs: dict) -> Plan:
         ran, err = planner.run_or_fallback(command, obs, budget_ms)
         if log is not None:
@@ -721,7 +722,7 @@ def planner_chooser(command: list[str], budget_ms: int = planner.DEFAULT_BUDGET_
             if err is not None:
                 log(f"{where}: planner {err}; six RECOVERs")
             for line in ran.stderr.splitlines():
-                if line.startswith(("fallback", "adjusted", "breaker")):
+                if line.startswith(("fallback", "adjusted", "breaker", "spend")):
                     log(f"{where}: planner {line[:200]}")
         return ran.plan
     choose.slow = True          # a subprocess (maybe a model call): plan in the background

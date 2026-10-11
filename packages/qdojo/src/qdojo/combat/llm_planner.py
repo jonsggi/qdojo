@@ -16,20 +16,23 @@ day in the state directory. No key, seed or salt is ever printed.
 A circuit breaker in the state directory (breaker.json) stops asking a
 provider that keeps refusing. An account error (HTTP 401, 402, 403: a bad
 key, no credit, no access) opens it at once for 30 minutes; three transient
-failures in a row (429, 5xx, timeouts, connection errors) open it for 2
-minutes. While it is open no request is made and mixed-v1 plays at once.
-When the time is up, one process probes: an answer closes the breaker, a
-failure opens it again for twice as long (at most 6 hours, or 30 minutes for
-transient failures). It logs changes, not rounds: the decision that opens it
-prints the usual "fallback ..." line, closing it prints "breaker closed ...",
-and a decision it skips prints a line the arena does not log. Deleting
-breaker.json closes it by hand (after a top-up, say). It also keeps when the
-model last answered and when the current run of failures began. The arena
-reads the same files to publish each LLM fighter's status, and does not start
-this process at all while no model call could be made (live.py). The
-planner's own files never stop a decision: one it cannot read counts as
-empty, and one it cannot write (a full disk, a read-only mount) only means
-the breaker cannot open; the log line says so and the fallback plays.
+failures in a row (429, 5xx, timeouts, connection errors), each within 30
+minutes of the one before, open it for 2 minutes. While it is open no request
+is made and mixed-v1 plays at once. When the time is up, one process probes:
+an answer closes the breaker, a failure opens it again for twice as long (at
+most 6 hours, or 30 minutes for transient failures). It logs changes, not
+rounds: the decision that opens it prints the usual "fallback ..." line,
+closing it prints "breaker closed ...", and a decision it skips prints a line
+the arena does not log. Deleting breaker.json closes it by hand (after a
+top-up, say). It also keeps when the model last answered and when the current
+run of failures began. The arena reads the same files to publish each LLM
+fighter's status, and does not start this process at all while no model call
+could be made (live.py). The planner's own files never stop a decision: one
+it cannot read counts as empty. A state directory it cannot write to (a full
+disk, a read-only mount) gets no request, whose cost could not be counted
+toward the cap: the fallback plays and its log line says why. A write that
+fails after the request (the disk filled meanwhile) loses no paid reply, only
+the record (a breaker that cannot save cannot open), and a log line says so.
 """
 from __future__ import annotations
 
@@ -59,6 +62,7 @@ FALLBACK_POLICY = "mixed-v1"
 # The circuit breaker (module docstring). Seconds.
 AUTH_BACKOFF, AUTH_BACKOFF_MAX = 30 * 60, 6 * 3600
 TRANSIENT_BACKOFF, TRANSIENT_BACKOFF_MAX, TRIP_AFTER = 2 * 60, 30 * 60, 3
+RUN_GAP = 30 * 60               # failures further apart (an idle stretch, the arena down) are not one run
 PROBE_MARGIN = 15               # a probe's claim outlives its request timeout by this much
 ACCOUNT_ERRORS = {401: "provider rejected the API key", 402: "provider out of credit",
                   403: "provider refused access"}
@@ -328,11 +332,18 @@ class Spend:
         self.doc = _spend_doc(self.path)
         self.today = self.doc.get(self.day, 0.0)
 
-    def add(self, usd: float):
+    def add(self, usd: float) -> str | None:
+        """None once the record is written, else why not, for the log line.
+        The reply it paid for is used all the same: decide() saw the
+        directory take a write before the request."""
         self.today += usd
         self.doc[self.day] = self.today
         self.doc = dict(sorted(self.doc.items())[-60:])
-        _write_json(self.path, self.doc)
+        try:
+            _write_json(self.path, self.doc)
+        except OSError as exc:
+            return f"spend not saved: {type(exc).__name__}: {str(exc)[:120]}"
+        return None
 
 
 def _spend_doc(path: Path) -> dict:
@@ -344,11 +355,15 @@ def _spend_doc(path: Path) -> dict:
     return {k: v for k, v in days if v is not None}
 
 
+def _tmp(path: Path) -> Path:
+    return path.with_name(f"{path.name}.{os.getpid()}.tmp")
+
+
 def _write_json(path: Path, doc: dict):
     """Atomically, through a temporary file of this process's own (two
     decisions of one fighter can overlap). A write that fails (a full disk)
     raises and leaves no temporary file behind."""
-    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    tmp = _tmp(path)
     try:
         tmp.write_text(json.dumps(doc))
         os.replace(tmp, path)
@@ -356,6 +371,18 @@ def _write_json(path: Path, doc: dict):
         with contextlib.suppress(OSError):
             tmp.unlink(missing_ok=True)
         raise
+
+
+def _check_writable(path: Path):
+    """Raises OSError when `path` could not be written now (a full disk, a
+    read-only mount): its temporary file is written and removed, and `path`
+    itself is left alone (spend.json's last write is a time the breaker reads)."""
+    tmp = _tmp(path)
+    try:
+        tmp.write_text("{}")
+    finally:
+        with contextlib.suppress(OSError):
+            tmp.unlink(missing_ok=True)
 
 
 def _written(path: Path) -> float | None:
@@ -433,7 +460,8 @@ def _past(v, now: float) -> float | None:
 
 def read_breaker(state: Path, now: float, legacy: float | None = None) -> dict:
     """The breaker record in the state directory: {"state": "closed", "fails": n,
-    "since"} (n transient failures in a row, the first of them at `since`) or
+    "since", "failed"} (n transient failures in a row, the first of them at
+    `since`, the latest at `failed`) or
     {"state": "open", "kind", "reason", "since" (when this run of failures
     began), "until", "backoff", "probe_until"}, each with "answered": when the
     model last answered, or None. A record that has never said (none yet, or
@@ -452,7 +480,7 @@ def read_breaker(state: Path, now: float, legacy: float | None = None) -> dict:
         fails = doc.get("fails")
         fails = fails if type(fails) is int and fails > 0 else 0
         return {"state": "closed", "fails": fails, "since": _past(doc.get("since"), now) if fails else None,
-                "answered": answered}
+                "failed": _past(doc.get("failed"), now) if fails else None, "answered": answered}
 
     def num(key, default=0.0):
         v = _number(doc.get(key))
@@ -544,14 +572,18 @@ class Breaker:
         else:
             # Offline since the first failure of this run, not since the model's
             # last answer: a fighter can sit idle for hours between the two.
-            fails, since = b["fails"] + 1, now if b["since"] is None else b["since"]
+            # A failure more than RUN_GAP after the one before starts a new
+            # run, so an idle stretch or the arena's downtime joins nothing.
+            run = b["since"] is not None and b["failed"] is not None and now - b["failed"] <= RUN_GAP
+            fails, since = (b["fails"] + 1, b["since"]) if run else (1, now)
             if err.kind == "auth" or fails >= TRIP_AFTER:
                 doc = {"state": "open", "kind": err.kind, "reason": err.reason, "since": since,
                        "until": now + first, "backoff": first, "probe_until": 0, "answered": b["answered"]}
                 told = (f"{err}; {f'{fails} failures in a row, ' if err.kind != 'auth' else ''}breaker open, "
                         f"no model calls until {_when(now + first, now)}")
             else:
-                doc, told = {"state": "closed", "fails": fails, "since": since, "answered": b["answered"]}, str(err)
+                doc = {"state": "closed", "fails": fails, "since": since, "failed": now, "answered": b["answered"]}
+                told = str(err)
         unsaved = self._save(doc)
         return told if unsaved is None else f"{err}; {unsaved}"
 
@@ -649,11 +681,17 @@ def ask(model: str, obs: dict, timeout: float, spend: "Spend", prompt: Path = PR
     or a billed reply carries no completion at all. The plan is checked
     against this fighter's state before it is returned. A request that gets
     no completion raises ProviderError; one that does tells the breaker, if
-    any (an unusable reply is the model's fault, not the provider's)."""
+    any (an unusable reply is the model's fault, not the provider's). A
+    spend or breaker record that cannot be saved is logged; the reply is
+    used all the same."""
     key = api_key()
     if not key:
         raise planner.PlannerError("NOT_STARTED", "no OpenRouter key in the environment")
     started = time.monotonic()
+
+    def note(line: str | None):
+        if line:
+            print(line, file=sys.stderr)
 
     def call(reasoning_now: str) -> str:
         body = request_body(model, obs, prompt, reasoning_now, max_tokens)
@@ -671,13 +709,11 @@ def ask(model: str, obs: dict, timeout: float, spend: "Spend", prompt: Path = PR
         cost = _number(usage.get("cost")) or 0.0
         if not isinstance(doc, dict) or not doc.get("choices"):
             if cost > 0:                    # billed all the same: it counts toward the day's cap
-                spend.add(cost)
+                note(spend.add(cost))
             raise _body_error(doc)
-        spend.add(cost)
+        note(spend.add(cost))
         if breaker is not None:
-            said = breaker.success()
-            if said:
-                print(said, file=sys.stderr)
+            note(breaker.success())
         cached = (usage.get("prompt_tokens_details") or {}).get("cached_tokens")
         choice = doc["choices"][0]
         print(f"{model}: ${cost:.5f} (today ${spend.today:.4f}); tokens in {usage.get('prompt_tokens')}"
@@ -715,6 +751,7 @@ def decide(obs: dict, model: str, state: Path, daily_usd: float = 1.0, timeout: 
     on stderr. The planner's own files never stop it (module docstring)."""
     try:
         state.mkdir(parents=True, exist_ok=True)
+        _check_writable(state / "spend.json")
     except OSError as exc:              # nowhere to keep the day's spend: no paid request
         return _fallback(obs, f"state directory unusable: {type(exc).__name__}: {str(exc)[:120]}")
     spend, breaker = Spend(state, clock), Breaker(state, clock)
