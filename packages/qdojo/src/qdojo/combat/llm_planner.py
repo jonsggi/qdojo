@@ -492,11 +492,11 @@ def _within(seconds: float, fn):
     worker = threading.Thread(target=run, name="llm-request", daemon=True)
     worker.start()
     worker.join(seconds)
-    if worker.is_alive():
-        raise TimeoutError(f"no answer within {seconds:.1f} s")
-    if "exc" in box:
-        raise box["exc"]
-    return box["out"]
+    if "exc" in box:                            # decided by the outcome, not by whether the thread has
+        raise box["exc"]                        # finished exiting: a reply already in hand is used
+    if "out" in box:
+        return box["out"]
+    raise TimeoutError(f"no answer within {seconds:.1f} s")
 
 
 def _when(t: float, now: float) -> str:
