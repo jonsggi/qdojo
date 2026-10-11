@@ -210,14 +210,37 @@ def _day() -> str:
     return time.strftime("%Y-%m-%d", time.gmtime())
 
 
+_WAL_HOLDS_ERASED: set[str] = set()             # inboxes whose WAL file may still hold an erased address
+
+
+def _truncate_wal(db: sqlite3.Connection):
+    """secure_delete clears an erased address from the database file; the WAL
+    file keeps the page that held it until a checkpoint truncates it. Best
+    effort, waiting at most 250 ms on a reader (the arena calls this from its
+    tick); a busy try is repeated on later calls."""
+    path = db.execute("PRAGMA database_list").fetchone()[2]
+    db.execute("PRAGMA busy_timeout = 250")
+    try:
+        busy = db.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()[0]
+    finally:
+        db.execute("PRAGMA busy_timeout = 10000")
+    (_WAL_HOLDS_ERASED.add if busy else _WAL_HOLDS_ERASED.discard)(path)
+
+
 def forget_addresses(db: sqlite3.Connection, older_than: float = ADDRESS_KEEP_SECONDS) -> int:
     """Clear the client address of every registration received more than
-    `older_than` seconds ago (0: every one). Returns how many were cleared."""
+    `older_than` seconds ago (0: every one), from the WAL file too. Returns
+    how many were cleared."""
     cutoff = time.time() - older_than
     if db.execute("SELECT 1 FROM registrations WHERE ip IS NOT NULL AND received <= ? LIMIT 1",
                   (cutoff,)).fetchone() is None:
+        if _WAL_HOLDS_ERASED:                   # an earlier truncate found a reader in the way
+            _truncate_wal(db)
         return 0                                # the arena calls this every tick: no write unless one is due
-    return db.execute("UPDATE registrations SET ip = NULL WHERE ip IS NOT NULL AND received <= ?", (cutoff,)).rowcount
+    cleared = db.execute("UPDATE registrations SET ip = NULL WHERE ip IS NOT NULL AND received <= ?",
+                         (cutoff,)).rowcount
+    _truncate_wal(db)
+    return cleared
 
 
 def recorded_limits(db: sqlite3.Connection) -> Limits | None:

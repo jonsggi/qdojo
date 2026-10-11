@@ -303,6 +303,11 @@ def test_a_log_whose_header_lacks_a_column_stops_the_report(tmp_path):
     # Of two columns with one name only the last was read (an empty assistance after the filled one: H3 5 of 10).
     twice = log("twice.csv", [*study.COHORT_FIELDS, "assistance"], [*study.COHORT_FIELDS, "unlogged"])
     assert "the header names assistance more than once" in refused(twice)
+    # A column of the team's own is never read, so it may repeat; a row of blank cells is no participant.
+    team = log("team.csv", [*study.COHORT_FIELDS, "notes", "notes"], [*study.COHORT_FIELDS, "notes", "notes"])
+    team.write_text(team.read_text() + "," * (len(study.COHORT_FIELDS) + 1) + "\n")
+    r = study.cohort_report(study.read_cohort_log(team))
+    assert r["unknown_columns"] == ["notes"] and r["phases"]["main"]["started"] == 10
     # An unquoted comma in a free-text cell moves every cell after it one column on.
     full = log("comma.csv", study.COHORT_FIELDS)
     text = full.read_text()

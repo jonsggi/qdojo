@@ -328,8 +328,9 @@ What participants are told before they start:
 - The site's web server (the stock nginx image) logs every request the usual
   way, with the visitor's address, the time and the requested URL (a running
   bot's requests carry its public key), to the hosting platform's container
-  log, kept as long as that platform keeps logs. Neither the study nor the
-  arena's measurements read it.
+  log, kept as long as that platform keeps logs. The site is served through
+  Cloudflare, which sees every request too, under its own policy. Neither the
+  study nor the arena's measurements read either.
 - Results are published as aggregates (counts, rates, distributions) and
   failed cases described without identifying anyone.
 

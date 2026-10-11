@@ -246,8 +246,10 @@ def read_csv(path: Path) -> list[dict]:
 def read_cohort_log(path: Path) -> list[dict]:
     """The cohort log's rows, its header checked first. Column names are compared
     without case or surrounding spaces, and a spreadsheet's byte-order mark is
-    not part of the first. A header without a column of COHORT_FIELDS or with
-    one twice, or a row with more cells than the header, raises CohortLogError
+    not part of the first. A row whose cells are all blank (a spreadsheet's
+    trailing lines) is no participant and is left out. A header without a
+    column of COHORT_FIELDS or with one of them twice, or a row with more
+    cells than the header, raises CohortLogError
     naming each: a column the report cannot find reads as blank in every row
     (n, none, no answer), so 'asssistance' made H3 5 of 10, a pass, for 4 of 10
     and the T6 columns kept in another sheet read as 0 of 10; of two columns
@@ -257,14 +259,14 @@ def read_cohort_log(path: Path) -> list[dict]:
         reader = csv.DictReader(f)
         header = [h.strip().lower() for h in reader.fieldnames or ()]
         reader.fieldnames = header
-        rows = list(reader)
+        rows = [r for r in reader if r.get(None) or any(str(v or "").strip() for k, v in r.items() if k is not None)]
     problems = []
     missing = [c for c in COHORT_FIELDS if c not in header]
     if missing:
         unknown = ", ".join(repr(h) for h in header if h not in COHORT_FIELDS)
         problems.append(f"the header has no {', '.join(missing)}"
                         + (f" (it has {unknown}, which the template does not: misspelt?)" if unknown else ""))
-    twice = sorted({h for h in header if h and header.count(h) > 1})
+    twice = sorted(c for c in COHORT_FIELDS if header.count(c) > 1)     # the team's own columns are never read
     if twice:
         problems.append(f"the header names {', '.join(twice)} more than once")
     for r in rows:

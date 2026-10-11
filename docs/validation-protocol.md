@@ -137,10 +137,11 @@ tested in `packages/qdojo/tests/test_study.py`:
   column of §4 (compared without case or surrounding spaces; a spreadsheet's
   byte-order mark is ignored): a column it lacks, misspelt or kept in another
   sheet, would read as blank in every row, so the report stops and names it,
-  with the columns it does not know. It stops too for a column named twice
-  and for a row with more cells than the header (a comma in a cell that is
-  not quoted). Columns of the team's own are listed as `unknown_columns` and
-  not read.
+  with the columns it does not know. It stops too for a column of §4 named
+  twice and for a row with more cells than the header (a comma in a cell
+  that is not quoted). Columns of the team's own are listed as
+  `unknown_columns` and not read; a row with every cell blank is no
+  participant.
 - **Adaptation** (`adaptation`): H7 from the read model's per-fighter results
   against the switching bot.
 - **Arena participation** (`GET /api/v1/community`, [beta.md](beta.md) §7):

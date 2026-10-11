@@ -401,6 +401,8 @@ def test_a_registration_keeps_its_client_address_one_day(tmp_path, capsys):
         age("Alice")
         register("Bob", "203.0.113.8")                  # a registration forgets addresses older than a day ...
         assert addresses() == [None, "203.0.113.8"]
+        for f in (rig.dir / "inbox.sqlite", rig.dir / "inbox.sqlite-wal"):   # from the WAL file as well
+            assert not f.exists() or b"203.0.113.7" not in f.read_bytes(), f
         age("Bob")
         rig.tick()                                      # ... and so does every arena tick
         assert addresses() == [None, None]
