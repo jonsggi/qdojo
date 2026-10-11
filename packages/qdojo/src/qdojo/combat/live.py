@@ -31,7 +31,7 @@ from pathlib import Path
 from . import evaluate as E
 from . import export, invariants, join, store
 from .bot import Bot, Budget, planner_chooser, policy_chooser
-from .chainsim import FeeModel, SimChain, SimQubicClient
+from .chainsim import FeeModel, Pending, SimChain, SimQubicClient
 from .codec import Mode, Op, asset_name_u64
 from .devnet import PROFILES, Devnet, DevnetClient, roles
 from .nft import QDOJO, NFTPolicy, SimFighterNFTs
@@ -334,6 +334,7 @@ class Arena:
         self.frozen = self._load_frozen(nft_frozen, nft_frozen_url)
         self.labels: dict[bytes, dict] = {}
         self.bots: dict[bytes, Bot] = {}
+        self._registering: dict[bytes, tuple[bytes, Pending]] = {}   # fighter -> (new owner, receipt in flight)
         self.cup_every, self.duel_every, self.market_every = cup_every, duel_every, market_every
         self.tier_stake = self.net.m.tiers[min(self.net.m.tiers)]
         self.market = Market(self, self._load("market.json", None))
@@ -641,23 +642,42 @@ class Arena:
         """A house fighter that changed hands: its new owner registers it (the
         contract binds the new owner, operator = owner, auth_version + 1) and
         a new bot runs it for them. Rating, record and history stay with the
-        fighter (docs/nft.md §2)."""
+        fighter (docs/nft.md §2).
+
+        The registration is a transaction of the new owner's like any other,
+        through the chain on their own nonces: a collector's bots for the
+        fighters it already holds have moved those far past any count kept
+        here (a registration sent outside them was refused STALE for up to
+        1,200 ticks, 2026-10-11). The new bot starts once it is in."""
         c = self.w.contract
         for fid, bot in list(self.bots.items()):
             owner = self.nfts.owner(fid)
             if owner is None or owner == bot.wallet:
+                self._registering.pop(fid, None)
                 continue
             f = c.fighters.get(fid)
             if self.mirrored and self.w.balances.get(owner, 0) < 10**9:
                 self.w.mint(owner, 10**12)            # devnet QU for the bot that now runs for the new holder
             if f is not None and f.owner != owner:
-                r = self.w.send(owner, Op.REGISTER_FIGHTER, fighter_id=fid, registry_version=1)
-                if not r.ok:
-                    self.log(f"tick {self.w.tick}: {self.labels[fid]['label']}: new owner's registration "
-                             f"refused ({r.code.name}); retrying next tick")
-                    continue
+                self._register_for(fid, owner)
+                continue
+            self._registering.pop(fid, None)
             self._make_bot(fid)
             self.log(f"tick {self.w.tick}: {self.labels[fid]['label']} now runs for {owner.hex()[:12]}")
+
+    def _register_for(self, fid: bytes, owner: bytes):
+        """Sends the new owner's RegisterFighter, or waits for the one in flight;
+        a refused or dropped one is sent again."""
+        sent = self._registering.get(fid)
+        if sent is not None and sent[0] == owner:
+            r = self.chain.poll(sent[1])
+            if r is None:
+                return                                # not included yet
+            why = "dropped" if r == "dropped" else f"refused ({r.code.name})"
+            self.log(f"tick {self.w.tick}: {self.labels[fid]['label']}: new owner's registration {why}; "
+                     "sending it again")
+        self._registering[fid] = (owner, self.chain.send(owner, Op.REGISTER_FIGHTER, fighter_id=fid,
+                                                         registry_version=1))
 
     def _reserve(self):
         if self.chain.fees is not None and (self.chain.reserve or 0) < RESERVE_FLOOR:

@@ -273,6 +273,7 @@ def run(lineup, ticks, seed, profile="demo", sample_every=250, export_every=0, *
     with tempfile.TemporaryDirectory(prefix="qdojo-metrics-") as tmp:
         arena = live.Arena(Path(tmp) / "arena", lineup, profile=profile, seed=seed, deterministic=True,
                            log=lambda m: None, **kw)
+        arena.chain.KEEP_TICKS = ticks                  # the report counts every transaction of the run
         col = Collector(arena)
         started = time.time()
         for i in range(1, ticks + 1):

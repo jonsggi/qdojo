@@ -1,6 +1,7 @@
 import json
 
 from qdojo.combat import live
+from qdojo.combat.sim import identity
 
 
 def test_live_run_exports_pruned_data_and_resumes(tmp_path):
@@ -41,3 +42,45 @@ def test_a_fight_exported_while_live_is_rewritten_when_it_ends(tmp_path):
     fighter = json.loads((out / "fighters" / f"{index['fighters'][0]}.json").read_text())
     total = sum(sum(r.values()) for r in fighter["records_by_mode"].values())
     assert total >= 1 and set(fighter["records_by_mode"]) <= {"ranked", "duel", "cup", "npc", "training"}
+
+
+def test_a_collector_running_fighters_takes_over_another_it_buys_within_a_few_ticks(tmp_path):
+    """Regression (2026-10-11): the new owner's RegisterFighter went out on a
+    nonce count the arena kept itself, which the collector's bots for the
+    fighters it already held had long passed: refused STALE once a tick, for
+    up to 1,200 ticks, the fighter idle meanwhile. It is now the collector's
+    own transaction through the chain."""
+    logs = []
+    lineup = [{"label": label, "policy": policy} for label, policy in
+              (("a", "scout-v1"), ("b", "kicker-v1"), ("c", "mixed-v1"), ("d", "mixed-v1"))]
+    arena = live.Arena(tmp_path / "net", lineup, seed=3, deterministic=True, market_every=0, log=logs.append)
+    first, second = list(arena.labels)[:2]
+    collector = identity("test-collector")
+    arena.w.mint(collector, 10**12)
+
+    def buy(fid):
+        for _ in range(600):                          # a fighter changes hands only while idle
+            if arena.nfts.poll(arena.nfts.transfer(arena.nfts.owner(fid), fid, collector,
+                                                   immediate=True))["code"] == "OK":
+                return
+            arena.step()
+        raise AssertionError("the fighter never came free")
+
+    def takes_over(fid):
+        for _ in range(12):                           # latency 1-3 ticks, a dropped send or two
+            arena.step()
+            if arena.bots[fid].wallet == collector:
+                return True
+        return False
+
+    buy(first)
+    assert takes_over(first)
+    for _ in range(4000):                             # the collector's bot plays: its nonces run on
+        arena.step()
+        if arena.w.contract.nonces.get(collector, (0,))[0] > 40:
+            break
+    assert arena.w.contract.nonces[collector][0] > 40
+    buy(second)
+    assert takes_over(second)
+    assert arena.w.contract.fighters[second].owner == collector
+    assert not [m for m in logs if "registration refused" in m]

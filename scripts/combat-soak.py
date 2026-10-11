@@ -100,6 +100,7 @@ def main():
         arena = live.Arena(Path(tmp) / "arena", lineup, seed=a.seed, deterministic=True,
                            drop_rate=a.drop_rate, fees=FeeModel(per_call=5, per_tick=1, per_resolved_round=10),
                            cup_every=1500, market_every=2000, log=lambda m: None)
+        arena.chain.KEEP_TICKS = a.ticks                # the report counts every transaction of the run
         # A thin reserve so the contract halts now and then (service gaps), topped up late.
         arena.chain.reserve = 3000
         floor = live.RESERVE_FLOOR
