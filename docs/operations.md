@@ -231,9 +231,12 @@ memory (263 MB RSS for 522 MB). To rebuild from scratch, stop the unit and
 run `qdojo combat readmodel rebuild --devnet … --db … --export …`, or start
 it once with `--rebuild`: both build a new database aside, syncing it every
 64 MB (94 MB RSS for 522 MB), swap it in and leave a snapshot to resume
-from. When the arena directory is moved aside for a rules change, the API
-notices the new journal and re-indexes by itself, under the new arena's
-manifest.
+from. With `--rebuild` the unit serves the static export throughout and
+`/api/v1/` answers 503 `not_ready` until the new database is in; a failed
+rebuild is logged, and the API then follows the database it had. Take the
+flag out again afterwards, or every restart rebuilds. When the arena
+directory is moved aside for a rules change, the API notices the new
+journal and re-indexes by itself, under the new arena's manifest.
 
 **Outside builders (off by default).** [build-a-bot.md](build-a-bot.md) §8
 describes the builder's side. Three switches, all off today, because opening

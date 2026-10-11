@@ -569,6 +569,40 @@ def test_a_rebuild_syncs_as_it_goes_and_leaves_a_snapshot_to_resume_from(tmp_pat
     _same(fl.conn, tmp_path / "one.sqlite")
 
 
+def test_a_stopped_or_failed_rebuild_leaves_the_database_as_it_was(tmp_path, monkeypatch):
+    """A stop (SIGTERM during `api --rebuild`) ends a rebuild between chunks;
+    stopped or failed, it leaves the database and its snapshot untouched and
+    removes the file it was building aside."""
+    arena = _arena(tmp_path)
+    for _ in range(300):
+        arena.step()
+    arena.save()
+    db = tmp_path / "rm.sqlite"
+    rm.rebuild(arena.dir, db, None, log=lambda m: None)
+    before = (db.read_bytes(), db.with_suffix(".replica").read_bytes())
+    for _ in range(100):
+        arena.step()
+    arena.save()
+    poll, stop, chunks = rm.Follower.poll, threading.Event(), []
+
+    def poll_then_stop(self, max_bytes=16 << 10):
+        chunks.append(poll(self, max_bytes))
+        stop.set()                             # SIGTERM during the rebuild
+        return chunks[-1]
+    monkeypatch.setattr(rm.Follower, "poll", poll_then_stop)
+    assert rm.rebuild(arena.dir, db, None, log=lambda m: None, stop=stop) is None and len(chunks) == 1
+
+    def poll_then_fail(self, max_bytes=16 << 10):
+        if self.offset:
+            raise OSError(28, "No space left on device")
+        return poll(self, max_bytes)
+    monkeypatch.setattr(rm.Follower, "poll", poll_then_fail)
+    with pytest.raises(OSError):
+        rm.rebuild(arena.dir, db, None, log=lambda m: None)
+    assert (db.read_bytes(), db.with_suffix(".replica").read_bytes()) == before
+    assert sorted(p.name for p in tmp_path.glob("rm.*")) == ["rm.replica", "rm.sqlite"]
+
+
 def test_a_long_catch_up_is_saved_at_once_and_a_stop_ends_it(tmp_path, monkeypatch):
     """A stop (SIGTERM) ends a catch-up between chunks and run() saves where it
     got to; a catch-up of SNAPSHOT_AFTER_BYTES or more is saved as soon as it

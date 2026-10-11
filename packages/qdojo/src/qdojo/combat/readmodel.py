@@ -954,27 +954,41 @@ class Follower:
             self.log(f"readmodel: snapshot on exit failed: {exc!r}")
 
 
-def rebuild(devnet_dir: Path, db_path: Path, export_dir: Path | None = None, log=print) -> dict:
+def rebuild(devnet_dir: Path, db_path: Path, export_dir: Path | None = None, log=print,
+            stop: threading.Event | None = None) -> dict | None:
     """Build a fresh database from the whole journal and swap it in
-    atomically, with a snapshot of its replica (a follower resumes there)."""
+    atomically, with a snapshot of its replica (a follower resumes there).
+    `stop` ends it between chunks (None returned); stopped or failed, it
+    leaves the database and snapshot as they were and removes its own file."""
     db_path = Path(db_path)
     tmp = db_path.with_name(db_path.name + ".rebuild")
-    for p in (tmp, Path(str(tmp) + "-wal"), Path(str(tmp) + "-shm")):
+    aside = (tmp, Path(str(tmp) + "-wal"), Path(str(tmp) + "-shm"))
+    for p in aside:
         p.unlink(missing_ok=True)
     t0 = time.monotonic()
     fl = Follower(devnet_dir, tmp, export_dir, snapshot=False, log=log)
-    synced = 0
-    while fl.poll():
-        # Nobody reads this file yet. Syncing it now and then lets the replica
-        # forget what it compacted, so a long journal does not fill memory.
-        if fl.offset - synced >= REBUILD_SYNC_BYTES:
-            fl.sync()
-            synced = fl.offset
-    t1 = time.monotonic()
-    fl.sync()
-    fights = fl.conn.execute("SELECT COUNT(*) FROM fights").fetchone()[0]
-    fl.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    fl.conn.close()
+    done = False
+    try:
+        synced = 0
+        while fl.poll():
+            if stop is not None and stop.is_set():
+                log("readmodel: rebuild stopped; the database is as it was")
+                return None
+            # Nobody reads this file yet. Syncing it now and then lets the replica
+            # forget what it compacted, so a long journal does not fill memory.
+            if fl.offset - synced >= REBUILD_SYNC_BYTES:
+                fl.sync()
+                synced = fl.offset
+        t1 = time.monotonic()
+        fl.sync()
+        fights = fl.conn.execute("SELECT COUNT(*) FROM fights").fetchone()[0]
+        fl.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        done = True
+    finally:
+        fl.conn.close()
+        if not done:
+            for p in aside:
+                p.unlink(missing_ok=True)
     os.replace(tmp, db_path)
     for suffix in ("-wal", "-shm"):
         Path(str(db_path) + suffix).unlink(missing_ok=True)

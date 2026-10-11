@@ -346,10 +346,10 @@ per-key transaction counts in 600-tick buckets (`activity`) and run starts
 Errors are `{"schema": "qdojo.combat.api.error.v1", "error": {"status",
 "code", "message"}}` with the HTTP status: 400 `bad_id`/`bad_query`, 404
 `not_found`, 405 `read_only`, 503 `not_ready` while the first index is
-built. CORS answers only the configured origins (`--cors-origin`). Finished
-fights and replays carry `Cache-Control: public, max-age=86400`, everything
-else `max-age=5`; responses have an `ETag` (`If-None-Match` gives 304) and
-are gzipped on request.
+built or the operator rebuilds it. CORS answers only the configured origins
+(`--cors-origin`). Finished fights and replays carry `Cache-Control: public,
+max-age=86400`, everything else `max-age=5`; responses have an `ETag`
+(`If-None-Match` gives 304) and are gzipped on request.
 
 The site uses the API for fighter pages, scouting, the leaderboard and fight
 lists when `/api/v1/status` answers for the same network as the export's

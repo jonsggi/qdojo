@@ -168,6 +168,17 @@ def test_rate_limits_per_key(tmp_path):
         rig.srv.shutdown()
 
 
+def test_the_entry_document_waits_for_the_followed_arena(rig, tmp_path):
+    """While `api --rebuild` runs, no follower is attached yet: the entry
+    document answers 503 rather than an arena without IDs."""
+    svc = J.JoinService(tmp_path / "other-inbox.sqlite", LIMITS)
+    status, doc = svc.get(["join"], {}, "127.0.0.1")
+    assert (status, doc["error"]["code"]) == (503, "not_ready")
+    svc.attach(rig.fl)
+    status, doc = svc.get(["join"], {}, "127.0.0.1")
+    assert status == 200 and doc["network_id"] == rig.info["network_id"] == rig.arena.w.manifest.network_id.hex()
+
+
 def test_join_is_off_unless_enabled(tmp_path):
     arena = live.Arena(tmp_path / "arena", [{"label": "a", "policy": "scout-v1"}], seed=1, deterministic=True,
                        log=lambda m: None)

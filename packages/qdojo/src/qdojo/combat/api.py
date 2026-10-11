@@ -474,6 +474,7 @@ class Server(ThreadingHTTPServer):
         self.db, self.export_dir = Path(db), (Path(export_dir).resolve() if export_dir else None)
         self.origins = tuple(origins)
         self.join, self.follower, self.access_log = join, follower, access_log
+        self.not_ready: str | None = None        # while set, the read endpoints answer 503 and never open the database
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -605,6 +606,8 @@ class Handler(BaseHTTPRequestHandler):
     # -- routes ---------------------------------------------------------------------
 
     def _reader(self) -> tuple[sqlite3.Connection, Reader]:
+        if self.server.not_ready:
+            raise ApiError(503, "not_ready", self.server.not_ready)
         if not self.server.db.exists():
             raise ApiError(503, "not_ready", "the read model has not been built yet")
         conn = rm.connect(self.server.db, readonly=True)
@@ -725,20 +728,49 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, body, ctype, LIVE_CACHE, {"Last-Modified": email.utils.formatdate(mtime, usegmt=True)})
 
 
+def _rebuild_then_follow(srv: Server, devnet: Path, db: Path, export_dir: Path | None, join, stop: threading.Event,
+                         interval: float, log):
+    """`--rebuild` behind a server that is already up, so the static export
+    stays served. /api/v1/ answers 503 until the new database is swapped in:
+    a reader that opened the path during the swap could pair the new file
+    with the old one's write-ahead log. A failed rebuild is only logged (a
+    restart would repeat it): the database is as it was, and it is followed
+    as without --rebuild."""
+    try:
+        if rm.rebuild(devnet, db, export_dir, log=log, stop=stop) is None:
+            return                           # stopped
+    except Exception as exc:
+        log(f"readmodel: rebuild failed: {exc!r}; following the database as it was")
+    if stop.is_set():
+        return
+    try:
+        follower = rm.Follower(devnet, db, export_dir, log=log)
+    except Exception as exc:
+        srv.not_ready = "the read model is unavailable"
+        log(f"readmodel: cannot follow the journal: {exc!r}")
+        return
+    if join is not None:
+        join.attach(follower)                # chain reads for remote bots come from the followed replica
+    srv.follower, srv.not_ready = follower, None
+    follower.run(stop, interval)
+
+
 def serve(db: Path, export_dir: Path | None, host: str, port: int, origins=DEFAULT_ORIGINS, devnet: Path | None = None,
           join=None, rebuild: bool = False, interval: float = 1.0, access_log: bool = False, log=print):
     follower, stop, thread = None, threading.Event(), None
-    if devnet is not None:
-        if rebuild:
-            # A new database and replica snapshot, built aside (bounded memory)
-            # and swapped in; the follower then resumes from that snapshot.
-            rm.rebuild(devnet, db, export_dir, log=log)
+    if devnet is not None and not rebuild:
         follower = rm.Follower(devnet, db, export_dir, log=log)
         if join is not None:
             join.attach(follower)            # chain reads for remote bots come from the followed replica
-        thread = threading.Thread(target=follower.run, args=(stop, interval), name="readmodel", daemon=True)
-        thread.start()
     srv = Server((host, port), db, export_dir, origins, join=join, follower=follower, access_log=access_log)
+    if devnet is not None:
+        if rebuild:
+            srv.not_ready = "the read model is being rebuilt from the journal"
+            work, args = _rebuild_then_follow, (srv, devnet, db, export_dir, join, stop, interval, log)
+        else:
+            work, args = follower.run, (stop, interval)
+        thread = threading.Thread(target=work, args=args, name="readmodel", daemon=True)
+        thread.start()
     log(f"qdojo combat api on http://{host}:{srv.server_address[1]}{API}/ (db {db}, export {export_dir}, "
         f"join {'ON' if join else 'off'})")
     import signal
@@ -769,7 +801,8 @@ def add_parser(s):
     d.add_argument("--cors-origin", action="append", help="allowed browser origin, repeatable "
                                                           f"(default {DEFAULT_ORIGINS[0]})")
     d.add_argument("--rebuild", action="store_true",
-                   help="rebuild the database and its snapshot from the journal before serving")
+                   help="rebuild the database and its snapshot from the journal; the export is served "
+                        "meanwhile and /api/v1/ answers 503")
     d.add_argument("--interval", type=float, default=1.0, help="seconds between journal polls")
     d.add_argument("--access-log", action="store_true")
     d.add_argument("--join-inbox", help="ENABLE outside-builder writes: the arena's inbox database "

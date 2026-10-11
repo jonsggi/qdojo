@@ -244,14 +244,16 @@ class JoinService:
         one = lambda k: (q.get(k) or [None])[-1]                           # noqa: E731
         if parts == ["join"]:
             fl = self.follower
+            if fl is None:                  # `api --rebuild` attaches it once the new database is in
+                raise JoinError(503, "not_ready", "the arena replica is still catching up")
             active = self.db.execute("SELECT COUNT(*) FROM registrations WHERE status IN ('new','active')").fetchone()[0]
             return 200, {"schema": "qdojo.combat.api.join.v1", "enabled": True, "chain": "simulated",
-                         "currency": "devnet QU", "network_id": fl.m.network_id.hex() if fl else None,
-                         "contract_id": fl.m.contract_id.hex() if fl else None, "input_type": INPUT_TYPE,
+                         "currency": "devnet QU", "network_id": fl.m.network_id.hex(),
+                         "contract_id": fl.m.contract_id.hex(), "input_type": INPUT_TYPE,
                          "tx_bytes": TX_LEN, "register_tag": REGISTER_TAG.decode().rstrip("\0"),
-                         "tiers": {str(k): v for k, v in fl.m.tiers.items()} if fl else {},
-                         "ruleset_digest": fl.m.ruleset.digest.hex() if fl else None,
-                         "timing_profiles": {str(k): list(v) for k, v in fl.m.timing.items()} if fl else {},
+                         "tiers": {str(k): v for k, v in fl.m.tiers.items()},
+                         "ruleset_digest": fl.m.ruleset.digest.hex(),
+                         "timing_profiles": {str(k): list(v) for k, v in fl.m.timing.items()},
                          "outside_fighters": active, "limits": asdict(self.limits),
                          "allowed_ops": sorted(o.name for o in PLAYER_OPS)}
         if parts == ["join", "status"]:

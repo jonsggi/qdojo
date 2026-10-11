@@ -1,7 +1,10 @@
 """The read API's contract: shapes, pagination, errors, CORS, caching, static files (AUD-026)."""
 import gzip
 import json
+import re
+import signal
 import threading
+import time
 import urllib.error
 import urllib.request
 
@@ -199,3 +202,125 @@ def test_market_and_economics(site):
     assert get(site, "/api/v1/market?fighter=zz")[0] == 400
     econ = j(site, "/api/v1/economics")
     assert econ["schema"] == "qdojo.combat.api.economics.v1" and econ["tiers"]["1"]["stake"] == "5000"
+
+
+# ---- `qdojo combat api --rebuild` --------------------------------------------------
+
+def _small_arena(tmp_path):
+    lineup = [{"label": "a", "policy": "scout-v1"}, {"label": "b", "policy": "kicker-v1"}]
+    arena = live.Arena(tmp_path / "arena", lineup, seed=3, deterministic=True, market_every=0, log=lambda m: None)
+    for _ in range(150):
+        arena.step()
+    arena.save()
+    out = tmp_path / "web" / "combat" / "v1"
+    export.export_all(arena.w.contract, out, keep=5, deployment=arena.deployment(1.5))
+    db = tmp_path / "rm.sqlite"
+    rm.rebuild(arena.dir, db, out, log=lambda m: None)            # the database a --rebuild replaces
+    return arena, out, db
+
+
+def _serve(monkeypatch, probe, **kw):
+    """api.serve as `qdojo combat api` runs it (in the main thread, which takes
+    SIGTERM), with `probe(site)` in another thread once it listens; then the
+    server stops as on SIGTERM. Returns the probe's result and the log."""
+    handlers, logs, site, done = {}, [], {}, {}
+    listening, armed = threading.Event(), threading.Event()
+
+    def log(m):
+        logs.append(m)
+        if m.startswith("qdojo combat api on "):
+            site["base"] = re.match(r"qdojo combat api on (http://[^/]+)/", m)[1]
+            listening.set()
+
+    def on_signal(sig, fn):
+        handlers[sig] = fn
+        armed.set()
+
+    def run():
+        try:
+            assert listening.wait(30)
+            done["result"] = probe(site)
+        except BaseException as exc:
+            done["error"] = exc
+        finally:
+            if armed.wait(30):
+                handlers[signal.SIGTERM]()
+    monkeypatch.setattr(signal, "signal", on_signal)
+    threading.Thread(target=run, daemon=True).start()
+    api.serve(kw.pop("db"), kw.pop("export_dir"), "127.0.0.1", 0, interval=0.05, log=log, **kw)
+    if "error" in done:
+        raise done["error"]
+    return done["result"], logs
+
+
+def _caught_up(site) -> dict:
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        status, _h, body = get(site, "/api/v1/status")
+        if status == 200 and json.loads(body)["caught_up"]:
+            return json.loads(body)
+        time.sleep(0.05)
+    raise AssertionError("the API never caught up")
+
+
+def test_a_rebuild_runs_behind_a_server_that_is_already_up(tmp_path, monkeypatch):
+    """`api --rebuild`: the static export is served from the start, /api/v1/
+    answers 503 without opening the database it replaces until the new one is
+    in, and then serves that one, followed."""
+    arena, out, db = _small_arena(tmp_path)
+    gate, rebuild = threading.Event(), rm.rebuild
+
+    def slow(*a, **kw):
+        assert gate.wait(30)
+        return rebuild(*a, **kw)
+    monkeypatch.setattr(rm, "rebuild", slow)
+
+    def probe(site):
+        static = get(site, "/index.json")[0]
+        status, _h, body = get(site, "/api/v1/status")
+        gate.set()
+        return static, status, json.loads(body)["error"]["code"], _caught_up(site)
+    (static, status, code, after), logs = _serve(monkeypatch, probe, db=db, export_dir=out, devnet=arena.dir,
+                                                 rebuild=True)
+    assert (static, status, code) == (200, 503, "not_ready")
+    assert after["following"] and after["counts"]["fights"] == arena.w.contract.next_id["fight"] - 1 > 0
+    assert any("readmodel: rebuilt" in m for m in logs)
+
+
+def test_a_failed_rebuild_is_logged_and_the_api_follows_the_database_it_had(tmp_path, monkeypatch):
+    """A rebuild that fails (here at once) never takes the server down: with
+    the flag in the unit's command, a restart would only repeat it."""
+    arena, out, db = _small_arena(tmp_path)
+
+    def broken(*a, **kw):
+        raise rm.ReadModelError("replica diverged from the arena at the checkpoint of tick 1")
+    monkeypatch.setattr(rm, "rebuild", broken)
+    (static, after), logs = _serve(monkeypatch, lambda site: (get(site, "/index.json")[0], _caught_up(site)),
+                                   db=db, export_dir=out, devnet=arena.dir, rebuild=True)
+    assert static == 200 and after["following"]
+    assert after["counts"]["fights"] == arena.w.contract.next_id["fight"] - 1
+    assert any("rebuild failed" in m and "replica diverged" in m for m in logs)
+
+
+def test_a_server_that_cannot_follow_still_serves_the_export(tmp_path, monkeypatch):
+    """If the database cannot be followed either (another schema, say), the
+    read endpoints say so and the static export stays served."""
+    arena, out, db = _small_arena(tmp_path)
+
+    def broken(*a, **kw):
+        raise rm.ReadModelError(f"{db} holds qdojo.combat.readmodel.v0, not {rm.SCHEMA_VERSION}; rebuild it")
+    monkeypatch.setattr(rm, "rebuild", broken)
+    monkeypatch.setattr(rm, "Follower", broken)
+
+    def probe(site):
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            status, _h, body = get(site, "/api/v1/status")
+            if json.loads(body)["error"]["message"] != "the read model is being rebuilt from the journal":
+                break
+            time.sleep(0.05)
+        return get(site, "/index.json")[0], status, json.loads(body)["error"]
+    (static, status, error), logs = _serve(monkeypatch, probe, db=db, export_dir=out, devnet=arena.dir, rebuild=True)
+    assert static == 200 and status == 503 and error == {"status": 503, "code": "not_ready",
+                                                         "message": "the read model is unavailable"}
+    assert any("cannot follow the journal" in m for m in logs)
