@@ -201,7 +201,12 @@ Choose = Callable[[dict], Plan]
 
 # A rejection that may clear by itself: retry later, with backoff. Every other
 # rejection of a commit or reveal is final for that round and is not re-sent.
-RETRYABLE = frozenset({Code.WRONG_PHASE, Code.FULL, Code.NONCE_CONFLICT})
+RETRYABLE = frozenset({Code.WRONG_PHASE, Code.FULL})
+# Refused for its nonce alone: another send of the same identity (another of
+# its owner's bots) got in first. Nothing was applied, and a resend carries a
+# fresh nonce, so it goes out again at once. Taken as final, a STALE commit or
+# reveal cost resold fighters about 16 rounds a day in the live arena (2026-10-11).
+RESEND = frozenset({Code.STALE, Code.NONCE_CONFLICT})
 BACKOFF_FIRST, BACKOFF_MAX = 4, 240
 
 
@@ -669,6 +674,8 @@ class Bot:
         """A commit or reveal the contract refused. Retry later only if it may clear."""
         code = result.code
         detail = getattr(result, "detail", "") or ""
+        if code in RESEND:
+            return f"{what} {code.name}; resending with a fresh nonce"
         if code in RETRYABLE:
             self._back_off((what, key), tick)
             return f"{what} {code.name}; retrying from tick {self.backoff[(what, key)][0]}"

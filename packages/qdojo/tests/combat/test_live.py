@@ -1,6 +1,8 @@
 import json
 
 from qdojo.combat import live
+from qdojo.combat.codec import Code
+from qdojo.combat.contract import CallResult
 from qdojo.combat.sim import identity
 
 
@@ -84,3 +86,29 @@ def test_a_collector_running_fighters_takes_over_another_it_buys_within_a_few_ti
     assert takes_over(second)
     assert arena.w.contract.fighters[second].owner == collector
     assert not [m for m in logs if "registration refused" in m]
+
+
+def test_a_refused_or_dropped_registration_is_sent_again_and_logged_once_per_reason(tmp_path):
+    logs = []
+    arena = live.Arena(tmp_path / "net", [{"label": "a", "policy": "mixed-v1"}], seed=3, deterministic=True,
+                       market_every=0, log=logs.append)
+    fid, owner = next(iter(arena.labels)), identity("test-collector")
+    outcomes = iter([CallResult(Code.NOT_OWNER), CallResult(Code.NOT_OWNER), "dropped", None])
+
+    class Chain:                                  # what _register_for asks of the chain, scripted
+        sent = 0
+
+        def send(self, who, op, **fields):
+            assert who == owner
+            self.sent += 1
+            return self.sent
+
+        def poll(self, receipt):
+            return next(outcomes)
+    arena.chain = chain = Chain()
+    for _ in range(5):
+        arena._register_for(fid, owner)
+    assert chain.sent == 4                        # the first, two refused, one dropped; then one in flight
+    assert [m.split(": ", 1)[1] for m in logs if "registration" in m] == [
+        "a: new owner's registration refused (NOT_OWNER); sending it again",
+        "a: new owner's registration dropped; sending it again"]

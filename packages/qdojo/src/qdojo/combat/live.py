@@ -334,7 +334,8 @@ class Arena:
         self.frozen = self._load_frozen(nft_frozen, nft_frozen_url)
         self.labels: dict[bytes, dict] = {}
         self.bots: dict[bytes, Bot] = {}
-        self._registering: dict[bytes, tuple[bytes, Pending]] = {}   # fighter -> (new owner, receipt in flight)
+        # fighter -> (new owner, its registration in flight, why the last one failed)
+        self._registering: dict[bytes, tuple[bytes, Pending, str | None]] = {}
         self.cup_every, self.duel_every, self.market_every = cup_every, duel_every, market_every
         self.tier_stake = self.net.m.tiers[min(self.net.m.tiers)]
         self.market = Market(self, self._load("market.json", None))
@@ -667,17 +668,18 @@ class Arena:
 
     def _register_for(self, fid: bytes, owner: bytes):
         """Sends the new owner's RegisterFighter, or waits for the one in flight;
-        a refused or dropped one is sent again."""
-        sent = self._registering.get(fid)
+        a refused or dropped one is sent again, and logged when its reason is new."""
+        sent, why = self._registering.get(fid), None
         if sent is not None and sent[0] == owner:
             r = self.chain.poll(sent[1])
             if r is None:
                 return                                # not included yet
             why = "dropped" if r == "dropped" else f"refused ({r.code.name})"
-            self.log(f"tick {self.w.tick}: {self.labels[fid]['label']}: new owner's registration {why}; "
-                     "sending it again")
+            if why != sent[2]:
+                self.log(f"tick {self.w.tick}: {self.labels[fid]['label']}: new owner's registration {why}; "
+                         "sending it again")
         self._registering[fid] = (owner, self.chain.send(owner, Op.REGISTER_FIGHTER, fighter_id=fid,
-                                                         registry_version=1))
+                                                         registry_version=1), why)
 
     def _reserve(self):
         if self.chain.fees is not None and (self.chain.reserve or 0) < RESERVE_FLOOR:
