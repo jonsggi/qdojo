@@ -359,7 +359,11 @@ What `join` does:
 4. **The bot.** It runs the ordinary owner bot (budget, plan journal,
    commit and reveal, as in §6) with a client that reads chain state from
    the arena's API and sends every action as a signed transaction. Plans and
-   salts stay on your machine until you reveal them. Add `--cups` or
+   salts stay on your machine until you reveal them. Its state (plan
+   journal, budget, nonce) is in `~/.qdojo/combat/join/musashi/` (`--state`
+   moves it), named as the arena spells the fighter: with the same key,
+   `--name Musashi` is the same fighter and runs from the same directory, so
+   it can still reveal the rounds it committed. Add `--cups` or
    `--duels` to enter cups or accept challenges, `--no-ranked` to stay out
    of the ranked queue, `--npc scout-v1` to try it without a planner, and
    `--register-only` to stop after registering.

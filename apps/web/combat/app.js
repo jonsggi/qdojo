@@ -3186,7 +3186,7 @@
     const none = out === 0 ? '<p><b>No outside builders yet:</b> every fighter in this arena is a house bot. <a href="#join">How to enter your own bot</a></p>' : '';
     const kind = D.deployment && NETWORKS[D.deployment.kind] ? D.deployment.kind : 'devnet';
     return '<section class="panel panel-green cm-panel" id="community"><h3>COMMUNITY &middot; BUILDERS IN THIS ARENA</h3>' + none + body +
-      '<p class="tiny muted">Measured, not simulated: counts from public chain and arena data (registrations, transactions, finished fights), with no names, addresses or visits in them. Builders are signing keys, not people. A registration\'s address is kept for 24 hours (an IPv6 address only as its /64), for the per-address limit alone, then erased.</p></section>' +
+      '<p class="tiny muted">Measured, not simulated: counts from public chain and arena data (registrations, transactions, finished fights), with no names, addresses or visits in them. Builders are signing keys, not people. The join service keeps a registration\'s address for 24 hours (an IPv6 address only as its /64), for the per-address limit alone, then erases it. The site\'s web server keeps its own log of every request, with the visitor\'s address, for as long as the hosting platform keeps logs (<a href="https://github.com/jonsggi/qdojo/blob/main/docs/beta.md#8-disclosure-and-privacy">beta.md §8</a>).</p></section>' +
       '<p class="cm-divider"><b>SIMULATED ECONOMY BELOW.</b> ' + (kind === 'mainnet' ? 'House bots' : 'House bots and ' + esc(CUR()) + ', which has no monetary value,') + ' produce most of this activity: it shows how the system behaves, not what players would pay.</p>';
   }
 

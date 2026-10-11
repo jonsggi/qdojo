@@ -967,7 +967,14 @@ def cmd_join(a):
         raise unfinished(e.why()) from None
     except (OSError, ValueError, KeyError, TypeError) as e:
         raise unfinished(printable(e)) from None
-    print(f"fighter {a.name} = {fid.hex()}")
+    # The name as the arena spells it. The same name in another case is this key's own fighter (register()),
+    # so it runs from that fighter's state directory: a second one has no plan journal for the rounds the
+    # fighter committed (they forfeit) and a budget counted from zero. Only a case variant of --name is
+    # taken from the answer, so an arena can never choose the path.
+    name = reg.get("name")
+    if not (isinstance(name, str) and NAME_RE.fullmatch(name) and name.lower() == a.name.lower()):
+        name = a.name
+    print(f"fighter {name} = {fid.hex()}")
     rules = candidate_1()
     if info.get("ruleset_digest") and info["ruleset_digest"] != rules.digest.hex():
         try:                                   # any packaged ruleset: the demo arena runs candidate 2
@@ -975,7 +982,7 @@ def cmd_join(a):
         except RulesetError:
             raise SystemExit("qdojo: the arena runs a ruleset this checkout does not know; update qdojo") from None
     print(f"arena ruleset {rules.semantic_version} {rules.digest.hex()}")
-    state = Path(a.state) if a.state else _home() / "join" / a.name
+    state = Path(a.state) if a.state else _home() / "join" / name
     say = lambda m: print(printable(m, None), flush=True)       # noqa: E731  (arena text, escaped)
     try:
         client = RemoteClient(http, info, subseed, pub, fid, state, log=say)
@@ -1063,7 +1070,8 @@ def add_parser(s):
     d.add_argument("--npc", help="without --planner, a built-in policy fights for you (default mixed-v1)")
     d.add_argument("--budget-ms", type=int, default=1500)
     d.add_argument("--budget", help="JSON file overriding the bot's spending budget")
-    d.add_argument("--state", help="bot state directory (plan journal, budget, nonce)")
+    d.add_argument("--state", help="bot state directory (plan journal, budget, nonce; default "
+                                   "~/.qdojo/combat/join/NAME, the name as the arena spells it)")
     d.add_argument("--cups", action="store_true", help="enter open cups")
     d.add_argument("--duels", action="store_true", help="accept duel challenges")
     d.add_argument("--no-ranked", action="store_true", help="stay out of the ranked queue")

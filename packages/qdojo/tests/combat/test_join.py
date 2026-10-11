@@ -233,7 +233,8 @@ def test_a_second_name_from_a_registered_key_is_refused(tmp_path, capsys, monkey
     (one_per_key) before join signs, sends or creates anything. It used to find
     the key's registration by owner and run that fighter under the new name,
     with a state directory of its own. The same name in another case is the
-    key's own fighter, as the arena compares names."""
+    key's own fighter, as the arena compares names, and runs from its state
+    directory under the arena's spelling."""
     monkeypatch.setenv("QDOJO_COMBAT_HOME", str(tmp_path / "home"))
     rig = Rig(tmp_path, J.Limits(**FAST, max_outside_fighters=4))
     try:
@@ -263,8 +264,11 @@ def test_a_second_name_from_a_registered_key_is_refused(tmp_path, capsys, monkey
             rig.http.post("/api/v1/join/register", second)
         assert (e.value.status, e.value.code) == (409, "one_per_key")
         assert e.value.message == "this key already registered First"
-        code, out = _cli(capsys, *join, "--name", "first", "--register-only")
-        assert code == 0 and f"fighter first = {fid.hex()}" in out and "registered on chain" in out, out
+        # The same name in another case is the key's own fighter: it runs under the arena's spelling, from
+        # the state directory it has (it ran from a second, first/, with no journal of First's committed rounds).
+        code, out = _cli(capsys, *join, "--name", "first", "--npc", "scout-v1", "--seconds", "0.01", "--poll", "0.01")
+        assert code == 0 and f"fighter First = {fid.hex()}" in out and "registered on chain" in out, out
+        assert sorted(p.name for p in (tmp_path / "home" / "join").iterdir()) == ["First"]
     finally:
         rig.srv.shutdown()
 
@@ -521,6 +525,29 @@ def test_a_registration_cut_short_on_chain_says_to_run_join_again(stub, tmp_path
     code, out = _cli(capsys, *join)
     assert len(reads) == 2 and "REGISTER_FIGHTER sent" in out, out
     assert code != 0 and "on chain did not complete (api_down" in out and "Traceback" not in out, out
+
+
+def test_only_a_case_variant_of_the_name_is_taken_from_the_arena(stub, tmp_path, capsys):
+    """join runs a fighter, and names its state directory, by the arena's spelling
+    of the name, but takes from the answer only a valid name that differs from
+    --name in case alone: an arena's answer never chooses the path."""
+    url, routes = stub
+    key = tmp_path / "me.seed"
+    _s, pub = J.load_or_make_key(key)
+    fid = J.fighter_id_for("Builder").hex()
+    routes[("GET", "/api/v1/join")] = (200, _join_doc(3, 16))
+    routes[("GET", "/api/v1/chain/state")] = (200, {        # the fighter waits in the queue: the bot sends nothing
+        "tick": 50, "fighter": {"lock": "QUEUED", "auth_version": 1, "active_fight": None, "lifetime": 1000,
+                                "operator": pub.hex(), "cup": None, "cooldown_until": 0, "suspended": False},
+        "balance": 1_000_000, "credit": 0, "nonce": 0, "open_cups": [], "duel_offers": []})
+    for answered, runs_as in (("../../outside", "Builder"), ("Builder-2", "Builder"), ("BUILDER", "BUILDER")):
+        routes[("POST", "/api/v1/join/register")] = (202, {"status": "active", "name": answered, "fighter_id": fid})
+        code, out = _cli(capsys, "combat", "join", "--arena", url, "--name", "Builder", "--key", str(key),
+                         "--npc", "scout-v1", "--seconds", "0.01", "--poll", "0.01")
+        assert code == 0 and f"fighter {runs_as} = {fid}" in out, (answered, out)
+    runs = tmp_path / "home" / "join"
+    assert (runs / "Builder").is_dir() and (runs / "BUILDER").is_dir() and not (runs / "Builder-2").exists()
+    assert not (tmp_path / "outside").exists()
 
 
 def test_an_answer_that_is_not_http_counts_as_no_answer(stub, tmp_path, capsys):

@@ -94,7 +94,7 @@ def test_cohort_report_keeps_drop_offs_in_the_denominator(tmp_path):
         w = csv.DictWriter(f, fieldnames=study.COHORT_FIELDS)
         w.writeheader()
         w.writerows(rows)
-    r = study.cohort_report(study.read_csv(path))
+    r = study.cohort_report(study.read_cohort_log(path))
     assert r["excluded_house_or_test"] == 1 and r["participants"] == 5 and r["unknown_columns"] == []
     m = r["phases"]["main"]
     assert m["recruited"] == 4 and m["started"] == 3
@@ -109,7 +109,8 @@ def test_cohort_report_keeps_drop_offs_in_the_denominator(tmp_path):
     assert r["phases"]["after-correction"]["first_fight"]["count"] == 1
     assert "P01" not in json.dumps(r)
     # The committed template parses with the same columns.
-    assert study.cohort_report(study.read_csv(ROOT / "docs" / "fixtures" / "beta-cohort-template.csv"))["unknown_columns"] == []
+    template = ROOT / "docs" / "fixtures" / "beta-cohort-template.csv"
+    assert study.cohort_report(study.read_cohort_log(template))["unknown_columns"] == []
 
 
 def _cohort(*rows):
@@ -267,6 +268,58 @@ def test_a_coded_answer_or_score_the_protocol_does_not_define_stops_the_report()
     for cell in ("T01: house_or_test 'house'", "T01: clarity '7'", "P01: returned_week_2 'TRUE?'",
                  "P01: counterplay '3.5'"):
         assert cell in str(exc.value)
+
+
+def test_a_log_whose_header_lacks_a_column_stops_the_report(tmp_path):
+    """A blank cell reads as n (or none, or no answer), so a column the report
+    could not find read as blank in every row and the report exited 0:
+    'asssistance' made H3 5 of 10, a pass, for 4 of 10, and the T6 columns kept
+    in another sheet read as 0 of 10 three times."""
+    rows = ([{**_person(f"P0{i}", 5, "hands_on" if i == 1 else "none"), **dict.fromkeys(study.T6, "y")}
+             for i in range(1, 6)] + [_person(f"P{i:02d}") for i in range(6, 11)])
+
+    def log(name, header, cols=study.COHORT_FIELDS, bom=""):
+        path = tmp_path / name
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            f.write(bom)
+            w = csv.writer(f)
+            w.writerow(header)
+            w.writerows([r.get(c, "") for c in cols] for r in rows)
+        return path
+
+    def refused(path):
+        with pytest.raises(study.CohortLogError) as exc:
+            study.read_cohort_log(path)
+        return str(exc.value)
+
+    typo = log("typo.csv", [c.replace("assistance", "asssistance") for c in study.COHORT_FIELDS])
+    assert "the header has no assistance (it has 'asssistance', which the template does not: misspelt?)" in refused(typo)
+    out = subprocess.run([sys.executable, str(ROOT / "scripts" / "beta-study.py"), "cohort", str(typo)],
+                         capture_output=True, text=True, timeout=120)
+    assert out.returncode == 2 and "'asssistance'" in out.stderr and out.stdout == "", out.stderr
+    kept = [c for c in study.COHORT_FIELDS if c not in study.T6]
+    assert ("the header has no second_submission, returned_week_2, explained_improvement"
+            in refused(log("t6.csv", kept, kept)))
+    # Of two columns with one name only the last was read (an empty assistance after the filled one: H3 5 of 10).
+    twice = log("twice.csv", [*study.COHORT_FIELDS, "assistance"], [*study.COHORT_FIELDS, "unlogged"])
+    assert "the header names assistance more than once" in refused(twice)
+    # An unquoted comma in a free-text cell moves every cell after it one column on.
+    full = log("comma.csv", study.COHORT_FIELDS)
+    text = full.read_text()
+    full.write_text(text.replace("P06,,,2026-10-20T10:00,,none,install,gave up,",
+                                 "P06,,,2026-10-20T10:00,,none,install,python version, gave up,"))
+    assert full.read_text() != text
+    assert "P06: 16 cells under a header of 15 (a comma in a cell that is not quoted?)" in refused(full)
+    # A spreadsheet's export reads as the template: a byte-order mark, names in another case or with spaces,
+    # and a column of the team's own beside the template's (listed, not read).
+    header = [c.upper() if c == "participant" else f" {c.title()} " if c == "assistance" else c
+              for c in study.COHORT_FIELDS] + ["notes"]
+    export = log("export.csv", header, [*study.COHORT_FIELDS, "notes"], bom="\ufeff")
+    r = study.cohort_report(study.read_cohort_log(export))
+    m = r["phases"]["main"]
+    assert r["unknown_columns"] == ["notes"] and m["assistance"] == {"hands_on": 1, "none": 9}
+    assert (m["first_fight_within_target"]["count"], m["first_fight_within_target"]["of"]) == (4, 10)
+    assert [(m[k]["count"], m[k]["of"]) for k in study.T6] == [(5, 10)] * 3
 
 
 def test_a_phase_is_read_without_case_or_stray_spaces():

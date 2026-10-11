@@ -133,7 +133,14 @@ tested in `packages/qdojo/tests/test_study.py`:
   `n` (`yes`, `true` and `1` read as `y`, `no`, `false` and `0` as `n`, a
   blank cell is `n`; case does not matter); a survey answer other than a
   whole number from 1 to 5 (a blank cell is no answer). Phases are compared
-  without case or surrounding spaces.
+  without case or surrounding spaces. The log's header must name every
+  column of §4 (compared without case or surrounding spaces; a spreadsheet's
+  byte-order mark is ignored): a column it lacks, misspelt or kept in another
+  sheet, would read as blank in every row, so the report stops and names it,
+  with the columns it does not know. It stops too for a column named twice
+  and for a row with more cells than the header (a comma in a cell that is
+  not quoted). Columns of the team's own are listed as `unknown_columns` and
+  not read.
 - **Adaptation** (`adaptation`): H7 from the read model's per-fighter results
   against the switching bot.
 - **Arena participation** (`GET /api/v1/community`, [beta.md](beta.md) §7):

@@ -234,12 +234,46 @@ STAMP_RE = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}")
 
 class CohortLogError(ValueError):
     """A cohort log value the report cannot count without guessing (a timestamp it
-    cannot read, a coded answer or survey score the protocol does not define)."""
+    cannot read, a coded answer or survey score the protocol does not define), or
+    a column it cannot find."""
 
 
 def read_csv(path: Path) -> list[dict]:
     with open(path, newline="") as f:
         return list(csv.DictReader(f))
+
+
+def read_cohort_log(path: Path) -> list[dict]:
+    """The cohort log's rows, its header checked first. Column names are compared
+    without case or surrounding spaces, and a spreadsheet's byte-order mark is
+    not part of the first. A header without a column of COHORT_FIELDS or with
+    one twice, or a row with more cells than the header, raises CohortLogError
+    naming each: a column the report cannot find reads as blank in every row
+    (n, none, no answer), so 'asssistance' made H3 5 of 10, a pass, for 4 of 10
+    and the T6 columns kept in another sheet read as 0 of 10; of two columns
+    with one name only the last was read; and an unquoted comma in a cell moves
+    every cell after it."""
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        header = [h.strip().lower() for h in reader.fieldnames or ()]
+        reader.fieldnames = header
+        rows = list(reader)
+    problems = []
+    missing = [c for c in COHORT_FIELDS if c not in header]
+    if missing:
+        unknown = ", ".join(repr(h) for h in header if h not in COHORT_FIELDS)
+        problems.append(f"the header has no {', '.join(missing)}"
+                        + (f" (it has {unknown}, which the template does not: misspelt?)" if unknown else ""))
+    twice = sorted({h for h in header if h and header.count(h) > 1})
+    if twice:
+        problems.append(f"the header names {', '.join(twice)} more than once")
+    for r in rows:
+        if None in r:                                 # DictReader keeps the cells past the header under None
+            problems.append(f"{_cell(r, 'participant') or '?'}: {len(header) + len(r[None])} cells under a header "
+                            f"of {len(header)} (a comma in a cell that is not quoted?)")
+    if problems:
+        raise CohortLogError("the cohort log's columns cannot be read without guessing: " + "; ".join(problems))
+    return rows
 
 
 def _cell(r: dict, col: str) -> str:
@@ -349,7 +383,8 @@ def cohort_report(rows: list[dict]) -> dict:
     dropout). H4 counts explained_improvement = y, not partial. Raises
     CohortLogError, naming every bad cell, when a timestamp cannot be read or a
     coded answer (house_or_test, assistance, the T6 answers) or a survey score
-    is not one the protocol defines."""
+    is not one the protocol defines. A row without a column reads as a blank
+    cell there: read a log file with read_cohort_log, which checks its header."""
     unknown = sorted(set().union(*(r.keys() for r in rows)) - set(COHORT_FIELDS)) if rows else []
     problems: list[str] = []
 

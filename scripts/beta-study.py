@@ -70,7 +70,7 @@ def main(argv=None) -> int:
         return 0
     if a.cmd == "cohort":
         try:
-            report = study.cohort_report(study.read_csv(a.log))
+            report = study.cohort_report(study.read_cohort_log(a.log))
         except study.CohortLogError as exc:
             print(f"beta-study: {a.log}: {exc}", file=sys.stderr)
             return 2
