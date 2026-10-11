@@ -237,7 +237,8 @@
       if (JSON.stringify(theirsBr) !== JSON.stringify(br ? { A: br.a, B: br.b } : null)) bad.push(tag + ': break recovery differs');
     });
     const forfeit = isForfeit(replay);
-    if (forfeit && 'forfeit_round' in replay && replay.forfeit_round !== derived.end.round_index) {
+    // null is "not recorded": the exporter writes it for a void (export.py).
+    if (forfeit && replay.forfeit_round != null && replay.forfeit_round !== derived.end.round_index) {
       bad.push('forfeit_round: export says ' + replay.forfeit_round + ', the replayed state is at round ' + derived.end.round_index);
     }
     // A fight still in progress claims no outcome; its revealed rounds must
