@@ -121,6 +121,9 @@ def test_train_and_replay_with_each_starter_distribution(which, tmp_path, capsys
     assert text.splitlines()[0].startswith(f"ruleset {PUBLIC_ARENA} "), "the ruleset comes first"
     replay = json.loads(out.read_text())
     assert replay["ruleset_digest"] == PUBLIC.digest.hex()
+    # the starter played; with --planner dropped the --as policy plays, and the two checks below pass vacuously
+    you = next(f for f in replay["fighters"].values() if f["name"] == "you")
+    assert you["kind"] == "planner", f"the starter did not play: {you}"
     # a failed round still exits 0: the replay records it as FALLBACK_PLAN_USED
     assert replay["fallbacks"] == [], text
     # an adjusted plan is only printed: "round N: your plan was illegal and would forfeit on a chain; ..."

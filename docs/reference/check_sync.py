@@ -37,7 +37,10 @@ is compared with it:
 
 C++ is read with simple regexes over regions marked `// sync:begin NAME` ...
 `// sync:end NAME`; Markdown tables are marked `<!-- sync:begin NAME -->` ...
-`<!-- sync:end NAME -->`. A number listed twice in any numbered table is an
+`<!-- sync:end NAME -->`. The regexes read C++ code only: comments and
+`#if 0` blocks are removed first, so a commented-out case, emit, registration
+or constant is not there (the markers and QDOJO.h's ruleset comments are the
+only comments read). A number listed twice in any numbered table is an
 error. Each error names the file, the table and the value.
 """
 from __future__ import annotations
@@ -81,15 +84,40 @@ def flat(s: str) -> str:
     return re.sub(r"\s+", " ", s)
 
 
+def code(s: str) -> str:
+    """C++ without what the compiler skips: comments and `#if 0` blocks (up to their
+    #else, #elif or #endif). Other conditionals stay, every branch of them."""
+    out, off = [], 0                                    # off: #if depth inside an #if 0
+    for line in re.sub(r"//[^\n]*|/\*.*?\*/", " ", s, flags=re.S).split("\n"):
+        d = re.match(r"\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b(.*)", line)
+        if off:
+            if d and d.group(1).startswith("if"):
+                off += 1
+            elif d and d.group(1) == "endif":
+                off -= 1
+            elif d and off == 1:                        # the #if 0's own #else or #elif
+                off = 0
+        elif d and d.group(1) == "if" and d.group(2).strip() == "0":
+            off = 1
+        else:
+            out.append(line)
+    return "\n".join(out)
+
+
+def cpp_code(rel: str) -> str:
+    """A whole C++ file, as code."""
+    return code(text(rel))
+
+
 def region(rel: str, name: str) -> str:
-    """The text between the sync markers NAME of a C++ or Markdown file."""
+    """The text between the sync markers NAME of a Markdown file, or the code between them of a C++ file."""
     s = text(rel)
     m = re.search(r"sync:begin " + re.escape(name) + r"\b[^\n]*\n(.*?)\n[^\n]*sync:end " + re.escape(name) + r"\b",
                   s, re.S)
     if not m:
         fail(rel, f"no region marked 'sync:begin {name}' ... 'sync:end {name}'")
         return ""
-    return m.group(1)
+    return code(m.group(1)) if rel.endswith(".h") else m.group(1)
 
 
 def table_rows(md: str) -> list[list[str]]:
@@ -164,7 +192,7 @@ def check_opcodes():
     # Both C++ files: the numbers, the body lengths, a case in the dispatch switch for each.
     # QDOJO.h dispatches Withdraw, which needs a transfer, from Dispatch (its withdraw-dispatch region).
     for rel, prefix in ((PORT, "OP_"), (QDOJO, "QDOJO_OP_")):
-        got = numbered(rel, re.findall(r"\b" + prefix + r"([A-Z_]+)\s*=\s*(\d+)", region(rel, "opcodes")))
+        got = numbered(f"{rel} opcodes", re.findall(r"\b" + prefix + r"([A-Z_]+)\s*=\s*(\d+)", region(rel, "opcodes")))
         compare("opcode", ref, f"{rel} opcodes", got, "codec.Op")
         lens = {name: cpp_sum(expr) for name, expr in
                 re.findall(r"case\s+" + prefix + r"([A-Z_]+):\s*return\s+([\d\s+]+);", region(rel, "body-lengths"))}
@@ -184,7 +212,7 @@ def check_opcodes():
     # Frame constants.
     for rel, names in ((PORT, ("FRAME_LEN", "FRAME_HEADER", "FRAME_SENTINEL")),
                        (QDOJO, ("QDOJO_FRAME_LEN", "QDOJO_FRAME_HEADER", "QDOJO_FRAME_SENTINEL", "QDOJO_MAX_BODY"))):
-        src = text(rel)
+        src = cpp_code(rel)
         for n in names:
             m = re.search(r"\b" + n + r"\s*=\s*(0x[0-9A-Fa-f]+|\d+)", src)
             want = getattr(codec, n.replace("QDOJO_", ""))
@@ -242,9 +270,10 @@ def check_events():
             "contract.EVENT_TYPES")
     py = text("packages/qdojo/src/qdojo/combat/contract.py")
     for rel, prefix, emit in ((PORT, "EV_", r"emit\(s,\s*EV_{}\b"), (QDOJO, "QDOJO_EV_", r"emit\(s,\s*c,\s*QDOJO_EV_{}\b")):
-        got = numbered(rel, re.findall(r"\b" + prefix + r"([A-Z_]+)\s*=\s*(\d+)", region(rel, "event-types")))
+        got = numbered(f"{rel} event-types", re.findall(r"\b" + prefix + r"([A-Z_]+)\s*=\s*(\d+)",
+                                                         region(rel, "event-types")))
         compare("event type", ref, f"{rel} event-types", got, "contract.EVENT_TYPES")
-        src = text(rel)
+        src = cpp_code(rel)
         for num, name in ref.items():
             if name in got.values() and not re.search(emit.format(name), src):
                 fail(rel, f"event type {num} {name} is defined but never emitted")
@@ -267,7 +296,7 @@ def check_codes():
     compare("result code", ref, f"{PROTOCOL} result-codes table", numbered(f"{PROTOCOL} result-codes table", pairs),
             "codec.Code")
     for rel, pat in ((PORT, r"\b([A-Z_]+)\s*=\s*(\d+)"), (QDOJO, r"\bQDOJO_([A-Z_]+)\s*=\s*(\d+)")):
-        got = numbered(rel, re.findall(pat, region(rel, "result-codes")))
+        got = numbered(f"{rel} result-codes", re.findall(pat, region(rel, "result-codes")))
         if got.pop(255, None) != "HOST_ERROR":
             fail(f"{rel} result-codes", "HOST_ERROR = 255 (not a protocol code) is missing")
         compare("result code", ref, f"{rel} result-codes", got, "codec.Code")
@@ -277,7 +306,7 @@ def check_codes():
 
 def check_abi():
     from qdojo.combat import join
-    src = text(QDOJO)
+    src = cpp_code(QDOJO)
     procs = numbered(f"{QDOJO} REGISTER_USER_PROCEDURE", re.findall(r"REGISTER_USER_PROCEDURE\((\w+),\s*(\d+)\)", src))
     funcs = numbered(f"{QDOJO} REGISTER_USER_FUNCTION", re.findall(r"REGISTER_USER_FUNCTION\((\w+),\s*(\d+)\)", src))
     if not procs or not funcs:
@@ -346,7 +375,7 @@ def check_rulesets():
     versions = list(want)
 
     # combat_core.h: every integer of CANDIDATE_n in declaration order.
-    core = re.sub(r"//[^\n]*", "", text(CORE))
+    core = cpp_code(CORE)
     for i, version in enumerate(versions, 1):
         m = re.search(r"static constexpr RulesetTable CANDIDATE_" + str(i) + r"\s*=\s*\{(.*?)\n\};", core, re.S)
         if not m:
@@ -372,6 +401,7 @@ def check_rulesets():
             fail(CORE, f"CANDIDATE_{i} differs from {RULESET_FILES[version]} in: {', '.join(bad)}")
 
     # QDOJO.h: compile the ruleset functions natively and evaluate every table.
+    qd = cpp_code(QDOJO)
     got = qdojo_tables()
     if got is not None:
         for i, version in enumerate(versions, 1):
@@ -392,13 +422,13 @@ def check_rulesets():
                           ("QDOJO_ORDINARY_RECOVERY", "ordinary_recovery"), ("QDOJO_RECOVER_UNHIT", "recover_unhit"),
                           ("QDOJO_RECOVER_HIT", "recover_hit"), ("QDOJO_EXHAUSTED_RECOVERY", "exhausted_recovery"),
                           ("QDOJO_BREAK_RECOVERY", "break_recovery"), ("QDOJO_POWER_COST", "power_cost")):
-            m = re.search(r"\b" + name + r"\s*=\s*(\d+)", text(QDOJO))
+            m = re.search(r"\b" + name + r"\s*=\s*(\d+)", qd)
             vals = {want[v]["doc"][key] for v in versions}
             if not m or {int(m.group(1))} != vals:
                 fail(QDOJO, f"{name} is {m.group(1) if m else 'missing'}, the ruleset files say {sorted(vals)}")
 
     # The compiled manifest's ruleset is the demo-c3 profile's.
-    m = re.search(r"QDOJO_MANIFEST_RULESET\s*=\s*QDOJO_RS_C(\d)", text(QDOJO))
+    m = re.search(r"QDOJO_MANIFEST_RULESET\s*=\s*QDOJO_RS_C(\d)", qd)
     demo = devnet.manifest("demo-c3").ruleset.semantic_version
     if not m or versions[int(m.group(1)) - 1] != demo:
         fail(QDOJO, f"QDOJO_MANIFEST_RULESET is {m.group(0) if m else 'missing'}, devnet demo-c3 runs {demo}")
@@ -458,7 +488,7 @@ def qdojo_tables() -> dict | None:
     if not gxx:
         notes.append("g++ not found: QDOJO.h ruleset functions not evaluated")
         return None
-    src = text(QDOJO)
+    src = cpp_code(QDOJO)
     consts = "\n".join(re.findall(r"^constexpr [^;\n]*;", src, re.M))
     body = region(QDOJO, "ruleset-functions")
     if not body:
@@ -573,7 +603,7 @@ def check_manifest():
     caps = {"FIGHTERS": "MAX_FIGHTERS", "ACCOUNTS": "MAX_ACCOUNTS", "OPEN_OFFERS": "MAX_OFFERS",
             "FIGHTS": "MAX_FIGHTS", "CUPS": "MAX_CUPS", "CUP_ENTRANTS": "MAX_CUP_ENTRANTS", "EVENTS": "EVENT_RING"}
     for rel, prefix in ((PORT, "CAP_"), (QDOJO, "QDOJO_CAP_")):
-        src = text(rel)
+        src = cpp_code(rel)
         for cap, key in caps.items():
             mm = re.search(r"\b" + prefix + cap + r"\s*=\s*(\d+)", src)
             if not mm or int(mm.group(1)) != dm.get(key):
@@ -659,7 +689,7 @@ def check_nft():
     # The mirror source contract.
     srcs = set(codec.MIRROR_SOURCES)
     for rel, name in ((PORT, "MIRROR_SOURCE_QBAY"), (QDOJO, "QDOJO_MIRROR_SOURCE_QBAY")):
-        mm = re.search(r"\b" + name + r"\s*=\s*(\d+)", text(rel))
+        mm = re.search(r"\b" + name + r"\s*=\s*(\d+)", cpp_code(rel))
         if not mm or {int(mm.group(1))} != srcs:
             fail(rel, f"{name} is {mm.group(1) if mm else 'missing'}, codec.MIRROR_SOURCES is {sorted(srcs)}")
     mm = re.search(r"the only accepted source is (\d+) \(QBAY\)", flat(text(PROTOCOL)))
