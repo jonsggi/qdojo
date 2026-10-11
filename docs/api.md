@@ -343,8 +343,8 @@ ISO-8601 UTC, each only when known); and the scripted policy that plays
 meanwhile (`mixed-v1`). The arena computes it at each export from the
 planner's state ([build-a-bot.md](build-a-bot.md) §7); the static export
 carries it in `index.json` (`deployment.fighters[id]`) and
-`fighters/{id}.json`. Other drivers, and exports from before 2026-10-10, have
-none.
+`fighters/{id}.json`. Other drivers, and exports from an arena older than the
+field, have none.
 
 `community` counts identities, not people: an outside builder is the key
 that registered an outside fighter (one fighter per key), and *active* means

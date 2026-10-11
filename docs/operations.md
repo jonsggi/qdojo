@@ -292,9 +292,11 @@ Handling problems:
   from the repository) and the arena (`~/src/qdojo-live`) ship separately.
   When a change makes the site describe something only the newer arena
   exports, such as `driver_status` (the help screen and llms.txt say an
-  offline model's fighter page says so), update `~/src/qdojo-live`, restart
+  offline model's fighter page says so), update the arena from the local
+  repository before pushing, since the push to `main` is what releases the
+  site: `git -C ~/src/qdojo-live pull --ff-only ~/src/qdojo main`, restart
   `qdojo-combat-live` and `qdojo-combat-api`, check that `index.json`
-  carries the field, and only then release the site. An older site ignores a
+  carries the field, and only then `git push`. An older site ignores a
   field it does not know; a newer site in front of an older arena promises a
   disclosure the export does not make. The API's first start on new code
   replays the whole journal (a snapshot from other code is ignored), and

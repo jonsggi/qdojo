@@ -4,6 +4,7 @@ publishes for an LLM fighter (llm_planner.Breaker, blocked, status; live.py).
 No test here reaches the network: every request goes to a scripted fake
 provider (an unscripted request fails the test), and the one planner process
 started runs with an open breaker behind a proxy that refuses everything."""
+import concurrent.futures
 import contextlib
 import datetime as dt
 import io
@@ -12,6 +13,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 
@@ -392,6 +394,79 @@ def test_a_broken_or_impossible_breaker_file_never_keeps_the_model_shut(tmp_path
     assert L.status(state, 1.0, T0) == {"state": "ok"}
 
 
+def test_a_clock_set_back_keeps_no_breaker_shut_longer_than_its_kind_ever_would(tmp_path):
+    """The clamp is per kind: a transient breaker (30 min at most) found three
+    hours ahead is due now, an account breaker (6 h at most) is not, and a
+    probe's claim never holds longer than PROBE_HOLD_MAX."""
+    state = tmp_path / "s"
+    state.mkdir()
+    p = state / "breaker.json"
+
+    def record(kind, until, probe=0):
+        p.write_text(json.dumps({"state": "open", "kind": kind, "reason": "r", "since": T0, "until": until,
+                                 "backoff": 120, "probe_until": probe}))
+        return L.read_breaker(state, T0)
+    assert record("transient", T0 + 3 * 3600)["until"] == T0
+    assert record("transient", T0 + L.TRANSIENT_BACKOFF_MAX)["until"] == T0 + L.TRANSIENT_BACKOFF_MAX
+    assert record("auth", T0 + 3 * 3600)["until"] == T0 + 3 * 3600
+    assert record("auth", T0, probe=T0 + 3600)["probe_until"] == 0.0
+    assert record("auth", T0, probe=T0 + 21)["probe_until"] == T0 + 21
+    record("auth", T0)
+    b = L.Breaker(state, Clock(T0))
+    assert b.admit(hold=3600) is None                                   # a claim of an hour is cut short
+    assert L.read_breaker(state, T0)["probe_until"] == T0 + L.PROBE_HOLD_MAX
+
+
+def test_decisions_that_find_a_due_breaker_together_send_one_probe(tmp_path, provider, capsys, monkeypatch):
+    """Reading the record and claiming the probe hold the fighter's lock, so
+    of several overlapping decisions exactly one probes, however slowly each
+    reads (the read here is held open 50 ms to make a race all but certain)."""
+    state, clock = tmp_path / "ken", Clock(T0)
+    provider.script = [http_error(402)]
+    decide(state, clock, capsys)
+    clock.t = T0 + L.AUTH_BACKOFF
+    read = L.read_breaker
+
+    def read_slowly(*a, **kw):
+        out = read(*a, **kw)
+        time.sleep(0.05)
+        return out
+    monkeypatch.setattr(L, "read_breaker", read_slowly)
+    breakers = [L.Breaker(state, clock) for _ in range(4)]
+    start = threading.Barrier(len(breakers))
+
+    def claim(b):
+        start.wait()
+        return b.admit(hold=21)
+    with concurrent.futures.ThreadPoolExecutor(len(breakers)) as pool:
+        shut = list(pool.map(claim, breakers))
+    assert sum(b.probing for b in breakers) == 1
+    assert sum(why is None for why in shut) == 1
+    assert all("another decision is probing" in why for why in shut if why)
+
+
+def test_the_request_timeout_counts_from_the_planner_start(tmp_path, monkeypatch, capsys):
+    """Starting Python and the imports come off --timeout: the arena's budget
+    runs from the moment it started the process."""
+    seen = []
+
+    def fake_decide(obs, model, state, daily_usd, timeout, *rest):
+        seen.append(timeout)
+        return fallback()
+    monkeypatch.setattr(L, "decide", fake_decide)
+    monkeypatch.setattr(L, "STARTED", time.monotonic() - 2.5)          # 2.5 s spent starting up
+    monkeypatch.setattr(sys, "argv", ["llm_planner", "--model", MODEL, "--state", str(tmp_path / "s"),
+                                      "--timeout", "6"])
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(_obs())))
+    L.main()
+    assert 3.0 < seen[0] < 3.5
+    monkeypatch.setattr(L, "STARTED", time.monotonic() - 30)           # never less than a second
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(_obs())))
+    L.main()
+    assert seen[1] == 1.0
+    capsys.readouterr()
+
+
 def test_numbers_no_float_can_hold_never_stop_a_decision(tmp_path, provider, capsys):
     """An integer too large for a float, NaN or Infinity in the planner's
     files reads as the field's default: nothing the arena or the planner
@@ -471,7 +546,7 @@ def test_a_spend_record_the_disk_refuses_after_the_request_costs_no_paid_reply(t
     out, err = decide(state, clock, capsys)
     assert out == fallback() and err == [unsaved, "fallback to mixed-v1: provider sent no completion"]
     assert L.read_breaker(state, clock.t) == closed(1, T0, T0, answered=T0)
-    assert provider.requests == 2 and sorted(f.name for f in state.iterdir()) == ["breaker.json"]
+    assert provider.requests == 2 and sorted(f.name for f in state.iterdir()) == ["breaker.json", "breaker.lock"]
 
 
 def test_a_breaker_record_that_cannot_be_saved_still_plays_the_fallback(tmp_path, provider, capsys, monkeypatch):
@@ -632,7 +707,7 @@ def test_the_arena_publishes_each_llm_fighters_status_through_the_export_and_the
         "state": "fallback", "reason": "provider out of credit (HTTP 402)", "since": "2026-09-29T08:02:00Z",
         "last_answer": "2026-09-28T08:12:00Z", "retry_at": "2026-09-29T08:32:00Z", "plays": "mixed-v1"}
     assert by["CLAUDE"]["driver_status"] == {
-        "state": "fallback", "reason": "daily budget spent ($0.50)", "since": "2026-09-29T08:02:00Z",
+        "state": "fallback", "reason": "daily model budget spent", "since": "2026-09-29T08:02:00Z",
         "retry_at": "2026-09-30T00:00:00Z", "plays": "mixed-v1"}
     assert by["QWEN-235"]["driver_status"] == {"state": "ok"}
     assert "driver_status" not in by["tanuki"]

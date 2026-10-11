@@ -78,8 +78,8 @@ test('an offline model says so, names the fallback that plays, why, since when, 
   assert.equal(off.short, 'LLM OFFLINE');
   assert.equal(off.model, 'google/gemini-3.1-flash-lite');
   assert.equal(off.text, OFFLINE_TEXT);
-  const budget = L.driverOffline('llm:anthropic/claude-sonnet-5', { state: 'fallback', reason: 'daily budget spent ($1.00)', retry_at: '2026-10-11T00:00:00Z', plays: 'mixed-v1' });
-  assert.match(budget.text, /^The model anthropic\/claude-sonnet-5 is offline: daily budget spent \(\$1\.00\)\. .* \(next try after 2026-10-11 00:00 UTC\)\.$/);
+  const budget = L.driverOffline('llm:anthropic/claude-sonnet-5', { state: 'fallback', reason: 'daily model budget spent', retry_at: '2026-10-11T00:00:00Z', plays: 'mixed-v1' });
+  assert.match(budget.text, /^The model anthropic\/claude-sonnet-5 is offline: daily model budget spent\. .* \(next try after 2026-10-11 00:00 UTC\)\.$/);
   const noKey = L.driverOffline('llm:x/y', { state: 'fallback', reason: 'no model API key configured', last_answer: '2026-09-28T13:26:00Z', plays: 'mixed-v1' });
   assert.match(noKey.text, /^The model x\/y is offline: no model API key configured; it last answered at 2026-09-28 13:26 UTC\. The scripted/);
 });

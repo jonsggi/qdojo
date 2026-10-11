@@ -36,6 +36,12 @@ the record (a breaker that cannot save cannot open), and a log line says so.
 """
 from __future__ import annotations
 
+import time
+
+# The arena's time budget for a decision runs from the moment it starts this
+# process, so the request's timeout counts from here, not from after the imports.
+STARTED = time.monotonic()
+
 import argparse
 import contextlib
 import datetime as dt
@@ -44,10 +50,14 @@ import json
 import math
 import os
 import sys
-import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:                     # no flock on this platform: the breaker runs unlocked
+    fcntl = None
 
 from . import npcs, planner, scouting
 from .engine import resolve_beat
@@ -62,8 +72,10 @@ FALLBACK_POLICY = "mixed-v1"
 # The circuit breaker (module docstring). Seconds.
 AUTH_BACKOFF, AUTH_BACKOFF_MAX = 30 * 60, 6 * 3600
 TRANSIENT_BACKOFF, TRANSIENT_BACKOFF_MAX, TRIP_AFTER = 2 * 60, 30 * 60, 3
+BACKOFF = {"auth": (AUTH_BACKOFF, AUTH_BACKOFF_MAX), "transient": (TRANSIENT_BACKOFF, TRANSIENT_BACKOFF_MAX)}
 RUN_GAP = 30 * 60               # failures further apart (an idle stretch, the arena down) are not one run
 PROBE_MARGIN = 15               # a probe's claim outlives its request timeout by this much
+PROBE_HOLD_MAX = 5 * 60         # and never holds longer than this
 ACCOUNT_ERRORS = {401: "provider rejected the API key", 402: "provider out of credit",
                   403: "provider refused access"}
 
@@ -395,6 +407,28 @@ def _written(path: Path) -> float | None:
 
 # ---- the provider circuit breaker --------------------------------------------
 
+@contextlib.contextmanager
+def _locked(state: Path):
+    """Holds the fighter's breaker lock (breaker.lock) while its record is read
+    and rewritten, so decisions that overlap neither both claim a probe nor
+    lose an update. Held for a file read and write, never across a request.
+    Best effort: where the lock cannot be taken (a read-only directory), the
+    update runs unlocked."""
+    try:
+        fd = os.open(state / "breaker.lock", os.O_RDWR | os.O_CREAT, 0o600) if fcntl else None
+    except OSError:
+        fd = None
+    try:
+        if fd is not None:
+            with contextlib.suppress(OSError):
+                fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        if fd is not None:
+            os.close(fd)                # releases the lock
+
+
+
 class ProviderError(Exception):
     """A request the provider did not answer with a completion. `kind` is
     "auth" (the account: key, credit, access) or "transient"; `reason` is the
@@ -467,9 +501,10 @@ def read_breaker(state: Path, now: float, legacy: float | None = None) -> dict:
     model last answered, or None. A record that has never said (none yet, or
     one from before it kept the time) takes `legacy`. Missing or unreadable
     is closed, and a value that is not a sane number reads as its default.
-    An open breaker whose times lie further ahead than any backoff could put
-    them (a clock set back, a hand edit) is due at once, so nothing can keep
-    it shut for good."""
+    An open breaker whose times lie further ahead than its kind's longest
+    backoff, or a probe's claim than PROBE_HOLD_MAX, could put them (a clock
+    set back, a hand edit) is due at once, so nothing can keep it shut for
+    longer than it ever means to."""
     try:
         doc = json.loads((Path(state) / "breaker.json").read_text())
     except (OSError, ValueError):
@@ -485,12 +520,12 @@ def read_breaker(state: Path, now: float, legacy: float | None = None) -> dict:
     def num(key, default=0.0):
         v = _number(doc.get(key))
         return default if v is None else v
-    until, probe = num("until"), num("probe_until")
-    if until - now > AUTH_BACKOFF_MAX:
-        until = now
-    if probe - now > AUTH_BACKOFF_MAX:
-        probe = 0.0
     kind = doc.get("kind") if doc.get("kind") in ("auth", "transient") else "transient"
+    until, probe = num("until"), num("probe_until")
+    if until - now > BACKOFF[kind][1]:
+        until = now
+    if probe - now > PROBE_HOLD_MAX:
+        probe = 0.0
     reason = doc.get("reason") if isinstance(doc.get("reason"), str) and doc.get("reason") else "provider failure"
     since = _past(doc.get("since"), now)
     return {"state": "open", "kind": kind, "reason": reason[:120], "since": now if since is None else since,
@@ -505,9 +540,9 @@ class Breaker:
     open: no request until `until`. Then the first process to come claims the
     probe (half-open) for its request's time; its answer closes the breaker,
     its failure opens it again for twice as long. Each update re-reads the
-    file, so overlapping processes lose little. Saving is best effort: a
-    record that cannot be written only means the breaker cannot open, and
-    the log line says so."""
+    file under the fighter's lock, so overlapping processes lose nothing.
+    Saving is best effort: a record that cannot be written only means the
+    breaker cannot open, and the log line says so."""
 
     def __init__(self, state: Path, clock=time.time):
         self.state, self.clock = Path(state), clock
@@ -529,15 +564,17 @@ class Breaker:
 
     def admit(self, hold: float) -> str | None:
         """None if this process may ask the provider now (claiming the probe of
-        an open breaker that is due), else why not, for a quiet fallback."""
-        now, b = self.clock(), self.read()
-        if b["state"] != "open":
-            return None
-        if now < b["until"]:
-            return f"breaker open until {_when(b['until'], now)}: {b['reason']}"
-        if now < b["probe_until"]:
-            return f"breaker open, another decision is probing: {b['reason']}"
-        unsaved = self._save({**b, "probe_until": now + hold})
+        an open breaker that is due, for `hold` seconds at most), else why
+        not, for a quiet fallback."""
+        with _locked(self.state):
+            now, b = self.clock(), self.read()
+            if b["state"] != "open":
+                return None
+            if now < b["until"]:
+                return f"breaker open until {_when(b['until'], now)}: {b['reason']}"
+            if now < b["probe_until"]:
+                return f"breaker open, another decision is probing: {b['reason']}"
+            unsaved = self._save({**b, "probe_until": now + min(hold, PROBE_HOLD_MAX)})
         if unsaved:                         # the probe goes out unclaimed: another decision may probe too
             print(unsaved, file=sys.stderr)
         self.probing = True
@@ -547,8 +584,9 @@ class Breaker:
         """The provider answered: the breaker closes and keeps the time.
         Returns the log line when that closed an open breaker, or when the
         record could not be saved."""
-        now, b = self.clock(), self.read()
-        unsaved = self._save({"state": "closed", "fails": 0, "answered": now})
+        with _locked(self.state):
+            now, b = self.clock(), self.read()
+            unsaved = self._save({"state": "closed", "fails": 0, "answered": now})
         self.probing = False
         if unsaved or b["state"] != "open":
             return unsaved
@@ -558,9 +596,12 @@ class Breaker:
     def failure(self, err: ProviderError) -> str:
         """A request failed. Returns the fallback reason, which says when the
         breaker opened and until when, or that it could not be saved."""
+        with _locked(self.state):
+            return self._failure(err)
+
+    def _failure(self, err: ProviderError) -> str:
         now, b = self.clock(), self.read()
-        first = {"auth": AUTH_BACKOFF, "transient": TRANSIENT_BACKOFF}[err.kind]
-        most = {"auth": AUTH_BACKOFF_MAX, "transient": TRANSIENT_BACKOFF_MAX}[err.kind]
+        first, most = BACKOFF[err.kind]
         if b["state"] == "open":
             if not self.probing:            # a request from before it opened: the breaker already knows
                 return f"{err}; breaker already open"
@@ -639,7 +680,7 @@ def status(state: Path, daily_usd: float, now: float | None = None, env=None) ->
                 **({"retry_at": _iso(b["until"])} if b["until"] > now else {}), "plays": FALLBACK_POLICY}
     if usd >= daily_usd:
         midnight = dt.datetime.fromisoformat(_day(now)).replace(tzinfo=dt.timezone.utc) + dt.timedelta(days=1)
-        return {"state": "fallback", "reason": f"daily budget spent (${daily_usd:.2f})",
+        return {"state": "fallback", "reason": "daily model budget spent",
                 **({"since": _iso(at)} if at is not None and _day(at) == _day(now) else {}),
                 "retry_at": _iso(midnight.timestamp()), "plays": FALLBACK_POLICY}
     return {"state": "ok"}
@@ -777,7 +818,8 @@ def main():
     p.add_argument("--model", required=True, help="OpenRouter model id, e.g. anthropic/claude-sonnet-5")
     p.add_argument("--state", required=True, help="directory for the daily spend record and the circuit breaker")
     p.add_argument("--daily-usd", type=float, default=1.0)
-    p.add_argument("--timeout", type=float, default=20.0)
+    p.add_argument("--timeout", type=float, default=20.0,
+                   help="seconds for the model's answer, counted from this process's start")
     p.add_argument("--prompt", help="system prompt: a path, or a name under prompts/combat "
                                     "(default planner-system.md)")
     p.add_argument("--reasoning", default="low", choices=("none", "off", "minimal", "low", "medium", "high"),
@@ -790,7 +832,11 @@ def main():
         prompt = Path(os.path.expanduser(a.prompt))
         if not prompt.is_absolute() and not prompt.exists():
             prompt = PROMPTS / a.prompt
-    out = decide(obs, a.model, Path(os.path.expanduser(a.state)), a.daily_usd, a.timeout, prompt, a.reasoning,
+    # What starting Python and the imports took (up to a second on a busy
+    # host) comes off the request's time, so a hung provider is reported as a
+    # timeout, which the breaker counts, before the arena's budget kills us.
+    timeout = max(1.0, a.timeout - (time.monotonic() - STARTED))
+    out = decide(obs, a.model, Path(os.path.expanduser(a.state)), a.daily_usd, timeout, prompt, a.reasoning,
                  a.max_tokens)
     print(json.dumps(out))
 
