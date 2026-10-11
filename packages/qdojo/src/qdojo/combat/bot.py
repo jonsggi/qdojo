@@ -445,6 +445,12 @@ class Bot:
         if st is not None and st != "pending":
             self._challenge_result(st, spend)
 
+    def declines_duel(self, challenger: bytes, challenger_rating: int, stake: int, rating: int) -> str | None:
+        """Why this bot would decline such a duel offer by its owner's filters
+        (the arena asks before proposing one), or None."""
+        return self._duel_declined({"lifetime": rating}, {"stake": stake, "challenger": challenger,
+                                                           "challenger_rating": challenger_rating})
+
     def _duel_declined(self, me: dict, o: dict) -> str | None:
         """Why this bot's owner filters would decline a duel offer, or None."""
         b = self.budget

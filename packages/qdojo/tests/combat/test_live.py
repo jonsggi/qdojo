@@ -132,3 +132,21 @@ def test_a_restart_while_a_new_owners_registration_is_in_flight_sends_it_again(t
     for _ in range(4):
         again.step()
     assert again.w.contract.fighters[fid].owner == collector
+
+
+def test_the_arena_proposes_no_duel_its_target_would_decline(tmp_path):
+    """The target's own filters are asked first: an offer it would decline
+    only held the challenger's stake until it expired."""
+    logs = []
+    lineup = [{"label": label, "policy": "mixed-v1", "duels": True, "ranked": False} for label in ("a", "b", "c")]
+    arena = live.Arena(tmp_path / "net", lineup, seed=3, deterministic=True, market_every=0, duel_every=1,
+                       cup_every=10**9, log=logs.append)
+    a, b, c = list(arena.labels)
+    for target in (b, c):                         # b and c each lost all of three series to a
+        arena.bots[target].bstate.duel_h2h[a.hex()] = [0, 0, 3]
+    assert arena.bots[b].declines_duel(a, 1000, 1, 1000) == "lost 3 of 3 series to this challenger"
+    for _ in range(300):
+        arena.step()
+    proposed = [m.split(": ", 1)[1] for m in logs if "duel challenge" in m]
+    assert proposed and not [m for m in proposed if m.startswith("duel challenge a ->")]
+    assert not [m for m in logs if "declined: lost" in m]

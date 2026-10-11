@@ -615,7 +615,10 @@ class Arena:
 
     def _maybe_duel(self):
         """Now and then an idle duel bot challenges another. The challenger's
-        bot decides, under its own budget and duel filters (AUD-019)."""
+        bot decides, under its own budget and duel filters (AUD-019). A pair
+        whose target's filters would decline the offer is not proposed: the
+        offer would only hold the challenger's stake until it expired (about
+        120 a day live before, 2026-10-11)."""
         if self.w.tick % self.duel_every:
             return
         c = self.w.contract
@@ -624,11 +627,17 @@ class Arena:
         self.rng.shuffle(pairs)
         fmt = self.rng.choice([0, 1, 1, 2])
         stake = self._stake(EVENTS["duel_stake"][fmt])
-        for a, b in pairs[:6]:
+        tried = 0
+        for a, b in pairs:
+            if self.bots[b].declines_duel(a, c.fighters[a].lifetime, stake, c.fighters[b].lifetime):
+                continue
             why = self.bots[a].challenge(b, c.fighters[b].lifetime, stake, fmt, self.w.tick + 200)
             if why is None:
                 self.log(f"tick {self.w.tick}: duel challenge {self.labels[a]['label']} -> "
                          f"{self.labels[b]['label']} ({stake} QU)")
+                return
+            tried += 1
+            if tried == 6:
                 return
 
     def _maybe_market(self):
