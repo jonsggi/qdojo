@@ -93,7 +93,7 @@ def test_a_refused_or_dropped_registration_is_sent_again_and_logged_once_per_rea
     arena = live.Arena(tmp_path / "net", [{"label": "a", "policy": "mixed-v1"}], seed=3, deterministic=True,
                        market_every=0, log=logs.append)
     fid, owner = next(iter(arena.labels)), identity("test-collector")
-    outcomes = iter([CallResult(Code.NOT_OWNER), CallResult(Code.NOT_OWNER), "dropped", None])
+    outcomes = iter([CallResult(Code.NOT_OWNER), "dropped", CallResult(Code.NOT_OWNER), None])
 
     class Chain:                                  # what _register_for asks of the chain, scripted
         sent = 0
@@ -108,7 +108,27 @@ def test_a_refused_or_dropped_registration_is_sent_again_and_logged_once_per_rea
     arena.chain = chain = Chain()
     for _ in range(5):
         arena._register_for(fid, owner)
-    assert chain.sent == 4                        # the first, two refused, one dropped; then one in flight
+    assert chain.sent == 4                        # the first, refused, dropped, refused again; then one in flight
     assert [m.split(": ", 1)[1] for m in logs if "registration" in m] == [
         "a: new owner's registration refused (NOT_OWNER); sending it again",
         "a: new owner's registration dropped; sending it again"]
+
+
+def test_a_restart_while_a_new_owners_registration_is_in_flight_sends_it_again(tmp_path):
+    """Only an included transaction is in the journal: after a restart the
+    new owner's bot runs (it follows the NFT), and the registration it needs
+    is read from the contract and sent again, not taken as done."""
+    lineup = [{"label": "a", "policy": "mixed-v1"}, {"label": "b", "policy": "mixed-v1"}]
+    kw = dict(seed=3, deterministic=True, market_every=0, drop_rate=0.0, log=lambda m: None)
+    arena = live.Arena(tmp_path / "net", lineup, **kw)
+    fid, collector = next(iter(arena.labels)), identity("test-collector")
+    arena.w.mint(collector, 10**12)
+    assert arena.nfts.poll(arena.nfts.transfer(arena.nfts.owner(fid), fid, collector, immediate=True))["code"] == "OK"
+    arena.step()
+    assert arena.chain.poll(arena._registering[fid][1]) is None       # in flight
+    arena.save()
+    again = live.Arena(tmp_path / "net", lineup, **kw)
+    assert again.bots[fid].wallet == collector and again.w.contract.fighters[fid].owner != collector
+    for _ in range(4):
+        again.step()
+    assert again.w.contract.fighters[fid].owner == collector

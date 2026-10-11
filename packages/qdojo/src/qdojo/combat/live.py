@@ -334,8 +334,8 @@ class Arena:
         self.frozen = self._load_frozen(nft_frozen, nft_frozen_url)
         self.labels: dict[bytes, dict] = {}
         self.bots: dict[bytes, Bot] = {}
-        # fighter -> (new owner, its registration in flight, why the last one failed)
-        self._registering: dict[bytes, tuple[bytes, Pending, str | None]] = {}
+        # fighter -> (new owner, its registration in flight, the failure reasons logged so far)
+        self._registering: dict[bytes, tuple[bytes, Pending, frozenset[str]]] = {}
         self.cup_every, self.duel_every, self.market_every = cup_every, duel_every, market_every
         self.tier_stake = self.net.m.tiers[min(self.net.m.tiers)]
         self.market = Market(self, self._load("market.json", None))
@@ -649,17 +649,22 @@ class Arena:
         through the chain on their own nonces: a collector's bots for the
         fighters it already holds have moved those far past any count kept
         here (a registration sent outside them was refused STALE for up to
-        1,200 ticks, 2026-10-11). The new bot starts once it is in."""
+        1,200 ticks, 2026-10-11). The new bot starts once it is in. What is
+        due is read from the contract, not from which bot runs: a restart
+        while a registration is in flight (only an included one is in the
+        journal) builds the new owner's bot at once, and the registration is
+        sent again."""
         c = self.w.contract
         for fid, bot in list(self.bots.items()):
             owner = self.nfts.owner(fid)
-            if owner is None or owner == bot.wallet:
+            f = c.fighters.get(fid)
+            unregistered = owner is not None and f is not None and f.owner != owner
+            if owner is None or not unregistered and owner == bot.wallet:
                 self._registering.pop(fid, None)
                 continue
-            f = c.fighters.get(fid)
             if self.mirrored and self.w.balances.get(owner, 0) < 10**9:
                 self.w.mint(owner, 10**12)            # devnet QU for the bot that now runs for the new holder
-            if f is not None and f.owner != owner:
+            if unregistered:
                 self._register_for(fid, owner)
                 continue
             self._registering.pop(fid, None)
@@ -668,18 +673,19 @@ class Arena:
 
     def _register_for(self, fid: bytes, owner: bytes):
         """Sends the new owner's RegisterFighter, or waits for the one in flight;
-        a refused or dropped one is sent again, and logged when its reason is new."""
-        sent, why = self._registering.get(fid), None
+        a refused or dropped one is sent again, each reason logged once."""
+        sent, logged = self._registering.get(fid), frozenset()
         if sent is not None and sent[0] == owner:
             r = self.chain.poll(sent[1])
             if r is None:
                 return                                # not included yet
-            why = "dropped" if r == "dropped" else f"refused ({r.code.name})"
-            if why != sent[2]:
+            why, logged = "dropped" if r == "dropped" else f"refused ({r.code.name})", sent[2]
+            if why not in logged:
+                logged |= {why}
                 self.log(f"tick {self.w.tick}: {self.labels[fid]['label']}: new owner's registration {why}; "
                          "sending it again")
         self._registering[fid] = (owner, self.chain.send(owner, Op.REGISTER_FIGHTER, fighter_id=fid,
-                                                         registry_version=1), why)
+                                                         registry_version=1), logged)
 
     def _reserve(self):
         if self.chain.fees is not None and (self.chain.reserve or 0) < RESERVE_FLOOR:

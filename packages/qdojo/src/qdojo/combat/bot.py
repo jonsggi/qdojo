@@ -319,6 +319,8 @@ class Bot:
         if me is None:
             return "fighter not registered"
         self._drain_challenge()
+        self._drain_cup()
+        self._drain_duel()
         drained = self._drain_entry()
         if drained is not None and "enter" in self.inflight:
             return drained                                  # still waiting: don't act on stale state
@@ -357,21 +359,22 @@ class Bot:
         ok, why = decide(self.budget, self.bstate, day, tick, amount, self.tier, wallet, self.rules.digest.hex())
         return ok, why, day
 
+    def _drain_duel(self):
+        """Settle an in-flight duel acceptance, whatever the fighter's lock says
+        now: once it is in, the fighter is in the duel, not idle, and a receipt
+        polled only after the duel can be long forgotten by the chain."""
+        st, spend = self._poll("duel")
+        if st is None or st == "pending":
+            return
+        if st != "dropped" and st.code.name in ("OK", "DUPLICATE"):
+            spend.contest_or_offer = f"contest:{st.data['contest_id']}"
+        else:
+            spend.returned = spend.stake
+        self.bstate.save(self.bpath)
+
     def _maybe_accept_duel(self, me: dict, tick: int) -> str | None:
-        st, extra = self._poll("duel")
-        if st == "pending":
+        if "duel" in self.inflight:
             return "duel acceptance waiting for inclusion"
-        if st is not None and st != "dropped":
-            spend = extra
-            if st.code.name in ("OK", "DUPLICATE"):
-                spend.contest_or_offer = f"contest:{st.data['contest_id']}"
-            else:
-                spend.returned = spend.stake
-            self.bstate.save(self.bpath)
-            return f"duel accept {st.code.name}"
-        if st == "dropped":
-            extra.returned = extra.stake
-            self.bstate.save(self.bpath)
         offers = getattr(self.client, "duel_offers_for", lambda _f: [])(self.fighter_id)
         for o in offers:
             ok, why, day = self._spend_allowed(tick, o["stake"])
@@ -456,17 +459,21 @@ class Bot:
             return f"lost {lost} of {series} series to this challenger"
         return None
 
+    def _drain_cup(self):
+        """Settle an in-flight cup registration, whatever the fighter's lock
+        says now (once it is in, the fighter is in the cup, not idle)."""
+        st, spend = self._poll("cup")
+        if st is None or st == "pending":
+            return
+        if st == "dropped" or st.code.name not in ("OK", "DUPLICATE"):
+            spend.returned = spend.stake
+            self.bstate.save(self.bpath)
+            if st != "dropped":
+                self.skip_cups.add(int(spend.contest_or_offer.split(":")[1]))
+
     def _maybe_join_cup(self, me: dict, tick: int) -> str | None:
-        st, extra = self._poll("cup")
-        if st == "pending":
+        if "cup" in self.inflight:
             return "cup entry waiting for inclusion"
-        if st is not None:
-            if st == "dropped" or st.code.name not in ("OK", "DUPLICATE"):
-                extra.returned = extra.stake
-                self.bstate.save(self.bpath)
-                if st != "dropped":
-                    self.skip_cups.add(int(extra.contest_or_offer.split(":")[1]))
-            return None if st == "dropped" else f"cup entry {st.code.name}"
         for k in getattr(self.client, "open_cups", lambda: [])():
             if k["entries"] >= k["max_entrants"] or k["cup_id"] in self.skip_cups:
                 continue
@@ -561,8 +568,12 @@ class Bot:
 
     def _settle_known(self, tick: int | None = None):
         changed = False
+        # A spend whose transaction is in flight is not settled yet: a cup
+        # registration not yet included reads as withdrawn ("refund") and would
+        # be booked as its entry fee back, whatever the cup then paid.
+        flying = {id(extra) for _, extra in self.inflight.values()}
         for s in self.bstate.spends:
-            if s.returned is not None or s.contest_or_offer == "pending":
+            if s.returned is not None or s.contest_or_offer == "pending" or id(s) in flying:
                 continue
             outcome = self.client.spend_outcome(s.contest_or_offer, self.fighter_id)
             if outcome is not None and outcome[0] == "contest":

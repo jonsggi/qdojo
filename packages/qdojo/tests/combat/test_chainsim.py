@@ -172,5 +172,9 @@ def test_bots_play_a_cup_and_a_duel_on_the_simulated_chain(tmp_path):
     assert cup.status == "COMPLETE", "a cup of bots that check in should crown a champion"
     duels = [x for x in c.contests.values() if x.mode == 1]
     assert duels and duels[0].status == "DONE"
-    for b in bots:                                         # every spend settles eventually
-        assert all(s.returned is not None for s in b.bstate.spends if s.contest_or_offer.startswith("cup:"))
+    for b in bots:                                         # every spend settles, at what the contract paid
+        for s in b.bstate.spends:
+            if s.contest_or_offer.startswith(("cup:", "contest:")):
+                assert s.returned == b.client.spend_outcome(s.contest_or_offer, b.fighter_id)[1], (b.wallet, s)
+    champion = next(b for b in cuppers if b.fighter_id == cup.champion)
+    assert [s.returned for s in champion.bstate.spends if s.contest_or_offer.startswith("cup:")] != [2000]
