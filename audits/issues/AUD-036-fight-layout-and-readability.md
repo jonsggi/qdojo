@@ -1,6 +1,6 @@
 # AUD-036 — Put fights and controls ahead of banners and technical detail
 
-- **Status:** Mitigated in 11059267 (replay, arena and title cards lead with the stage; technical detail folded; reading face) and in f147149e and 52c48685 (practice on phones: the arena stays pinned while you plan and the page opens on the move deck under it). Remaining: the new-viewer comparison (beta study, AUD-038/039).
+- **Status:** Mitigated in 11059267 (replay, arena and title cards lead with the stage; technical detail folded; reading face) and in f147149e, 52c48685 and 88be7834 (practice on phones: the arena pinned and fitted to the screen while you plan, steady on every replay frame, and the page opening on the move deck under it, from 360×640 up). Remaining: the new-viewer comparison (beta study, AUD-038/039).
 - **Priority:** P2 — spectator and mobile usability
 - **Type:** UX / accessibility
 - **Scope:** combat/app.js, combat/combat.css, combat/shell.css, shared typography
@@ -27,33 +27,49 @@ all information must fit in one phone viewport.
   the first screen at every width. Arena cards put the stage before phase and acted rows.
 - [x] Keep the move deck easy to reach while planning on phones, without duplicate
   controls drifting out of sync or covering essential combat state. *Evidence:* measured
-  first on b3e3f71a at 390×844, 360×740, 412×915 and 640×960 with the six- and
-  eight-move decks. On arrival every beat, move, POWER, CLEAR and FIGHT was below the
-  first screen (at 390×844 the beats began 1,072 px down, FIGHT 1,452 px); after round 1,
-  14 to 20 of the 20 were off screen again; and once scrolled to them, both HP bars were
-  above the screen. A bottom tray holding the beats would have covered the arena's
-  POWER/OPENING/GUARD strip (on arrival at 360×740 the arena ends at 603 px), and a
-  deck-only tray would have split the deck from the beats. So in f147149e and 52c48685,
-  while a round is open on a screen at most 700 px wide and at least 700 px tall, the
-  arena stays pinned at the top, the planner follows it directly (the replay controls
-  come after the planner, on screen and in tab order) and the page opens on the deck on
-  arrival, after every round and on a rematch. In a first fight at 390×844 and at 360×740
-  the beats sit at 342–548 px, the deck at 554–664 and FIGHT at 674–719, under the arena
-  at 0–328, with no scrolling needed. Both fighters' HP and stamina bars and
-  POWER/OPENING/GUARD strips stay on screen and uncovered, no control sits under the
-  arena or on an HP bar, and there is one deck, which scrolls under the arena, never over
-  it. Taps never move the page, and while a round plays back the beats follow the arena
-  as it grows. The round heading shows too where everything fits (412×915, 640×960, and
-  390×844 after the first fight). A first fight's coach tip follows FIGHT: on the same
-  screen at 390×844 and larger, just below FIGHT at 360×740. Keys pressed in the planner
-  no longer step the replay above it off the state you plan from. Desktop element
-  rectangles are identical to b3e3f71a at 1280×900 and 1440×900. The e2e steps
-  `practice-phone` (390×844), `practice-phone-360` (360×740, reduced motion) and
-  `practice-phone-v3` (eight moves) assert all of this on arrival, mid-round and after
-  round 1 with no scripted scroll, and fail on b3e3f71a and on f147149e; screenshots
-  `shots/practice-phone*-{plan,mid,round2}.png`. A screen under 700 px tall (375×667)
-  cannot hold the arena and the deck together and keeps the plain scrolling page, the
-  deck reached by scrolling past the arena as before.
+  first on b3e3f71a: at 390×844 and 360×740 every beat, move, POWER, CLEAR and FIGHT was
+  below the first screen on arrival (beats from 1,072 and 1,094 px, FIGHT at 1,452 and
+  1,474 px) and again after every round, and once scrolled to them both HP bars were off
+  the top of the screen. A bottom tray holding the beats would cover the arena's
+  POWER/OPENING/GUARD strip and a deck-only tray would split the deck from the beats, so
+  on a phone (at most 700 px wide) the practice page pins the arena at the top of the
+  screen while a round is open, puts the one planner straight after it (the replay
+  controls follow it, on screen and in tab order) and opens on the beats, the deck and
+  FIGHT on arrival, after every round and on a rematch. The arena's floor is fitted to
+  the screen once per round (at most 170 px, at least 72 px), so the arena keeps one
+  height on every frame of a replay and nothing under it moves: the round box hangs into
+  the floor and the move strip has a fixed height (none of 920 replay frames at 360 px
+  clips its text). It pins from 360×640 up, which covers phone browsers with their
+  toolbars showing (375×667, 390×664: the beats and moves are a little tighter there,
+  every target still at least 26 px tall); shorter screens and anything wider than
+  700 px keep the plain page. Pinned at 390×844, 412×915, 640×960, 360×740, 360×700,
+  375×667, 390×664 and 360×640 with six and with eight moves, nothing is off screen,
+  covered, under the arena or on an HP bar, both fighters' HP and stamina bars and
+  POWER/OPENING/GUARD strips are on screen and uncovered, and nothing scrolls sideways.
+  In a first fight the floor shrinks so the coach tip under FIGHT is on the same screen
+  from 360×740 up (six or eight moves); on shorter screens it sits just below FIGHT.
+  While a round plays back with motion on, the replay controls and the beat headline sit
+  right under the arena and hold still, and the page glides back to the deck when the
+  round has played to the end (not if the player has scrolled meanwhile). With motion off
+  the round is resolved at once and the page lands on the deck; the step controls and
+  the headline follow the deck, a scroll or TAB away. While round 2 or 3 is planned the
+  arena's round box names that round, and the beats are labelled "Your plan for round N".
+  The beats are a listbox with one tab stop: the focus moves with the selection (LEFT and
+  RIGHT a beat, UP and DOWN a row, HOME and END), a typed move lands on the focused beat,
+  the focused beat has the 3 px hazard ring, and focus scrolls clear of the arena (scroll
+  padding on the page from the arena's measured height, never inside the beat table). A
+  phone turned sideways and back, or a resized window, fits the arena again and lands on
+  the deck. Desktop element rectangles at 1280×900 and 1440×900 are identical to b3e3f71a
+  (six and eight moves; arrival, mid-round and round 2). The e2e steps `practice-phone`
+  (390×844, motion on), `practice-phone-360` and `practice-phone-360-v3` (360×740, motion
+  off, coach tip on screen), `practice-phone-v3`, `practice-phone-667`, `practice-phone-664`,
+  `practice-phone-700` and `practice-phone-rotate` assert this on arrival, mid-round and
+  for round 2 with no scripted scroll, one arena height and beat row on every frame, the
+  controls and headline on screen and still during playback, and the listbox keys; they
+  fail on b3e3f71a and on 6c57e7a4, where a review found the pin only at 700 px and
+  taller, an arena 60–74 px taller on every beat, the narration off screen during
+  playback and ROUND 1/3 shown while round 2 was planned (fixed in 88be7834).
+  Screenshots `shots/practice-phone*-{plan,mid,playing,round2}.png`.
 - [x] Place ticks, commitment/verification internals and extended accounting in
   accessible detail sections; keep network identity and material status visible.
   *Evidence:* VERIFICATION is a `<details>` panel (opens by itself when the level is
