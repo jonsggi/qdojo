@@ -435,7 +435,7 @@ def test_a_clamped_breaker_is_due_for_a_clock_that_moves_between_readings(tmp_pa
                                                     "until": T0 + 3 * 3600, "backoff": 120, "probe_until": 0}))
     b = L.Breaker(state, Ticking(T0))
     assert b.admit(hold=21) is None and b.probing
-    assert L.read_breaker(state, T0 + 1)["until"] <= T0 + 1
+    assert json.loads((state / "breaker.json").read_text())["until"] <= T0 + 1   # the claim saved a sane record
 
 
 def test_a_provider_that_never_finishes_answering_is_a_timeout_within_the_budget(tmp_path, monkeypatch, capsys):
@@ -454,6 +454,25 @@ def test_a_provider_that_never_finishes_answering_is_a_timeout_within_the_budget
     assert capsys.readouterr().err.splitlines() == ["fallback to mixed-v1: provider timeout: TimeoutError: "
                                                    "no answer within 1.0 s"]
     assert L.read_breaker(tmp_path / "s", T0)["fails"] == 1
+
+
+def test_a_timeout_the_request_itself_catches_still_ends_it(tmp_path, monkeypatch, capsys):
+    """socket.create_connection catches an OSError (TimeoutError is one) for
+    each of a host's addresses and tries the next: an alarm raised inside the
+    request was swallowed there, and the next address had no deadline."""
+    def per_address(req, timeout=None):
+        for _ in range(30):                                             # thirty blackholed addresses
+            try:
+                time.sleep(0.2)
+            except OSError:
+                pass
+        return Response(json.dumps(answer()).encode())
+    monkeypatch.setattr(L.urllib.request, "urlopen", per_address)
+    started = time.monotonic()
+    out = L.decide(_obs(), MODEL, tmp_path / "s", timeout=1.0, clock=Clock(T0))
+    assert time.monotonic() - started < 3 and out == fallback()
+    assert capsys.readouterr().err.splitlines() == ["fallback to mixed-v1: provider timeout: TimeoutError: "
+                                                   "no answer within 1.0 s"]
 
 
 def test_overlapping_decisions_keep_both_costs(tmp_path):

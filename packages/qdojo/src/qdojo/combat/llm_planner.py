@@ -49,7 +49,6 @@ import hashlib
 import json
 import math
 import os
-import signal
 import sys
 import threading
 import urllib.error
@@ -475,28 +474,29 @@ def _body_error(doc) -> ProviderError:
     return ProviderError("transient", "provider sent no completion", detail)
 
 
-@contextlib.contextmanager
-def _deadline(seconds: float):
-    """Raises TimeoutError in the block once `seconds` have passed. urlopen's
-    timeout bounds each socket operation, not the request: a connect tried
-    on each of the host's addresses in turn, or a body that trickles in,
-    could outlast the arena's budget, which kills the planner before the
-    breaker hears of it. (A name lookup inside the C resolver runs to the
-    resolver's own timeout first.) Only in the main thread, where signals
-    arrive (the planner process), and not on Windows, which has no SIGALRM:
-    there the per-operation timeout stays."""
-    if sys.platform != "win32" and threading.current_thread() is threading.main_thread():
-        def expired(signum, frame):
-            raise TimeoutError(f"no answer within {seconds:.1f} s")
-        before = signal.signal(signal.SIGALRM, expired)
-        signal.setitimer(signal.ITIMER_REAL, seconds)
+def _within(seconds: float, fn):
+    """fn() in a worker thread, given up with TimeoutError after `seconds`.
+    urlopen's timeout bounds each socket operation, not the request: a
+    connect tried on each of the host's addresses in turn, or a body that
+    trickles in, could outlast the arena's budget, which kills the planner
+    before the breaker hears of it. An alarm raised inside the request does
+    not do: the connect loop catches it for one address and tries the next.
+    The thread given up keeps its socket until the planner process exits."""
+    box: dict = {}
+
+    def run():
         try:
-            yield
-        finally:
-            signal.setitimer(signal.ITIMER_REAL, 0)
-            signal.signal(signal.SIGALRM, before)
-    else:
-        yield
+            box["out"] = fn()
+        except BaseException as exc:            # handed to the caller as it is
+            box["exc"] = exc
+    worker = threading.Thread(target=run, name="llm-request", daemon=True)
+    worker.start()
+    worker.join(seconds)
+    if worker.is_alive():
+        raise TimeoutError(f"no answer within {seconds:.1f} s")
+    if "exc" in box:
+        raise box["exc"]
+    return box["out"]
 
 
 def _when(t: float, now: float) -> str:
@@ -774,9 +774,12 @@ def ask(model: str, obs: dict, timeout: float, spend: "Spend", prompt: Path = PR
                                      headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
                                               "X-Title": "qdojo combat demo"})
         left = max(1.0, timeout - (time.monotonic() - started))
+
+        def fetch():
+            with urllib.request.urlopen(req, timeout=left) as resp:
+                return json.loads(resp.read())
         try:
-            with _deadline(left), urllib.request.urlopen(req, timeout=left) as resp:
-                doc = json.loads(resp.read())
+            doc = _within(left, fetch)
         except Exception as exc:            # whatever the request raised is the provider's failure
             raise provider_error(exc) from None
         usage = doc.get("usage") if isinstance(doc, dict) else None
