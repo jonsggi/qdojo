@@ -183,6 +183,8 @@ def test_evaluation_is_reproducible_and_seed_suites_differ(capsys):
     train = json.loads(_evaluate(capsys, *args, "--suite", "train")[1].out)
     assert E.eval_seed("train/mixed-v1", 0) != E.eval_seed("test/mixed-v1", 0)
     assert train["suite"] == "train"
+    # the same fights are reproducible (above), so other rows mean --suite train fought other seeds
+    assert train["planners"][0]["rows"] != a["planners"][0]["rows"]
 
 
 def test_human_report_names_the_ruleset_first(capsys):
