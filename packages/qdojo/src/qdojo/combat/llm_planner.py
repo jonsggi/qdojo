@@ -12,17 +12,54 @@ reached, the plan comes from the local mixed-v1 policy, with the reason on
 stderr. That keeps the fighter playing instead of falling back to six idle
 RECOVERs. Spend is read from OpenRouter's usage accounting and kept per UTC
 day in the state directory. No key, seed or salt is ever printed.
+
+A circuit breaker in the state directory (breaker.json) stops asking a
+provider that keeps refusing. An account error (HTTP 401, 402, 403: a bad
+key, no credit, no access) opens it at once for 30 minutes; three transient
+failures in a row (429, 5xx, timeouts, connection errors), each within 30
+minutes of the one before, open it for 2 minutes. While it is open no request
+is made and mixed-v1 plays at once. When the time is up, one process probes:
+an answer closes the breaker, a failure opens it again for twice as long (at
+most 6 hours, or 30 minutes for transient failures). It logs changes, not
+rounds: the decision that opens it prints the usual "fallback ..." line,
+closing it prints "breaker closed ...", and a decision it skips prints a line
+the arena does not log. Deleting breaker.json closes it by hand (after a
+top-up, say). It also keeps when the model last answered and when the current
+run of failures began. The arena reads the same files to publish each LLM
+fighter's status, and does not start this process at all while no model call
+could be made (live.py). The planner's own files never stop a decision: one
+it cannot read counts as empty. A state directory it cannot write to (a full
+disk, a read-only mount) gets no request, whose cost could not be counted
+toward the cap: the fallback plays and its log line says why. A write that
+fails after the request (the disk filled meanwhile) loses no paid reply, only
+the record (a breaker that cannot save cannot open), and a log line says so.
 """
 from __future__ import annotations
 
+import time
+
+# The arena's time budget for a decision runs from the moment it starts this
+# process, so the request's timeout counts from here, not from after the imports.
+STARTED = time.monotonic()
+
 import argparse
+import contextlib
 import datetime as dt
 import hashlib
 import json
+import math
 import os
+import signal
 import sys
+import threading
+import urllib.error
 import urllib.request
 from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:                     # no flock on this platform: the breaker runs unlocked
+    fcntl = None
 
 from . import npcs, planner, scouting
 from .engine import resolve_beat
@@ -32,6 +69,17 @@ from .types import Action, FighterState
 PROMPTS = Path(__file__).resolve().parents[5] / "prompts/combat"
 PROMPT = PROMPTS / "planner-system.md"
 URL = "https://openrouter.ai/api/v1/chat/completions"
+FALLBACK_POLICY = "mixed-v1"
+
+# The circuit breaker (module docstring). Seconds.
+AUTH_BACKOFF, AUTH_BACKOFF_MAX = 30 * 60, 6 * 3600
+TRANSIENT_BACKOFF, TRANSIENT_BACKOFF_MAX, TRIP_AFTER = 2 * 60, 30 * 60, 3
+BACKOFF = {"auth": (AUTH_BACKOFF, AUTH_BACKOFF_MAX), "transient": (TRANSIENT_BACKOFF, TRANSIENT_BACKOFF_MAX)}
+RUN_GAP = 30 * 60               # failures further apart (an idle stretch, the arena down) are not one run
+PROBE_MARGIN = 15               # a probe's claim outlives its request timeout by this much
+PROBE_HOLD_MAX = 5 * 60         # and never holds longer than this
+ACCOUNT_ERRORS = {401: "provider rejected the API key", 402: "provider out of credit",
+                  403: "provider refused access"}
 
 
 def _rules(obs: dict):
@@ -251,35 +299,425 @@ def _normalise(actions, power_slot):
     return out, power_slot, notes
 
 
-def _fallback(obs: dict, why: str) -> dict:
-    print(f"fallback to mixed-v1: {why}", file=sys.stderr)
+def fallback_plan(obs: dict):
+    """The local mixed-v1 plan for this observation, seeded by the observation
+    itself: the arena's in-process fallback (live.py) and this process agree."""
+    obs = json.loads(json.dumps(obs))           # exactly what the process reads from stdin
     rules = _rules(obs)
     s, o = planner.fighter_state(obs["self"]), planner.fighter_state(obs["opponent"])
     seed = hashlib.sha256(json.dumps(obs, sort_keys=True).encode()).digest()
-    plan = npcs.mixed_v1(rules, npcs.Observation(obs["round_index"], s, o), npcs.Stream(seed, 0, obs["round_index"]))
-    return planner.plan_json(plan)
+    return npcs.mixed_v1(rules, npcs.Observation(obs["round_index"], s, o), npcs.Stream(seed, 0, obs["round_index"]))
+
+
+def _fallback(obs: dict, why: str, quiet: bool = False) -> dict:
+    """The fallback plan, with the reason on stderr. A quiet line (a decision
+    the open breaker skipped) does not start with "fallback", so the arena,
+    which logs those lines (bot.planner_chooser), does not log every round."""
+    if quiet:
+        print(f"no model call, {why}; {FALLBACK_POLICY} plays", file=sys.stderr)
+    else:
+        print(f"fallback to {FALLBACK_POLICY}: {why}", file=sys.stderr)
+    return planner.plan_json(fallback_plan(obs))
+
+
+def _day(now: float) -> str:
+    return dt.datetime.fromtimestamp(now, dt.timezone.utc).date().isoformat()
+
+
+def _number(v) -> float | None:
+    """A JSON number as a finite float, else None. The planner's files are
+    read through it, so a hand edit or a broken file (a string, true, NaN, an
+    integer too large for a float) never stops a decision."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return None
+    try:
+        v = float(v)
+    except OverflowError:
+        return None
+    return v if math.isfinite(v) else None
 
 
 class Spend:
     """USD spent per UTC day, from OpenRouter's usage accounting; the last 60 days are kept."""
 
-    def __init__(self, state: Path):
+    def __init__(self, state: Path, clock=time.time):
         self.path = state / "spend.json"
-        self.day = dt.datetime.now(dt.timezone.utc).date().isoformat()
-        try:
-            doc = json.loads(self.path.read_text())
-        except (OSError, ValueError):
-            doc = {}
-        self.doc = {k: float(v) for k, v in doc.items() if isinstance(v, (int, float))}
+        self.day = _day(clock())
+        self.doc = _spend_doc(self.path)
         self.today = self.doc.get(self.day, 0.0)
 
-    def add(self, usd: float):
-        self.today += usd
-        self.doc[self.day] = self.today
-        self.doc = dict(sorted(self.doc.items())[-60:])
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self.doc))
-        os.replace(tmp, self.path)
+    def add(self, usd: float) -> str | None:
+        """None once the record is written, else why not, for the log line.
+        The reply it paid for is used all the same: decide() saw the
+        directory take a write before the request. The record is read again
+        under the fighter's lock, so an overlapping decision's cost is kept."""
+        with _locked(self.path.parent):
+            doc = _spend_doc(self.path)
+            self.today = doc.get(self.day, 0.0) + usd
+            doc[self.day] = self.today
+            self.doc = dict(sorted(doc.items())[-60:])
+            try:
+                _write_json(self.path, self.doc)
+            except OSError as exc:
+                return f"spend not saved: {type(exc).__name__}: {str(exc)[:120]}"
+        return None
+
+
+def _spend_doc(path: Path) -> dict:
+    try:
+        doc = json.loads(path.read_text())
+    except (OSError, ValueError):
+        doc = {}
+    days = ((k, _number(v)) for k, v in doc.items()) if isinstance(doc, dict) else ()
+    return {k: v for k, v in days if v is not None}
+
+
+def _tmp(path: Path) -> Path:
+    return path.with_name(f"{path.name}.{os.getpid()}.tmp")
+
+
+def _write_json(path: Path, doc: dict):
+    """Atomically, through a temporary file of this process's own (two
+    decisions of one fighter can overlap). A write that fails (a full disk)
+    raises and leaves no temporary file behind."""
+    tmp = _tmp(path)
+    try:
+        tmp.write_text(json.dumps(doc))
+        os.replace(tmp, path)
+    except OSError:
+        with contextlib.suppress(OSError):
+            tmp.unlink(missing_ok=True)
+        raise
+
+
+def _check_writable(path: Path):
+    """Raises OSError when `path` could not be written now (a full disk, a
+    read-only mount): its temporary file is written and removed, and `path`
+    itself is left alone (spend.json's last write is a time the breaker reads)."""
+    tmp = _tmp(path)
+    try:
+        tmp.write_text("{}")
+    finally:
+        with contextlib.suppress(OSError):
+            tmp.unlink(missing_ok=True)
+
+
+def _written(path: Path) -> float | None:
+    """When a file was last written, if it exists."""
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return None
+
+
+# ---- the provider circuit breaker --------------------------------------------
+
+@contextlib.contextmanager
+def _locked(state: Path):
+    """Holds the fighter's breaker lock (breaker.lock) while its record is read
+    and rewritten, so decisions that overlap neither both claim a probe nor
+    lose an update. Held for a file read and write, never across a request.
+    Best effort: where the lock cannot be taken (a read-only directory), the
+    update runs unlocked."""
+    try:
+        fd = os.open(state / "breaker.lock", os.O_RDWR | os.O_CREAT, 0o600) if fcntl else None
+    except OSError:
+        fd = None
+    try:
+        if fd is not None:
+            with contextlib.suppress(OSError):
+                fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        if fd is not None:
+            os.close(fd)                # releases the lock
+
+
+
+class ProviderError(Exception):
+    """A request the provider did not answer with a completion. `kind` is
+    "auth" (the account: key, credit, access) or "transient"; `reason` is the
+    short wording the breaker keeps and the export shows, `detail` is for the log."""
+
+    def __init__(self, kind: str, reason: str, detail: str = ""):
+        super().__init__(f"{reason}: {detail}" if detail else reason)
+        self.kind, self.reason, self.detail = kind, reason, detail
+
+
+def _http_error(code: int, detail: str = "") -> ProviderError:
+    if code in ACCOUNT_ERRORS:
+        return ProviderError("auth", f"{ACCOUNT_ERRORS[code]} (HTTP {code})", detail)
+    return ProviderError("transient", f"{'provider rate limit' if code == 429 else 'provider error'} (HTTP {code})",
+                         detail)
+
+
+def provider_error(exc: Exception) -> ProviderError:
+    """What a request raised, classified for the breaker. Everything but an
+    account refusal is transient: a timeout, a refused connection, a 5xx, a
+    body that is not JSON."""
+    if isinstance(exc, urllib.error.HTTPError):
+        return _http_error(exc.code, str(exc.reason)[:120])
+    detail = f"{type(exc).__name__}: {str(exc)[:120]}"
+    if isinstance(exc, TimeoutError) or isinstance(getattr(exc, "reason", None), TimeoutError):
+        return ProviderError("transient", "provider timeout", detail)
+    if isinstance(exc, ValueError):
+        return ProviderError("transient", "unreadable provider response", detail)
+    return ProviderError("transient", "provider unreachable", detail)
+
+
+def _body_error(doc) -> ProviderError:
+    """A 200 response without a completion: OpenRouter's error object, if any, says why."""
+    err = doc.get("error") if isinstance(doc, dict) else None
+    err = err if isinstance(err, dict) else {}
+    code, detail = err.get("code"), str(err.get("message") or "")[:120]
+    if type(code) is int:
+        return _http_error(code, detail)
+    return ProviderError("transient", "provider sent no completion", detail)
+
+
+@contextlib.contextmanager
+def _deadline(seconds: float):
+    """Raises TimeoutError in the block once `seconds` have passed. urlopen's
+    timeout bounds each socket operation, not the request: a connect tried
+    on each of the host's addresses in turn, or a body that trickles in,
+    could outlast the arena's budget, which kills the planner before the
+    breaker hears of it. (A name lookup inside the C resolver runs to the
+    resolver's own timeout first.) Only in the main thread, where signals
+    arrive (the planner process), and not on Windows, which has no SIGALRM:
+    there the per-operation timeout stays."""
+    if sys.platform != "win32" and threading.current_thread() is threading.main_thread():
+        def expired(signum, frame):
+            raise TimeoutError(f"no answer within {seconds:.1f} s")
+        before = signal.signal(signal.SIGALRM, expired)
+        signal.setitimer(signal.ITIMER_REAL, seconds)
+        try:
+            yield
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, before)
+    else:
+        yield
+
+
+def _when(t: float, now: float) -> str:
+    """A time for a log line: HH:MM UTC, with the date when it is not today."""
+    at = dt.datetime.fromtimestamp(t, dt.timezone.utc)
+    return at.strftime("%H:%M UTC" if _day(t) == _day(now) else "%Y-%m-%d %H:%M UTC")
+
+
+def _span(seconds: float) -> str:
+    m = max(0, int(seconds)) // 60
+    d, h, m = m // 1440, m // 60 % 24, m % 60
+    return " ".join(f"{n} {u}" for n, u in ((d, "d"), (h, "h"), (m, "min")) if n) or "under a minute"
+
+
+def _iso(t: float) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
+
+
+def _past(v, now: float) -> float | None:
+    """A time from the breaker record, no later than now (a clock set back), or None."""
+    v = _number(v)
+    return None if v is None or v < 0 else min(v, now)
+
+
+def read_breaker(state: Path, now: float, legacy: float | None = None) -> dict:
+    """The breaker record in the state directory: {"state": "closed", "fails": n,
+    "since", "failed"} (n transient failures in a row, the first of them at
+    `since`, the latest at `failed`) or
+    {"state": "open", "kind", "reason", "since" (when this run of failures
+    began), "until", "backoff", "probe_until"}, each with "answered": when the
+    model last answered, or None. A record that has never said (none yet, or
+    one from before it kept the time) takes `legacy`. Missing or unreadable
+    is closed, and a value that is not a sane number reads as its default.
+    An open breaker whose times lie further ahead than its kind's longest
+    backoff, or a probe's claim than PROBE_HOLD_MAX, could put them (a clock
+    set back, a hand edit) is due at once, so nothing can keep it shut for
+    longer than it ever means to."""
+    try:
+        doc = json.loads((Path(state) / "breaker.json").read_text())
+    except (OSError, ValueError):
+        doc = None
+    doc = doc if isinstance(doc, dict) else {}
+    answered = _past(doc.get("answered"), now) if "answered" in doc else legacy
+    if doc.get("state") != "open":
+        fails = doc.get("fails")
+        fails = fails if type(fails) is int and fails > 0 else 0
+        return {"state": "closed", "fails": fails, "since": _past(doc.get("since"), now) if fails else None,
+                "failed": _past(doc.get("failed"), now) if fails else None, "answered": answered}
+
+    def num(key, default=0.0):
+        v = _number(doc.get(key))
+        return default if v is None else v
+    kind = doc.get("kind") if doc.get("kind") in ("auth", "transient") else "transient"
+    until, probe = num("until"), num("probe_until")
+    if until - now > BACKOFF[kind][1]:
+        until = now
+    if probe - now > PROBE_HOLD_MAX:
+        probe = 0.0
+    reason = doc.get("reason") if isinstance(doc.get("reason"), str) and doc.get("reason") else "provider failure"
+    since = _past(doc.get("since"), now)
+    return {"state": "open", "kind": kind, "reason": reason[:120], "since": now if since is None else since,
+            "until": until, "backoff": num("backoff", TRANSIENT_BACKOFF), "probe_until": probe, "answered": answered}
+
+
+class Breaker:
+    """The provider circuit breaker of one fighter, shared by its planner
+    processes through breaker.json (each decision is a new process).
+
+    closed: requests are made; transient failures in a row are counted.
+    open: no request until `until`. Then the first process to come claims the
+    probe (half-open) for its request's time; its answer closes the breaker,
+    its failure opens it again for twice as long. Each update re-reads the
+    file under the fighter's lock, so overlapping processes lose nothing.
+    Saving is best effort: a record that cannot be written only means the
+    breaker cannot open, and the log line says so."""
+
+    def __init__(self, state: Path, clock=time.time):
+        self.state, self.clock = Path(state), clock
+        self.probing = False
+        # Before breaker.json kept the model's last answer, the last write of
+        # spend.json was it: read before this process writes spend.json itself.
+        self.legacy = _written(self.state / "spend.json")
+
+    def read(self, now: float) -> dict:
+        """The record as of `now`: the caller's own clock reading, so a time
+        clamped to now compares equal to it."""
+        return read_breaker(self.state, now, self.legacy)
+
+    def _save(self, doc: dict) -> str | None:
+        """None once the record is written, else why not, for the log line."""
+        try:
+            _write_json(self.state / "breaker.json", doc)
+        except OSError as exc:
+            return f"breaker state not saved: {type(exc).__name__}: {str(exc)[:120]}"
+        return None
+
+    def admit(self, hold: float) -> str | None:
+        """None if this process may ask the provider now (claiming the probe of
+        an open breaker that is due, for `hold` seconds at most), else why
+        not, for a quiet fallback."""
+        with _locked(self.state):
+            now = self.clock()
+            b = self.read(now)
+            if b["state"] != "open":
+                return None
+            if now < b["until"]:
+                return f"breaker open until {_when(b['until'], now)}: {b['reason']}"
+            if now < b["probe_until"]:
+                return f"breaker open, another decision is probing: {b['reason']}"
+            unsaved = self._save({**b, "probe_until": now + min(hold, PROBE_HOLD_MAX)})
+        if unsaved:                         # the probe goes out unclaimed: another decision may probe too
+            print(unsaved, file=sys.stderr)
+        self.probing = True
+        return None
+
+    def success(self) -> str | None:
+        """The provider answered: the breaker closes and keeps the time.
+        Returns the log line when that closed an open breaker, or when the
+        record could not be saved."""
+        with _locked(self.state):
+            now = self.clock()
+            b = self.read(now)
+            unsaved = self._save({"state": "closed", "fails": 0, "answered": now})
+        self.probing = False
+        if unsaved or b["state"] != "open":
+            return unsaved
+        return (f"breaker closed: the model answered again after {_span(now - b['since'])} "
+                f"(offline since {_when(b['since'], now)}: {b['reason']})")
+
+    def failure(self, err: ProviderError) -> str:
+        """A request failed. Returns the fallback reason, which says when the
+        breaker opened and until when, or that it could not be saved."""
+        with _locked(self.state):
+            return self._failure(err)
+
+    def _failure(self, err: ProviderError) -> str:
+        now = self.clock()
+        b = self.read(now)
+        first, most = BACKOFF[err.kind]
+        if b["state"] == "open":
+            if not self.probing:            # a request from before it opened: the breaker already knows
+                return f"{err}; breaker already open"
+            self.probing = False
+            backoff = min(most, 2 * b["backoff"]) if b["kind"] == err.kind else first
+            doc = {**b, "kind": err.kind, "reason": err.reason, "until": now + backoff, "backoff": backoff,
+                   "probe_until": 0}
+            told = f"probe failed, {err}; breaker open, no model calls until {_when(now + backoff, now)}"
+        else:
+            # Offline since the first failure of this run, not since the model's
+            # last answer: a fighter can sit idle for hours between the two.
+            # A failure more than RUN_GAP after the one before starts a new
+            # run, so an idle stretch or the arena's downtime joins nothing.
+            run = b["since"] is not None and b["failed"] is not None and now - b["failed"] <= RUN_GAP
+            fails, since = (b["fails"] + 1, b["since"]) if run else (1, now)
+            if err.kind == "auth" or fails >= TRIP_AFTER:
+                doc = {"state": "open", "kind": err.kind, "reason": err.reason, "since": since,
+                       "until": now + first, "backoff": first, "probe_until": 0, "answered": b["answered"]}
+                told = (f"{err}; {f'{fails} failures in a row, ' if err.kind != 'auth' else ''}breaker open, "
+                        f"no model calls until {_when(now + first, now)}")
+            else:
+                doc = {"state": "closed", "fails": fails, "since": since, "failed": now, "answered": b["answered"]}
+                told = str(err)
+        unsaved = self._save(doc)
+        return told if unsaved is None else f"{err}; {unsaved}"
+
+
+# ---- what the arena reads: this planner's status -------------------------------
+
+def api_key(env=None) -> str | None:
+    env = os.environ if env is None else env
+    return env.get("OPEN_ROUTER_API_KEY") or env.get("OPENROUTER_API_KEY")
+
+
+def _spent(state: Path, now: float) -> tuple[float, float | None]:
+    """USD spent on the UTC day of `now`, and when spend.json was last written
+    (once the day's cap is reached, nothing is spent, so: when it was reached)."""
+    path = Path(state) / "spend.json"
+    at = _written(path)
+    usd = _spend_doc(path).get(_day(now), 0.0) if at is not None else 0.0
+    return usd, at
+
+
+def blocked(state: Path, daily_usd: float, now: float | None = None, env=None) -> str | None:
+    """Why this planner would make no model call right now: "no_key", "budget"
+    (the day's cap is spent) or "breaker" (open, or a probe already running);
+    None when it would call or probe. The arena then plays fallback_plan
+    in-process instead of starting the planner."""
+    now = time.time() if now is None else now
+    if not api_key(env):
+        return "no_key"
+    if _spent(state, now)[0] >= daily_usd:
+        return "budget"
+    b = read_breaker(state, now)
+    if b["state"] == "open" and (now < b["until"] or now < b["probe_until"]):
+        return "breaker"
+    return None
+
+
+def status(state: Path, daily_usd: float, now: float | None = None, env=None) -> dict:
+    """What chooses this fighter's plans now, for the public export (index.json
+    deployment.fighters[id].driver_status): {"state": "ok"} while the model is
+    asked, else {"state": "fallback", "reason", "since", "last_answer",
+    "retry_at", "plays"}: why; since when (the first failure of this outage,
+    or when the day's budget ran out); when the model last answered (an open
+    breaker, no key); when it is next asked (times ISO-8601 UTC, each only
+    when known); and the policy that plays meanwhile."""
+    now = time.time() if now is None else now
+    usd, at = _spent(state, now)
+    b = read_breaker(state, now, legacy=at)
+    last = {"last_answer": _iso(b["answered"])} if b["answered"] is not None else {}
+    if not api_key(env):
+        return {"state": "fallback", "reason": "no model API key configured", **last, "plays": FALLBACK_POLICY}
+    if b["state"] == "open":
+        return {"state": "fallback", "reason": b["reason"], "since": _iso(b["since"]), **last,
+                **({"retry_at": _iso(b["until"])} if b["until"] > now else {}), "plays": FALLBACK_POLICY}
+    if usd >= daily_usd:
+        midnight = dt.datetime.fromisoformat(_day(now)).replace(tzinfo=dt.timezone.utc) + dt.timedelta(days=1)
+        return {"state": "fallback", "reason": "daily model budget spent",
+                **({"since": _iso(at)} if at is not None and _day(at) == _day(now) else {}),
+                "retry_at": _iso(midnight.timestamp()), "plays": FALLBACK_POLICY}
+    return {"state": "ok"}
 
 
 def request_body(model: str, obs: dict, prompt: Path = PROMPT, reasoning: str = "low",
@@ -313,14 +751,22 @@ def request_body(model: str, obs: dict, prompt: Path = PROMPT, reasoning: str = 
 
 
 def ask(model: str, obs: dict, timeout: float, spend: "Spend", prompt: Path = PROMPT, reasoning: str = "low",
-        max_tokens: int = 1200) -> dict:
-    """One model call. Its cost is recorded even when the reply is unusable.
-    The plan is checked against this fighter's state before it is returned."""
-    key = os.environ.get("OPEN_ROUTER_API_KEY") or os.environ.get("OPENROUTER_API_KEY")
+        max_tokens: int = 1200, breaker: "Breaker | None" = None) -> dict:
+    """One model call. Its cost is recorded even when the reply is unusable,
+    or a billed reply carries no completion at all. The plan is checked
+    against this fighter's state before it is returned. A request that gets
+    no completion raises ProviderError; one that does tells the breaker, if
+    any (an unusable reply is the model's fault, not the provider's). A
+    spend or breaker record that cannot be saved is logged; the reply is
+    used all the same."""
+    key = api_key()
     if not key:
         raise planner.PlannerError("NOT_STARTED", "no OpenRouter key in the environment")
-    import time
     started = time.monotonic()
+
+    def note(line: str | None):
+        if line:
+            print(line, file=sys.stderr)
 
     def call(reasoning_now: str) -> str:
         body = request_body(model, obs, prompt, reasoning_now, max_tokens)
@@ -328,11 +774,21 @@ def ask(model: str, obs: dict, timeout: float, spend: "Spend", prompt: Path = PR
                                      headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
                                               "X-Title": "qdojo combat demo"})
         left = max(1.0, timeout - (time.monotonic() - started))
-        with urllib.request.urlopen(req, timeout=left) as resp:
-            doc = json.loads(resp.read())
-        usage = doc.get("usage") or {}
-        cost = float(usage.get("cost") or 0.0)
-        spend.add(cost)
+        try:
+            with _deadline(left), urllib.request.urlopen(req, timeout=left) as resp:
+                doc = json.loads(resp.read())
+        except Exception as exc:            # whatever the request raised is the provider's failure
+            raise provider_error(exc) from None
+        usage = doc.get("usage") if isinstance(doc, dict) else None
+        usage = usage if isinstance(usage, dict) else {}
+        cost = _number(usage.get("cost")) or 0.0
+        if not isinstance(doc, dict) or not doc.get("choices"):
+            if cost > 0:                    # billed all the same: it counts toward the day's cap
+                note(spend.add(cost))
+            raise _body_error(doc)
+        note(spend.add(cost))
+        if breaker is not None:
+            note(breaker.success())
         cached = (usage.get("prompt_tokens_details") or {}).get("cached_tokens")
         choice = doc["choices"][0]
         print(f"{model}: ${cost:.5f} (today ${spend.today:.4f}); tokens in {usage.get('prompt_tokens')}"
@@ -364,12 +820,40 @@ def legal(obs: dict, plan) -> dict:
     return planner.plan_json(plan)
 
 
+def decide(obs: dict, model: str, state: Path, daily_usd: float = 1.0, timeout: float = 20.0, prompt: Path = PROMPT,
+           reasoning: str = "low", max_tokens: int = 1200, clock=time.time) -> dict:
+    """One decision: the model's checked plan, or the fallback with the reason
+    on stderr. The planner's own files never stop it (module docstring)."""
+    try:
+        state.mkdir(parents=True, exist_ok=True)
+        _check_writable(state / "spend.json")
+    except OSError as exc:              # nowhere to keep the day's spend: no paid request
+        return _fallback(obs, f"state directory unusable: {type(exc).__name__}: {str(exc)[:120]}")
+    spend, breaker = Spend(state, clock), Breaker(state, clock)
+    if spend.today >= daily_usd:
+        return _fallback(obs, f"daily cap ${daily_usd:.2f} reached")
+    try:
+        shut = breaker.admit(timeout + PROBE_MARGIN)
+        if shut is None:
+            return ask(model, obs, timeout, spend, prompt_for(prompt, obs), reasoning, max_tokens, breaker)
+    except ProviderError as exc:        # no completion: the breaker counts it
+        try:
+            why = breaker.failure(exc)
+        except Exception as bad:        # the breaker's own trouble never costs the fallback
+            why = f"{exc}; breaker not updated: {type(bad).__name__}: {str(bad)[:120]}"
+        return _fallback(obs, why)
+    except Exception as exc:            # any other model or parse failure: play the local policy
+        return _fallback(obs, f"{type(exc).__name__}: {str(exc)[:160]}")
+    return _fallback(obs, shut, quiet=True)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--model", required=True, help="OpenRouter model id, e.g. anthropic/claude-sonnet-5")
-    p.add_argument("--state", required=True, help="directory for the daily spend record")
+    p.add_argument("--state", required=True, help="directory for the daily spend record and the circuit breaker")
     p.add_argument("--daily-usd", type=float, default=1.0)
-    p.add_argument("--timeout", type=float, default=20.0)
+    p.add_argument("--timeout", type=float, default=20.0,
+                   help="seconds for the model's answer, counted from this process's start")
     p.add_argument("--prompt", help="system prompt: a path, or a name under prompts/combat "
                                     "(default planner-system.md)")
     p.add_argument("--reasoning", default="low", choices=("none", "off", "minimal", "low", "medium", "high"),
@@ -382,16 +866,12 @@ def main():
         prompt = Path(os.path.expanduser(a.prompt))
         if not prompt.is_absolute() and not prompt.exists():
             prompt = PROMPTS / a.prompt
-    state = Path(os.path.expanduser(a.state))
-    state.mkdir(parents=True, exist_ok=True)
-    spend = Spend(state)
-    if spend.today >= a.daily_usd:
-        out = _fallback(obs, f"daily cap ${a.daily_usd:.2f} reached")
-    else:
-        try:
-            out = ask(a.model, obs, a.timeout, spend, prompt_for(prompt, obs), a.reasoning, a.max_tokens)
-        except Exception as exc:        # any model, network or parse failure: play the local policy
-            out = _fallback(obs, f"{type(exc).__name__}: {str(exc)[:160]}")
+    # What starting Python and the imports took (up to a second on a busy
+    # host) comes off the request's time, so a hung provider is reported as a
+    # timeout, which the breaker counts, before the arena's budget kills us.
+    timeout = max(1.0, a.timeout - (time.monotonic() - STARTED))
+    out = decide(obs, a.model, Path(os.path.expanduser(a.state)), a.daily_usd, timeout, prompt, a.reasoning,
+                 a.max_tokens)
     print(json.dumps(out))
 
 

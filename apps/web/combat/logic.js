@@ -13,6 +13,8 @@
  *   explainSide    combat.md section 9 sentences for one side of one beat
  *   fighterStats   observed play from completed fights; never a prediction
  *   practice*      a local, free fight against a disclosed NPC
+ *   driverBadge    who chooses a fighter's plans, as the page shows it (with
+ *                  the page's esc); an LLM fighter's offline model is disclosed
  *
  * <script src="combat/logic.js"> (after engine.js and npcs.js) defines
  * window.QDojoCombatLogic; in Node, require() returns the same object.
@@ -902,6 +904,62 @@
     return res;
   }
 
+  // ---- who chooses a fighter's plans: its driver, and an offline model ---------
+
+  // The roster's driver kinds: its DRIVER filter and each card's driver word.
+  const DRIVER_LABEL = Object.freeze({ llm: 'LLM', script: 'SCRIPTED', builder: 'BUILDER BOT' });
+  const driverKind = d => (/^llm:/.test(d || '') ? 'llm' : d === 'planner' || d === 'builder' ? 'builder' : 'script');
+
+  /* An LLM fighter's model can be offline (out of credit, its daily budget
+   * spent, the provider down): a scripted fallback policy then chooses its
+   * plans, and the site must say so wherever it names the model. driver is
+   * the export's "llm:<model>"; status its driver_status ({state: "ok"} or
+   * {state: "fallback", reason, since, last_answer, retry_at, plays}, times
+   * ISO-8601 UTC). Returns null when there is nothing to disclose: not an
+   * LLM driver, no status (an older export) or state "ok"; the badge then
+   * renders as before. Times are shown in UTC as exported, never converted
+   * to local time. */
+  function driverOffline(driver, status) {
+    if (!/^llm:/.test(driver || '') || !status || typeof status !== 'object' || status.state !== 'fallback') return null;
+    const text = v => (typeof v === 'string' && v.trim() ? v.trim() : null);
+    const utc = v => { const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(text(v) || ''); return m ? m[1] + ' ' + m[2] + ' UTC' : null; };
+    const model = driver.slice(4), plays = text(status.plays), reason = text(status.reason);
+    const since = utc(status.since), last = utc(status.last_answer), next = utc(status.retry_at);
+    return {
+      model, plays, reason, since, last, next,
+      label: 'MODEL OFFLINE · PLAYS ' + (plays ? plays.toUpperCase() : 'A SCRIPTED FALLBACK'),
+      short: 'LLM OFFLINE',
+      text: 'The model ' + model + ' is offline' + (since ? ' since ' + since : '') + (reason ? ': ' + reason : '') +
+        (last ? '; it last answered at ' + last : '') + '. ' +
+        (plays ? 'The scripted ' + plays + ' policy' : 'A scripted fallback policy') + ' chooses this fighter\'s plans until the model answers again' +
+        (next ? ' (next try after ' + next + ')' : '') + '.',
+    };
+  }
+
+  /* The page's HTML for who chooses a fighter's plans, from the export's
+   * driver and driver_status, with the page's own esc() applied to every
+   * value. driverBadge: the badge on the fighter and owner pages. driverNote:
+   * the sentence under the fighter page's badges, empty unless the model is
+   * offline. rosterDriver: the roster card's driver word, before its kit. */
+  function driverBadge(d, status, esc) {
+    if (!d) return '';
+    const off = driverOffline(d, status);
+    if (off) return '<span class="drv drv-off" title="' + esc(off.text) + '">' + esc(off.label) + '</span>';
+    if (/^llm:/.test(d)) return '<span class="drv drv-llm" title="An LLM chooses this fighter\'s plans">MODEL: ' + esc(d.slice(4)) + '</span>';
+    if (d === 'planner') return '<span class="drv drv-planner" title="The owner\'s own planner program">PLANNER</span>';
+    if (d === 'builder') return '<span class="drv drv-planner" title="The outside builder runs this bot on their own machine; its code never runs on the arena">BUILDER\'S OWN BOT</span>';
+    return '<span class="drv drv-policy" title="A disclosed policy chooses this fighter\'s plans">POLICY: ' + esc(d) + '</span>';
+  }
+  function driverNote(d, status, esc) {
+    const off = driverOffline(d, status);
+    return off ? '<p class="drv-note">' + esc(off.text) + '</p>' : '';
+  }
+  function rosterDriver(d, status, kit, esc) {
+    const off = driverOffline(d, status);
+    if (off) return '<span><span class="ff-off" title="' + esc(off.text) + '">' + esc(off.short) + '</span> &middot; ' + esc(kit) + '</span>';
+    return esc(DRIVER_LABEL[driverKind(d)] || '') + ' &middot; ' + esc(kit);
+  }
+
   // ---- outside-builder entry (AUD-027): can I enter this deployment? ----------
 
   /* Whether this deployment accepts outside fighters, from what it reports:
@@ -940,7 +998,7 @@
   }
 
   return Object.freeze({
-    entryStatus,
+    entryStatus, driverOffline, driverBadge, driverNote, rosterDriver, driverKind, DRIVER_LABEL,
     NAMES, ID, LEVELS,
     fromHex, toHex, concat, uLE, canonicalJson, rulesetDigest, chooseRuleset, defaultSha256,
     parseContext, roundStateBytes, commitmentPreimage,

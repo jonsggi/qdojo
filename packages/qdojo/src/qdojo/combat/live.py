@@ -6,7 +6,9 @@ What it runs, all simulated, never a real network or real funds:
 - fighter NFTs on the NFT interface (nft.py, docs/nft.md): house-minted at
   registration, founding fighters, and a market where simulated owners and
   collectors list, bid and buy; a sale completes when the fighter is idle;
-- demo bots: code policies and, optionally, LLM planners with daily caps;
+- demo bots: code policies and, optionally, LLM planners with daily caps and
+  a circuit breaker (while a model is offline its fallback plays, and the
+  export says so);
 - scheduled cups, occasional duel challenges, ranked play, rolling seasons;
 - a public export for the spectator site.
 
@@ -29,7 +31,7 @@ import time
 from pathlib import Path
 
 from . import evaluate as E
-from . import export, invariants, join, store
+from . import export, invariants, join, llm_planner, store
 from .bot import Bot, Budget, planner_chooser, policy_chooser
 from .chainsim import FeeModel, SimChain, SimQubicClient
 from .codec import Mode, Op, asset_name_u64
@@ -98,6 +100,12 @@ EVENTS = {
     # sponsor_window sponsored cups: one bot cannot capture the house's money.
     "sponsor_window": 6, "sponsor_max_wins": 2,
 }
+
+
+# Why an LLM bot plays its fallback without starting its planner, logged once
+# per UTC day (the planner logs its own circuit breaker's changes).
+LLM_NOTES = {"budget": "daily model budget ${cap:.2f} spent: {plays} plays until 00:00 UTC",
+             "no_key": "no OpenRouter key in the environment: {plays} plays"}
 
 
 # A demo bot stops paid entry after this many faults (missed commits/reveals)
@@ -298,6 +306,7 @@ class Arena:
         # A live arena keeps secrets-based salts, as a real bot must.
         self.deterministic = deterministic
         self.log = log
+        self.clock = time.time                   # wall time for the LLM planners' state (tests set it)
         self.net = Devnet(self.dir, profile, params=params, compact=compact, compact_every=COMPACT_EVERY)
         if self.net.restart["mode"] != "new":
             r = self.net.restart
@@ -529,13 +538,7 @@ class Arena:
 
     def _chooser(self, entry):
         if "llm" in entry:
-            llm = entry["llm"]
-            cmd = [sys.executable, "-m", "qdojo.combat.llm_planner", "--model", llm["model"],
-                   "--state", str(self.dir / "llm" / entry["label"]), "--daily-usd", str(llm.get("daily_usd", 1.0))]
-            for key in ("prompt", "reasoning", "max_tokens", "timeout"):
-                if key in llm:
-                    cmd += ["--" + key.replace("_", "-"), str(llm[key])]
-            return planner_chooser(cmd, int(llm.get("budget_ms", 25000)), log=self._bot_log(entry["label"]))
+            return self._llm_chooser(entry)
         if "planner" in entry:
             return planner_chooser(shlex.split(entry["planner"]), int(entry.get("budget_ms", 1500)),
                                    log=self._bot_log(entry["label"]))
@@ -544,6 +547,51 @@ class Arena:
         if "stub" in entry:
             return stub_chooser(self.rules, entry["stub"], seed)
         return policy_chooser(self.rules, E.policy_by_name(entry["policy"], self.rules), seed)
+
+    def _llm_state(self, entry) -> Path:
+        return self.dir / "llm" / entry["label"]
+
+    def _llm_chooser(self, entry):
+        """A model planner process per decision (llm_planner.py). While it could
+        make no model call anyway (its circuit breaker open, the day's budget
+        spent, no key), the same mixed-v1 plan it would print plays in-process
+        instead, without starting Python for each decision. The planner logs
+        its breaker's changes; a spent budget or a missing key is noted here,
+        once a day."""
+        llm, label = entry["llm"], entry["label"]
+        state, cap = self._llm_state(entry), float(llm.get("daily_usd", 1.0))
+        cmd = [sys.executable, "-m", "qdojo.combat.llm_planner", "--model", llm["model"],
+               "--state", str(state), "--daily-usd", str(llm.get("daily_usd", 1.0))]
+        for key in ("prompt", "reasoning", "max_tokens", "timeout"):
+            if key in llm:
+                cmd += ["--" + key.replace("_", "-"), str(llm[key])]
+        log = self._bot_log(label)
+        run = planner_chooser(cmd, int(llm.get("budget_ms", 25000)), log=log)
+        noted = {}
+
+        def choose(obs):
+            now = self.clock()
+            try:
+                why = llm_planner.blocked(state, cap, now)
+            except Exception:                      # unreadable state: the planner decides for itself
+                why = None
+            if why is None:
+                return run(obs)
+            day = time.strftime("%Y-%m-%d", time.gmtime(now))
+            if why in LLM_NOTES and noted.get(why) != day:
+                noted[why] = day
+                log(LLM_NOTES[why].format(cap=cap, plays=llm_planner.FALLBACK_POLICY))
+            return llm_planner.fallback_plan(obs)
+        choose.slow = True
+        return choose
+
+    def planner_status(self, entry) -> dict | None:
+        """An LLM fighter's driver_status (llm_planner.status): whether its model
+        chooses its plans right now, or its fallback does and why."""
+        try:
+            return llm_planner.status(self._llm_state(entry), float(entry["llm"].get("daily_usd", 1.0)), self.clock())
+        except Exception:                          # never let a status stop the export
+            return None
 
     def _bot_log(self, label: str):
         return lambda m: self.log(f"tick {self.w.tick}: bot {label}: {m}")
@@ -816,6 +864,10 @@ class Arena:
             # origin: "house" (operator-run) or "outside" (registered and run by an outside builder)
             fighters[fid.hex()] = {"name": entry["label"], "driver": driver, "origin": entry.get("origin", "house"),
                                    "asset": self.nfts.public(fid)}
+            # An LLM fighter whose model is offline says so, and what plays instead.
+            status = self.planner_status(entry) if "llm" in entry else None
+            if status is not None:
+                fighters[fid.hex()]["driver_status"] = status
         extra = {"mirror": {**(self.w.nft.source or {}), **self.mirror.status()}} if self.mirrored else {}
         return {**DEPLOYMENT, **extra, "profile": self.net.profile, "tick_seconds": tick_seconds,
                 "nft_backend": self.state["nft_backend"],

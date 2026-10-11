@@ -4,9 +4,10 @@ season, cup, duel and ownership record, for the read API (docs/api.md §3.2).
 It is an index, never an authority. Its only input is the devnet's input
 journal (store.py): a `Replica` replays the journal into its own copy of the
 reference contract, exactly as a restart of the arena would, and `sync`
-copies public state from that copy into SQLite. Names, drivers, origin and
-simulated NFT history come from the public export's index.json (the arena's
-deployment block), which is public already.
+copies public state from that copy into SQLite. Names, drivers (with an LLM
+fighter's driver_status), origin and simulated NFT history come from the
+public export's index.json (the arena's deployment block), which is public
+already.
 
 - Rebuildable: `rebuild` deletes nothing in place; it builds a new file from
   the whole journal and swaps it in atomically.
@@ -384,6 +385,10 @@ class Syncer:
             self._titles(st)
             set_meta(conn, "owner_credits", {f.owner.hex(): c.ledger.credits.get(f.owner, 0)
                                              for f in c.fighters.values()})
+            # LLM fighters' planner status (live.py deployment): it changes with
+            # time, not with the journal, so it is kept beside the rows.
+            set_meta(conn, "driver_status", {h: m["driver_status"] for h, m in meta.items()
+                                             if isinstance(m.get("driver_status"), dict)})
             contests = sorted(self.open_contests | {x for x in c.contests if x > self.max_contest})
             for cid in contests:
                 self._contest(c, cid)

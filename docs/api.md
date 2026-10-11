@@ -306,7 +306,7 @@ ended). Lists are newest first; `page` starts at 1, `per_page` defaults to
 | Endpoint | Content |
 |---|---|
 | `GET /api/v1/status` | Indexed tick, journal offset, counts, whether it is following and caught up |
-| `GET /api/v1/fighters` | Every fighter: rating, belt, contract record, full-history `records_by_mode` and `career`, `fights_total`, `form` (last 5), name, `origin`, driver, simulated NFT |
+| `GET /api/v1/fighters` | Every fighter: rating, belt, contract record, full-history `records_by_mode` and `career`, `fights_total`, `form` (last 5), name, `origin`, driver (an LLM fighter's with `driver_status`), simulated NFT |
 | `GET /api/v1/fighters/{id}` | One fighter as above, plus `form` (last 10), `first_fight`, the last 64 fight IDs and `ratings_recent` |
 | `GET /api/v1/fighters/{id}/fights?mode=&page=&per_page=` | That fighter's fights (summaries plus `slot` and `outcome`) |
 | `GET /api/v1/fighters/{id}/replays?before=&limit=` | Up to 100 finished replays, for scouting; `next_before` continues |
@@ -330,6 +330,21 @@ ended). Lists are newest first; `page` starts at 1, `per_page` defaults to
 `origin` is `house` (run by the operator: demo bots and NPCs) or `outside`
 (registered and run by an outside builder, [build-a-bot.md](build-a-bot.md)
 §8). The static export carries the same field on each fighter.
+
+`driver` is `llm:<model>` for a house fighter an LLM plans for, `planner`,
+`builder` (an outside builder's own bot) or the name of a disclosed policy.
+An LLM fighter also carries `driver_status`: `{"state": "ok"}` while its model
+chooses its plans, or `{"state": "fallback", "reason", "since", "last_answer",
+"retry_at", "plays"}` while the model is offline (out of credit, its daily
+budget spent, its provider down, no key): why; since when (the first failed
+request of this outage, or when the day's budget ran out); when the model last
+answered (with an open breaker or no key); when the model is next asked (times
+ISO-8601 UTC, each only when known); and the scripted policy that plays
+meanwhile (`mixed-v1`). The arena computes it at each export from the
+planner's state ([build-a-bot.md](build-a-bot.md) §7); the static export
+carries it in `index.json` (`deployment.fighters[id]`) and
+`fighters/{id}.json`. Other drivers, and exports from an arena older than the
+field, have none.
 
 `community` counts identities, not people: an outside builder is the key
 that registered an outside fighter (one fighter per key), and *active* means

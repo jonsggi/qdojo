@@ -553,6 +553,7 @@ html { background: var(--soot); }
 .house-rules li { font-family: var(--font-pixel) !important; font-size: 9px !important; line-height: 1.6 !important; padding: 8px 10px; color: #111; background: #d9d2c4; border: 3px solid #111; transform: rotate(-1deg); box-shadow: 3px 3px 0 #000; }
 .house-rules li:nth-child(2n) { transform: rotate(1.2deg); background: #e8c46a; }
 .panel p.bio { font-size: 17px; color: #e6ddcf; font-style: italic; margin: 0 0 12px; }
+.panel p.drv-note { font-size: 14px; color: var(--hazard); margin: -4px 0 12px; }
 
 /* ---- story: four chapters, told like a comic ---------------------------- */
 .story { max-width: 920px; margin: 0 auto; display: flex; flex-direction: column; gap: 26px; }
@@ -789,6 +790,7 @@ td.net { white-space: nowrap; } td.net.pos { color: #9ad36b; } td.net.neg { colo
 .ff-form { display: flex; gap: 2px; }
 .ff-form .form { font-style: normal; width: 16px; height: 16px; font-size: 8px; display: inline-grid; place-items: center; }
 .ff-live { font-size: 8px; color: #111; background: var(--green); padding: 2px 4px; align-self: flex-start; }
+.ff-off { color: var(--hazard); }
 @media (max-width: 560px) {
   .ff-k { width: 100%; min-width: 0; }
   .ff-active { margin-left: 0; }

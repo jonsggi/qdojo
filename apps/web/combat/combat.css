@@ -319,6 +319,8 @@ table.board td.rank { color: var(--yellow); }
 .drv-nft { color: var(--grey); }
 .drv-house { color: var(--grey); border-style: dashed; }
 .drv-outside { color: var(--black); background: var(--green); border-color: var(--green); }
+/* An LLM fighter whose model is offline: a scripted fallback plays (driver_status). */
+.drv-off { color: var(--yellow); border-style: dashed; }
 .pager { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0; }
 .pager .on { text-decoration: underline; }
 .sub-links { font-size: 9px; margin: -6px 0 14px; }

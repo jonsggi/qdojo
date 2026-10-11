@@ -267,6 +267,40 @@ Handling problems:
 - **Stopping LLM spend.** LLM bots cap their spend per UTC day
   (`--daily-usd`) and fall back to a local policy. Removing their lineup
   entries and restarting stops all model calls.
+- **An LLM bot's model is offline** (its page says MODEL OFFLINE · PLAYS
+  MIXED-V1; `index.json` `deployment.fighters[id].driver_status` says why:
+  out of credit, budget spent, provider down, no key). Each LLM bot keeps a
+  circuit breaker in `~/.qdojo/combat/arena/llm/<label>/breaker.json`
+  ([build-a-bot.md](build-a-bot.md) §7). While it is open, or the day's
+  budget is spent, or the runner has no key, the arena plays mixed-v1 for
+  that bot in-process and starts no planner. The log has one line per change
+  (`planner fallback to mixed-v1: ... breaker open ...`, `planner breaker
+  closed: ...`, and once a day `daily model budget ... spent` or `no
+  OpenRouter key`), not one per round. After a top-up, deleting the bots'
+  `breaker.json` files makes them ask their models at the next decision
+  instead of at the next probe (at most 6 hours away); no restart is needed.
+  A `planner fallback to mixed-v1: state directory unusable: ...` line on
+  every decision means the bot's state directory cannot be written (a full
+  disk, a read-only mount, an owner other than the arena's user): with
+  nowhere to keep the day's spend the bot makes no model call and plays
+  mixed-v1 until the directory is writable again. Its page still names the
+  model meanwhile, so fix the directory. A `planner spend not saved: ...`
+  line, or one ending `breaker state not saved: ...`, means a write failed
+  after a request (the disk filled meanwhile): the reply was played, but
+  its cost or the breaker's change was not recorded.
+- **Deploy order: the arena first, then the site.** The site (Dokploy, built
+  from the repository) and the arena (`~/src/qdojo-live`) ship separately.
+  When a change makes the site describe something only the newer arena
+  exports, such as `driver_status` (the help screen and llms.txt say an
+  offline model's fighter page says so), update the arena from the local
+  repository before pushing, since the push to `main` is what releases the
+  site: `git -C ~/src/qdojo-live pull --ff-only ~/src/qdojo main`, restart
+  `qdojo-combat-live` and `qdojo-combat-api`, check that `index.json`
+  carries the field, and only then `git push`. An older site ignores a
+  field it does not know; a newer site in front of an older arena promises a
+  disclosure the export does not make. The API's first start on new code
+  replays the whole journal (a snapshot from other code is ignored), and
+  meanwhile the site reads `driver_status` from the static export.
 - **Rules change.** A devnet's manifest profile and values are fixed when it
   is created; the marker refuses to reopen it under other rules. To change the
   rules, stop the unit, move the arena directory aside, and start fresh.

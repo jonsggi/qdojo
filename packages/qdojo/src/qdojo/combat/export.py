@@ -401,7 +401,8 @@ def export_all(c: CombatContract, root: Path, keep: int | None = None, deploymen
     by_mode, recent = records_by_mode(c), fighter_fights(c)
     for fid in c.fighters:
         doc = fighter(c, fid, by_mode, recent, title_state, honours)
-        doc.update(meta.get(fid.hex(), {}))     # name, driver, simulated asset and its full ownership history
+        # name, driver (an LLM fighter's with its driver_status), simulated asset and its full ownership history
+        doc.update(meta.get(fid.hex(), {}))
         put(f"fighters/{fid.hex()}.json", doc)
     put("events/latest.json", events(c, max(0, c.event_seq - PAGE)))
     results = []

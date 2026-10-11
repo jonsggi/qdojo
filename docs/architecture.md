@@ -113,7 +113,7 @@ All paths under `packages/qdojo/src/qdojo/combat/` unless noted.
 | `engine.py` | Pure beat, round and fight resolution: no I/O, clock, randomness or floats |
 | `codec.py` | Canonical bytes, digests, commitments, opcodes |
 | `npcs.py`, `evaluate.py` | The six NPCs; research policies (`search-v1`, `reader-v1`), pools and the benchmark runner |
-| `planner.py`, `llm_planner.py` | The planner subprocess contract; an OpenRouter-backed planner with a daily spend cap |
+| `planner.py`, `llm_planner.py` | The planner subprocess contract; an OpenRouter-backed planner with a daily spend cap and a provider circuit breaker, whose status the arena publishes |
 | `training.py` | Local practice fights, replay verification, "where it cost you" explanations |
 | `contract.py`, `ledger.py`, `matchmaking.py`, `rating.py`, `series.py` | The reference contract and its pure parts |
 | `sim.py`, `chainsim.py`, `devnet.py`, `store.py` | Fake chain, realistic simulated chain, persistent local devnet, journals |
