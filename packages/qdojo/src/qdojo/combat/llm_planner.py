@@ -49,7 +49,9 @@ import hashlib
 import json
 import math
 import os
+import signal
 import sys
+import threading
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -347,14 +349,17 @@ class Spend:
     def add(self, usd: float) -> str | None:
         """None once the record is written, else why not, for the log line.
         The reply it paid for is used all the same: decide() saw the
-        directory take a write before the request."""
-        self.today += usd
-        self.doc[self.day] = self.today
-        self.doc = dict(sorted(self.doc.items())[-60:])
-        try:
-            _write_json(self.path, self.doc)
-        except OSError as exc:
-            return f"spend not saved: {type(exc).__name__}: {str(exc)[:120]}"
+        directory take a write before the request. The record is read again
+        under the fighter's lock, so an overlapping decision's cost is kept."""
+        with _locked(self.path.parent):
+            doc = _spend_doc(self.path)
+            self.today = doc.get(self.day, 0.0) + usd
+            doc[self.day] = self.today
+            self.doc = dict(sorted(doc.items())[-60:])
+            try:
+                _write_json(self.path, self.doc)
+            except OSError as exc:
+                return f"spend not saved: {type(exc).__name__}: {str(exc)[:120]}"
         return None
 
 
@@ -470,6 +475,30 @@ def _body_error(doc) -> ProviderError:
     return ProviderError("transient", "provider sent no completion", detail)
 
 
+@contextlib.contextmanager
+def _deadline(seconds: float):
+    """Raises TimeoutError in the block once `seconds` have passed. urlopen's
+    timeout bounds each socket operation, not the request: a connect tried
+    on each of the host's addresses in turn, or a body that trickles in,
+    could outlast the arena's budget, which kills the planner before the
+    breaker hears of it. (A name lookup inside the C resolver runs to the
+    resolver's own timeout first.) Only in the main thread, where signals
+    arrive (the planner process), and not on Windows, which has no SIGALRM:
+    there the per-operation timeout stays."""
+    if sys.platform != "win32" and threading.current_thread() is threading.main_thread():
+        def expired(signum, frame):
+            raise TimeoutError(f"no answer within {seconds:.1f} s")
+        before = signal.signal(signal.SIGALRM, expired)
+        signal.setitimer(signal.ITIMER_REAL, seconds)
+        try:
+            yield
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, before)
+    else:
+        yield
+
+
 def _when(t: float, now: float) -> str:
     """A time for a log line: HH:MM UTC, with the date when it is not today."""
     at = dt.datetime.fromtimestamp(t, dt.timezone.utc)
@@ -551,8 +580,10 @@ class Breaker:
         # spend.json was it: read before this process writes spend.json itself.
         self.legacy = _written(self.state / "spend.json")
 
-    def read(self) -> dict:
-        return read_breaker(self.state, self.clock(), self.legacy)
+    def read(self, now: float) -> dict:
+        """The record as of `now`: the caller's own clock reading, so a time
+        clamped to now compares equal to it."""
+        return read_breaker(self.state, now, self.legacy)
 
     def _save(self, doc: dict) -> str | None:
         """None once the record is written, else why not, for the log line."""
@@ -567,7 +598,8 @@ class Breaker:
         an open breaker that is due, for `hold` seconds at most), else why
         not, for a quiet fallback."""
         with _locked(self.state):
-            now, b = self.clock(), self.read()
+            now = self.clock()
+            b = self.read(now)
             if b["state"] != "open":
                 return None
             if now < b["until"]:
@@ -585,7 +617,8 @@ class Breaker:
         Returns the log line when that closed an open breaker, or when the
         record could not be saved."""
         with _locked(self.state):
-            now, b = self.clock(), self.read()
+            now = self.clock()
+            b = self.read(now)
             unsaved = self._save({"state": "closed", "fails": 0, "answered": now})
         self.probing = False
         if unsaved or b["state"] != "open":
@@ -600,7 +633,8 @@ class Breaker:
             return self._failure(err)
 
     def _failure(self, err: ProviderError) -> str:
-        now, b = self.clock(), self.read()
+        now = self.clock()
+        b = self.read(now)
         first, most = BACKOFF[err.kind]
         if b["state"] == "open":
             if not self.probing:            # a request from before it opened: the breaker already knows
@@ -741,7 +775,7 @@ def ask(model: str, obs: dict, timeout: float, spend: "Spend", prompt: Path = PR
                                               "X-Title": "qdojo combat demo"})
         left = max(1.0, timeout - (time.monotonic() - started))
         try:
-            with urllib.request.urlopen(req, timeout=left) as resp:
+            with _deadline(left), urllib.request.urlopen(req, timeout=left) as resp:
                 doc = json.loads(resp.read())
         except Exception as exc:            # whatever the request raised is the provider's failure
             raise provider_error(exc) from None

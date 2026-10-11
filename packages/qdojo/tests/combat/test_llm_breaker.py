@@ -417,6 +417,53 @@ def test_a_clock_set_back_keeps_no_breaker_shut_longer_than_its_kind_ever_would(
     assert L.read_breaker(state, T0)["probe_until"] == T0 + L.PROBE_HOLD_MAX
 
 
+class Ticking(Clock):
+    """A clock that moves on every reading, as a real one does."""
+
+    def __call__(self):
+        self.t += 1e-6
+        return self.t
+
+
+def test_a_clamped_breaker_is_due_for_a_clock_that_moves_between_readings(tmp_path):
+    """read_breaker clamps a time too far ahead to the reading it was given;
+    admit() compares with that same reading, so the breaker is due at once
+    (with two readings the clamped time was always just ahead of the first)."""
+    state = tmp_path / "s"
+    state.mkdir()
+    (state / "breaker.json").write_text(json.dumps({"state": "open", "kind": "transient", "reason": "r", "since": T0,
+                                                    "until": T0 + 3 * 3600, "backoff": 120, "probe_until": 0}))
+    b = L.Breaker(state, Ticking(T0))
+    assert b.admit(hold=21) is None and b.probing
+    assert L.read_breaker(state, T0 + 1)["until"] <= T0 + 1
+
+
+def test_a_provider_that_never_finishes_answering_is_a_timeout_within_the_budget(tmp_path, monkeypatch, capsys):
+    """urlopen's timeout bounds each socket operation; a deadline bounds the
+    whole request, so the breaker counts the timeout before the arena's
+    budget kills the planner."""
+    def trickle(req, timeout=None):
+        for _ in range(30):
+            time.sleep(0.2)                                             # each read well inside `timeout`
+        return Response(json.dumps(answer()).encode())
+    monkeypatch.setattr(L.urllib.request, "urlopen", trickle)
+    started = time.monotonic()
+    out = L.decide(_obs(), MODEL, tmp_path / "s", timeout=1.0, clock=Clock(T0))
+    assert time.monotonic() - started < 3
+    assert out == fallback()
+    assert capsys.readouterr().err.splitlines() == ["fallback to mixed-v1: provider timeout: TimeoutError: "
+                                                   "no answer within 1.0 s"]
+    assert L.read_breaker(tmp_path / "s", T0)["fails"] == 1
+
+
+def test_overlapping_decisions_keep_both_costs(tmp_path):
+    state = tmp_path / "s"
+    state.mkdir()
+    a, b = L.Spend(state, Clock(T0)), L.Spend(state, Clock(T0))         # both read the record before either adds
+    assert a.add(0.3) is None and b.add(0.4) is None
+    assert json.loads((state / "spend.json").read_text()) == {"2026-09-29": pytest.approx(0.7)}
+
+
 def test_decisions_that_find_a_due_breaker_together_send_one_probe(tmp_path, provider, capsys, monkeypatch):
     """Reading the record and claiming the probe hold the fighter's lock, so
     of several overlapping decisions exactly one probes, however slowly each
